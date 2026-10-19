@@ -8,6 +8,7 @@
   "plans": {
     "free": "Free",
     "pro": "Pro",
+    "collab": "Collab",
     "self_hosted": "Self-hosted"
   },
   "status": {
@@ -25,6 +26,7 @@
     "current": "Current plan",
     "freeSummary": "1 mailbox, 1 member and $0.50 of AI usage a month, free forever.",
     "proSummary": "Unlimited mailboxes and members, $10 of AI usage per seat each month.",
+    "collabSummary": "Unlimited mailboxes and members, $20 of AI usage per seat each month, and your own mail with Collab.",
     "perSeatMonth": "{{price}} per seat per month",
     "perSeatYear": "{{price}} per seat per year",
     "renews": "Renews {{date}}",
@@ -56,6 +58,10 @@
   "toast": {
     "pro": "You're on Pro",
     "proBody": "Unlimited mailboxes and members, and more AI usage each month.",
+    "collab": "You're on Collab",
+    "collabBody": "Connect your mail accounts from Collab.",
+    "switched": "You're on {{plan}} now",
+    "switchedBody": "The change is prorated on your next invoice.",
     "checkoutCancel": "Checkout cancelled. Nothing was charged.",
     "topUp": "AI usage added",
     "topUpBody": "It never expires and is spent after the monthly allowance.",
@@ -88,6 +94,32 @@
     "ctaYearly": "Upgrade to Pro yearly",
     "redirecting": "Opening Stripe Checkout",
     "secure": "Payments are handled by Stripe. Cancel any time."
+  },
+  "collab": {
+    "title": "Collab",
+    "description": "Your own mail, shared with your team: connect Google, Microsoft or IMAP accounts and work them together.",
+    "current": "Your plan",
+    "free": "On for free",
+    "freeUntil": "Collab is on for free until {{date}}.",
+    "freeForever": "Collab is on for free.",
+    "freeHint": "An opendesk admin turned it on for this workspace. Subscribe to keep it after it ends.",
+    "freeHintForever": "An opendesk admin turned it on for this workspace.",
+    "benefit": {
+      "mail": "Connect your own Google, Microsoft or IMAP mail",
+      "share": "Keep accounts private or share them with your team",
+      "limits": "Unlimited mailboxes and members",
+      "ai": "$20 of AI usage per seat each month, pooled"
+    },
+    "subscribe": "Subscribe to Collab",
+    "subscribeYearly": "Subscribe to Collab yearly",
+    "switch": "Switch to Collab",
+    "switchToPro": "Switch to Pro",
+    "switchTitle": "Switch to Collab?",
+    "switchBody": "Your subscription moves to {{price}} per seat, keeps its {{count}} seats and is prorated on the next invoice.",
+    "switchBodyNoPrice": "Your subscription moves to Collab, keeps its seats and is prorated on the next invoice.",
+    "switchProTitle": "Switch to Pro?",
+    "switchProBody": "Your subscription moves back to Pro, prorated on the next invoice. Connected mail accounts stop syncing and are kept.",
+    "unavailable": "Collab can't be bought on this workspace yet."
   },
   "limits": {
     "title": "Plan limits",

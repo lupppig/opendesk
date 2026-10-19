@@ -521,6 +521,12 @@ func applyPatch(ctx context.Context, tx pgx.Tx, d *deps.Deps, wid, tid uuid.UUID
 			return nil, err
 		}
 	}
+	if slices.Contains(changes, "status") && closing(next.Status) && !closing(cur.Status) {
+		// The mailbox's own copy leaves the Gmail or Outlook inbox too, when it asks for that.
+		if err := domain.QueueProviderArchive(ctx, tx, d.Jobs, wid, tid); err != nil {
+			return nil, err
+		}
+	}
 	if o.Enqueue {
 		if _, err := d.Jobs.InsertTx(ctx, tx, jobs.TicketTriggerArgs{WorkspaceID: wid, TicketID: tid, Trigger: jobs.TriggerTicketUpdated,
 			ActorUserID: actor.UserID, Changes: changes}, nil); err != nil {

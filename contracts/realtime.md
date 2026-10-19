@@ -31,7 +31,7 @@ client appends `/websocket`.
 
 | topic                         | who may join                                   | server pushes |
 | ----------------------------- | ---------------------------------------------- | ------------- |
-| `workspace:<wid>`             | `ws` token with that `wid`                     | `"event"` with every envelope for that workspace (visibility `agents` or `public`); for an event of a private team's ticket only the stand-in `{id, seq, workspace_id, type: "event.hidden", visibility: "agents", data: {}, occurred_at}`, so `seq` stays contiguous |
+| `workspace:<wid>`             | `ws` token with that `wid`                     | `"event"` with every envelope for that workspace (visibility `agents` or `public`); for an event of a private team's ticket, or one scoped to people (`private` in `topics`, contracts/events.md), only the stand-in `{id, seq, workspace_id, type: "event.hidden", visibility: "agents", data: {}, occurred_at}`, so `seq` stays contiguous |
 | | | Pushed envelopes omit `topics`: per-user events (`notification.created`) are told apart by the channel they arrive on (`user:<uid>`), not by `topics` |
 | `team:<wid>:<tid>`            | `ws` token with that `wid` and `tid` in its `teams` claim | `"event"` envelopes of a private team's tickets in full (contracts/teams.md "Visibility"); `workspace:<wid>` gets their stand-in. They may arrive before or after the stand-in: apply them when they arrive, track `seq` on the workspace channel |
 | `user:<uid>`                  | `ws` token, `kind=user`, `sub == uid`          | `"event"` envelopes whose topics include `user:<uid>`, in full (their notifications and assignments, which go only to users who can see the ticket) |

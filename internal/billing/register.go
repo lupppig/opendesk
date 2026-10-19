@@ -30,6 +30,7 @@ func Register(d *deps.Deps, api huma.API, r chi.Router) {
 	s.registerAPI(api)
 	s.registerRechargeAPI(api)
 	s.registerPaymentsAPI(api)
+	s.registerPlansAPI(api)
 	// Raw route: the signature is computed over the exact body bytes.
 	r.Post(WebhookPath, s.webhook)
 	if s.enabled() && d.Plan != nil {

@@ -366,7 +366,7 @@ func (s *svc) oauthStart(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, 404, "not_found", "Unknown sign-in provider.")
 		return
 	}
-	ip := httpx.ClientIP(s.d.Cfg.TrustProxy)(r)
+	ip := httpx.ClientIP(s.d.Cfg.TrustProxy, s.d.Cfg.ProxyHops)(r)
 	if !s.d.Limiter.Allow("oauth:start:"+ip, 30, 15*time.Minute) {
 		writeProblem(w, 429, "rate_limited", "Too many requests. Wait a moment and try again.")
 		return
@@ -537,7 +537,7 @@ func (s *svc) resolveIdentity(ctx context.Context, id *fedIdentity, redirectTo, 
 			return nil
 		}
 		var hasPassword bool
-		err = tx.QueryRow(ctx, `SELECT id, password_hash IS NOT NULL FROM users WHERE email = $1`, id.Email).Scan(&uid, &hasPassword)
+		err = tx.QueryRow(ctx, `SELECT id, `+auth.PasswordHashSQL+` IS NOT NULL FROM users WHERE email = $1`, id.Email).Scan(&uid, &hasPassword)
 		switch {
 		case err == nil && hasPassword:
 			data["kind"] = "link"
@@ -673,7 +673,7 @@ func (s *svc) registerOAuth(api huma.API, r chi.Router) {
 			}
 			var hash *string
 			var totp bool
-			if err := s.d.DB.Pool.QueryRow(ctx, `SELECT password_hash, totp_enabled FROM users WHERE id = $1`, uid).Scan(&hash, &totp); err != nil {
+			if err := s.d.DB.Pool.QueryRow(ctx, `SELECT `+auth.PasswordHashSQL+`, totp_enabled FROM users WHERE id = $1`, uid).Scan(&hash, &totp); err != nil {
 				return nil, httpx.Wrap(err)
 			}
 			if hash == nil {

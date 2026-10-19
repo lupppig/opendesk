@@ -12,6 +12,7 @@ export type AdminPermission =
   | "workspaces.suspend"
   | "workspaces.limits"
   | "workspaces.delete"
+  | "workspaces.test"
   | "jobs.manage"
   | "admins.manage";
 
@@ -60,7 +61,7 @@ export type AdminUser = AdminUserRow & {
   sessions: AdminSession[];
 };
 
-export type Plan = "free" | "pro" | "self_hosted";
+export type Plan = "free" | "pro" | "collab" | "self_hosted";
 export type AdminWorkspaceRef = { id: string; name: string; slug: string };
 export type AdminWorkspaceRow = AdminWorkspaceRef & {
   avatar_url: string | null;
@@ -70,6 +71,11 @@ export type AdminWorkspaceRow = AdminWorkspaceRef & {
   suspended_at: string | null;
   last_activity_at: string | null;
   created_at: string;
+  /** A test workspace (contracts/admin.md "Test workspaces"). */
+  test: boolean;
+  /** When the cleanup deletes it; null = kept. */
+  test_expires_at: string | null;
+  sample_data: AdminSampleData;
 };
 export type AdminLimits = { max_mailboxes: number | null; max_members: number | null; monthly_ai_usd: number | null };
 export type AdminMailbox = {
@@ -84,7 +90,7 @@ export type AdminMailbox = {
   created_at: string;
 };
 export type AdminSubscription = {
-  plan: "free" | "pro";
+  plan: "free" | "pro" | "collab";
   status: string;
   interval: "month" | "year";
   seats: number;
@@ -94,6 +100,20 @@ export type AdminSubscription = {
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
 };
+export type CollabAccess = "none" | "offered" | "complimentary";
+/** The workspace's Collab: the instance admin's access and whether it is on (contracts/admin.md "Collab access"). */
+export type AdminCollab = {
+  access: CollabAccess;
+  /** Complimentary access ends then; null = until changed. */
+  until: string | null;
+  note: string;
+  /** The workspace has Collab now. */
+  enabled: boolean;
+  /** Mail accounts its members connected. */
+  accounts: number;
+};
+export type AdminCollabInput = { access: CollabAccess; until?: string | null; note?: string };
+
 export type AdminWorkspaceAi = {
   remaining_usd: number;
   monthly_usd: number;
@@ -133,6 +153,7 @@ export type AdminWorkspace = AdminWorkspaceRow & {
   entitlements: { max_mailboxes: number; max_members: number; monthly_ai_usd: number; unlimited_ai: boolean };
   limits: AdminLimits;
   subscription: AdminSubscription | null;
+  collab: AdminCollab;
   ai: AdminWorkspaceAi;
   recent_audit: AuditLog[];
 };
@@ -228,7 +249,7 @@ export type InstanceAdmin = {
 export type AdminAuditTarget = "user" | "workspace" | "admin" | "job" | "instance";
 export type AdminAuditLog = {
   id: string;
-  actor: { type: "admin" | "cli"; id: string | null; email: string };
+  actor: { type: "admin" | "cli" | "system"; id: string | null; email: string };
   action: string;
   target_type: AdminAuditTarget;
   target_id: string | null;
@@ -251,10 +272,81 @@ export const AUDIT_ACTIONS = [
   "workspace.unsuspended",
   "workspace.limits_changed",
   "workspace.ai_granted",
+  "workspace.collab_changed",
   "workspace.deleted",
+  "test_workspace.created",
+  "test_workspace.changed",
+  "test_workspace.sample_added",
+  "test_workspace.expired",
   "job.retried",
   "job.cancelled",
   "admin.granted",
   "admin.role_changed",
   "admin.revoked",
 ] as const;
+
+// ─── Test workspaces (contracts/admin.md "Test workspaces") ────────────────
+
+export const SAMPLE_SIZES = ["small", "realistic", "large"] as const;
+export type SampleSize = (typeof SAMPLE_SIZES)[number];
+export const SAMPLE_KINDS = ["tickets", "chat", "kb", "team", "collab", "history"] as const;
+export type SampleKind = (typeof SAMPLE_KINDS)[number];
+export type SampleStatus = "none" | "running" | "done" | "failed";
+export type AdminSampleCounts = {
+  members: number;
+  teams: number;
+  contacts: number;
+  companies: number;
+  tickets: number;
+  messages: number;
+  chats: number;
+  articles: number;
+  collections: number;
+  mail_accounts: number;
+  mail_threads: number;
+  views: number;
+  saved_replies: number;
+};
+/** The last batch's status, size and kinds, and the counts of every batch that finished. */
+export type AdminSampleData = {
+  status: SampleStatus;
+  size: SampleSize | "";
+  kinds: SampleKind[];
+  counts: AdminSampleCounts | null;
+  batches: number;
+  started_at: string | null;
+  seeded_at: string | null;
+  error: string;
+};
+export type TestPlan = "free" | "pro" | "collab";
+export type AdminTestWorkspace = {
+  workspace: AdminWorkspaceRef;
+  owner: { id: string; email: string; name: string; test_account: boolean; password_expires_at: string | null } | null;
+  created_by: { id: string; email: string } | null;
+  reason: string;
+  plan: TestPlan;
+  test_expires_at: string | null;
+  sample_data: AdminSampleData;
+  members: number;
+  suspended_at: string | null;
+  created_at: string;
+};
+export type SampleRequest = { size: SampleSize; kinds: SampleKind[] };
+export type CreateTestWorkspaceInput = {
+  code: string;
+  name: string;
+  owner: { email: string; name?: string } | { user_id: string };
+  password_days?: number;
+  plan: TestPlan;
+  sample?: SampleRequest;
+  /** null keeps it until deleted by hand. */
+  delete_after_days: number | null;
+  reason: string;
+};
+export type ChangeTestWorkspaceInput = { code: string; delete_after_days?: number | null; password_days?: number };
+/** The owner's credentials: the password only when generated now, never again. */
+export type TestWorkspaceResult = {
+  workspace: AdminTestWorkspace;
+  owner: { id: string; email: string; new_account: boolean; password: string | null; password_expires_at: string | null };
+  sign_in_url: string;
+};

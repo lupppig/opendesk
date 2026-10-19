@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mailboxHost, offersNoTls, receivesOverImap, sendOnly, signedInProvider } from "./mailHost";
+import { mailboxHost, offersNoTls, readsDirectly, receivesOverImap, sendOnly, signedInProvider } from "./mailHost";
 
 describe("offersNoTls", () => {
   it("offers no encryption only for local and private hosts", () => {
@@ -21,5 +21,13 @@ describe("how a mailbox connects", () => {
     expect(mailboxHost(sendOnlyGoogle)).toBe("google_workspace");
     expect(mailboxHost({ ...base, inbound_kind: "forwarding", outbound_kind: "microsoft" })).toBe("microsoft365");
     expect(mailboxHost(forwarding)).toBeNull();
+  });
+
+  it("tells reading the inbox directly from syncing over IMAP", () => {
+    const direct = { ...base, inbound_kind: "microsoft", outbound_kind: "microsoft", config: { oauth_grant: "api" } } as const;
+    const sync = { ...base, inbound_kind: "google", outbound_kind: "google", config: { oauth_grant: "sync" } } as const;
+    const sendOnlyApi = { ...base, inbound_kind: "forwarding", outbound_kind: "google", config: { oauth_grant: "api" } } as const;
+    expect([direct, sync, sendOnlyApi, { ...base, inbound_kind: "google", outbound_kind: "google" } as const].map(readsDirectly)).toEqual([true, false, false, false]);
+    expect(signedInProvider(direct)).toBe("microsoft");
   });
 });

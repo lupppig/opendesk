@@ -1,0 +1,47 @@
+# opendesk behind your own reverse proxy (Traefik, nginx, Nginx Proxy Manager,
+# a Caddy you already run), instead of the bundled Caddy. Turn it on in .env:
+#
+#   COMPOSE_FILE=docker-compose.yml:compose.external-proxy.yml
+#
+# or run the installer with --proxy external, which sets the same thing.
+# Docs: https://docs.opendesk.sh/self-hosting/reverse-proxy/
+#
+# Your proxy terminates TLS and routes the public address of OPENDESK_URL:
+#
+#   /socket, /socket/*  -> realtime  (127.0.0.1:${REALTIME_PORT:-4000})  WebSocket upgrades
+#   everything else     -> opendesk  (127.0.0.1:${OPENDESK_PORT:-8080})  Host passed on as is
+#
+# Both speak plain HTTP and are published on OPENDESK_BIND (127.0.0.1, so only
+# a proxy on this host reaches them). A proxy in a container joins the
+# opendesk_proxy network instead and reaches opendesk:8080 and realtime:4000:
+#
+#   docker network connect opendesk_proxy <your proxy container>
+#
+# TRUSTED_PROXY_HOPS is the number of proxies in front that append to
+# X-Forwarded-For (1 for one proxy; 2 for Cloudflare in front of it). The client
+# address for rate limits and the audit log is read that many entries from the
+# right, so what a client sends itself is never believed.
+
+services:
+  # Off: only started with --profile bundled-proxy.
+  caddy:
+    profiles: [bundled-proxy]
+
+  opendesk:
+    environment:
+      TRUST_PROXY: "false"
+      TRUSTED_PROXY_HOPS: ${TRUSTED_PROXY_HOPS:-1}
+    ports:
+      - "${OPENDESK_BIND:-127.0.0.1}:${OPENDESK_PORT:-8080}:8080"
+    networks: [internal, proxy]
+
+  realtime:
+    environment:
+      TRUSTED_PROXY_HOPS: ${TRUSTED_PROXY_HOPS:-1}
+    ports:
+      - "${OPENDESK_BIND:-127.0.0.1}:${REALTIME_PORT:-4000}:4000"
+    networks: [internal, proxy]
+
+networks:
+  # For a reverse proxy that runs in a container. Postgres is never on it.
+  proxy:

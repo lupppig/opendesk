@@ -223,7 +223,10 @@ its domain with), never SES: the cloud runs with `MAILBOX_SYSTEM_SEND=false`
 and a mailbox still set to it sends nothing until it connects a way to send.
 Mail comes in by forwarding, through the email
 worker: the cloud runs with `MAILBOX_IMAP=false` (Terraform `mailbox_imap`), so
-no mailbox is read over IMAP and Google and Microsoft connect send-only.
+Google and Microsoft never sync over IMAP and connect send-only. Workspaces with
+Collab are the exception: their mailboxes can read the inbox directly through
+the Gmail API or Microsoft Graph with the Collab clients (step 7), or receive
+over generic IMAP.
 
 ### 6. Secrets
 
@@ -320,6 +323,16 @@ The client ids are not secret: set `google_client_id`, `microsoft_client_id`
 `optional_secrets`, and `terraform apply`. The same goes for `TURNSTILE_SECRET`
 (Cloudflare Turnstile, with `turnstile_site_key`) and `POSTHOG_KEY`.
 
+**Integrations** (optional): Slack and Box only accept apps registered in
+advance, and GitHub signs in with a GitHub App (asking for a token without
+one). Create a Slack app (api.slack.com/apps), a Box Platform app and a GitHub
+App (Issues read and write; Pull requests, Contents and Metadata read; webhook
+off; expiring user tokens; any account) with the redirect URL
+`https://api.opendesk.sh/v1/integrations/oauth/callback`, set
+`mcp_slack_client_id`, `mcp_box_client_id` and `mcp_github_client_id`, and store
+`MCP_SLACK_CLIENT_SECRET`, `MCP_BOX_CLIENT_SECRET` and `MCP_GITHUB_CLIENT_SECRET`
+the same way. Every other integration registers itself on first sign-in.
+
 **Mailbox sign-in while a provider's review is pending.** Each provider's
 mailbox sign-in, which sends replies, has its own switch, separate from user
 sign-in: the API reads `GOOGLE_MAILBOX_OAUTH` and `MICROSOFT_MAILBOX_OAUTH` (Terraform
@@ -335,10 +348,42 @@ set `MAILBOX_OAUTH` to `google,microsoft` and redeploy Pages.
 
 **IMAP stays off in the cloud.** `MAILBOX_IMAP` (Terraform `mailbox_imap`, and
 the GitHub variable `MAILBOX_IMAP` for the web app, step 11) is `false` for the
-cloud: every mailbox receives by forwarding, the API answers an IMAP, Google or
-Microsoft `inbound_kind` and a syncing connection with `422 imap_off`, and the
-wizard offers neither. Leave it off; turning it on would need the restricted
+cloud: mailboxes receive by forwarding, the API answers a Google or Microsoft
+`inbound_kind` and a syncing connection with `422 imap_off` (and an IMAP one too,
+unless the workspace has Collab), and the wizard offers neither. Leave it off; turning it on would need the restricted
 Google scope above, with its verification and yearly CASA assessment.
+
+**Collab mail accounts** (`contracts/collab.md`; the hidden collab plan). A member
+of a workspace with Collab connects their own account, which Collab reads and
+changes like a mail client: Google with `openid`, `email`, `profile` (the account's
+name), `https://www.googleapis.com/auth/gmail.modify` (a **restricted** scope) and `https://www.googleapis.com/auth/gmail.settings.basic`
+(a sensitive scope: the account's signature, From name and vacation responder),
+Microsoft with Graph `Mail.ReadWrite`, `Mail.Send`, `User.Read`,
+`MailboxSettings.ReadWrite` (automatic replies and categories) and `offline_access`,
+or any IMAP server. An account connected without the settings scope still syncs its
+mail; its settings are read only until it is reconnected. Keep the restricted scope
+off the mailbox client: create a separate Google project (and, if you like, a
+separate Entra app) for Collab, enable the Gmail API, add the scopes and the
+redirect URI `https://api.opendesk.sh/v1/collab/accounts/oauth/google/callback`
+(Microsoft: `.../oauth/microsoft/callback`). Support mailboxes of those workspaces
+connect with these clients too, to read the inbox directly instead of forwarding,
+so add the mailbox redirect URIs as well:
+`https://api.opendesk.sh/v1/mailboxes/oauth/google/callback` and
+`https://api.opendesk.sh/v1/mailboxes/oauth/microsoft/callback`. Then:
+
+```sh
+scripts/put-secret.sh COLLAB_GOOGLE_CLIENT_SECRET
+scripts/put-secret.sh COLLAB_MICROSOFT_CLIENT_SECRET
+```
+
+and set `collab_google_client_id` / `collab_microsoft_client_id` in
+`terraform.tfvars` with the secret names in `optional_secrets`. Without them
+Collab uses the mailbox clients, which must then carry these scopes and redirect
+URIs too. While the Google project is unverified for the restricted scope, only
+its listed test users can connect a Gmail account: enough for the workspaces an
+instance admin gives Collab to try (`contracts/admin.md` "Collab access").
+Publishing it to everyone needs Google's verification and a yearly CASA
+assessment.
 
 ### 8. Stripe billing
 
@@ -351,7 +396,11 @@ dashboard (test mode first, then the same in live mode):
    product (`STRIPE_PRICE_PRO_YEARLY`), and an "AI top-up" product with a
    one-time $10 price: each top-up adds $10 of AI usage
    (`STRIPE_PRICE_AI_TOPUP`, or the older name `STRIPE_PRICE_CREDITS`, which is
-   the name of its Secrets Manager secret). Note the `price_...` ids. The app reads amounts from Stripe, so changing a price is a
+   the name of its Secrets Manager secret). A "Collab" product with a recurring
+   per-seat price, $38 per month (`STRIPE_PRICE_COLLAB`), optionally yearly
+   (`STRIPE_PRICE_COLLAB_YEARLY`): the hidden collab plan, bought only by
+   workspaces an instance admin offered it to (`contracts/billing.md` "Collab").
+   Note the `price_...` ids. The app reads amounts from Stripe, so changing a price is a
    new price id, never a code change.
 2. **Tax**: nothing to set up. Checkout is a business purchase: it requires the
    company's legal name and billing address and collects its tax ID, and prices
@@ -387,7 +436,8 @@ for k in STRIPE_SECRET_KEY STRIPE_WEBHOOK_SECRET STRIPE_PRICE_PRO STRIPE_PRICE_P
 done
 ```
 
-then add the five names to `optional_secrets` in `terraform.tfvars`, `terraform
+(and `STRIPE_PRICE_COLLAB`, optionally `STRIPE_PRICE_COLLAB_YEARLY`, the same way when the collab
+plan is sold), then add the names to `optional_secrets` in `terraform.tfvars`, `terraform
 apply`, and run the Deploy workflow from the current release tag (target `backend`) so the api and worker
 pick up the new task definitions. Test end to end in test mode with
 `stripe listen --forward-to https://api.opendesk.sh/v1/billing/stripe/webhook`
@@ -605,11 +655,13 @@ machine and open ports 80 and 443. The installer:
 2. asks for the domain (and an email for certificate notices) unless given;
 3. generates every secret and writes `/opt/opendesk/.env` (mode 0600);
 4. pins the newest release in `.env`, downloads that release's
-   `docker-compose.yml`, `Caddyfile`, `env.template` and `opendesk-ctl`, and
-   checks each against the release's `SHA256SUMS`;
+   `docker-compose.yml`, `compose.external-proxy.yml`, `Caddyfile`,
+   `env.template` and `opendesk-ctl`, and checks each against the release's
+   `SHA256SUMS`;
 5. pulls the images, starts the stack and waits for the first boot's migrations.
 
-Flags: `--domain`, `--email`, `--dir` (default `/opt/opendesk`), `--version`,
+Flags: `--domain`, `--email`, `--proxy` (`caddy` or `external`), `--dir`
+(default `/opt/opendesk`), `--version`,
 `--no-start`, `--wizard` (also asks about SMTP, attachment storage, inbound
 mail, AI and sign-ups), `--ai-key`, `--ai-url`, `--ai-model`, `--ollama`,
 `--no-ai`, `--yes`, `--dry-run`, `--help`. Each has an `OPENDESK_*`
@@ -772,7 +824,11 @@ forwarding, mailboxes can connect over IMAP and SMTP, and Google and Microsoft
 mailboxes can sync instead of connecting send-only, which needs the extra OAuth
 scopes in the docs page "Google and Microsoft OAuth". `MAILBOX_IMAP=false`
 receives by forwarding only, as opendesk Cloud does; mailboxes that read over
-IMAP are kept, stop receiving, and switch to forwarding from their page.
+IMAP are kept, stop receiving, and switch to forwarding from their page. With
+Collab on (`COLLAB`, `COLLAB_IMAP`, both on by default) generic IMAP stays
+available to every workspace, and Google and Microsoft mailboxes can read the
+inbox directly through their APIs with the Collab clients; turn `COLLAB_IMAP`
+off too to receive by forwarding only.
 
 **Sending through opendesk.** On by default (`MAILBOX_SYSTEM_SEND=true`): a
 mailbox without its own way to send can send replies through the platform email
@@ -833,12 +889,17 @@ Caddy gets every help center certificate on its first visit, after asking
 opendesk (`/v1/public/help-domains/tls`) whether the host is one of its help
 centers, so no wildcard certificate is needed.
 
-**Behind another proxy.** Set `OPENDESK_DOMAIN=:80`, `HTTP_PORT` to a free
-port, and `OPENDESK_URL` / `OPENDESK_GATEWAY_URL` to the public https / wss
-URLs; the outer proxy terminates TLS and must pass WebSocket upgrades on
-`/socket`. It also gets the help center certificates: a wildcard for
-`*.HELP_DOMAIN`, or its own on-demand TLS asking the same endpoint, with the
-`Host` header passed on as is.
+**Behind your own reverse proxy.** `install.sh --proxy external`, or
+`COMPOSE_FILE=docker-compose.yml:compose.external-proxy.yml` in `.env`, runs
+without Caddy: opendesk is published on `127.0.0.1:8080` and realtime on
+`127.0.0.1:4000` (`OPENDESK_BIND`, `OPENDESK_PORT`, `REALTIME_PORT`), and both
+join the `opendesk_proxy` network for a proxy in a container. The proxy
+terminates TLS, sends `/socket/*` to realtime with WebSocket upgrades and the
+rest to opendesk with the `Host` header as is, and gets the help center
+certificates: a wildcard for `*.HELP_DOMAIN`, or its own on-demand TLS asking
+the same endpoint. The client address is read `TRUSTED_PROXY_HOPS` (default 1)
+entries from the right of `X-Forwarded-For`. Examples for nginx, Traefik,
+Caddy and Nginx Proxy Manager: "Your own reverse proxy" (self-hosting).
 
 ### Troubleshooting
 
@@ -863,6 +924,17 @@ make selfhost-env               # .env with fresh secrets for https://localhost
 docker compose up -d --build    # builds both images from this checkout
 open https://localhost          # Caddy's local CA; the browser asks once
 make selfhost-smoke             # the CI check: throwaway project, checks through Caddy, torn down
+```
+
+For demo data, make a test workspace (`contracts/admin.md` "Test workspaces") with the
+binary's own CLI, which reads the same `.env` as the server. It prints a sign-in link,
+a `.invalid` address and a password that is shown once, and deletes the workspace after
+`--delete-after` days (`0` keeps it):
+
+```sh
+docker compose exec opendesk opendesk admin test-workspace create --name "Acme demo" --plan pro --sample realistic
+docker compose exec opendesk opendesk admin test-workspace list
+docker compose exec opendesk opendesk admin test-workspace delete acme-demo
 ```
 
 ## Sizing and cost

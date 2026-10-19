@@ -8,6 +8,7 @@
 #
 #   sh install.sh --domain desk.example.com --email you@example.com
 #   sh install.sh --wizard       ask about email, storage and inbound mail too
+#   sh install.sh --proxy external   behind your own reverse proxy, without Caddy
 #   sh install.sh --dry-run      print what it would write, touch nothing
 #   sh install.sh --help         every flag, and the environment variable for each
 #
@@ -19,8 +20,9 @@
 #   * creates one directory (default /opt/opendesk) and writes only inside it
 #   * generates every secret with openssl (or /dev/urandom), writes .env 0600
 #   * resolves the release once and PINS it in .env. Never "latest"
-#   * downloads docker-compose.yml, Caddyfile, env.template and opendesk-ctl
-#     from that release and refuses any file whose SHA256SUMS entry differs
+#   * downloads docker-compose.yml, compose.external-proxy.yml, Caddyfile,
+#     env.template and opendesk-ctl from that release and refuses any file
+#     whose SHA256SUMS entry differs
 #   * runs `docker compose pull` and `docker compose up -d`
 #   * turns on automatic updates (AUTO_UPDATE in .env; --no-auto-update to
 #     skip): a systemd timer, or a cron entry, runs `opendesk-ctl auto-update
@@ -49,6 +51,7 @@ DOCS="https://docs.opendesk.sh"
 DEFAULT_DIR="/opt/opendesk"
 DEFAULT_REGISTRY="ghcr.io/useopendesk"
 MARKER=".opendesk-install"
+EXTERNAL_COMPOSE="compose.external-proxy.yml"
 
 # ── Answers: each is a flag and an OPENDESK_* variable ──────────────────────
 DIR="${OPENDESK_DIR:-$DEFAULT_DIR}"
@@ -57,6 +60,9 @@ EMAIL="${OPENDESK_EMAIL:-}"
 VERSION="${OPENDESK_VERSION:-}"
 REGISTRY="${OPENDESK_REGISTRY:-$DEFAULT_REGISTRY}"
 ASSETS_URL="${OPENDESK_ASSETS_URL:-}"   # default: the GitHub release of VERSION
+# caddy (the bundled Caddy, automatic HTTPS) | external (your own reverse proxy).
+# Empty keeps what the install has, or caddy.
+PROXY="${OPENDESK_PROXY:-}"
 NO_START="${OPENDESK_NO_START:-0}"
 WIZARD="${OPENDESK_WIZARD:-0}"
 ASSUME_YES="${OPENDESK_YES:-0}"
@@ -323,6 +329,11 @@ adopt_existing() {
     if [ -z "$EMAIL" ]; then
         EMAIL=$(env_get "$_env" CADDY_GLOBAL_OPTIONS | sed -n 's/^email //p')
     fi
+    if [ -z "$PROXY" ]; then
+        case ":$(env_get "$_env" COMPOSE_FILE):" in
+            *":$EXTERNAL_COMPOSE:"*) PROXY=external ;;
+        esac
+    fi
     return 0
 }
 
@@ -351,13 +362,24 @@ ask_basics() {
     if [ -z "$DOMAIN" ]; then
         if [ "$INTERACTIVE" = 1 ]; then
             say ""
-            note "The hostname people will open, e.g. desk.example.com. Its DNS must point"
-            note "at this machine with ports 80 and 443 open, so Caddy can get a certificate."
-            note "Use localhost to try it on this machine."
+            if [ "$PROXY" = external ]; then
+                note "The hostname people will open, e.g. desk.example.com. Your reverse"
+                note "proxy serves it over https and forwards it here."
+            else
+                note "The hostname people will open, e.g. desk.example.com. Its DNS must point"
+                note "at this machine with ports 80 and 443 open, so Caddy can get a certificate."
+                note "Use localhost to try it on this machine."
+            fi
         fi
         ask DOMAIN "Domain:" "localhost"
     fi
     valid_domain "$DOMAIN" || die "\"$DOMAIN\" is not a hostname." "Pass one with --domain desk.example.com"
+    if [ "$PROXY" = external ]; then
+        case "$DOMAIN" in
+            :*) die "With --proxy external, --domain is the public hostname your proxy serves, e.g. desk.example.com" ;;
+        esac
+        return 0
+    fi
     case "$DOMAIN" in
         localhost|:*) ;;
         *)
@@ -473,7 +495,7 @@ fetch_assets() {
     info "Fetching the $VERSION release files"
     curl -fsSL "$_base/SHA256SUMS" -o "$TMP/SHA256SUMS" ||
         die "Could not download $_base/SHA256SUMS." "Is $VERSION a published release?"
-    for _f in docker-compose.yml Caddyfile env.template opendesk-ctl; do
+    for _f in docker-compose.yml "$EXTERNAL_COMPOSE" Caddyfile env.template opendesk-ctl; do
         curl -fsSL "$_base/$_f" -o "$TMP/$_f" || die "Could not download $_base/$_f"
         _want=$(awk -v f="$_f" '$2 == f || $2 == "*" f { print $1 }' "$TMP/SHA256SUMS")
         [ -n "$_want" ] || die "$_f is not listed in the release's SHA256SUMS."
@@ -487,12 +509,40 @@ fetch_assets() {
 # ── Rendering ──────────────────────────────────────────────────────────────
 
 derive() {
-    case "$DOMAIN" in
-        :*) URL="http://localhost${DOMAIN#:80}"; GW="ws://localhost${DOMAIN#:80}/socket" ;;
+    case "$PROXY:$DOMAIN" in
+        caddy::*) URL="http://localhost${DOMAIN#:80}"; GW="ws://localhost${DOMAIN#:80}/socket" ;;
         *) URL="https://$DOMAIN"; GW="wss://$DOMAIN/socket" ;;
     esac
     GLOBAL_OPTS=""
     [ -n "$EMAIL" ] && GLOBAL_OPTS="email $EMAIL"
+    compose_files
+    return 0
+}
+
+# compose_files sets COMPOSE_FILES to the COMPOSE_FILE line for .env: the
+# external proxy file added to (or removed from) the list the install has, so
+# an operator's own override files stay. Empty leaves .env as it is.
+compose_files() {
+    COMPOSE_FILES=""
+    _have=$(env_get "$DIR/.env" COMPOSE_FILE)
+    _list=$(printf '%s' ":$_have:" | sed "s/:$EXTERNAL_COMPOSE:/:/g; s/^:*//; s/:*$//")
+    if [ "$PROXY" = external ]; then
+        COMPOSE_FILES="${_list:-docker-compose.yml}:$EXTERNAL_COMPOSE"
+    elif [ "$_list" != "$_have" ]; then
+        COMPOSE_FILES="${_list:-docker-compose.yml}"
+    fi
+    return 0
+}
+
+# proxy_ports reads where opendesk and realtime listen for an external proxy,
+# as compose.external-proxy.yml publishes them.
+proxy_ports() {
+    BIND=$(env_get "$DIR/.env" OPENDESK_BIND)
+    APP_PORT=$(env_get "$DIR/.env" OPENDESK_PORT)
+    SOCKET_PORT=$(env_get "$DIR/.env" REALTIME_PORT)
+    BIND=${BIND:-127.0.0.1}
+    APP_PORT=${APP_PORT:-8080}
+    SOCKET_PORT=${SOCKET_PORT:-4000}
     return 0
 }
 
@@ -513,6 +563,7 @@ NATS_TOKEN=$NATS_TOKEN
 INBOUND_SECRET=$INBOUND_SECRET
 POSTGRES_PASSWORD=$POSTGRES_PASSWORD
 EOF
+    [ -n "$COMPOSE_FILES" ] && printf 'COMPOSE_FILE=%s\n' "$COMPOSE_FILES"
     [ "$REGISTRY" = "$DEFAULT_REGISTRY" ] || printf 'OPENDESK_IMAGE=%s/opendesk\nREALTIME_IMAGE=%s/realtime\n' "$REGISTRY" "$REGISTRY"
     [ -n "$SIGNUP" ] && printf 'SIGNUP_ENABLED=%s\n' "$SIGNUP"
     [ -n "$AUTO_UPDATE_A" ] && printf 'AUTO_UPDATE=%s\n' "$AUTO_UPDATE_A"
@@ -680,6 +731,7 @@ write_all() {
     write_file "$DIR/.env" 0600 <"$TMP/env.rendered"
     backup_file "$DIR/docker-compose.yml"
     write_file "$DIR/docker-compose.yml" 0644 <"$TMP/docker-compose.yml"
+    write_file "$DIR/$EXTERNAL_COMPOSE" 0644 <"$TMP/$EXTERNAL_COMPOSE"
     write_file "$DIR/Caddyfile" 0644 <"$TMP/Caddyfile"
     write_file "$DIR/opendesk-ctl" 0755 <"$TMP/opendesk-ctl"
     printf 'installed_at=%s\nversion=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$VERSION" | write_file "$DIR/$MARKER" 0644
@@ -703,12 +755,23 @@ check_old_volume() {
 }
 
 pull_and_start() {
-    for _p in 80 443; do
-        if port_busy "$_p"; then
-            warn "Port $_p is already in use; Caddy needs it. Stop whatever listens there,"
-            note "or set HTTP_PORT / HTTPS_PORT in $DIR/.env."
+    if [ "$PROXY" = external ]; then
+        if [ "$EXISTING" = 0 ]; then
+            for _p in "$APP_PORT" "$SOCKET_PORT"; do
+                if port_busy "$_p"; then
+                    warn "Port $_p is already in use; opendesk publishes it for your proxy."
+                    note "Set OPENDESK_PORT / REALTIME_PORT in $DIR/.env to free ones."
+                fi
+            done
         fi
-    done
+    else
+        for _p in 80 443; do
+            if port_busy "$_p"; then
+                warn "Port $_p is already in use; Caddy needs it. Stop whatever listens there,"
+                note "or set HTTP_PORT / HTTPS_PORT in $DIR/.env."
+            fi
+        done
+    fi
     info "Pulling images (this takes a minute the first time)"
     composec pull --quiet >"$TMP/pull.log" 2>&1 || {
         tail -20 "$TMP/pull.log" >&2
@@ -721,6 +784,12 @@ pull_and_start() {
         die "The stack did not start." "See: cd $DIR && docker compose logs"
     }
     ok "Containers started"
+    if [ "$PROXY" = external ] && [ -n "$(composec --profile bundled-proxy ps -aq caddy 2>/dev/null)" ]; then
+        # The bundled Caddy of an install that used it until now: it would keep
+        # ports 80 and 443 your proxy needs.
+        composec --profile bundled-proxy rm -sf caddy >/dev/null 2>&1 || true
+        ok "Removed the bundled Caddy"
+    fi
 }
 
 wait_healthy() {
@@ -756,9 +825,17 @@ finale() {
         say "  Start it:      cd $DIR && docker compose up -d"
     else
         say "  Open:          ${B}$URL${R}"
-        case "$DOMAIN" in
-            localhost) note "Caddy's local certificate authority signs localhost; your browser asks once." ;;
-            :*) ;;
+        if [ "$PROXY" = external ]; then
+            note "once your reverse proxy serves $DOMAIN over https and forwards:"
+            note "  /socket, /socket/*  to http://$BIND:$SOCKET_PORT (WebSocket)"
+            note "  everything else     to http://$BIND:$APP_PORT"
+            note "Examples for nginx, Traefik, Caddy and Nginx Proxy Manager:"
+            note "$DOCS/self-hosting/reverse-proxy/"
+        fi
+        case "$PROXY:$DOMAIN" in
+            external:*) ;;
+            caddy:localhost) note "Caddy's local certificate authority signs localhost; your browser asks once." ;;
+            caddy::*) ;;
             *) note "The certificate is issued on the first request once DNS for $DOMAIN points here." ;;
         esac
         say "  First account: sign up at $URL; it becomes the workspace owner."
@@ -771,7 +848,11 @@ finale() {
     fi
     say "  Files:         $DIR (.env holds the secrets, mode 0600)"
     say "  Status:        $DIR/opendesk-ctl status"
-    say "  Logs:          $DIR/opendesk-ctl logs [opendesk|realtime|postgres|caddy]"
+    if [ "$PROXY" = external ]; then
+        say "  Logs:          $DIR/opendesk-ctl logs [opendesk|realtime|postgres]"
+    else
+        say "  Logs:          $DIR/opendesk-ctl logs [opendesk|realtime|postgres|caddy]"
+    fi
     say "  Back up:       $DIR/opendesk-ctl backup"
     if [ "${AUTO_ON:-0}" = 1 ]; then
         say "  Updates:       installed each night ($DIR/opendesk-ctl auto-update status, or off)"
@@ -800,6 +881,10 @@ opendesk installer
 Options                                     environment variable
   --domain HOST     Public hostname         OPENDESK_DOMAIN    [asked, or localhost]
   --email ADDRESS   ACME account email      OPENDESK_EMAIL
+  --proxy MODE      caddy: the bundled Caddy gets certificates on 80 and 443.
+                    external: your own reverse proxy in front; opendesk and
+                    realtime listen on 127.0.0.1:8080 and :4000 for it
+                                            OPENDESK_PROXY     [kept, or caddy]
   --dir PATH        Install directory       OPENDESK_DIR       [$DEFAULT_DIR]
   --version TAG     Release to install      OPENDESK_VERSION   [newest]
   --no-start        Write the files and pull nothing; start later yourself
@@ -855,6 +940,8 @@ parse_args() {
             --dir=*) DIR=${1#*=} ;;
             --version) VERSION=$(need_value "$@"); shift ;;
             --version=*) VERSION=${1#*=} ;;
+            --proxy) PROXY=$(need_value "$@"); shift ;;
+            --proxy=*) PROXY=${1#*=} ;;
             --registry) REGISTRY=$(need_value "$@"); shift ;;
             --ai-key) AI_KEY=$(need_value "$@"); shift ;;
             --ai-url) AI_URL=$(need_value "$@"); shift ;;
@@ -880,6 +967,10 @@ parse_args() {
     if [ -z "$AI_MODE" ]; then
         if [ -n "$AI_URL" ]; then AI_MODE=openai; elif [ -n "$AI_KEY" ]; then AI_MODE=anthropic; fi
     fi
+    case "$PROXY" in
+        ""|caddy|external) ;;
+        *) die "--proxy must be caddy or external" ;;
+    esac
     case "$AI_MODE" in
         ""|none|anthropic|openai|ollama) ;;
         *) die "OPENDESK_AI must be none, anthropic, openai or ollama" ;;
@@ -921,6 +1012,8 @@ main() {
     if [ "$EXISTING" = 1 ] && [ "$PRINT_ENV" = 0 ]; then
         info "Found an install in $DIR; keeping its secrets and settings"
     fi
+    [ -n "$PROXY" ] || PROXY=caddy
+    proxy_ports
     ask_basics
     [ "$WIZARD" = 1 ] && wizard
     resolve_version

@@ -22,6 +22,9 @@ export const NOTIFICATION_DEFAULTS: Record<NotificationType, { group: Notificati
   sla_breached: { group: "tickets", defaults: on },
   ai_handoff: { group: "tickets", defaults: on },
   team_joined: { group: "team", defaults: { email: false, push: false, desktop: true } },
+  // Collab mail (contracts/collab.md "Notifications"): everywhere by default, like the ticket ones.
+  collab_assigned: { group: "mail", defaults: on },
+  collab_mention: { group: "mail", defaults: on },
   ai_cap_reached: { group: "ai_billing", defaults: { email: true, push: false, desktop: true } },
   ai_key_failed: { group: "ai_billing", defaults: { email: true, push: false, desktop: true } },
   ai_balance_low: { group: "ai_billing", defaults: { email: true, push: false, desktop: true } },
@@ -38,6 +41,8 @@ export const NOTIFICATION_ORDER: NotificationType[] = [
   "sla_breached",
   "ai_handoff",
   "team_joined",
+  "collab_assigned",
+  "collab_mention",
   "ai_cap_reached",
   "ai_key_failed",
   "ai_balance_low",
@@ -105,7 +110,7 @@ export function pacingCopy(p: NotificationPacing | undefined, delayFallback?: nu
   };
 }
 
-export const NOTIFICATION_GROUPS: NotificationGroup[] = ["tickets", "team", "ai_billing", "workspace"];
+export const NOTIFICATION_GROUPS: NotificationGroup[] = ["tickets", "team", "mail", "ai_billing", "workspace"];
 
 /** Groups only owners and admins receive. */
 export const ADMIN_GROUPS: ReadonlySet<NotificationGroup> = new Set<NotificationGroup>(["ai_billing", "workspace"]);

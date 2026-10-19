@@ -28,7 +28,7 @@ const (
 // CoreNotificationTypePrefs is one row of the preferences table.
 type CoreNotificationTypePrefs struct {
 	Type     string               `json:"type"`
-	Group    string               `json:"group" enum:"tickets,team,ai_billing,workspace"`
+	Group    string               `json:"group" enum:"tickets,team,mail,ai_billing,workspace"`
 	Email    bool                 `json:"email"`
 	Push     bool                 `json:"push"`
 	Desktop  bool                 `json:"desktop"`
@@ -341,7 +341,7 @@ func (s *svc) registerNotificationPrefs(api huma.API, r chi.Router) {
 		_, _ = io.Copy(io.Discard, io.LimitReader(req.Body, 4096))
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
-		ip := httpx.ClientIP(s.d.Cfg.TrustProxy)(req)
+		ip := httpx.ClientIP(s.d.Cfg.TrustProxy, s.d.Cfg.ProxyHops)(req)
 		if !s.d.Limiter.Allow("unsubscribe:"+ip, unsubscribesPerHour, time.Hour) {
 			w.WriteHeader(http.StatusTooManyRequests)
 			_, _ = io.WriteString(w, "Too many requests.\n")

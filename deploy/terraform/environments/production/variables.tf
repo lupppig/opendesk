@@ -245,6 +245,18 @@ variable "microsoft_mailbox_client_id" {
   default     = ""
 }
 
+variable "collab_google_client_id" {
+  description = "COLLAB_GOOGLE_CLIENT_ID: the Google client Collab mail accounts connect with (gmail.modify, a restricted scope), when it is not the mailbox client. Its secret is COLLAB_GOOGLE_CLIENT_SECRET (optional_secrets)."
+  type        = string
+  default     = ""
+}
+
+variable "collab_microsoft_client_id" {
+  description = "COLLAB_MICROSOFT_CLIENT_ID: the Microsoft app Collab mail accounts connect with (Mail.ReadWrite, Mail.Send), when it is not the mailbox app. Its secret is COLLAB_MICROSOFT_CLIENT_SECRET (optional_secrets)."
+  type        = string
+  default     = ""
+}
+
 variable "google_mailbox_oauth" {
   description = "Offer Google sign-in for new mailbox connections. Keep false until the Google OAuth client is verified for the Gmail scopes; mailboxes then connect with an app password or forwarding. User sign-in with Google is not affected."
   type        = bool
@@ -279,6 +291,28 @@ variable "github_client_id" {
   default = ""
 }
 
+# Integrations whose sign-in only accepts apps registered in advance
+# (contracts/integrations.md): MCP_<KEY>_CLIENT_ID, with the secret
+# MCP_<KEY>_CLIENT_SECRET in optional_secrets. Redirect URL:
+# https://<api host>/v1/integrations/oauth/callback.
+variable "mcp_slack_client_id" {
+  description = "MCP_SLACK_CLIENT_ID: the Slack app integrations sign in with."
+  type        = string
+  default     = ""
+}
+
+variable "mcp_box_client_id" {
+  description = "MCP_BOX_CLIENT_ID: the Box app integrations sign in with."
+  type        = string
+  default     = ""
+}
+
+variable "mcp_github_client_id" {
+  description = "MCP_GITHUB_CLIENT_ID: the GitHub App integrations sign in with; empty asks for a token."
+  type        = string
+  default     = ""
+}
+
 variable "turnstile_site_key" {
   type    = string
   default = ""
@@ -289,8 +323,10 @@ variable "optional_secrets" {
     Operator-supplied secrets the tasks should reference, once they have a value
     (GOOGLE_CLIENT_SECRET, GOOGLE_MAILBOX_CLIENT_SECRET, MICROSOFT_CLIENT_SECRET, MICROSOFT_MAILBOX_CLIENT_SECRET, GITHUB_CLIENT_SECRET,
     TURNSTILE_SECRET, POSTHOG_KEY, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
-    STRIPE_PRICE_PRO, STRIPE_PRICE_PRO_YEARLY, STRIPE_PRICE_CREDITS,
-    OPENROUTER_API_KEY, ANTHROPIC_API_KEY, VOYAGE_API_KEY, APNS_KEY, CLOUDFLARE_SAAS_TOKEN). See modules/secrets.
+    STRIPE_PRICE_PRO, STRIPE_PRICE_PRO_YEARLY, STRIPE_PRICE_CREDITS, STRIPE_PRICE_COLLAB, STRIPE_PRICE_COLLAB_YEARLY,
+    OPENROUTER_API_KEY, ANTHROPIC_API_KEY, VOYAGE_API_KEY, APNS_KEY, CLOUDFLARE_SAAS_TOKEN,
+    MCP_SLACK_CLIENT_SECRET, MCP_BOX_CLIENT_SECRET, MCP_GITHUB_CLIENT_SECRET,
+    COLLAB_GOOGLE_CLIENT_SECRET, COLLAB_MICROSOFT_CLIENT_SECRET). See modules/secrets.
   EOT
   type        = set(string)
   default     = []
@@ -299,7 +335,10 @@ variable "optional_secrets" {
     condition = alltrue([for s in var.optional_secrets : contains([
       "GOOGLE_CLIENT_SECRET", "GOOGLE_MAILBOX_CLIENT_SECRET", "MICROSOFT_CLIENT_SECRET", "MICROSOFT_MAILBOX_CLIENT_SECRET", "GITHUB_CLIENT_SECRET", "TURNSTILE_SECRET", "POSTHOG_KEY",
       "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STRIPE_PRICE_PRO", "STRIPE_PRICE_PRO_YEARLY", "STRIPE_PRICE_CREDITS",
+      "STRIPE_PRICE_COLLAB", "STRIPE_PRICE_COLLAB_YEARLY",
       "OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "VOYAGE_API_KEY", "APNS_KEY", "CLOUDFLARE_SAAS_TOKEN",
+      "MCP_SLACK_CLIENT_SECRET", "MCP_BOX_CLIENT_SECRET", "MCP_GITHUB_CLIENT_SECRET",
+      "COLLAB_GOOGLE_CLIENT_SECRET", "COLLAB_MICROSOFT_CLIENT_SECRET",
     ], s)])
     error_message = "optional_secrets may only list the operator-supplied secrets."
   }

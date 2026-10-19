@@ -29,3 +29,17 @@ group("team_joined notifications", () => {
     expect(describe(joined({ team: { name: "Billing" }, user: { name: "Lea" } }), t)).not.toBe(t("notifications.type.other"));
   });
 });
+
+group("Collab notifications", () => {
+  const collab = (type: "collab_assigned" | "collab_mention", data: Record<string, unknown>): Notification => ({ id: "n2", type, ticket: null, data, read_at: null, created_at: "2026-10-13T09:00:00Z" });
+
+  it("leads to the mail conversation", () => {
+    expect(notificationPath(collab("collab_assigned", { thread_id: "th1", account_id: "a1" }))).toBe("/mail/assigned/th1");
+    expect(notificationPath(collab("collab_mention", { thread_id: "th1", comment_id: "c1" }))).toBe("/mail/all/th1");
+  });
+
+  it("names who assigned or mentioned, or says it plainly", () => {
+    expect(describe(collab("collab_assigned", { thread_id: "th1", actor: { name: "Maya Chen" } }), t)).toBe("Maya Chen assigned you a conversation");
+    expect(describe(collab("collab_mention", { thread_id: "th1" }), t)).toBe("You were mentioned in a comment");
+  });
+});

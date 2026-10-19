@@ -26,7 +26,19 @@ import { connectionLabel, GoogleGlyph, MailboxIcon, MailboxStatus, MicrosoftGlyp
 import { ForwardingInstructions } from "@/components/mailboxes/forwarding";
 import { PortInput, validPort } from "@/components/mailboxes/PortInput";
 import { useMailboxActions } from "@/components/mailboxes/useMailboxActions";
-import { CauseCallout, connectFailure, imapOn, sendProviders, systemSendOn, useConnectOptions, useMailDetection, type ConnectFailure, type Provider } from "@/components/mailboxes/connect";
+import {
+  apiOn,
+  CauseCallout,
+  connectFailure,
+  imapOn,
+  sendProviders,
+  syncOn,
+  systemSendOn,
+  useConnectOptions,
+  useMailDetection,
+  type ConnectFailure,
+  type Provider,
+} from "@/components/mailboxes/connect";
 import { SmtpPresets } from "@/components/mailboxes/smtpPresets";
 import { MailboxOllieSection } from "@/components/mailboxes/MailboxOllie";
 import {
@@ -45,7 +57,7 @@ import { api, type MailboxReceive } from "@/lib/api/endpoints";
 import { errorMessage } from "@/lib/api/client";
 import type { Mailbox, MailboxConfig, MailboxTest, TemplatePreviewBody, TemplateProblem, TlsMode } from "@/lib/api/types";
 import { relLong } from "@/lib/format";
-import { isMicrosoftHost, mailboxHost, offersNoTls, receivesOverImap, sendOnly, signedInProvider } from "@/lib/mailHost";
+import { isMicrosoftHost, mailboxHost, offersNoTls, readsDirectly, receivesOverImap, sendOnly, signedInProvider } from "@/lib/mailHost";
 import { q, qk, upsertInList } from "@/lib/queries";
 import { atLeast, useRole } from "@/lib/session";
 
@@ -78,6 +90,11 @@ type ServerKey = (typeof IMAP_KEYS)[number] | (typeof SMTP_KEYS)[number];
 
 const sameKeys = (a: MailboxConfig, b: MailboxConfig, keys: readonly ServerKey[]) => keys.every((k) => (a[k] ?? "") === (b[k] ?? ""));
 const pick = (c: MailboxConfig, keys: readonly ServerKey[]): MailboxConfig => Object.fromEntries(keys.map((k) => [k, c[k]])) as MailboxConfig;
+
+/** What a mailbox that reads its inbox directly may tidy up in Gmail or Outlook. */
+const TIDY_KEYS = ["provider_mark_read", "provider_archive_on_solve", "provider_label"] as const;
+type TidyKey = (typeof TIDY_KEYS)[number];
+const sameTidy = (a: MailboxConfig, b: MailboxConfig) => TIDY_KEYS.every((k) => !!a[k] === !!b[k]);
 
 /** Replies go out through opendesk or the mailbox's own SMTP server (not a provider sign-in). */
 const ownSending = (k: Mailbox["outbound_kind"]) => k === "system" || k === "smtp";
@@ -219,6 +236,9 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
   // IMAP server settings are edited only where the instance still receives over IMAP.
   const { data: opts } = useConnectOptions();
   const imapReceiving = imapOn(opts);
+  // Google and Microsoft sync over IMAP only where the instance receives over IMAP.
+  const syncReceiving = syncOn(opts);
+  const direct = readsDirectly(mailbox);
   const imap = mailbox.inbound_kind === "imap" && imapReceiving && mailbox.receiving !== "imap_off";
   const smtp = draft.outbound_kind === "smtp";
   const imapChanged = imap && (!sameKeys(draft.config, base.config, IMAP_KEYS) || !!draft.password);
@@ -226,6 +246,7 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
   // Moving to SMTP from opendesk: no password is stored yet.
   const smtpPasswordNeeded = smtp && base.outbound_kind !== "smtp";
   const sendingValid = !smtp || (!!draft.config.smtp_host?.trim() && validPort(draft.config.smtp_port ?? 0) && (!smtpPasswordNeeded || !!draft.smtp_password));
+  const tidyChanged = direct && !sameTidy(draft.config, base.config);
 
   // Where replies would go through the mailbox's own server: the address's SMTP server, when detection knows it.
   const forwarding = mailbox.inbound_kind === "forwarding";
@@ -269,8 +290,16 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
         ...(draft.ai_answers_outside_hours !== base.ai_answers_outside_hours ? { ai_answers_outside_hours: draft.ai_answers_outside_hours } : {}),
         ...(draft.bot_id !== base.bot_id ? { bot_id: draft.bot_id } : {}),
         ...(draft.outbound_kind !== base.outbound_kind ? { outbound_kind: draft.outbound_kind } : {}),
-        // Only the server settings: the rest of config is the API's.
-        ...(imap || smtp ? { config: { ...(imap ? pick(draft.config, IMAP_KEYS) : {}), ...(smtp ? pick(draft.config, SMTP_KEYS) : {}) } } : {}),
+        // Only the server settings and the Gmail or Outlook options: the rest of config is the API's.
+        ...(imap || smtp || tidyChanged
+          ? {
+              config: {
+                ...(imap ? pick(draft.config, IMAP_KEYS) : {}),
+                ...(smtp ? pick(draft.config, SMTP_KEYS) : {}),
+                ...(tidyChanged ? Object.fromEntries(TIDY_KEYS.map((k) => [k, !!draft.config[k]])) : {}),
+              },
+            }
+          : {}),
         ...(draft.password ? { password: draft.password } : {}),
         ...(smtp && draft.smtp_password ? { smtp_password: draft.smtp_password } : {}),
         // A changed server or password is signed in to before it is saved.
@@ -306,9 +335,25 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
         openInBrowser(location.pathname);
         return null;
       }
-      // A sync keeps syncing where the instance still receives over IMAP; anything else connects to send only.
-      const receive: MailboxReceive = mailbox.inbound_kind === p && imapReceiving ? "sync" : "forwarding";
+      // Reading directly keeps reading directly while the workspace can (the API decides); a sync keeps
+      // syncing where the instance still receives over IMAP; anything else connects to send only.
+      const receive: MailboxReceive | undefined = direct ? undefined : mailbox.inbound_kind === p && syncReceiving ? "sync" : "forwarding";
       return api.mailboxes.oauthStart(p, { mailbox_id: mailbox.id, name: mailbox.name, email: mailbox.email, receive });
+    },
+    onSuccess: (r, p) => (r ? window.location.assign(r.url) : setOpenedInBrowser(p)),
+    onError: (e) => toast.error(e),
+  });
+
+  // A forwarding mailbox of a workspace with Collab can read its Google or Microsoft inbox directly instead.
+  const directProvider: Provider | null = forwarding ? (signedInProvider(mailbox) ?? detection?.oauth ?? null) : null;
+  const directOffered = !!directProvider && apiOn(opts, directProvider);
+  const readDirect = useMutation({
+    mutationFn: async (p: Provider) => {
+      if (isDesktop) {
+        openInBrowser(location.pathname);
+        return null;
+      }
+      return api.mailboxes.oauthStart(p, { mailbox_id: mailbox.id, name: mailbox.name, email: mailbox.email, receive: "api" });
     },
     onSuccess: (r, p) => (r ? window.location.assign(r.url) : setOpenedInBrowser(p)),
     onError: (e) => toast.error(e),
@@ -423,9 +468,13 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
           <Row
             label={t("detail.account")}
             description={
-              imapReceiving
-                ? t("detail.accountHint", { provider: t(`kind.${provider}`) })
-                : t("detail.accountHintNoImap", { provider: providerName(provider) })
+              direct
+                ? apiOn(opts, provider)
+                  ? t("detail.accountDirect", { provider: providerName(provider) })
+                  : t("detail.accountHintNoImap", { provider: providerName(provider) })
+                : syncReceiving
+                  ? t("detail.accountHint", { provider: t(`kind.${provider}`) })
+                  : t("detail.accountHintNoImap", { provider: providerName(provider) })
             }
           >
             <span className="mono text-xs text-fg-2">{mailbox.config.oauth_email ?? mailbox.email}</span>
@@ -435,8 +484,24 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
           </Row>
         )}
         {provider && !sendingOnly && openedInBrowser && <InBrowserNote name={providerName(provider)} opened className="my-3" />}
+        {directOffered && directProvider && (
+          <Row label={t("detail.directTitle")} description={t("detail.directHint", { provider: providerName(directProvider) })}>
+            <Button
+              size="sm"
+              icon={directProvider === "google" ? <GoogleGlyph className="size-3.5" /> : <MicrosoftGlyph className="size-3.5" />}
+              loading={readDirect.isPending}
+              onClick={() => readDirect.mutate(directProvider)}
+            >
+              {t("detail.directButton")}
+            </Button>
+          </Row>
+        )}
+        {directOffered && directProvider && readDirect.data === null && <InBrowserNote name={providerName(directProvider)} opened className="my-3" />}
         {receivesOverImap(mailbox) && !off && (
-          <Row label={t("receiving.title")} description={t("receiving.imapHint")}>
+          <Row
+            label={t("receiving.title")}
+            description={direct ? t("receiving.apiHint", { provider: providerName(mailbox.inbound_kind === "google" ? "google" : "microsoft") }) : t("receiving.imapHint")}
+          >
             <Button size="sm" icon={<Forward className="size-3.5" />} loading={toForwarding.isPending} onClick={switchToForwarding}>
               {t("receiving.switch")}
             </Button>
@@ -471,6 +536,8 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
           </div>
         )}
       </Section>
+
+      {direct && <ProviderTidySection provider={mailbox.inbound_kind === "microsoft" ? "microsoft" : "google"} config={draft.config} onChange={setCfg} />}
 
       {(ownSending(mailbox.outbound_kind) || sendingOnly) && (
         <Section
@@ -722,6 +789,26 @@ function MailboxEditor({ mailbox }: { mailbox: Mailbox }) {
       {testDialog}
       <SaveBar dirty={dirty} saving={save.isPending} disabled={!draft.name.trim() || !!fromNameProblem(draft.from_name_format) || (imap && !validPort(draft.config.imap_port ?? 993)) || !sendingValid} onSave={() => save.mutate()} onDiscard={() => setDraft(base)} />
     </SettingsPage>
+  );
+}
+
+/** For a mailbox that reads Gmail or Outlook directly: what opendesk also does there. */
+function ProviderTidySection({ provider, config, onChange }: { provider: Provider; config: MailboxConfig; onChange: (k: TidyKey, v: boolean) => void }) {
+  const { t } = useTranslation("settingsChannels");
+  const app = provider === "google" ? "Gmail" : "Outlook";
+  const rows: { key: TidyKey; label: string; hint?: string }[] = [
+    { key: "provider_mark_read", label: t("provider.markRead", { app }) },
+    { key: "provider_archive_on_solve", label: t("provider.archive", { app }) },
+    { key: "provider_label", label: t("provider.label", { app }), hint: provider === "microsoft" ? t("provider.labelOutlook") : undefined },
+  ];
+  return (
+    <Section title={t("provider.title", { app })} description={t("provider.replies", { app })}>
+      {rows.map((r) => (
+        <Row key={r.key} label={r.label} description={r.hint}>
+          <Switch aria-label={r.label} checked={!!config[r.key]} onCheckedChange={(v) => onChange(r.key, v)} />
+        </Row>
+      ))}
+    </Section>
   );
 }
 

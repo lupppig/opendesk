@@ -25,13 +25,16 @@ type service struct {
 	http  *http.Client
 
 	providers map[string]*oauthProvider
+	// apiClients are the Collab OAuth clients an api grant connects with.
+	apiClients map[string]*oauthProvider
 	// detector names a domain's mail host and servers (GET /v1/mailboxes/detect).
 	detector  *mailhost.Detector
 	gmailBase string // https://gmail.googleapis.com
 	graphBase string // https://graph.microsoft.com/v1.0
 
-	// mailboxIMAP: mailboxes may receive over IMAP (MAILBOX_IMAP). Off, no IMAP server
-	// is dialled and Google and Microsoft connect send-only.
+	// mailboxIMAP: mailboxes may receive over IMAP (MAILBOX_IMAP). Off, Google and
+	// Microsoft never sync over IMAP, and generic IMAP is dialled only for workspaces
+	// with Collab (access.go).
 	mailboxIMAP bool
 	// systemSend: mailboxes may send through the platform mailer (MAILBOX_SYSTEM_SEND).
 	systemSend bool
@@ -53,6 +56,7 @@ func newService(d *deps.Deps) *service {
 		systemSend:  d.Cfg.MailboxSystemSend,
 	}
 	s.providers = defaultProviders(d.Cfg)
+	s.apiClients = apiClients(d.Cfg)
 	s.detector = mailhost.NewDetector(nil, s.guard.httpClient(), mailhost.NewMemoryCache(detectCacheTTL, detectCacheMax))
 	if !d.Cfg.MailhostISPDB {
 		s.detector.WithoutISPDB()

@@ -114,6 +114,41 @@ describe("mock mailbox receiving", () => {
     expect((await start("other@acme.io", { receive: "pop3" })).status).toBe(422);
   });
 
+  it("reads a Google inbox directly only where the workspace has Collab", async () => {
+    const start = (email: string) => call("POST", "/v1/mailboxes/oauth/google/start", { name: "Desk", email, receive: "api" });
+    const refused = await start("direct@acme.io");
+    expect(refused.status).toBe(422);
+    expect(refused.body.code).toBe("api_sync_unavailable");
+    localStorage.setItem("od.mock.apiSync", "on");
+    try {
+      expect((await call("GET", "/v1/mailboxes/connect-options")).body.google.api_sync).toBe(true);
+      config.mailboxImap = false;
+      const ok = await start("direct@acme.io");
+      const m = (await list()).find((x) => x.id === new URL(ok.body.url, "http://x").searchParams.get("connected"))!;
+      expect(m).toMatchObject({ inbound_kind: "google", outbound_kind: "google", receiving: "ok" });
+      expect(m.config).toMatchObject({ oauth_grant: "api", oauth_client: "collab" });
+    } finally {
+      localStorage.removeItem("od.mock.apiSync");
+    }
+  });
+
+  it("tidies up in Gmail only for a mailbox that reads it directly", async () => {
+    localStorage.setItem("od.mock.apiSync", "on");
+    try {
+      const ok = await call("POST", "/v1/mailboxes/oauth/google/start", { name: "Desk", email: "tidy@acme.io", receive: "api" });
+      const id = new URL(ok.body.url, "http://x").searchParams.get("connected")!;
+      const on = await call("PATCH", `/v1/mailboxes/${id}`, { config: { provider_mark_read: true, provider_label: true } });
+      expect(on.status).toBe(200);
+      expect(on.body.config).toMatchObject({ oauth_grant: "api", provider_mark_read: true, provider_label: true });
+      const off = await call("PATCH", `/v1/mailboxes/${id}`, { config: { provider_label: false } });
+      expect(off.body.config.provider_label).toBeUndefined();
+      const forwarding = (await list()).find((m) => m.inbound_kind === "forwarding")!;
+      expect((await call("PATCH", `/v1/mailboxes/${forwarding.id}`, { config: { provider_archive_on_solve: true } })).status).toBe(422);
+    } finally {
+      localStorage.removeItem("od.mock.apiSync");
+    }
+  });
+
   it("refuses receiving over IMAP while it is off, and switches to forwarding", async () => {
     config.mailboxImap = false;
     const mbs = await list();

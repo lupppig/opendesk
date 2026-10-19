@@ -124,7 +124,7 @@ func (s *svc) registerMe(api huma.API) {
 				return nil, err
 			}
 			var hash *string
-			if err := s.d.DB.Pool.QueryRow(ctx, `SELECT password_hash FROM users WHERE id = $1`, p.UserID).Scan(&hash); err != nil {
+			if err := s.d.DB.Pool.QueryRow(ctx, `SELECT `+auth.PasswordHashSQL+` FROM users WHERE id = $1`, p.UserID).Scan(&hash); err != nil {
 				return nil, httpx.Wrap(err)
 			}
 			if hash == nil {
@@ -146,7 +146,7 @@ func (s *svc) registerMe(api huma.API) {
 				return nil, httpx.Wrap(err)
 			}
 			err = s.tx(ctx, func(tx pgx.Tx) error {
-				if _, err := tx.Exec(ctx, `UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1`, p.UserID, newHash); err != nil {
+				if _, err := tx.Exec(ctx, `UPDATE users SET password_hash = $2, password_expires_at = NULL, updated_at = now() WHERE id = $1`, p.UserID, newHash); err != nil {
 					return err
 				}
 				if err := revokeOtherSessions(ctx, tx, p.UserID, p.SessionID); err != nil {
@@ -188,7 +188,7 @@ func (s *svc) registerMe(api huma.API) {
 			}
 			var hash *string
 			var totp bool
-			if err := s.d.DB.Pool.QueryRow(ctx, `SELECT password_hash, totp_enabled FROM users WHERE id = $1`, p.UserID).Scan(&hash, &totp); err != nil {
+			if err := s.d.DB.Pool.QueryRow(ctx, `SELECT `+auth.PasswordHashSQL+`, totp_enabled FROM users WHERE id = $1`, p.UserID).Scan(&hash, &totp); err != nil {
 				return nil, httpx.Wrap(err)
 			}
 			if hash != nil {

@@ -661,6 +661,22 @@
   .tpl-tag.tpl-logic { background: var(--tone-violet-soft); color: var(--tone-violet); box-shadow: inset 0 0 0 1px var(--tone-violet-line); }
   .tpl-tag.tpl-bad { background: var(--tone-red-soft); color: var(--tone-red); box-shadow: inset 0 0 0 1px var(--tone-red-line); }
 
+  /* A sidebar row with its own menu (RowMenu): on hover, keyboard focus or while a menu is open,
+     its number fades and the ⋯ button shows in its place; a row without a number makes room. */
+  .nav-row-menu { position: relative; }
+  .nav-row-menu [data-count],
+  .nav-row-menu > [data-row-more] { transition: opacity 120ms ease-out; }
+  .nav-row-menu > [data-row-more] { opacity: 0; pointer-events: none; }
+  .nav-row-menu:is(:hover, :has(:focus-visible), :has([data-state="open"])) [data-count] { opacity: 0; min-width: 1rem; }
+  .nav-row-menu:is(:hover, :has(:focus-visible), :has([data-state="open"])) > [data-row-more] { opacity: 1; pointer-events: auto; }
+  /* !important: the row's own padding utility (px-2) is in a later layer and would win, leaving
+     the ⋯ button on top of what the row keeps visible (an account's warning, a waiting chip). */
+  .nav-row-menu:is(:hover, :has(:focus-visible), :has([data-state="open"])) > a:not(:has([data-count])) { padding-right: 2rem !important; }
+  @media (prefers-reduced-motion: reduce) {
+    .nav-row-menu [data-count],
+    .nav-row-menu > [data-row-more] { transition: none; }
+  }
+
   /* TipTap editor surface. */
   .tiptap { outline: none; }
   .tiptap:focus-visible { box-shadow: none; }

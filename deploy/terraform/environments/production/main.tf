@@ -378,10 +378,17 @@ locals {
     # The Microsoft mailbox app, when it is not the sign-in app; empty uses the sign-in app.
     MICROSOFT_MAILBOX_CLIENT_ID = var.microsoft_mailbox_client_id
     MICROSOFT_TENANT            = var.microsoft_tenant
+    COLLAB_GOOGLE_CLIENT_ID     = var.collab_google_client_id # Collab's own clients; empty uses the mailbox clients
+    COLLAB_MICROSOFT_CLIENT_ID  = var.collab_microsoft_client_id
     GITHUB_CLIENT_ID            = var.github_client_id
     TURNSTILE_SITE_KEY          = var.turnstile_site_key
     POSTHOG_HOST                = var.posthog_host
     APP_ATTEST_APP_IDS          = var.app_attest_app_ids
+
+    # Integrations that only accept apps registered in advance (variables.tf).
+    MCP_SLACK_CLIENT_ID  = var.mcp_slack_client_id
+    MCP_BOX_CLIENT_ID    = var.mcp_box_client_id
+    MCP_GITHUB_CLIENT_ID = var.mcp_github_client_id
 
     # Mailbox sign-in per provider (variables.tf).
     GOOGLE_MAILBOX_OAUTH    = tostring(var.google_mailbox_oauth)

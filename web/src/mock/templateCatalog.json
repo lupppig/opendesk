@@ -1,0 +1,593 @@
+{
+  "default_csat_html": "<p>Hi {{ contact.first_name | default: \"there\" }},</p><p>Your request #{{ ticket.number }} \"{{ ticket.subject }}\" was marked solved. How did {{ team.name }} do? Rate it from 1 (very poor) to 5 (great).</p>{{ survey }}<p style=\"font-size: 12px; color: #8A8A8A\">One click records your answer. You can add a comment on the next page.</p>",
+  "default_csat_subject": "How did we do?",
+  "default_custom_layout": "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"background-color: #F4F4F5\"><tr><td align=\"center\" style=\"padding: 28px 12px\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"max-width: 600px; background-color: #FFFFFF; border-radius: 10px\"><tr><td style=\"padding: 24px 32px\">{{ content }}{{ signature }}{{ history }}</td></tr></table><p style=\"font-size: 12px; color: #8A8A8A\">{{ brand.name }}</p></td></tr></table>",
+  "default_layout": {
+    "mode": "simple",
+    "style": "plain",
+    "logo": false,
+    "accent": "",
+    "font": "system",
+    "footer_html": "",
+    "history": "last",
+    "history_header": ""
+  },
+  "filters": [
+    {
+      "name": "default",
+      "group": "text",
+      "args": "\"fallback\"",
+      "description": "The fallback when the value is empty.",
+      "example": "{{ contact.first_name | default: \"there\" }}"
+    },
+    {
+      "name": "upcase",
+      "group": "text",
+      "args": "",
+      "description": "Upper case.",
+      "example": "{{ team.name | upcase }}"
+    },
+    {
+      "name": "downcase",
+      "group": "text",
+      "args": "",
+      "description": "Lower case.",
+      "example": "{{ contact.email | downcase }}"
+    },
+    {
+      "name": "capitalize",
+      "group": "text",
+      "args": "",
+      "description": "The first letter upper case.",
+      "example": "{{ ticket.status | capitalize }}"
+    },
+    {
+      "name": "titlecase",
+      "group": "text",
+      "args": "",
+      "description": "Every word starting upper case.",
+      "example": "{{ contact.name | titlecase }}"
+    },
+    {
+      "name": "strip",
+      "group": "text",
+      "args": "",
+      "description": "Spaces at both ends removed.",
+      "example": "{{ contact.name | strip }}"
+    },
+    {
+      "name": "truncate",
+      "group": "text",
+      "args": "20, \"…\"",
+      "description": "Cut to a number of characters, the ending included.",
+      "example": "{{ ticket.subject | truncate: 40 }}"
+    },
+    {
+      "name": "truncatewords",
+      "group": "text",
+      "args": "10, \"…\"",
+      "description": "Cut to a number of words.",
+      "example": "{{ ticket.subject | truncatewords: 5 }}"
+    },
+    {
+      "name": "append",
+      "group": "text",
+      "args": "\"text\"",
+      "description": "Text added at the end.",
+      "example": "{{ ticket.number | append: \" (open)\" }}"
+    },
+    {
+      "name": "prepend",
+      "group": "text",
+      "args": "\"text\"",
+      "description": "Text added at the start.",
+      "example": "{{ ticket.number | prepend: \"#\" }}"
+    },
+    {
+      "name": "replace",
+      "group": "text",
+      "args": "\"old\", \"new\"",
+      "description": "Every match replaced.",
+      "example": "{{ ticket.subject | replace: \"Re: \", \"\" }}"
+    },
+    {
+      "name": "replace_first",
+      "group": "text",
+      "args": "\"old\", \"new\"",
+      "description": "The first match replaced.",
+      "example": "{{ ticket.subject | replace_first: \"-\", \":\" }}"
+    },
+    {
+      "name": "remove",
+      "group": "text",
+      "args": "\"text\"",
+      "description": "Every match removed.",
+      "example": "{{ ticket.subject | remove: \"[urgent]\" }}"
+    },
+    {
+      "name": "slice",
+      "group": "text",
+      "args": "0, 10",
+      "description": "Characters from a position, with an optional length.",
+      "example": "{{ contact.name | slice: 0, 1 }}"
+    },
+    {
+      "name": "url_encode",
+      "group": "text",
+      "args": "",
+      "description": "Safe inside a link.",
+      "example": "{{ contact.email | url_encode }}"
+    },
+    {
+      "name": "split",
+      "group": "list",
+      "args": "\", \"",
+      "description": "Text into a list, at each separator.",
+      "example": "{% for part in contact.fields.notes | split: \",\" %}"
+    },
+    {
+      "name": "join",
+      "group": "list",
+      "args": "\", \"",
+      "description": "A list into text, with the separator (default \", \").",
+      "example": "{{ ticket.labels | join: \" / \" }}"
+    },
+    {
+      "name": "first",
+      "group": "list",
+      "args": "",
+      "description": "The first item, or the first word of text.",
+      "example": "{{ ticket.labels | first }}"
+    },
+    {
+      "name": "last",
+      "group": "list",
+      "args": "",
+      "description": "The last item, or the last word of text.",
+      "example": "{{ contact.name | last }}"
+    },
+    {
+      "name": "size",
+      "group": "list",
+      "args": "",
+      "description": "How many items, or characters of text.",
+      "example": "{{ ticket.labels | size }}"
+    },
+    {
+      "name": "sort",
+      "group": "list",
+      "args": "",
+      "description": "Items in alphabetical order.",
+      "example": "{{ ticket.labels | sort | join }}"
+    },
+    {
+      "name": "uniq",
+      "group": "list",
+      "args": "",
+      "description": "Repeated items removed.",
+      "example": "{{ contact.labels | uniq | join }}"
+    },
+    {
+      "name": "plus",
+      "group": "number",
+      "args": "1",
+      "description": "Adds a number.",
+      "example": "{{ ticket.number | plus: 1 }}"
+    },
+    {
+      "name": "minus",
+      "group": "number",
+      "args": "1",
+      "description": "Subtracts a number.",
+      "example": "{{ forloop.index | minus: 1 }}"
+    },
+    {
+      "name": "times",
+      "group": "number",
+      "args": "2",
+      "description": "Multiplies.",
+      "example": "{{ ticket.fields.seats | times: 12 }}"
+    },
+    {
+      "name": "divided_by",
+      "group": "number",
+      "args": "2",
+      "description": "Divides.",
+      "example": "{{ ticket.fields.amount | divided_by: 100 }}"
+    },
+    {
+      "name": "round",
+      "group": "number",
+      "args": "2",
+      "description": "Rounds, to a number of decimals (default 0).",
+      "example": "{{ ticket.fields.score | round: 1 }}"
+    },
+    {
+      "name": "date",
+      "group": "date",
+      "args": "\"%e %B %Y\"",
+      "description": "A date in another format (strftime: %Y %m %d %e %B %b %A %a %H %I %M %p). \"now\" is the current time.",
+      "example": "{{ ticket.created_date | date: \"%A, %b %e\" }}"
+    }
+  ],
+  "slots": [
+    {
+      "key": "content",
+      "label": "Message",
+      "description": "The message itself.",
+      "required_in": [
+        "layout"
+      ]
+    },
+    {
+      "key": "signature",
+      "label": "Signature",
+      "description": "The team's, address's or sender's signature.",
+      "required_in": null
+    },
+    {
+      "key": "history",
+      "label": "Earlier messages",
+      "description": "The quoted conversation, when the layout includes it.",
+      "required_in": null
+    },
+    {
+      "key": "survey",
+      "label": "Rating buttons",
+      "description": "The five score buttons of the satisfaction survey.",
+      "required_in": [
+        "csat"
+      ]
+    }
+  ],
+  "tags": [
+    {
+      "name": "if",
+      "syntax": "{% if agent.phone %}…{% elsif agent.title %}…{% else %}…{% endif %}",
+      "description": "Shows a part only when a condition holds. Compare with ==, !=, >, <, >=, <= and contains; combine with and, or and not; test for empty with == empty."
+    },
+    {
+      "name": "unless",
+      "syntax": "{% unless contact.name %}Hi there{% endunless %}",
+      "description": "The opposite of if."
+    },
+    {
+      "name": "case",
+      "syntax": "{% case ticket.priority %}{% when \"Urgent\", \"High\" %}…{% else %}…{% endcase %}",
+      "description": "Picks a part by value."
+    },
+    {
+      "name": "for",
+      "syntax": "{% for label in ticket.labels limit: 5 %}{{ label }}{% unless forloop.last %}, {% endunless %}{% else %}No labels{% endfor %}",
+      "description": "Repeats a part for each item of a list or a range like (1..3), with forloop.index, forloop.first and forloop.last. else shows when the list is empty."
+    },
+    {
+      "name": "assign",
+      "syntax": "{% assign greeting = contact.first_name | default: \"there\" %}",
+      "description": "Names a value to use later in the template."
+    },
+    {
+      "name": "capture",
+      "syntax": "{% capture who %}{{ agent.first_name }} from {{ team.name }}{% endcapture %}",
+      "description": "Names a whole piece of the template."
+    },
+    {
+      "name": "comment",
+      "syntax": "{% comment %}Only we see this{% endcomment %}",
+      "description": "A note that never reaches the customer."
+    },
+    {
+      "name": "raw",
+      "syntax": "{% raw %}{{ not filled }}{% endraw %}",
+      "description": "Writes tags as they are, not filled."
+    }
+  ],
+  "variables": [
+    {
+      "key": "contact.name",
+      "group": "contact",
+      "label": "Name",
+      "description": "The customer's full name.",
+      "example": "Jane Cooper",
+      "html": false,
+      "list": false
+    },
+    {
+      "key": "contact.first_name",
+      "group": "contact",
+      "label": "First name",
+      "description": "The first word of the customer's name.",
+      "example": "Jane",
+      "html": false,
+      "list": false
+    },
+    {
+      "key": "contact.last_name",
+      "group": "contact",
+      "label": "Last name",
+      "description": "The rest of the customer's name.",
+      "example": "Cooper",
+      "html": false,
+      "list": false
+    },
+    {
+      "key": "contact.email",
+      "group": "contact",
+      "label": "Email",
+      "description": "The customer's email address.",
+      "example": "jane@example.com",
+      "html": false,
+      "list": false
+    },
+    {
+      "key": "contact.phone",
+      "group": "contact",
+      "label": "Phone",
+      "description": "The customer's phone number.",
+      "example": "+1 555 0100",
+      "html": false,
+      "list": false
+    },
+    {
+      "key": "contact.labels",
+      "group": "contact",
+      "label": "Labels",
+      "description": "The customer's labels, a list.",
+      "example": "VIP",
+      "html": false,
+      "list": true
+    },
+    {
+      "key": "company.name",
+      "group": "company",
+      "label": "Name",
+      "description": "The customer's company.",
+      "example": "Acme Inc",
+      "html": false,
+      "list": false
+    },
+    {
+      "key": "company.domain",
+      "group": "company",
+      "label": "Domain",
+      "description": "The company's web domain.",
+      "example": "acme.com",
+      "html": false,
+      "list": false
+    },
+    {
+      "key": "company.labels",
+      "group": "company",
+      "label": "Labels",
+      "description": "The company's labels, a list.",
+      "example": "Enterprise",
+      "html": false,
+      "list": true
+    },
+    {
+      "key": "ticket.number",
+      "group": "ticket",
+      "label": "Number",
+      "description": "The ticket number, without the #.",
+      "example": "1042",
+      "html": false,
+      "list": false
+    },
+    {
+      "key": "ticket.subject",
+      "group": "ticket",
+      "label": "Subject",
+      "description": "The ticket's subject.",
+      "example": "Can't sign in",
+      "html": false,
+      "list": false
+    },
+    {
+      "key": "ticket.status",
+      "group": "ticket",
+      "label": "Status",
+      "description": "Open, Pending, On hold, Solved or Closed.",
+      "example": "Open",
+      "html": false,
+      "list": false
+    },
+    {
+      "key": "ticket.priority",
+      "group": "ticket",
+      "label": "Priority",
+      "description": "Low, Normal, High or Urgent.",
+      "example": "Normal",
+      "html": false,
+      "list": false
+    },
+    {
+      "key": "ticket.channel",
+      "group": "ticket",
+      "label": "Channel",
+      "description": "Email, Chat, API or Form.",
+      "example": "Email",
+      "html": false,
+      "list": false
+    },
+    {
+      "key": "ticket.created_date",
+      "group": "ticket",
+      "label": "Created",
+      "description": "The day the ticket was opened.",
+      "example": "18 October 2026",
+      "html": false,
+      "list": false
+    },
+    {
+      "key": "ticket.labels",
+      "group": "ticket",
+      "label": "Labels",
+      "description": "The ticket's labels, a list.",
+      "example": "Billing, Refund",
+      "html": false,
+      "list": true
+    },
+    {
+      "key": "agent.name",
+      "group": "agent",
+      "label": "Name",
+      "description": "Who sends the reply. Empty for automations and auto-replies.",
+      "example": "Alex Morgan",
+      "html": false,
+      "list": false
+    },
+    {
+      "key": "agent.first_name",
+      "group": "agent",
+      "label": "First name",
+      "description": "The first word of the sender's name.",
+      "example": "Alex",
+      "html": false,
+      "list": false
+    },
+    {
+      "key": "agent.last_name",
+      "group": "agent",
+      "label": "Last name",
+      "description": "The rest of the sender's name.",
+      "example": "Morgan",
+      "html": false,
+      "list": false
+    },
+    {
+      "key": "agent.title",
+      "group": "agent",
+      "label": "Job title",
+      "description": "From the sender's profile.",
+      "example": "Support engineer",
+      "html": false,
+      "list": false
+    },
+    {
+      "key": "agent.phone",
+      "group": "agent",
+      "label": "Phone",
+      "description": "From the sender's profile.",
+      "example": "+1 555 0199",
+      "html": false,
+      "list": false
+    },
+    {
+      "key": "agent.pronouns",
+      "group": "agent",
+      "label": "Pronouns",
+      "description": "From the sender's profile.",
+      "example": "they/them",
+      "html": false,
+      "list": false
+    },
+    {
+      "key": "agent.avatar_url",
+      "group": "agent",
+      "label": "Picture URL",
+      "description": "The sender's profile picture, for an image in a signature.",
+      "example": "https://api.opendesk.sh/v1/images/…",
+      "html": false,
+      "list": false
+    },
+    {
+      "key": "agent.signature",
+      "group": "agent",
+      "label": "Personal signature",
+      "description": "The sender's own signature, placed inside a team or address signature.",
+      "example": "Alex Morgan, Support engineer",
+      "html": true,
+      "list": false
+    },
+    {
+      "key": "team.name",
+      "group": "team",
+      "label": "Name",
+      "description": "The ticket's team, or the brand when it has none.",
+      "example": "Billing",
+      "html": false,
+      "list": false
+    },
+    {
+      "key": "team.description",
+      "group": "team",
+      "label": "Description",
+      "description": "The team's description.",
+      "example": "Invoices, refunds and plans",
+      "html": false,
+      "list": false
+    },
+    {
+      "key": "brand.name",
+      "group": "brand",
+      "label": "Name",
+      "description": "The ticket's brand.",
+      "example": "Acme",
+      "html": false,
+      "list": false
+    },
+    {
+      "key": "brand.color",
+      "group": "brand",
+      "label": "Colour",
+      "description": "The brand colour, as #rrggbb.",
+      "example": "#2563EB",
+      "html": false,
+      "list": false
+    },
+    {
+      "key": "brand.logo_url",
+      "group": "brand",
+      "label": "Logo URL",
+      "description": "The brand's logo, for an image.",
+      "example": "https://api.opendesk.sh/v1/images/…",
+      "html": false,
+      "list": false
+    },
+    {
+      "key": "brand.help_center_url",
+      "group": "brand",
+      "label": "Help center URL",
+      "description": "The brand's help center, when it is on.",
+      "example": "https://help.acme.com",
+      "html": false,
+      "list": false
+    },
+    {
+      "key": "mailbox.name",
+      "group": "mailbox",
+      "label": "Name",
+      "description": "The sending address's name.",
+      "example": "Acme Support",
+      "html": false,
+      "list": false
+    },
+    {
+      "key": "mailbox.email",
+      "group": "mailbox",
+      "label": "Email",
+      "description": "The address the email goes out from.",
+      "example": "support@acme.com",
+      "html": false,
+      "list": false
+    },
+    {
+      "key": "workspace.name",
+      "group": "workspace",
+      "label": "Name",
+      "description": "Your workspace's name.",
+      "example": "Acme",
+      "html": false,
+      "list": false
+    },
+    {
+      "key": "date.today",
+      "group": "date",
+      "label": "Today",
+      "description": "Today's date in the workspace's timezone.",
+      "example": "18 October 2026",
+      "html": false,
+      "list": false
+    }
+  ]
+}

@@ -70,6 +70,7 @@ jobs:
           cache-dependency-path: desktop/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
+      - run: pnpm test
       - run: pnpm build
       - name: Bundles are in dist/
         run: test -s dist/main.cjs && test -s dist/preload.cjs && test -s dist/picker-preload.cjs && test -s dist/picker/index.html

@@ -41,7 +41,7 @@ export function MenuContent({
   );
 }
 
-const itemCls =
+export const menuItemCls =
   "group/item relative flex h-7 cursor-default select-none items-center gap-2 rounded-md px-2 transition-colors duration-100 text-[12.5px] text-fg outline-none data-[disabled]:pointer-events-none data-[disabled]:opacity-40 data-[highlighted]:bg-hover [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:text-fg-3";
 
 export function MenuItem({
@@ -63,7 +63,7 @@ export function MenuItem({
     <M.Item
       disabled={disabled}
       onSelect={onSelect}
-      className={cn(itemCls, danger && "text-danger-fg data-[highlighted]:bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] [&_svg]:text-danger-fg")}
+      className={cn(menuItemCls, danger && "text-danger-fg data-[highlighted]:bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] [&_svg]:text-danger-fg")}
     >
       {icon}
       <span className="flex-1 truncate">{children}</span>
@@ -79,12 +79,25 @@ export function MenuCheckItem({ children, checked, onSelect, icon }: { children:
         e.preventDefault();
         onSelect();
       }}
-      className={itemCls}
+      className={menuItemCls}
     >
       {icon}
       <span className="flex-1 truncate">{children}</span>
       {checked && <Check className="!text-fg" />}
     </M.Item>
+  );
+}
+
+/** One of several choices: the current one shows its check, and `hint` sits at the right (a count, a key). */
+export function MenuChoice({ children, checked, onSelect, hint }: { children: ReactNode; checked: boolean; onSelect: () => void; hint?: ReactNode }) {
+  return (
+    <M.CheckboxItem checked={checked} onSelect={onSelect} className={cn(menuItemCls, "pl-[30px]")}>
+      <M.ItemIndicator className="absolute left-2 flex">
+        <Check className="!text-fg" />
+      </M.ItemIndicator>
+      <span className="flex-1 truncate">{children}</span>
+      {hint !== undefined && hint !== null && <span className="mono shrink-0 text-[11px] tabular-nums text-fg-4">{hint}</span>}
+    </M.CheckboxItem>
   );
 }
 
@@ -99,7 +112,7 @@ export function MenuSeparator() {
 export function MenuSub({ label, icon, children }: { label: ReactNode; icon?: ReactNode; children: ReactNode }) {
   return (
     <M.Sub>
-      <M.SubTrigger className={cn(itemCls, "data-[state=open]:bg-hover")}>
+      <M.SubTrigger className={cn(menuItemCls, "data-[state=open]:bg-hover")}>
         {icon}
         <span className="flex-1">{label}</span>
         <ChevronRight />

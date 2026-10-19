@@ -10,12 +10,15 @@ import {
   dollarForDollar,
   expiresSoon,
   formatMoney,
+  hasSubscription,
+  isComplimentary,
   limitState,
   parseUsd,
   paymentMethodExpiry,
   paymentMethodLabel,
   rechargeTooSmall,
   roundUsd,
+  showCollab,
   stackDays,
   topUpQuote,
   validTopUp,
@@ -197,5 +200,27 @@ describe("auto-recharge", () => {
     expect(withPatch(failed, { enabled: true })).toMatchObject({ enabled: true, failure: null, low_at_usd: 2 });
     expect(withPatch(ar({ enabled: true, low_at_usd: 2 }), { threshold_usd: 4 }).low_at_usd).toBe(4);
     expect(withPatch(ar(), { threshold_usd: 4 }).low_at_usd).toBe(0.1);
+  });
+});
+
+describe("collab", () => {
+  const base = { billing_enabled: true, status: "none", prices: { pro_month: null, pro_year: null, ai_top_up: null } } as unknown as Billing;
+  const b = (over: Partial<Billing>) => ({ ...base, ...over }) as Billing;
+  const access = (a: "none" | "offered" | "complimentary", available = a !== "none") => ({ access: a, until: null, enabled: false, available });
+
+  it("hides the plan without access", () => {
+    expect(showCollab(b({ plan: "free", collab: access("none") }))).toBe(false);
+    expect(showCollab(b({ plan: "pro", status: "active" }))).toBe(false);
+    expect(showCollab(b({ plan: "free", collab: access("offered") }))).toBe(true);
+    expect(showCollab(b({ plan: "self_hosted", billing_enabled: false, collab: access("none") }))).toBe(false);
+  });
+
+  it("tells a paid collab subscription from complimentary access", () => {
+    expect(hasSubscription(b({ plan: "pro", status: "active" }))).toBe(true);
+    expect(hasSubscription(b({ plan: "collab", status: "active", collab: access("offered") }))).toBe(true);
+    expect(hasSubscription(b({ plan: "collab", status: "canceled", collab: access("complimentary") }))).toBe(false);
+    expect(isComplimentary(b({ plan: "collab", status: "none", collab: access("complimentary") }))).toBe(true);
+    expect(isComplimentary(b({ plan: "collab", status: "active", collab: access("complimentary") }))).toBe(false);
+    expect(isComplimentary(b({ plan: "free", collab: access("complimentary") }))).toBe(false);
   });
 });

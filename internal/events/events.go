@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -42,6 +43,10 @@ type Event struct {
 	// ticket. Only ticket.hidden uses it: it carries ids alone and tells everyone outside
 	// the team to drop the ticket.
 	Workspace bool
+	// Users scopes the event to these people (contracts/events.md "Scoped to people"): it
+	// goes to their user topics only, the workspace gets the stand-in, replay hides it from
+	// everyone else and no webhook receives it. A non-nil empty list reaches nobody.
+	Users []uuid.UUID
 }
 
 // TicketRef is a payload that names the ticket it is about. Publish scopes an event whose
@@ -136,6 +141,10 @@ func ContactTopic(wid, cid, bid uuid.UUID) string {
 }
 func TeamTopic(wid, tid uuid.UUID) string { return "team:" + wid.String() + ":" + tid.String() }
 
+// PrivateTopic marks an envelope scoped to people: the gateway gives the workspace channel
+// only the stand-in and pushes the envelope to the listed user topics.
+const PrivateTopic = "private"
+
 // Publish writes ev in tx and returns the envelope. The relay delivers it after commit.
 func Publish(ctx context.Context, tx pgx.Tx, ev Event) (Envelope, error) {
 	if ev.Visibility == "" {
@@ -166,7 +175,22 @@ func Publish(ctx context.Context, tx pgx.Tx, ev Event) (Envelope, error) {
 	if team != nil {
 		topics = []string{TeamTopic(ev.WorkspaceID, *team)}
 	}
+	var users []uuid.UUID
+	if ev.Users != nil {
+		team = nil
+		users = []uuid.UUID{}
+		topics = []string{PrivateTopic}
+		for _, u := range ev.Users {
+			if u != uuid.Nil && !slices.Contains(users, u) {
+				users = append(users, u)
+				topics = append(topics, UserTopic(u))
+			}
+		}
+	}
 	for _, t := range ev.Topics {
+		if users != nil && !strings.HasPrefix(t, "user:") {
+			continue
+		}
 		if !slices.Contains(topics, t) {
 			topics = append(topics, t)
 		}
@@ -177,9 +201,9 @@ func Publish(ctx context.Context, tx pgx.Tx, ev Event) (Envelope, error) {
 		ev.WorkspaceID).Scan(&env.Seq); err != nil {
 		return Envelope{}, fmt.Errorf("next event seq: %w", err)
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO events (workspace_id, seq, id, type, visibility, topics, data, created_at, team_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-		env.WorkspaceID, env.Seq, env.ID, env.Type, env.Visibility, env.Topics, data, env.OccurredAt, team); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO events (workspace_id, seq, id, type, visibility, topics, data, created_at, team_id, user_ids)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+		env.WorkspaceID, env.Seq, env.ID, env.Type, env.Visibility, env.Topics, data, env.OccurredAt, team, users); err != nil {
 		return Envelope{}, fmt.Errorf("insert event: %w", err)
 	}
 	// Wake the relay at commit; it also polls, so a lost notify only adds latency.
@@ -200,11 +224,12 @@ func Hide(e Envelope) Envelope {
 }
 
 // Since returns events after seq for replay. resync=true when the gap is older than retention.
-// Events of the hidden private teams are replaced by their stand-in.
+// Events of the hidden private teams, and events scoped to people other than viewer (nil:
+// every such event), are replaced by their stand-in.
 func Since(ctx context.Context, q interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
-}, wid uuid.UUID, since int64, limit int, includeAgents bool, hidden []uuid.UUID) (out []Envelope, latest int64, resync bool, err error) {
+}, wid uuid.UUID, since int64, limit int, includeAgents bool, hidden []uuid.UUID, viewer *uuid.UUID) (out []Envelope, latest int64, resync bool, err error) {
 	if err = q.QueryRow(ctx, `SELECT event_seq FROM workspaces WHERE id = $1`, wid).Scan(&latest); err != nil {
 		return nil, 0, false, err
 	}
@@ -219,8 +244,8 @@ func Since(ctx context.Context, q interface {
 		return []Envelope{}, latest, true, nil
 	}
 	rows, err := q.Query(ctx, `SELECT id, seq, workspace_id, type, visibility, topics, data, created_at,
-		COALESCE(team_id = ANY($5::uuid[]), false) FROM events
-		WHERE workspace_id = $1 AND seq > $2 AND ($3 OR visibility = 'public') ORDER BY seq LIMIT $4`, wid, since, includeAgents, limit+1, hidden)
+		COALESCE(team_id = ANY($5::uuid[]), false) OR (user_ids IS NOT NULL AND NOT COALESCE($6::uuid = ANY(user_ids), false)) FROM events
+		WHERE workspace_id = $1 AND seq > $2 AND ($3 OR visibility = 'public') ORDER BY seq LIMIT $4`, wid, since, includeAgents, limit+1, hidden, viewer)
 	if err != nil {
 		return nil, 0, false, err
 	}

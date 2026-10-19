@@ -13,6 +13,10 @@
 #   realtime   the Phoenix gateway, joined to opendesk's NATS with NATS_TOKEN
 #   postgres   17 with pgvector, data in the postgres-data volume
 #
+# Behind a reverse proxy you already run (Traefik, nginx, Nginx Proxy Manager),
+# compose.external-proxy.yml turns Caddy off and publishes opendesk and realtime
+# for it: COMPOSE_FILE=docker-compose.yml:compose.external-proxy.yml in .env.
+#
 # Optional profiles (COMPOSE_PROFILES in .env, or --profile on the command line):
 #   minio         S3-compatible attachment storage instead of the opendesk-data volume
 #   smtp-inbound  publish the built-in SMTP receiver so mail can be pointed at this host
@@ -69,6 +73,8 @@ services:
       SIGNUP_ENABLED: ${SIGNUP_ENABLED:-true}
       # Look for new releases and tell the instance admins (docs: self-hosting/backups-and-upgrades).
       UPDATE_CHECK: ${UPDATE_CHECK:-true}
+      # debug, info, warn or error (docs: self-hosting/configuration).
+      LOG_LEVEL: ${LOG_LEVEL:-info}
       # Help centers at <slug>.HELP_DOMAIN (a wildcard DNS record to this host);
       # empty keeps them at OPENDESK_URL/help/<slug>. Custom domains CNAME to
       # HELP_CNAME_TARGET, the host of OPENDESK_URL when empty. Caddy issues
@@ -113,6 +119,13 @@ services:
       MAILHOST_ISPDB: ${MAILHOST_ISPDB:-}
       MAILBOX_IMAP: ${MAILBOX_IMAP:-true}
       MAILBOX_SYSTEM_SEND: ${MAILBOX_SYSTEM_SEND:-true}
+      # Collab: members' own mail accounts (contracts/collab.md).
+      COLLAB: ${COLLAB:-true}
+      COLLAB_IMAP: ${COLLAB_IMAP:-true}
+      COLLAB_GOOGLE_CLIENT_ID: ${COLLAB_GOOGLE_CLIENT_ID:-}
+      COLLAB_GOOGLE_CLIENT_SECRET: ${COLLAB_GOOGLE_CLIENT_SECRET:-}
+      COLLAB_MICROSOFT_CLIENT_ID: ${COLLAB_MICROSOFT_CLIENT_ID:-}
+      COLLAB_MICROSOFT_CLIENT_SECRET: ${COLLAB_MICROSOFT_CLIENT_SECRET:-}
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
       OIDC_ISSUER: ${OIDC_ISSUER:-}
@@ -139,6 +152,10 @@ services:
       # Integrations: OAuth apps registered in advance (MCP_<KEY>_CLIENT_ID / _SECRET).
       MCP_SLACK_CLIENT_ID: ${MCP_SLACK_CLIENT_ID:-}
       MCP_SLACK_CLIENT_SECRET: ${MCP_SLACK_CLIENT_SECRET:-}
+      MCP_BOX_CLIENT_ID: ${MCP_BOX_CLIENT_ID:-}
+      MCP_BOX_CLIENT_SECRET: ${MCP_BOX_CLIENT_SECRET:-}
+      MCP_GITHUB_CLIENT_ID: ${MCP_GITHUB_CLIENT_ID:-}
+      MCP_GITHUB_CLIENT_SECRET: ${MCP_GITHUB_CLIENT_SECRET:-}
       POSTHOG_KEY: ${POSTHOG_KEY:-}
       POSTHOG_HOST: ${POSTHOG_HOST:-https://us.i.posthog.com}
       WEB_POSTHOG_KEY: ${WEB_POSTHOG_KEY:-}

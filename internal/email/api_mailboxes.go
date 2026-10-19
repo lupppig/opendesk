@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/rivertype"
 
 	"github.com/useopendesk/opendesk/internal/ai/bots"
 	"github.com/useopendesk/opendesk/internal/audit"
@@ -65,6 +66,16 @@ type mailboxConfigPatch struct {
 	SMTPPort     *int    `json:"smtp_port,omitempty" minimum:"1" maximum:"65535"`
 	SMTPUsername *string `json:"smtp_username,omitempty"`
 	SMTPTLS      *string `json:"smtp_tls,omitempty" enum:"tls,starttls,none"`
+	// Tidy-up at the provider, for a mailbox that reads its inbox through Google or Microsoft.
+	ProviderMarkRead       *bool `json:"provider_mark_read,omitempty" doc:"Mark emails read in Gmail or Outlook once they become ticket messages"`
+	ProviderArchiveOnSolve *bool `json:"provider_archive_on_solve,omitempty" doc:"Archive a ticket's emails in Gmail or Outlook when it is solved or closed"`
+	ProviderLabel          *bool `json:"provider_label,omitempty" doc:"Label emails \"opendesk\" in Gmail (an Outlook category) once they become ticket messages"`
+}
+
+// turnsTidyOn reports a patch that turns a provider tidy-up option on.
+func (c *mailboxConfigPatch) turnsTidyOn() bool {
+	on := func(b *bool) bool { return b != nil && *b }
+	return c != nil && (on(c.ProviderMarkRead) || on(c.ProviderArchiveOnSolve) || on(c.ProviderLabel))
 }
 
 type updateMailboxInput struct {
@@ -145,10 +156,14 @@ func (s *service) registerMailboxRoutes(api huma.API) {
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
+			a, err := s.access(ctx, s.d.DB.Pool, p.WorkspaceID)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
 			admin := canSeeConfig(p)
 			out := make([]Mailbox, 0, len(list))
 			for _, m := range list {
-				out = append(out, s.api(m, admin))
+				out = append(out, s.api(m, admin, a))
 			}
 			page := httpx.NewPage(out, limit, func(m Mailbox) any {
 				return map[string]any{"c": m.CreatedAt, "i": m.ID}
@@ -171,7 +186,11 @@ func (s *service) registerMailboxRoutes(api huma.API) {
 			if err != nil {
 				return nil, wrapMailboxErr(err)
 			}
-			return &mailboxBody{s.api(m, canSeeConfig(p))}, nil
+			a, err := s.access(ctx, s.d.DB.Pool, p.WorkspaceID)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			return &mailboxBody{s.api(m, canSeeConfig(p), a)}, nil
 		})
 
 	huma.Register(api, huma.Operation{OperationID: "create-mailbox", Method: http.MethodPost, Path: "/v1/mailboxes",
@@ -183,8 +202,12 @@ func (s *service) registerMailboxRoutes(api huma.API) {
 				return nil, httpx.Wrap(err)
 			}
 			b := in.Body
-			if receivesIMAP(b.InboundKind) && !s.mailboxIMAP {
-				return nil, imapOff()
+			a, err := s.access(ctx, s.d.DB.Pool, p.WorkspaceID)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			if err := s.checkReceive(b.InboundKind, a); err != nil {
+				return nil, err
 			}
 			if b.OutboundKind == OutboundSystem && !s.systemSend {
 				return nil, systemSendOff()
@@ -249,7 +272,7 @@ func (s *service) registerMailboxRoutes(api huma.API) {
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			return &mailboxBody{s.api(out, true)}, nil
+			return &mailboxBody{s.api(out, true, a)}, nil
 		})
 
 	huma.Register(api, huma.Operation{OperationID: "update-mailbox", Method: http.MethodPatch, Path: "/v1/mailboxes/{id}",
@@ -282,7 +305,10 @@ func (s *service) registerMailboxRoutes(api huma.API) {
 				}
 				prevInbound, prevOutbound := m.InboundKind, m.OutboundKind
 				changes, resetSync := applyPatch(m, &creds, in)
-				if err := s.checkInboundChange(prevInbound, m.InboundKind); err != nil {
+				if in.Body.Config.turnsTidyOn() && !m.readsAPI() {
+					return httpx.Validation("Gmail and Outlook options are only for a mailbox that reads its inbox through Google or Microsoft.")
+				}
+				if err := s.checkInboundChange(ctx, tx, p.WorkspaceID, prevInbound, m.InboundKind); err != nil {
 					return err
 				}
 				if err := s.checkOutboundChange(prevOutbound, m.OutboundKind); err != nil {
@@ -336,6 +362,7 @@ func (s *service) registerMailboxRoutes(api huma.API) {
 					next_sync_at = CASE WHEN $15 THEN NULL ELSE next_sync_at END,
 					imap_uid_validity = CASE WHEN $16 THEN 0 ELSE imap_uid_validity END,
 					imap_last_uid = CASE WHEN $16 THEN 0 ELSE imap_last_uid END,
+					api_sync_state = CASE WHEN $16 THEN '{}'::jsonb ELSE api_sync_state END,
 					ai_answers = $17, ai_answers_mode = $18, ai_answers_outside_hours = $19,
 					brand_id = $20, aliases = $21, from_name_format = $22, trusted_form_senders = $23, bot_id = $24,
 					alias_teams = $26,
@@ -367,6 +394,10 @@ func (s *service) registerMailboxRoutes(api huma.API) {
 				if contains(changes, "bot_id") {
 					data["bot_id"] = m.BotID
 				}
+				if contains(changes, "provider_options") {
+					data["provider_options"] = map[string]any{"mark_read": m.Config.ProviderMarkRead,
+						"archive_on_solve": m.Config.ProviderArchiveOnSolve, "label": m.Config.ProviderLabel}
+				}
 				if contains(changes, "ai_answers") || contains(changes, "ai_answers_mode") || contains(changes, "ai_answers_outside_hours") {
 					data["ai_answers"] = map[string]any{"enabled": m.AIAnswers, "mode": m.AIAnswersMode, "outside_hours": m.AIAnswersOutsideHours}
 				}
@@ -396,7 +427,11 @@ func (s *service) registerMailboxRoutes(api huma.API) {
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			return &mailboxBody{s.api(out, true)}, nil
+			a, err := s.access(ctx, s.d.DB.Pool, p.WorkspaceID)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			return &mailboxBody{s.api(out, true, a)}, nil
 		})
 
 	huma.Register(api, huma.Operation{OperationID: "delete-mailbox", Method: http.MethodDelete, Path: "/v1/mailboxes/{id}",
@@ -649,18 +684,36 @@ func (s *service) insertMailbox(ctx context.Context, tx pgx.Tx, m *mailboxRow, s
 	}
 }
 
-// enqueueSync queues an immediate sync for IMAP and OAuth mailboxes while this
-// instance receives over IMAP.
+// enqueueSync queues an immediate sync for a mailbox that is polled: one that reads
+// through the provider's API, or over IMAP while that is on for its workspace.
 func (s *service) enqueueSync(ctx context.Context, tx pgx.Tx, m *mailboxRow) error {
-	if !receivesIMAP(m.InboundKind) || !s.mailboxIMAP || m.Status == "disabled" || s.d.Jobs == nil {
+	if !m.polled() || m.Status == "disabled" || s.d.Jobs == nil {
 		return nil
+	}
+	if m.readsIMAP() && !s.mailboxIMAP {
+		a, err := s.access(ctx, tx, m.WorkspaceID)
+		if err != nil {
+			return err
+		}
+		if !s.imapReceives(m, a) {
+			return nil
+		}
 	}
 	_, err := s.d.Jobs.InsertTx(ctx, tx, jobs.SyncMailboxArgs{MailboxID: m.ID}, syncInsertOpts())
 	return err
 }
 
 func syncInsertOpts() *river.InsertOpts {
-	return &river.InsertOpts{Queue: jobs.QueueEmail, MaxAttempts: 1, UniqueOpts: river.UniqueOpts{ByArgs: true}}
+	// Completed syncs must not block the next poll. ByQueue also versions the
+	// uniqueness key so completed jobs created with the old defaults stop blocking
+	// syncs immediately after an upgrade.
+	return &river.InsertOpts{Queue: jobs.QueueEmail, MaxAttempts: 1, UniqueOpts: river.UniqueOpts{
+		ByArgs: true, ByQueue: true,
+		ByState: []rivertype.JobState{
+			rivertype.JobStateAvailable, rivertype.JobStatePending, rivertype.JobStateRetryable,
+			rivertype.JobStateRunning, rivertype.JobStateScheduled,
+		},
+	}}
 }
 
 // applyPatch merges a PATCH into m and creds and returns the changed field names and
@@ -791,6 +844,19 @@ func applyPatch(m *mailboxRow, creds *credentials, in *updateMailboxInput) (chan
 				resetSync = true
 			}
 		}
+		// The tidy-up options are settings of their own, not the connection's.
+		setB := func(dst *bool, v *bool) {
+			if v != nil {
+				*dst = *v
+			}
+		}
+		setB(&cfg.ProviderMarkRead, c.ProviderMarkRead)
+		setB(&cfg.ProviderArchiveOnSolve, c.ProviderArchiveOnSolve)
+		setB(&cfg.ProviderLabel, c.ProviderLabel)
+		if cfg.ProviderMarkRead != before.ProviderMarkRead || cfg.ProviderArchiveOnSolve != before.ProviderArchiveOnSolve ||
+			cfg.ProviderLabel != before.ProviderLabel {
+			changes = append(changes, "provider_options")
+		}
 	}
 	credsChanged := false
 	if prevInbound == InboundIMAP && m.InboundKind != InboundIMAP && creds.Password != "" {
@@ -808,7 +874,7 @@ func applyPatch(m *mailboxRow, creds *credentials, in *updateMailboxInput) (chan
 			creds.GraphAccessToken, creds.GraphExpiry = "", time.Time{}
 			credsChanged = true
 		}
-		m.Config.OAuthEmail, m.Config.OAuthGrant = "", ""
+		m.Config.OAuthEmail, m.Config.OAuthGrant, m.Config.OAuthClient = "", "", ""
 	} else if prevProvider != "" && m.Config.OAuthGrant == "" {
 		m.Config.OAuthGrant = GrantSync // stored before grants were recorded
 	}
@@ -884,6 +950,10 @@ func (s *service) validateMailbox(m *mailboxRow, creds credentials) error {
 		return err
 	}
 	cfg := &m.Config
+	if !m.readsAPI() {
+		// Only a mailbox that reads through the provider's API tidies up there.
+		*cfg = cfg.withoutTidy()
+	}
 
 	switch m.InboundKind {
 	case InboundForwarding:
@@ -899,6 +969,11 @@ func (s *service) validateMailbox(m *mailboxRow, creds credentials) error {
 			return httpx.Validation("Enter the IMAP password.")
 		}
 	case KindGoogle, KindMicrosoft:
+		if cfg.OAuthGrant == GrantAPI {
+			// It reads through the provider's API: no IMAP server.
+			cfg.IMAPHost, cfg.IMAPPort, cfg.IMAPUsername, cfg.IMAPTLS = "", 0, "", ""
+			break
+		}
 		// OAuth tokens only ever go to the provider's own server.
 		cfg.IMAPHost, cfg.IMAPPort, cfg.IMAPTLS = s.providers[m.InboundKind].imapHost, 993, TLSImplicit
 		if cfg.IMAPUsername == "" {
@@ -928,23 +1003,41 @@ func (s *service) validateMailbox(m *mailboxRow, creds credentials) error {
 		return httpx.Validation("Unknown outbound kind.")
 	}
 	if creds.RefreshToken == "" {
-		cfg.OAuthGrant = ""
+		cfg.OAuthGrant, cfg.OAuthClient = "", ""
 	}
 	return nil
 }
 
 // checkInboundChange refuses a change of how a mailbox receives that a PATCH cannot
-// make: to IMAP while this instance has it off, or onto a Google or Microsoft sign-in,
-// which only the OAuth start route connects.
-func (s *service) checkInboundChange(prev, next string) error {
+// make: to IMAP while that is off for the workspace, or onto a Google or Microsoft
+// sign-in, which only the OAuth start route connects.
+func (s *service) checkInboundChange(ctx context.Context, q db.Querier, wid uuid.UUID, prev, next string) error {
 	if next == prev {
 		return nil
 	}
-	if receivesIMAP(next) && !s.mailboxIMAP {
-		return imapOff()
+	if receivesIMAP(next) {
+		a, err := s.access(ctx, q, wid)
+		if err != nil {
+			return err
+		}
+		if err := s.checkReceive(next, a); err != nil {
+			return err
+		}
 	}
 	if next == KindGoogle || next == KindMicrosoft {
 		return httpx.Validation("Connect " + providerLabel(next) + " mailboxes with POST /v1/mailboxes/oauth/" + next + "/start.")
+	}
+	return nil
+}
+
+// checkReceive refuses an inbound kind that reads over IMAP while that is off for the
+// workspace: generic IMAP per workspace, Google and Microsoft per instance.
+func (s *service) checkReceive(kind string, a access) error {
+	switch {
+	case kind == InboundIMAP && !s.imapAllowed(a):
+		return imapOff()
+	case (kind == KindGoogle || kind == KindMicrosoft) && !s.mailboxIMAP:
+		return imapOff()
 	}
 	return nil
 }

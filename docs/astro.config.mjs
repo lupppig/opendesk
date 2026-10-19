@@ -201,6 +201,7 @@ export default defineConfig({
             { label: 'Requirements', slug: 'self-hosting/requirements' },
             { label: 'Install script', slug: 'self-hosting/install-script' },
             { label: 'Docker Compose', slug: 'self-hosting/docker-compose' },
+            { label: 'Your own reverse proxy', slug: 'self-hosting/reverse-proxy' },
             { label: 'Configuration reference', slug: 'self-hosting/configuration' },
             { label: 'Postgres', slug: 'self-hosting/postgres' },
             { label: 'Email setup', slug: 'self-hosting/email' },

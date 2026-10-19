@@ -235,7 +235,7 @@ func (s *svc) registerPlatform(api huma.API) {
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			evs, latest, resync, err := events.Since(ctx, s.d.DB.Pool, p.WorkspaceID, in.Since, in.Limit, true, hidden)
+			evs, latest, resync, err := events.Since(ctx, s.d.DB.Pool, p.WorkspaceID, in.Since, in.Limit, true, hidden, p.ActorUserID())
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}

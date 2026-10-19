@@ -444,3 +444,32 @@ func TestSendMessageGraphMIME(t *testing.T) {
 		t.Fatal("not sent")
 	}
 }
+
+// TestSendMessageReservedAddress: a reply to a reserved .invalid address (a test workspace's
+// sample customer) is never handed to a provider, and reads as sent.
+func TestSendMessageReservedAddress(t *testing.T) {
+	w := newWorld(t)
+	m := w.mailbox(InboundForwarding, OutboundSystem, nil)
+	called := false
+	w.s.rawSend = func(context.Context, string, []string, []byte) error { called = true; return nil }
+	tk, _ := firstTicket(t, w, m, "jordan@acme.example.invalid")
+	var mid uuid.UUID
+	err := w.d.DB.Tx(w.ctx, func(tx pgxTx) error {
+		msg, err := domain.AddMessage(w.ctx, tx, w.d.Jobs, domain.NewMessage{WorkspaceID: w.wid, TicketID: tk.ID, Kind: "reply",
+			Direction: "outbound", AuthorType: "user", AuthorUserID: &w.uid, DeliveryStatus: "pending", BodyHTML: "<p>Hi</p>", BodyText: "Hi"})
+		mid = msg.ID
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.s.sendMessage(w.ctx, w.wid, mid, false); err != nil {
+		t.Fatal(err)
+	}
+	if called {
+		t.Fatal("handed a reserved address to the transport")
+	}
+	if got := w.message(mid).Delivery; got != "sent" {
+		t.Fatalf("delivery %s", got)
+	}
+}

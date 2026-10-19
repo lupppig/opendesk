@@ -27,11 +27,18 @@ const (
 
 // OAuth grants a Google or Microsoft mailbox holds (MailboxConfig.OAuthGrant). A send
 // grant sends only (gmail.send, Mail.Send) and the mailbox receives by forwarding; a sync
-// grant also reads the inbox over IMAP. A connection stored without a grant is a sync one.
+// grant also reads the inbox over IMAP; an api grant reads the inbox through the Gmail
+// API or Microsoft Graph and sends through them, with the Collab OAuth client. A
+// connection stored without a grant is a sync one.
 const (
 	GrantSend = "send"
 	GrantSync = "sync"
+	GrantAPI  = "api"
 )
+
+// ClientCollab marks tokens issued to the Collab OAuth client (MailboxConfig.OAuthClient);
+// without it they belong to the mailbox client.
+const ClientCollab = "collab"
 
 // Receiving states (Mailbox.Receiving).
 const (
@@ -64,12 +71,34 @@ type MailboxConfig struct {
 	SMTPTLS      string `json:"smtp_tls,omitempty" enum:"tls,starttls,none"`
 	OAuthEmail   string `json:"oauth_email,omitempty"`
 	// OAuthGrant is what the Google or Microsoft connection may do: send (send only,
-	// the mailbox receives by forwarding) or sync (read the inbox and send). Set by the
+	// the mailbox receives by forwarding), sync (read the inbox over IMAP and send) or
+	// api (read the inbox through the provider's API and send). Set by the connection,
+	// never by a request.
+	OAuthGrant string `json:"oauth_grant,omitempty" enum:"send,sync,api"`
+	// OAuthClient is the OAuth client the connection's tokens belong to: collab (the
+	// Collab client, an api grant), or empty for the mailbox client. Set by the
 	// connection, never by a request.
-	OAuthGrant string `json:"oauth_grant,omitempty" enum:"send,sync"`
+	OAuthClient string `json:"oauth_client,omitempty" enum:"collab"`
 	// MailHost is who hosts the mailbox's mail (mailhost.Host values, e.g. gmail,
 	// google_workspace, yahoo, other), for labels and connection fixes.
 	MailHost string `json:"mail_host,omitempty" maxLength:"32"`
+	// Tidy-up at the provider for a mailbox that reads its inbox through the Gmail API or
+	// Microsoft Graph (readsAPI), all off by default; other mailboxes keep them off.
+	// ProviderMarkRead marks an email read there once it became a ticket message,
+	// ProviderArchiveOnSolve archives a ticket's emails there when it is solved or closed,
+	// ProviderLabel labels imported emails "opendesk" (Gmail label, Outlook category).
+	ProviderMarkRead       bool `json:"provider_mark_read,omitempty"`
+	ProviderArchiveOnSolve bool `json:"provider_archive_on_solve,omitempty"`
+	ProviderLabel          bool `json:"provider_label,omitempty"`
+}
+
+// providerLabelName is the Gmail label or Outlook category ProviderLabel applies.
+const providerLabelName = "opendesk"
+
+// withoutTidy is c with the provider tidy-up options off.
+func (c MailboxConfig) withoutTidy() MailboxConfig {
+	c.ProviderMarkRead, c.ProviderArchiveOnSolve, c.ProviderLabel = false, false, false
+	return c
 }
 
 // Mailbox is the API shape. Credentials are never part of it.
@@ -106,8 +135,9 @@ type Mailbox struct {
 	BotID *uuid.UUID `json:"bot_id"`
 	// Private is true when its team is private: only that team's members send from it.
 	Private bool `json:"private"`
-	// Receiving is imap_off when the mailbox receives over IMAP and this instance has
-	// IMAP off (MAILBOX_IMAP): it is kept but not polled until it switches to forwarding.
+	// Receiving is imap_off when the mailbox receives over IMAP and that is off for its
+	// workspace (MAILBOX_IMAP, or Collab for generic IMAP): it is kept but not polled
+	// until it switches to forwarding.
 	Receiving string `json:"receiving" enum:"ok,imap_off"`
 	// Sending is system_off when the mailbox sends through the platform mailer and this
 	// instance has that off (MAILBOX_SYSTEM_SEND): it sends nothing until it connects
@@ -208,10 +238,34 @@ func (m *mailboxRow) addresses() []string {
 	return out
 }
 
-// receivesIMAP reports an inbound kind that reads the mailbox over IMAP: generic
-// IMAP, or a Google or Microsoft sync connection.
+// receivesIMAP reports an inbound kind that may read the mailbox over IMAP: generic
+// IMAP, or a Google or Microsoft connection (unless it reads through the API, readsAPI).
 func receivesIMAP(kind string) bool {
 	return kind == InboundIMAP || kind == KindGoogle || kind == KindMicrosoft
+}
+
+// readsAPI reports a Google or Microsoft mailbox that reads its inbox through the Gmail
+// API or Microsoft Graph (an api grant): it is polled over HTTPS and never dialled over IMAP.
+func (m *mailboxRow) readsAPI() bool {
+	return (m.InboundKind == KindGoogle || m.InboundKind == KindMicrosoft) && m.Config.OAuthGrant == GrantAPI
+}
+
+// sendsAPI reports a mailbox that sends through the Gmail API or Microsoft Graph with an
+// api grant: its replies can join the provider's conversation (providerThread).
+func (m *mailboxRow) sendsAPI() bool {
+	return m.Config.OAuthGrant == GrantAPI && (m.OutboundKind == KindGoogle || m.OutboundKind == KindMicrosoft) &&
+		m.OutboundKind == m.oauthProvider()
+}
+
+// readsIMAP reports a mailbox that reads its inbox over IMAP: generic IMAP, or a Google
+// or Microsoft sync connection.
+func (m *mailboxRow) readsIMAP() bool {
+	return receivesIMAP(m.InboundKind) && !m.readsAPI()
+}
+
+// polled reports a mailbox the sync job reads (over IMAP or the provider's API).
+func (m *mailboxRow) polled() bool {
+	return m.readsIMAP() || m.readsAPI()
 }
 
 // oauthProvider is the provider whose grant the mailbox holds: the one it receives
@@ -229,6 +283,12 @@ func (m *mailboxRow) oauthProvider() string {
 // sendOnly reports a grant that sends but cannot read the mailbox.
 func (m *mailboxRow) sendOnly() bool {
 	return m.Config.OAuthGrant == GrantSend
+}
+
+// noIMAPGrant reports a grant without IMAP consent: send, or api (which reads through
+// the provider's API instead).
+func (m *mailboxRow) noIMAPGrant() bool {
+	return m.Config.OAuthGrant == GrantSend || m.Config.OAuthGrant == GrantAPI
 }
 
 // alias returns addr when it is one of the mailbox's aliases (not its own address).
@@ -261,12 +321,13 @@ func (s *service) inboundDomain() string {
 	return strings.ToLower(strings.TrimSpace(s.d.Cfg.InboundDomain))
 }
 
-// api returns the public shape. Non-admin readers do not see connection settings.
-func (s *service) api(m *mailboxRow, withConfig bool) Mailbox {
+// api returns the public shape. Non-admin readers do not see connection settings. a is
+// what the mailbox's workspace may use (s.access).
+func (s *service) api(m *mailboxRow, withConfig bool, a access) Mailbox {
 	out := m.Mailbox
 	out.ForwardingAddress = s.forwardingAddress(m.ForwardingToken)
 	out.Receiving = ReceivingOK
-	if receivesIMAP(m.InboundKind) && !s.mailboxIMAP {
+	if m.readsIMAP() && !s.imapReceives(m, a) {
 		out.Receiving = ReceivingIMAPOff
 	}
 	out.Sending = SendingOK
@@ -307,7 +368,11 @@ func (s *service) publishMailbox(ctx context.Context, tx pgx.Tx, wid, id uuid.UU
 	if err != nil {
 		return err
 	}
-	_, err = events.Publish(ctx, tx, events.Event{WorkspaceID: wid, Type: typ, Data: map[string]any{"mailbox": s.api(m, true)}})
+	a, err := s.access(ctx, tx, wid)
+	if err != nil {
+		return err
+	}
+	_, err = events.Publish(ctx, tx, events.Event{WorkspaceID: wid, Type: typ, Data: map[string]any{"mailbox": s.api(m, true, a)}})
 	return err
 }
 

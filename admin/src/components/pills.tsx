@@ -10,6 +10,7 @@ import type { Tone } from "@/lib/tones";
 const PLAN: Record<Plan, { label: string; tone: Tone }> = {
   free: { label: "Free", tone: "gray" },
   pro: { label: "Pro", tone: "blue" },
+  collab: { label: "Collab", tone: "indigo" },
   self_hosted: { label: "Self-hosted", tone: "teal" },
 };
 
@@ -61,6 +62,11 @@ export const JOB_TONE: Record<JobState, Tone> = {
 
 export function JobStatePill({ state }: { state: JobState }) {
   return <Badge tone={JOB_TONE[state] ?? "gray"}>{humanize(state)}</Badge>;
+}
+
+/** A test workspace (contracts/admin.md "Test workspaces"). */
+export function TestPill() {
+  return <Badge tone="violet">Test</Badge>;
 }
 
 /** A yes/no fact: "2FA on" in green, "2FA off" in grey (or amber when it should be on). */

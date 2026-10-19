@@ -76,15 +76,40 @@ func New(ctx context.Context, o Options, log *slog.Logger) (Mailer, error) {
 		if o.Host == "" {
 			return nil, errors.New("SMTP_HOST is required for MAIL_DRIVER=smtp")
 		}
-		return &smtpMailer{o: o}, nil
+		return reserved{&smtpMailer{o: o}, log}, nil
 	case "ses":
 		cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(o.Region))
 		if err != nil {
 			return nil, err
 		}
-		return &sesMailer{client: sesv2.NewFromConfig(cfg), from: o.From}, nil
+		return reserved{&sesMailer{client: sesv2.NewFromConfig(cfg), from: o.From}, log}, nil
 	}
 	return nil, fmt.Errorf("unknown MAIL_DRIVER %q", o.Driver)
+}
+
+// Undeliverable reports an address under the reserved .invalid top-level domain (RFC
+// 2606), which test accounts use (contracts/admin.md "Test workspaces"): it can never
+// receive mail, so nothing is sent to it.
+func Undeliverable(addr string) bool {
+	a := strings.TrimSpace(addr)
+	if p, err := mail.ParseAddress(a); err == nil {
+		a = p.Address
+	}
+	return strings.HasSuffix(strings.ToLower(a), ".invalid")
+}
+
+// reserved skips mail to undeliverable addresses instead of handing it to the provider.
+type reserved struct {
+	Mailer
+	log *slog.Logger
+}
+
+func (r reserved) Send(ctx context.Context, m Mail) error {
+	if Undeliverable(m.To) {
+		r.log.Info("platform mail to a reserved .invalid address skipped")
+		return nil
+	}
+	return r.Mailer.Send(ctx, m)
 }
 
 type logMailer struct{ log *slog.Logger }

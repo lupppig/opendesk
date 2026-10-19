@@ -4,8 +4,9 @@ name: Release
 #   ghcr.io/useopendesk/opendesk:<tag>  multi-arch (amd64, arm64), API + workers + web
 #   ghcr.io/useopendesk/realtime:<tag>  multi-arch, the gateway
 #   a GitHub release with the installer, its checksum, and the files the
-#   installer fetches (docker-compose.yml, Caddyfile, env.template,
-#   opendesk-ctl) listed in SHA256SUMS, plus images.json with the digests.
+#   installer fetches (docker-compose.yml, compose.external-proxy.yml,
+#   Caddyfile, env.template, opendesk-ctl) listed in SHA256SUMS, plus
+#   images.json with the digests.
 on:
   push:
     tags: ["v*"]

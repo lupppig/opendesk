@@ -9,9 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"net/mail"
+	"net/textproto"
 	"net/url"
 	"strconv"
 	"strings"
@@ -208,6 +210,13 @@ func smtpDetail(se *smtp.SMTPError) string {
 
 // apiCall runs one provider HTTPS request, refreshing the token once on 401.
 func (s *service) apiCall(ctx context.Context, m *mailboxRow, resource string, build func(token string) (*http.Request, error)) (*http.Response, []byte, error) {
+	return s.apiCallLimit(ctx, m, resource, 1<<20, build)
+}
+
+// apiCallLimit is apiCall reading at most limit bytes of the answer (limit+1 tells a
+// longer one apart).
+func (s *service) apiCallLimit(ctx context.Context, m *mailboxRow, resource string, limit int64,
+	build func(token string) (*http.Request, error)) (*http.Response, []byte, error) {
 	for attempt := 0; attempt < 2; attempt++ {
 		token, err := s.accessToken(ctx, m, resource)
 		if err != nil {
@@ -227,7 +236,7 @@ func (s *service) apiCall(ctx context.Context, m *mailboxRow, resource string, b
 		if err != nil {
 			return nil, nil, transient("The email provider did not answer.")
 		}
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 		resp.Body.Close()
 		if resp.StatusCode == http.StatusUnauthorized && attempt == 0 {
 			if err := s.expireToken(ctx, m, resource); err != nil {
@@ -286,35 +295,68 @@ func providerFailure(provider string, status int, body []byte) error {
 	return permanent(msg)
 }
 
-// sendGmail sends through users.messages.send (media upload, up to 35 MB). Gmail
-// also files the reply in the mailbox's Sent folder. It returns the Message-ID the
-// recipient sees, which Gmail may have re-stamped.
-func (s *service) sendGmail(ctx context.Context, m *mailboxRow, raw []byte) (string, error) {
+// sendGmail sends through users.messages.send (an upload, up to 35 MB). Gmail also
+// files the reply in the mailbox's Sent folder. With threadID (a Gmail thread of the
+// mailbox's account) the message joins that conversation: the upload is multipart, with
+// the thread in its metadata. It returns the Message-ID the recipient sees, which Gmail
+// may have re-stamped, and, for an api grant, where the sent message lives.
+func (s *service) sendGmail(ctx context.Context, m *mailboxRow, raw []byte, threadID string) (string, *providerRef, error) {
+	target := s.gmailBase + "/upload/gmail/v1/users/me/messages/send?uploadType=media"
+	contentType, payload := "message/rfc822", raw
+	if threadID != "" {
+		var b bytes.Buffer
+		mw := multipart.NewWriter(&b)
+		meta, err := json.Marshal(map[string]string{"threadId": threadID})
+		if err != nil {
+			return "", nil, err
+		}
+		for _, part := range []struct {
+			ct   string
+			body []byte
+		}{{"application/json; charset=UTF-8", meta}, {"message/rfc822", raw}} {
+			w, err := mw.CreatePart(textproto.MIMEHeader{"Content-Type": {part.ct}})
+			if err != nil {
+				return "", nil, err
+			}
+			if _, err := w.Write(part.body); err != nil {
+				return "", nil, err
+			}
+		}
+		if err := mw.Close(); err != nil {
+			return "", nil, err
+		}
+		target = s.gmailBase + "/upload/gmail/v1/users/me/messages/send?uploadType=multipart"
+		contentType, payload = "multipart/related; boundary="+mw.Boundary(), b.Bytes()
+	}
 	resp, body, err := s.apiCall(ctx, m, resIMAP, func(token string) (*http.Request, error) {
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-			s.gmailBase+"/upload/gmail/v1/users/me/messages/send?uploadType=media", bytes.NewReader(raw))
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(payload))
 		if err != nil {
 			return nil, err
 		}
 		req.Header.Set("Authorization", "Bearer "+token)
-		req.Header.Set("Content-Type", "message/rfc822")
+		req.Header.Set("Content-Type", contentType)
 		return req, nil
 	})
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if resp.StatusCode/100 != 2 {
-		return "", providerFailure("Gmail", resp.StatusCode, body)
+		return "", nil, providerFailure("Gmail", resp.StatusCode, body)
 	}
 	var sent struct {
-		ID string `json:"id"`
+		ID       string `json:"id"`
+		ThreadID string `json:"threadId"`
 	}
 	// A send grant cannot read the sent message back; replies then thread through our
 	// own Message-ID, the reply address tag and the [#n] subject.
 	if json.Unmarshal(body, &sent) != nil || sent.ID == "" || m.sendOnly() {
-		return "", nil
+		return "", nil, nil
 	}
-	return s.gmailStampedID(ctx, m, sent.ID), nil
+	var ref *providerRef
+	if m.sendsAPI() {
+		ref = newProviderRef(m, sent.ID, sent.ThreadID)
+	}
+	return s.gmailStampedID(ctx, m, sent.ID), ref, nil
 }
 
 func (s *service) gmailStampedID(ctx context.Context, m *mailboxRow, id string) string {

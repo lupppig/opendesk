@@ -4,7 +4,7 @@ import { intlLocale } from "@/i18n";
 import { formatUsd } from "@/lib/format";
 import { isApiError } from "@/lib/api/client";
 import { api } from "@/lib/api/endpoints";
-import type { AutoRechargePatch, Billing } from "@/lib/api/types";
+import type { AutoRechargePatch, Billing, PaidPlan } from "@/lib/api/types";
 import { q, qk } from "@/lib/queries";
 import { atLeast, useRole } from "@/lib/session";
 import { toast } from "@/components/ui/toast";
@@ -39,7 +39,22 @@ function useRedirect<A>(fn: (a: A) => Promise<{ url: string }>) {
 }
 
 export const useCheckout = () => useRedirect((interval: "month" | "year") => api.billing.checkout(interval));
+/** Stripe Checkout for the collab plan (offered to the workspace by an instance admin). */
+export const useCollabCheckout = () => useRedirect((interval: "month" | "year") => api.billing.checkout(interval, "collab"));
 export const usePortal = () => useRedirect((_: void) => api.billing.portal());
+
+/** Switches the subscription between Pro and Collab, prorated; the page updates in place. */
+export function useChangePlan() {
+  const qc = useQueryClient();
+  const { t } = useTranslation("billing");
+  return useMutation({
+    mutationFn: (plan: PaidPlan) => api.billing.changePlan(plan),
+    onSuccess: (b) => {
+      qc.setQueryData(qk.billing, b);
+      toast.success(t("toast.switched", { plan: t(`plans.${b.plan}`) }), { description: t("toast.switchedBody") });
+    },
+  });
+}
 /** Stripe Checkout for `usd` of AI usage. */
 export const useBuyTopUps = () => useRedirect((usd: number) => api.billing.topUpCheckout(usd));
 

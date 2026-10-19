@@ -44,7 +44,7 @@ func Current() Pacing {
 // the person now. Billing problems stop Ollie for customers, and are rare by construction
 // (once a month, or once an hour for a failing key), so they are urgent too; the balance
 // running low and the widget's monthly cap are expected and wait.
-var urgentTypes = []string{"mentioned", "sla_breached", "ai_handoff", "ai_balance_out", "auto_recharge_failed", "ai_key_failed"}
+var urgentTypes = []string{"mentioned", "collab_mention", "sla_breached", "ai_handoff", "ai_balance_out", "auto_recharge_failed", "ai_key_failed"}
 
 // Urgent reports whether typ may cut a cooldown short.
 func Urgent(typ string) bool { return slices.Contains(urgentTypes, typ) }

@@ -40,7 +40,7 @@ type helpCenterCollection struct {
 // rateLimit throttles anonymous help center reads per client address; search has a
 // tighter budget of its own.
 func rateLimit(d *deps.Deps, key string, perMinute int) func(huma.Context, func(huma.Context)) {
-	clientIP := httpx.ClientIP(d.Cfg.TrustProxy)
+	clientIP := httpx.ClientIP(d.Cfg.TrustProxy, d.Cfg.ProxyHops)
 	return func(ctx huma.Context, next func(huma.Context)) {
 		r, _ := humachi.Unwrap(ctx)
 		ip := clientIP(r)

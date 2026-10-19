@@ -65,3 +65,32 @@ describe("support channel events", () => {
     expect(qc.getQueryData<SupportChannelDestination[]>(qk.supportChannelDestinations)).toEqual([]);
   });
 });
+
+describe("Collab events", () => {
+  it("refetches what collab.changed names, once per burst, and leaves the stand-in alone", async () => {
+    vi.useFakeTimers();
+    const qc = new QueryClient();
+    const spy = vi.spyOn(qc, "invalidateQueries");
+    applyEnvelope(qc, env(10, { type: "event.hidden", data: {} }), { me: "u1" });
+    expect(spy).not.toHaveBeenCalled();
+    applyEnvelope(qc, env(11, { type: "collab.changed", data: { account_id: "a1", thread_ids: ["t1"], folders: true } }), { me: "u1", viaUser: true });
+    applyEnvelope(qc, env(12, { type: "collab.changed", data: { account_id: "a1", thread_ids: ["t2"], folders: false } }), { me: "u1", viaUser: true });
+    expect(spy).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(250);
+    const keys = spy.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey));
+    expect(keys).toContain(JSON.stringify(qk.mailThreadLists));
+    expect(keys).toContain(JSON.stringify(qk.mailCounts));
+    expect(keys).toContain(JSON.stringify(qk.mailThread("t1")));
+    expect(keys).toContain(JSON.stringify(qk.mailThread("t2")));
+    expect(keys).toContain(JSON.stringify(qk.mailFolders("a1")));
+    expect(keys.filter((k) => k === JSON.stringify(qk.mailThreadLists))).toHaveLength(1);
+    vi.useRealTimers();
+  });
+
+  it("refreshes accounts on collab.accounts", () => {
+    const qc = new QueryClient();
+    const spy = vi.spyOn(qc, "invalidateQueries");
+    applyEnvelope(qc, env(13, { type: "collab.accounts", data: { account_id: "a1" } }), { me: "u1", viaUser: true });
+    expect(spy.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey))).toContain(JSON.stringify(qk.mailAccounts));
+  });
+});

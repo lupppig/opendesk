@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/useopendesk/opendesk/internal/domain"
+	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hdtest"
 	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/ids"
@@ -272,4 +273,93 @@ func TestMessagesAndMentions(t *testing.T) {
 		t.Fatalf("activities %+v", acts.Data)
 	}
 	_ = time.Now
+}
+
+// Each sidebar row's stats count its own tickets: awaiting a reply, urgent and overdue.
+func TestCountStats(t *testing.T) {
+	e, ws := newEnv(t)
+	team := addTeam(t, e, ws, ws.Agent.ID)
+	priv := addPrivateTeam(t, e, ws, map[uuid.UUID]string{ws.Admin.ID: hd.TeamLead})
+	agent := ws.Agent.ID
+	type tk struct {
+		status, priority        string
+		assignee, team          *uuid.UUID
+		spam                    bool
+		customerLag             *time.Duration // the customer's last message, this long before the last message
+		responded               bool
+		firstDue, resDue        *time.Duration // from now
+		breachedFR, breachedRes bool
+	}
+	ago := func(d time.Duration) *time.Duration { return &d }
+	cases := map[string]tk{
+		"t1": {status: "open", priority: "urgent", team: &team, customerLag: ago(0)},
+		"t2": {status: "pending", priority: "normal", assignee: &agent, team: &team, firstDue: ago(-time.Hour)},
+		"t3": {status: "on_hold", priority: "normal", customerLag: ago(0), breachedRes: true},
+		"t4": {status: "open", priority: "urgent", assignee: &agent, customerLag: ago(500 * time.Millisecond), responded: true,
+			firstDue: ago(-time.Hour), resDue: ago(time.Hour)},
+		"t5": {status: "open", priority: "normal", assignee: &agent, customerLag: ago(5 * time.Second)},
+		"t6": {status: "open", priority: "urgent", spam: true, customerLag: ago(0), breachedFR: true},
+		"t7": {status: "solved", priority: "urgent", customerLag: ago(0), breachedFR: true, resDue: ago(-time.Hour)},
+		"t8": {status: "open", priority: "urgent", team: &priv},
+	}
+	for name, c := range cases {
+		id := createTicket(t, e, ws, map[string]any{"subject": name}).ID
+		var lastCustomer *time.Time
+		last := time.Now().Add(-time.Minute)
+		if c.customerLag != nil {
+			v := last.Add(-*c.customerLag)
+			lastCustomer = &v
+		}
+		due := func(d *time.Duration) *time.Time {
+			if d == nil {
+				return nil
+			}
+			v := time.Now().Add(*d)
+			return &v
+		}
+		var responded *time.Time
+		if c.responded {
+			responded = &last
+		}
+		e.Exec(`UPDATE tickets SET status = $2, priority = $3, assignee_id = $4, team_id = $5, spam = $6, last_message_at = $7,
+			last_customer_message_at = $8, first_responded_at = $9, first_response_due_at = $10, resolution_due_at = $11,
+			sla_first_response_breached_at = CASE WHEN $12 THEN now() END, sla_resolution_breached_at = CASE WHEN $13 THEN now() END
+			WHERE id = $1`, id, c.status, c.priority, c.assignee, c.team, c.spam, last, lastCustomer, responded,
+			due(c.firstDue), due(c.resDue), c.breachedFR, c.breachedRes)
+	}
+	view := ids.New()
+	e.Exec(`INSERT INTO views (id, workspace_id, name, filters) VALUES ($1, $2, 'Urgent', '{"priority":["urgent"]}')`, view, ws.ID)
+
+	type stats struct{ Awaiting, Urgent, Overdue int }
+	var c struct {
+		Views map[string]int
+		Teams map[string]struct{ Open, Unassigned int }
+		Stats map[string]stats
+	}
+	e.Do("GET", "/v1/tickets/counts", ws.Agent.As(ws), nil).Want(t, 200).JSON(t, &c)
+	want := map[string]stats{
+		"ticket_folder:unassigned": {1, 2, 1}, // t1, t3, t8
+		"ticket_folder:mine":       {1, 1, 1}, // t2, t4, t5
+		"ticket_folder:open":       {2, 3, 0}, // t1, t4, t5, t8
+		"ticket_folder:pending":    {0, 0, 2}, // t2, t3
+		"team:" + team.String():    {1, 1, 1}, // t1, t2
+		"team:mine":                {1, 1, 1},
+		"view:" + view.String():    {2, 3, 0}, // t1, t4, t7 (t8 is in a team the agent cannot see)
+	}
+	for k, w := range want {
+		if got, ok := c.Stats[k]; !ok || got != w {
+			t.Errorf("%s: got %+v want %+v", k, got, w)
+		}
+	}
+	if _, ok := c.Stats["team:"+priv.String()]; ok || len(c.Stats) != len(want) {
+		t.Errorf("stats rows %v", c.Stats)
+	}
+	if c.Views[view.String()] != 3 || c.Teams[team.String()].Open != 2 {
+		t.Errorf("counts %+v %+v", c.Views, c.Teams)
+	}
+	// The private team's lead sees its row and its ticket in the view.
+	e.Do("GET", "/v1/tickets/counts", ws.Admin.As(ws), nil).Want(t, 200).JSON(t, &c)
+	if c.Stats["team:"+priv.String()] != (stats{0, 1, 0}) || c.Stats["view:"+view.String()] != (stats{2, 4, 0}) {
+		t.Errorf("admin stats %+v", c.Stats)
+	}
 }

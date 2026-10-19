@@ -24,7 +24,7 @@ Everything else on this page is optional. When you have these, run the [install 
 ## Network
 
 - A **domain** (or subdomain) with an `A`/`AAAA` record pointing at the server, such as `desk.example.com`.
-- Ports **80** and **443** open, so Caddy can obtain and renew a certificate and serve HTTPS.
+- Ports **80** and **443** open, so Caddy can obtain and renew a certificate and serve HTTPS. With a reverse proxy of your own in front instead, it needs them, not Caddy: see [Your own reverse proxy](/self-hosting/reverse-proxy/).
 - Outbound access to your mail providers (SMTP 465 or 587, and IMAP 993 for mailboxes that receive over IMAP) and to Google and Microsoft if you connect those mailboxes.
 - Optional: port **25** open and an `MX` record if you want to receive forwarded mail directly on this server. See [Email setup](/self-hosting/email/).
 

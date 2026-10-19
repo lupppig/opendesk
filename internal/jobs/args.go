@@ -64,6 +64,27 @@ type SyncMailboxArgs struct {
 
 func (SyncMailboxArgs) Kind() string { return "email.sync_mailbox" }
 
+// Provider tidy-up actions (ProviderTidyArgs.Action).
+const (
+	// ProviderImported: an email read through the provider's API became a ticket message.
+	ProviderImported = "imported"
+	// ProviderArchive: the ticket was solved or closed.
+	ProviderArchive = "archive"
+)
+
+// ProviderTidyArgs applies a support mailbox's tidy-up options at Gmail or Microsoft
+// (contracts/api.md "Reading the inbox directly"): for ProviderImported, mark MessageID's
+// email read and label it; for ProviderArchive, archive the ticket's emails. What is done
+// follows the mailbox's settings when the job runs. Owner: email.
+type ProviderTidyArgs struct {
+	WorkspaceID uuid.UUID  `json:"workspace_id"`
+	TicketID    uuid.UUID  `json:"ticket_id"`
+	MessageID   *uuid.UUID `json:"message_id,omitempty"`
+	Action      string     `json:"action"`
+}
+
+func (ProviderTidyArgs) Kind() string { return "email.provider_tidy" }
+
 // Ticket triggers.
 const (
 	TriggerTicketCreated   = "ticket_created"
@@ -340,3 +361,42 @@ func (ImportUndoArgs) Kind() string { return "import.undo" }
 type ImportSweepArgs struct{}
 
 func (ImportSweepArgs) Kind() string { return "import.sweep" }
+
+// CollabSyncArgs syncs one Collab mail account with its provider (contracts/collab.md
+// "Sync"). Unique per account. Owner: collab.
+type CollabSyncArgs struct {
+	AccountID uuid.UUID `json:"account_id"`
+}
+
+func (CollabSyncArgs) Kind() string { return "collab.sync_account" }
+
+// CollabApplyArgs makes an action already applied in opendesk at the provider
+// (contracts/collab.md "Actions"). Owner: collab.
+type CollabApplyArgs struct {
+	WorkspaceID uuid.UUID   `json:"workspace_id"`
+	AccountID   uuid.UUID   `json:"account_id"`
+	ThreadIDs   []uuid.UUID `json:"thread_ids"`
+	Action      string      `json:"action"`
+	FolderID    *uuid.UUID  `json:"folder_id,omitempty"`
+}
+
+func (CollabApplyArgs) Kind() string { return "collab.apply" }
+
+// CollabCleanupArgs removes the accounts of people who left and the stored raw messages
+// of deleted mail. Owner: collab.
+type CollabCleanupArgs struct{}
+
+func (CollabCleanupArgs) Kind() string { return "collab.cleanup" }
+
+// SeedTestWorkspaceArgs fills a test workspace with one batch of sample data
+// (internal/sample) and records it in workspaces.sample_data (contracts/admin.md "Test
+// workspaces"). Batch numbers a workspace's batches from 1; the generator's seed comes
+// from the workspace id and the batch. Owner: admin.
+type SeedTestWorkspaceArgs struct {
+	WorkspaceID uuid.UUID `json:"workspace_id"`
+	Size        string    `json:"size"`
+	Kinds       []string  `json:"kinds"`
+	Batch       int       `json:"batch"`
+}
+
+func (SeedTestWorkspaceArgs) Kind() string { return "admin.seed_test_workspace" }

@@ -53,15 +53,20 @@ type imapError struct {
 
 func (e *imapError) Error() string { return e.msg }
 
-// errIMAPOff is what a mailbox that receives over IMAP reports while this instance
-// has IMAP off (MAILBOX_IMAP).
+// errIMAPOff is what a mailbox that receives over IMAP reports while that is off for
+// its workspace (MAILBOX_IMAP, or Collab for generic IMAP).
 var errIMAPOff = &imapError{msg: "Receiving over IMAP is off on this instance. Forward the address to opendesk instead."}
 
 // dialIMAP connects with TLS (implicit or STARTTLS, verified, TLS 1.2+) and logs in
-// with the mailbox password or an OAuth token. It dials nothing while this instance
-// has IMAP off.
+// with the mailbox password or an OAuth token. It dials nothing while IMAP is off for
+// the mailbox's workspace, and never for a mailbox that reads through the provider's API.
 func (s *service) dialIMAP(ctx context.Context, m *mailboxRow) (*imapSession, error) {
-	if !s.mailboxIMAP {
+	if !m.readsIMAP() {
+		return nil, &imapError{msg: "This mailbox does not read its inbox over IMAP."}
+	}
+	if ok, err := s.imapReceivesNow(ctx, m); err != nil {
+		return nil, err
+	} else if !ok {
 		return nil, errIMAPOff
 	}
 	cfg := m.Config

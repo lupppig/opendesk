@@ -34,6 +34,14 @@ fetches them with `GET /v1/events?since=<last_seq>`.
   Add `user:<uid>` for per-user notifications, and `contact:<wid>:<contact_id>:<brand_id>` (the
   chat's brand) for public events about a chat conversation.
 
+### Scoped to people
+
+An event with `events.Event.Users` belongs to those people alone (Collab mail, contracts/collab.md):
+its topics are `private` and one `user:<uid>` per person, never `workspace:<wid>` or a team. The
+gateway pushes it in full to those user channels and the `event.hidden` stand-in to `workspace:<wid>`
+(so `seq` stays contiguous), `GET /v1/events` replays it to them and the stand-in to everyone else
+(`events.user_ids`), and no webhook receives it.
+
 ## Transport
 
 1. `events.Relay` (worker role) reads unpublished rows in seq order, publishes each to
@@ -77,11 +85,15 @@ fetches them with `GET /v1/events?since=<last_seq>`.
 | `ai_agent_review.updated` | agents | — | `{ "message_id", "ticket_id", "outcome": "dismissed" \| "improved" }`: an agent reply left the review queue |
 | `billing.updated`        | agents     | —                                     | `Billing` (`contracts/billing.md`): plan, status, seats, limits, usage, AI balance, prices. Sent on subscription changes, seat syncs, AI top-ups and recharges |
 | `saved_reply.*`, `view.*`, `automation.*`, `sla_policy.*`, `kb_article.*`, `kb_collection.*`, `team.*`, `webhook.*` | agents | — | `{ "<resource>": Obj }` / `{ "<resource>_id" }` |
+| `brand.created` / `brand.updated` / `brand.deleted` | agents | — | `{ "brand": Brand }` / `{ "brand_id" }` |
+| `routing_rule.created` / `routing_rule.updated` / `routing_rule.deleted` | agents | — | `{ "routing_rule": RoutingRule }` / `{ "routing_rule_id" }` |
+| `widget.created` / `widget.updated` / `widget.deleted` | agents | — | `{ "widget": Widget }` / `{ "widget_id" }` |
 | `email_template.updated` | agents | — | `{ "brand_id", "kind": "layout" \| "csat" }` (contracts/templates.md): a brand's email layout or CSAT email was saved or reset; refetch it |
 | `bot.created` / `bot.updated` / `bot.deleted` | agents | — | `{ "bot": Bot }` / `{ "bot_id" }` (contracts/bots.md); a new default, a reorder or a new picture is `bot.updated` of each bot it changed |
 | `integration.created` / `integration.updated` / `integration.deleted` | agents | — | `{ "integration": Integration }` / `{ "integration_id" }` (`contracts/integrations.md`; never credentials) |
 | `ticket_link.created` / `ticket_link.deleted` | agents | — | `{ "ticket_id", "link": Link }` / `{ "ticket_id", "link_id" }` |
 | `import.created` / `import.updated` | agents | — | `{ "import": Import }` (`contracts/imports.md`; never credentials). `updated` on every state change and as it writes, at most once a second and after every page. Imported tickets, messages, contacts and articles publish no events of their own: refetch lists |
+| `collab.changed` / `collab.accounts` | agents | scoped to people | ids only (contracts/collab.md "Events") |
 | `chat.typing` (not stored; gateway only) | public | `contact:<wid>:<cid>` | `{ "ticket_id": "...", "user": {"id","name"} }` |
 
 Webhooks receive the envelope unchanged (minus `topics`); an event of a private team's ticket (`events.team_id`)

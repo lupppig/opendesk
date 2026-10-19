@@ -24,7 +24,8 @@ import { PaymentAndInvoices } from "@/components/billing/Invoices";
 import { TopUpPanel } from "@/components/billing/TopUp";
 import { api } from "@/lib/api/endpoints";
 import { Meter } from "@/components/billing/Meter";
-import { balanceBreakdown, formatMoney, formatPrice, hasSubscription, isSelfHosted, limitState, stackDays, yearlySavings } from "@/components/billing/model";
+import { balanceBreakdown, formatMoney, formatPrice, hasSubscription, isComplimentary, isSelfHosted, limitState, showCollab, stackDays, yearlySavings } from "@/components/billing/model";
+import { CollabPlan } from "@/components/billing/CollabPlan";
 import { UsageChart, UsageDayTable, UsageLegend, shadeOf } from "@/components/billing/UsageChart";
 import { isApiError } from "@/lib/api/client";
 import type { AutoRechargePatch, Billing, BillingStatus, ReportsRange } from "@/lib/api/types";
@@ -59,6 +60,7 @@ export default function BillingPage() {
           {confirming && <Notice icon={<Spinner className="size-3.5" />} title={t("notice.confirming")} body={t("notice.confirmingBody")} />}
           <Notices b={b} />
           <PlanCard b={b} />
+          {showCollab(b) && <CollabPlan b={b} />}
           {b.plan === "free" && <Upgrade b={b} />}
           {b.plan === "free" && <Limits b={b} />}
           <AiBalance b={b} />
@@ -104,6 +106,10 @@ function useCheckoutReturn(b: Billing | undefined) {
     if (confirming && b.plan === "pro") {
       setConfirming(false);
       toast.success(t("toast.pro"), { description: t("toast.proBody") });
+    }
+    if (confirming && b.plan === "collab" && hasSubscription(b)) {
+      setConfirming(false);
+      toast.success(t("toast.collab"), { description: t("toast.collabBody") });
     }
     if (topUpBase.current !== null && b.ai.purchased_usd > topUpBase.current) {
       topUpBase.current = null;
@@ -252,26 +258,36 @@ function PlanCard({ b }: { b: Billing }) {
   const canManage = useCanManageBilling();
   const portal = usePortal();
   const pro = b.plan === "pro";
-  const price = b.interval === "year" ? b.prices.pro_year : b.prices.pro_month;
+  const collab = b.plan === "collab";
+  const free = isComplimentary(b);
+  // The subscription's facts: always on Pro (as before), on Collab while it is paid for.
+  const paid = pro || (collab && hasSubscription(b));
+  const price = collab
+    ? ((b.interval === "year" ? b.prices.collab_year : b.prices.collab_month) ?? null)
+    : b.interval === "year"
+      ? b.prices.pro_year
+      : b.prices.pro_month;
+  const summary = pro ? t("plan.proSummary") : collab ? t("plan.collabSummary") : t("plan.freeSummary");
 
   return (
     <Section flush>
       <div className="flex items-start justify-between gap-4 px-5 pb-4 pt-4">
         <div className="flex min-w-0 items-start gap-3.5">
-          <IconTile tone={pro ? "blue" : "gray"} className="mt-0.5 size-10 rounded-lg [&_svg]:size-[18px]">
+          <IconTile tone={pro ? "blue" : collab ? "indigo" : "gray"} className="mt-0.5 size-10 rounded-lg [&_svg]:size-[18px]">
             <CreditCard strokeWidth={1.75} />
           </IconTile>
           <div className="min-w-0">
           <div className="label-caps">{t("plan.current")}</div>
           <div className="mt-1.5 flex items-center gap-2.5">
             <span className="text-[22px] font-semibold leading-7 tracking-[-0.03em]">{t(`plans.${b.plan}`)}</span>
-            {pro && b.status !== "none" && (
+            {free && <Badge tone="indigo">{t("collab.free")}</Badge>}
+            {paid && b.status !== "none" && (
               <Badge tone={b.cancel_at_period_end ? "neutral" : (statusTone[b.status] ?? "neutral")} dot>
                 {b.cancel_at_period_end && b.current_period_end ? t("status.ending", { date: fmt.date(b.current_period_end) }) : t(`status.${b.status as Exclude<BillingStatus, "none">}`)}
               </Badge>
             )}
           </div>
-          <p className="mt-1 text-[12.5px] text-fg-3">{pro ? t("plan.proSummary") : t("plan.freeSummary")}</p>
+          <p className="mt-1 text-[12.5px] text-fg-3">{summary}</p>
           </div>
         </div>
         {canManage && hasSubscription(b) && (
@@ -280,7 +296,7 @@ function PlanCard({ b }: { b: Billing }) {
           </Button>
         )}
       </div>
-      {pro && (
+      {paid && (
         <div className="grid grid-cols-1 gap-4 border-t border-line-soft bg-sunken/50 px-5 py-3.5 sm:grid-cols-3">
           <Fact
             label={t("plan.seats")}
@@ -304,7 +320,7 @@ function PlanCard({ b }: { b: Billing }) {
           />
         </div>
       )}
-      {!pro && !canManage && <div className="border-t border-line-soft px-5 py-3 text-[12.5px] text-fg-3">{t("plan.readOnly")}</div>}
+      {!paid && !canManage && <div className="border-t border-line-soft px-5 py-3 text-[12.5px] text-fg-3">{t("plan.readOnly")}</div>}
     </Section>
   );
 }

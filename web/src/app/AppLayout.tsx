@@ -17,7 +17,7 @@ import { AssistantDock, AssistantRoot } from "@/components/assistant/AssistantRo
 import type { Notification, Ticket } from "@/lib/api/types";
 import { qk } from "@/lib/queries";
 import { i18n } from "@/i18n";
-import { describe, joinedTeam } from "./Notifications";
+import { collabThread, describe, joinedTeam } from "./Notifications";
 import { Sidebar } from "./Sidebar";
 import { SuspendedWorkspace } from "./SuspendedWorkspace";
 import { AppHeader } from "./AppHeader";
@@ -29,8 +29,12 @@ import { notifyDesktop, useDesktopBadge, useDesktopPreferences } from "./useDesk
 import { AiBalanceBanner } from "@/components/billing/AiBalanceBanner";
 import { DesktopUpdateBanner } from "@/components/desktop/UpdateBanner";
 import { shell, toggleNav, useNav, useShell } from "./shellStore";
+import { useCollab } from "@/lib/collab/hooks";
+import { compose } from "@/lib/collab/compose";
 
 const NewTicketDialog = lazy(() => import("@/components/tickets/NewTicketDialog"));
+// Collab's dialogs (customize sidebar, new mail) load only for workspaces with Collab.
+const CollabRoot = lazy(() => import("@/components/collab/CollabRoot"));
 const UpgradeDialog = lazy(() => import("@/components/billing/UpgradeDialog"));
 
 function notificationText(n: Notification) {
@@ -58,6 +62,8 @@ function notificationText(n: Notification) {
       return n.data.reason === "no_funds" ? "Your AI provider account is out of funds" : "Your AI provider rejected the workspace's key";
     case "team_joined":
     case "import_finished":
+    case "collab_assigned":
+    case "collab_mention":
       return describe(n, i18n.getFixedT(null, "shell"));
     default:
       return `Notification ${subject}`;
@@ -77,6 +83,8 @@ const notificationSound: Partial<Record<Notification["type"], AlertSound>> = {
   assigned: "assigned",
   mentioned: "assigned",
   sla_breached: "assigned",
+  collab_assigned: "assigned",
+  collab_mention: "assigned",
 };
 
 /** What a stopped import says went wrong, for its toast. */
@@ -123,7 +131,9 @@ function useRealtimeConnection() {
         if (n.type === "ai_key_failed") void qc.invalidateQueries({ queryKey: qk.aiProvider });
         toast.info(notificationText(n), {
           description:
-            n.type === "ai_cap_reached" ? "Chats go to your team until the cap resets or you raise it." : (billingNoticeBody[n.type] ?? importProblem(n) ?? n.ticket?.subject),
+            n.type === "ai_cap_reached"
+              ? "Chats go to your team until the cap resets or you raise it."
+              : (billingNoticeBody[n.type] ?? importProblem(n) ?? n.ticket?.subject ?? (typeof n.data.subject === "string" ? n.data.subject : undefined)),
           action: n.ticket
             ? {
                 label: "Open",
@@ -141,6 +151,12 @@ function useRealtimeConnection() {
                 }
               : n.type === "import_finished"
                 ? { label: "View import", onClick: () => void navigate({ to: "/settings/import" }) }
+              : collabThread(n)
+                ? {
+                    label: "Open",
+                    onClick: () =>
+                      void navigate({ to: "/mail/$box/{-$threadId}", params: { box: n.type === "collab_assigned" ? "assigned" : "all", threadId: collabThread(n)! }, search: {} }),
+                  }
               : n.type === "ai_cap_reached" || n.type === "ai_key_failed"
               ? { label: "Settings", onClick: () => void navigate({ to: n.type === "ai_key_failed" ? "/settings/ai" : "/settings/ai/behaviour" }) }
               : billingNoticeBody[n.type]
@@ -178,13 +194,20 @@ export function AppLayout() {
   const suspended = useSession((s) => !!currentMembership(s)?.suspended);
   useWaitingAlerts(authed && !suspended);
 
+  const collab = useCollab();
+  // On the mail pages, c writes new mail and g i goes to the mail inbox.
+  const onMail = collab.enabled && section === "mail";
+
   useHotkeys({
     "mod+k": () => shell.palette(!useShell.getState().paletteOpen),
     "?": () => shell.shortcuts(),
     "shift+?": () => shell.shortcuts(),
-    c: () => shell.newTicket(),
+    c: () => (onMail ? compose.open() : shell.newTicket()),
     b: () => toggleNav(),
-    "g i": () => void navigate({ to: "/inbox/$folder/{-$ticketId}", params: { folder: "unassigned", ticketId: undefined } }),
+    "g i": () =>
+      onMail
+        ? void navigate({ to: "/mail/$box/{-$threadId}", params: { box: "inbox", threadId: undefined }, search: (prev: { account?: string }) => ({ account: prev.account }) })
+        : void navigate({ to: "/inbox/$folder/{-$ticketId}", params: { folder: "unassigned", ticketId: undefined } }),
     "g m": () => void navigate({ to: "/inbox/$folder/{-$ticketId}", params: { folder: "mine", ticketId: undefined } }),
     "g c": () => void navigate({ to: "/contacts/{-$contactId}", params: { contactId: undefined } }),
     "g k": () => void navigate({ to: "/kb" }),
@@ -243,6 +266,11 @@ export function AppLayout() {
       {newTicketOpen && (
         <Suspense fallback={null}>
           <NewTicketDialog />
+        </Suspense>
+      )}
+      {collab.enabled && (
+        <Suspense fallback={null}>
+          <CollabRoot />
         </Suspense>
       )}
     </div>

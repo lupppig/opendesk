@@ -103,7 +103,7 @@ func adminCommand() *cobra.Command {
 		},
 	}
 
-	cmd.AddCommand(grant, revoke, list)
+	cmd.AddCommand(grant, revoke, list, testWorkspaceCommand())
 	return cmd
 }
 

@@ -75,7 +75,9 @@ current icon. A new icon publishes `integration.updated`.
   without it is refused.
 - Client identity, in order: an operator's pre-registered client (`MCP_<KEY>_CLIENT_ID`,
   `MCP_<KEY>_CLIENT_SECRET`), the client ID metadata document (https instances), dynamic
-  client registration (RFC 7591).
+  client registration (RFC 7591). Slack and Box accept only a pre-registered client.
+  GitHub signs in with one when it is set (a GitHub App; its secret is sent as form
+  fields) and asks for a token until then: the catalog's `auth` says which.
 - The flow uses an `oauth_state` JWT (`data.flow = "integration"`, with the integration id and the
   sealed PKCE verifier) and an `od_integration_oauth` HttpOnly cookie (Path `/v1/integrations/oauth`)
   binding it to the browser. The callback checks the cookie and that the user is still an admin.

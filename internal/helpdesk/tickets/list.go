@@ -512,6 +512,9 @@ type TicketCounts struct {
 	// Teams counts every team the caller can see; MyTeams the tickets of the caller's teams.
 	Teams   map[string]TeamCount `json:"teams" doc:"Every team the caller can see"`
 	MyTeams TeamCount            `json:"my_teams" doc:"Tickets of the caller's teams"`
+	// Stats breaks each sidebar row's tickets down, keyed by row id: ticket_folder:<unassigned|mine|open|pending>,
+	// team:<id>, team:mine and view:<id>, over the same tickets as the row's count.
+	Stats map[string]TicketStats `json:"stats" doc:"Per sidebar row: awaiting a reply, urgent and overdue tickets"`
 }
 
 // TeamCount counts a team's open and pending tickets (spam excluded).
@@ -520,31 +523,73 @@ type TeamCount struct {
 	Unassigned int `json:"unassigned"`
 }
 
+// TicketStats are the numbers a sidebar row can show besides its count.
+type TicketStats struct {
+	Awaiting int `json:"awaiting" doc:"Open or pending, and the customer wrote last"`
+	Urgent   int `json:"urgent" doc:"Urgent priority"`
+	Overdue  int `json:"overdue" doc:"Not solved or closed, past its due time or with an SLA breach recorded"`
+}
+
+// statCols are the three TicketStats counts over the tickets matching cond, for columns of
+// alias a ("t." or ""): awaiting (the customer wrote last, as the inbox list shows it),
+// urgent, and overdue (the due time that applies has passed, or an SLA breach is recorded).
+func statCols(a, cond string) string {
+	return fmt.Sprintf(`count(*) FILTER (WHERE (%[2]s) AND %[1]sstatus IN ('open','pending')
+			AND %[1]slast_customer_message_at >= %[1]slast_message_at - interval '1 second'),
+		count(*) FILTER (WHERE (%[2]s) AND %[1]spriority = 'urgent'),
+		count(*) FILTER (WHERE (%[2]s) AND %[1]sstatus NOT IN ('solved','closed') AND (
+			CASE WHEN %[1]sfirst_responded_at IS NULL THEN %[1]sfirst_response_due_at ELSE %[1]sresolution_due_at END < now()
+			OR %[1]ssla_first_response_breached_at IS NOT NULL OR %[1]ssla_resolution_breached_at IS NOT NULL))`, a, cond)
+}
+
+func (s *TicketStats) dest() []any { return []any{&s.Awaiting, &s.Urgent, &s.Overdue} }
+
 func ticketCounts(ctx context.Context, q db.Querier, p *auth.Principal) (TicketCounts, error) {
-	c := TicketCounts{Views: map[string]int{}, Teams: map[string]TeamCount{}}
+	c := TicketCounts{Views: map[string]int{}, Teams: map[string]TeamCount{}, Stats: map[string]TicketStats{}}
+	const (
+		unassigned = `NOT spam AND status IN ('open','pending','on_hold') AND assignee_id IS NULL`
+		mine       = `NOT spam AND status IN ('open','pending','on_hold') AND assignee_id = $2`
+		open       = `NOT spam AND status = 'open'`
+		pending    = `NOT spam AND status IN ('pending','on_hold')`
+		myTeams    = `NOT spam AND status IN ('open','pending') AND team_id IN (SELECT mt.team_id FROM team_members mt WHERE mt.user_id = $2)`
+	)
+	var sUnassigned, sMine, sOpen, sPending, sMyTeams TicketStats
+	dest := []any{&c.Unassigned, &c.Mine, &c.Open, &c.Pending, &c.OnHold, &c.Solved, &c.Spam, &c.MyTeams.Open, &c.MyTeams.Unassigned}
+	for _, s := range []*TicketStats{&sUnassigned, &sMine, &sOpen, &sPending, &sMyTeams} {
+		dest = append(dest, s.dest()...)
+	}
 	err := q.QueryRow(ctx, `SELECT
-		count(*) FILTER (WHERE NOT spam AND status IN ('open','pending','on_hold') AND assignee_id IS NULL),
-		count(*) FILTER (WHERE NOT spam AND status IN ('open','pending','on_hold') AND assignee_id = $2),
-		count(*) FILTER (WHERE NOT spam AND status = 'open'),
+		count(*) FILTER (WHERE `+unassigned+`),
+		count(*) FILTER (WHERE `+mine+`),
+		count(*) FILTER (WHERE `+open+`),
 		count(*) FILTER (WHERE NOT spam AND status = 'pending'),
 		count(*) FILTER (WHERE NOT spam AND status = 'on_hold'),
 		count(*) FILTER (WHERE NOT spam AND status = 'solved'),
 		count(*) FILTER (WHERE spam AND status <> 'closed'),
-		count(*) FILTER (WHERE NOT spam AND status IN ('open','pending')
-			AND team_id IN (SELECT mt.team_id FROM team_members mt WHERE mt.user_id = $2)),
-		count(*) FILTER (WHERE NOT spam AND status IN ('open','pending') AND assignee_id IS NULL
-			AND team_id IN (SELECT mt.team_id FROM team_members mt WHERE mt.user_id = $2))
+		count(*) FILTER (WHERE `+myTeams+`),
+		count(*) FILTER (WHERE `+myTeams+` AND assignee_id IS NULL),
+		`+statCols("", unassigned)+`,
+		`+statCols("", mine)+`,
+		`+statCols("", open)+`,
+		`+statCols("", pending)+`,
+		`+statCols("", myTeams)+`
 		FROM tickets WHERE workspace_id = $1 AND deleted_at IS NULL`, p.WorkspaceID, p.ActorUserID()).
-		Scan(&c.Unassigned, &c.Mine, &c.Open, &c.Pending, &c.OnHold, &c.Solved, &c.Spam, &c.MyTeams.Open, &c.MyTeams.Unassigned)
+		Scan(dest...)
 	if err != nil {
 		return c, err
 	}
+	c.Stats["ticket_folder:unassigned"] = sUnassigned
+	c.Stats["ticket_folder:mine"] = sMine
+	c.Stats["ticket_folder:open"] = sOpen
+	c.Stats["ticket_folder:pending"] = sPending
+	c.Stats["team:mine"] = sMyTeams
 	hidden, err := domain.HiddenTeams(ctx, q, p)
 	if err != nil {
 		return c, err
 	}
 	rows, err := q.Query(ctx, `SELECT tm.id,
-		count(t.id) FILTER (WHERE t.id IS NOT NULL), count(t.id) FILTER (WHERE t.assignee_id IS NULL)
+		count(t.id) FILTER (WHERE t.id IS NOT NULL), count(t.id) FILTER (WHERE t.assignee_id IS NULL),
+		`+statCols("t.", "t.id IS NOT NULL")+`
 		FROM teams tm LEFT JOIN tickets t ON t.workspace_id = tm.workspace_id AND t.team_id = tm.id AND t.deleted_at IS NULL
 			AND NOT t.spam AND t.status IN ('open', 'pending')
 		WHERE tm.workspace_id = $1 AND NOT tm.id = ANY($2::uuid[]) GROUP BY tm.id`, p.WorkspaceID, hidden)
@@ -554,11 +599,13 @@ func ticketCounts(ctx context.Context, q db.Querier, p *auth.Principal) (TicketC
 	for rows.Next() {
 		var id uuid.UUID
 		var tc TeamCount
-		if err := rows.Scan(&id, &tc.Open, &tc.Unassigned); err != nil {
+		var st TicketStats
+		if err := rows.Scan(append([]any{&id, &tc.Open, &tc.Unassigned}, st.dest()...)...); err != nil {
 			rows.Close()
 			return c, err
 		}
 		c.Teams[id.String()] = tc
+		c.Stats["team:"+id.String()] = st
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
@@ -606,10 +653,13 @@ func ticketCounts(ctx context.Context, q db.Querier, p *auth.Principal) (TicketC
 			continue // a view whose filters no longer parse counts as zero
 		}
 		var n int
-		if err := q.QueryRow(ctx, `SELECT count(*) FROM tickets t`+b.sql(), b.args...).Scan(&n); err != nil {
+		var st TicketStats
+		if err := q.QueryRow(ctx, `SELECT count(*), `+statCols("t.", "true")+` FROM tickets t`+b.sql(), b.args...).
+			Scan(append([]any{&n}, st.dest()...)...); err != nil {
 			return c, err
 		}
 		c.Views[v.id.String()] = n
+		c.Stats["view:"+v.id.String()] = st
 	}
 	return c, nil
 }

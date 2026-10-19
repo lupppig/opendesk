@@ -22,7 +22,8 @@ defmodule Realtime.Fanout do
       `RealtimeWeb.ContactChannel` pushes it only to sockets of that brand.
 
   The pushed payload is the envelope minus `topics`. When `topics` names any
-  `team:` topic, `workspace:<wid>` gets only the stand-in
+  `team:` topic, or `private` (an event scoped to the people whose `user:`
+  topics it lists), `workspace:<wid>` gets only the stand-in
   `{id, seq, workspace_id, type: "event.hidden", visibility: "agents", data: {},
   occurred_at}`, which keeps `seq` contiguous for every agent without
   revealing the event; a malformed `team:` topic still hides the event from the
@@ -168,7 +169,8 @@ defmodule Realtime.Fanout do
   @doc """
   The `{topic, payload}` pairs an envelope from workspace `wid` fans out to:
   the full envelope minus `topics` everywhere, except `workspace:<wid>`, which
-  gets the `event.hidden` stand-in when the envelope names a `team:` topic.
+  gets the `event.hidden` stand-in when the envelope names a `team:` topic or
+  is scoped to people (`private`).
   """
   @spec routes(String.t(), map()) :: {:ok, [{String.t(), map()}]} | {:error, atom()}
   def routes(wid, %{"workspace_id" => envelope_wid, "visibility" => visibility} = envelope)
@@ -184,7 +186,9 @@ defmodule Realtime.Fanout do
 
       true ->
         payload = Map.delete(envelope, "topics")
-        workspace = if team_scoped?(listed), do: hidden(envelope), else: payload
+
+        workspace =
+          if team_scoped?(listed) or private?(listed), do: hidden(envelope), else: payload
 
         extra =
           listed
@@ -207,6 +211,8 @@ defmodule Realtime.Fanout do
   end
 
   defp team_scoped?(listed), do: Enum.any?(listed, &match?("team:" <> _, &1))
+
+  defp private?(listed), do: Enum.member?(listed, "private")
 
   defp route("team:" <> rest, wid, _visibility) do
     case String.split(rest, ":") do

@@ -35,6 +35,7 @@ func RegisterWorkers(d *deps.Deps, w *river.Workers) {
 	river.AddWorker(w, &sendMessageWorker{s: s})
 	river.AddWorker(w, &sendTicketEmailWorker{s: s})
 	river.AddWorker(w, &chatFollowUpWorker{s: s})
+	river.AddWorker(w, &providerTidyWorker{s: s})
 }
 
 // Periodic returns this area's scheduled jobs: every minute, queue a sync for each

@@ -117,6 +117,8 @@ func Wrap(err error) error {
 	switch {
 	case errors.As(err, &le):
 		return E(402, "plan_limit", "Your plan includes "+plural(le.Limit, le.Resource)+". Upgrade to add more.")
+	case errors.Is(err, plan.ErrCollab):
+		return E(402, "collab_required", "Collab is not on this workspace's plan.")
 	case errors.Is(err, plan.ErrNoBalance):
 		return E(402, "ai_balance_empty", "Your workspace's AI balance is too low for this. Add AI usage or upgrade.")
 	case errors.Is(err, auth.ErrUnauthenticated):

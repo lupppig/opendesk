@@ -84,6 +84,12 @@ func msgIDList(vals ...string) []string {
 // does not. envFrom is the SMTP envelope sender when the transport reports it, else nil.
 // It returns dup=true for a message seen before.
 func (s *service) ingest(ctx context.Context, m *mailboxRow, raw []byte, rcpt string, envFrom *string) (uuid.UUID, bool, error) {
+	return s.ingestRef(ctx, m, raw, rcpt, envFrom, nil)
+}
+
+// ingestRef is ingest of a message read through the provider's API, recording where it
+// lives there (ref; nil for mail from anywhere else).
+func (s *service) ingestRef(ctx context.Context, m *mailboxRow, raw []byte, rcpt string, envFrom *string, ref *providerRef) (uuid.UUID, bool, error) {
 	msgID := headerMessageID(raw)
 	hash := contentHash(raw)
 	var exists bool
@@ -105,9 +111,9 @@ func (s *service) ingest(ctx context.Context, m *mailboxRow, raw []byte, rcpt st
 	}
 	inserted := false
 	err := s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, `INSERT INTO inbound_emails (id, workspace_id, mailbox_id, message_id_hdr, raw_storage_key, rcpt_to, content_hash, envelope_from)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (mailbox_id, message_id_hdr, content_hash) DO NOTHING`,
-			id, m.WorkspaceID, m.ID, msgID, key, truncate(strings.ToLower(rcpt), 320), hash, envFrom)
+		tag, err := tx.Exec(ctx, `INSERT INTO inbound_emails (id, workspace_id, mailbox_id, message_id_hdr, raw_storage_key, rcpt_to, content_hash, envelope_from, provider_ref)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (mailbox_id, message_id_hdr, content_hash) DO NOTHING`,
+			id, m.WorkspaceID, m.ID, msgID, key, truncate(strings.ToLower(rcpt), 320), hash, envFrom, ref)
 		if err != nil {
 			return err
 		}

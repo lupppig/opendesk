@@ -73,7 +73,7 @@ func (s *svc) withReqInfo(ctx huma.Context, next func(huma.Context)) {
 // readReqInfo reads the caller's address, user agent and client. Browsers always send
 // Origin on POST, so a request with Origin is never native, whatever OD-Client says.
 func (s *svc) readReqInfo(r *http.Request) reqInfo {
-	ri := reqInfo{IP: httpx.ClientIP(s.d.Cfg.TrustProxy)(r), UserAgent: truncate(r.UserAgent(), 400), Client: "web"}
+	ri := reqInfo{IP: httpx.ClientIP(s.d.Cfg.TrustProxy, s.d.Cfg.ProxyHops)(r), UserAgent: truncate(r.UserAgent(), 400), Client: "web"}
 	od := r.Header.Get(ClientHeader)
 	switch {
 	case strings.HasPrefix(od, "ios/") && r.Header.Get("Origin") == "":

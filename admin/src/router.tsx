@@ -73,7 +73,7 @@ const overviewRoute = createRoute({
   staticData: { title: "Overview" },
 });
 
-const WORKSPACE_FILTERS = ["all", "suspended", "paid", "free"] as const satisfies readonly WorkspaceFilter[];
+const WORKSPACE_FILTERS = ["all", "suspended", "paid", "free", "collab", "test"] as const satisfies readonly WorkspaceFilter[];
 const workspacesRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/workspaces",
@@ -90,6 +90,14 @@ const workspaceRoute = createRoute({
   loader: ({ context, params }) => void context.queryClient.prefetchQuery(q.workspace(params.id)),
   component: page(() => import("./pages/WorkspaceDetail")),
   staticData: { title: "Workspace" },
+});
+
+const testWorkspacesRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/test-workspaces",
+  loader: ({ context }) => void context.queryClient.prefetchInfiniteQuery(q.testWorkspaces()),
+  component: page(() => import("./pages/TestWorkspaces")),
+  staticData: { title: "Test workspaces" },
 });
 
 const USER_FILTERS = ["all", "suspended", "admins", "unverified"] as const satisfies readonly UserFilter[];
@@ -155,7 +163,7 @@ const adminsRoute = createRoute({
 
 export const routeTree = rootRoute.addChildren([
   loginRoute,
-  shellRoute.addChildren([overviewRoute, workspacesRoute, workspaceRoute, usersRoute, userRoute, jobsRoute, healthRoute, auditRoute, adminsRoute]),
+  shellRoute.addChildren([overviewRoute, workspacesRoute, workspaceRoute, testWorkspacesRoute, usersRoute, userRoute, jobsRoute, healthRoute, auditRoute, adminsRoute]),
 ]);
 
 export const router = createRouter({

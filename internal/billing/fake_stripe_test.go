@@ -54,6 +54,8 @@ func newFakeStripe() *fakeStripe {
 		setupPMs: map[string]string{}, invoices: map[string]map[string]any{}, idem: map[string]any{}, prices: map[string]map[string]any{
 			"price_pro":      {"id": "price_pro", "object": "price", "unit_amount": 1900, "currency": "usd", "recurring": map[string]any{"interval": "month"}},
 			"price_pro_y":    {"id": "price_pro_y", "object": "price", "unit_amount": 19000, "currency": "usd", "recurring": map[string]any{"interval": "year"}},
+			"price_collab":   {"id": "price_collab", "object": "price", "unit_amount": 3800, "currency": "usd", "recurring": map[string]any{"interval": "month"}},
+			"price_collab_y": {"id": "price_collab_y", "object": "price", "unit_amount": 38000, "currency": "usd", "recurring": map[string]any{"interval": "year"}},
 			"price_ai_topup": {"id": "price_ai_topup", "object": "price", "unit_amount": 1000, "currency": "usd", "recurring": nil, "product": "prod_ai_topup"},
 		}}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.serve))
@@ -73,6 +75,13 @@ func (f *fakeStripe) addSub(customer, wid string, qty int64) *fakeSub {
 		Quantity: qty, Metadata: map[string]string{"workspace_id": wid}, PeriodEnd: time.Now().Add(30 * 24 * time.Hour).Unix()}
 	f.subs[s.ID] = s
 	return s
+}
+
+// setPrice moves a subscription to another price, as a plan change in the portal does.
+func (f *fakeStripe) setPrice(id, price, interval string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.subs[id].PriceID, f.subs[id].Interval = price, interval
 }
 
 func (f *fakeStripe) sub(id string) fakeSub {
@@ -325,7 +334,18 @@ func (f *fakeStripe) serve(w http.ResponseWriter, r *http.Request) {
 				f.itemForms = append(f.itemForms, r.PostForm)
 				q, _ := strconv.ParseInt(r.PostForm.Get("quantity"), 10, 64)
 				s.Quantity = q
-				writeStripe(w, 200, map[string]any{"id": s.ItemID, "object": "subscription_item", "quantity": q})
+				if price := r.PostForm.Get("price"); price != "" {
+					p, ok := f.prices[price]
+					if !ok {
+						missing()
+						return
+					}
+					s.PriceID = price
+					s.Interval = p["recurring"].(map[string]any)["interval"].(string)
+				}
+				item := map[string]any{"id": s.ItemID, "object": "subscription_item", "quantity": q}
+				f.remember(r, item)
+				writeStripe(w, 200, item)
 				return
 			}
 		}

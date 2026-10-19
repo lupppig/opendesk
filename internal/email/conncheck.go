@@ -20,11 +20,14 @@ func safeError(err error) string {
 	}
 	var ie *imapError
 	var se *sendError
+	var ae *apiError
 	switch {
 	case errors.As(err, &ie):
 		return cleanLine(ie.msg, 300)
 	case errors.As(err, &se):
 		return cleanLine(se.msg, 300)
+	case errors.As(err, &ae):
+		return cleanLine(ae.msg, 300)
 	case errors.Is(err, errReconnect), errors.Is(err, errProviderUnavailable):
 		return err.Error()
 	case errors.Is(err, context.DeadlineExceeded):
@@ -45,7 +48,14 @@ func (s *service) testInbound(ctx context.Context, m *mailboxRow) error {
 		}
 		return nil
 	}
-	if !s.mailboxIMAP {
+	if m.readsAPI() {
+		ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+		defer cancel()
+		return s.testAPIInbound(ctx, m)
+	}
+	if ok, err := s.imapReceivesNow(ctx, m); err != nil {
+		return err
+	} else if !ok {
 		return errIMAPOff
 	}
 	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)

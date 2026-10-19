@@ -11,6 +11,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { Menu, MenuCheckItem, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { cn } from "@/lib/cn";
 import { config } from "@/lib/config";
+import { can } from "@/lib/permissions";
 import { springs } from "@/lib/motion";
 import { useMe } from "@/lib/session";
 import { useTheme, type ThemePref } from "@/lib/theme";
@@ -48,7 +49,7 @@ export function Sidebar({ onSignOut, onShortcuts }: { onSignOut: () => void; onS
       </div>
 
       <ul className="flex flex-col gap-px px-2.5 pt-1">
-        {NAV.map((n) => (
+        {NAV.filter((n) => !n.perm || can(me, n.perm)).map((n) => (
           <li key={n.to}>
             <Link
               to={n.to}

@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "description": "opendesk for macOS, Windows and Linux",
   "homepage": "https://opendesk.sh",
+  "type": "module",
   "author": {
     "name": "opendesk",
     "email": "team@opendesk.sh"
@@ -15,6 +16,7 @@
     "dev": "node scripts/build.mjs && electron . --dev",
     "start": "electron .",
     "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
     "dist": "node scripts/build.mjs && electron-builder --config electron-builder.config.cjs --publish never",
     "release": "node scripts/build.mjs && electron-builder --config electron-builder.config.cjs --publish always",
     "icons": "electron scripts/icons.cjs",
@@ -29,6 +31,7 @@
     "electron": "^44.7.0",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
-    "typescript": "~6.0.3"
+    "typescript": "~6.0.3",
+    "vitest": "^5.0.4"
   }
 }

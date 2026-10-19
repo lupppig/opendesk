@@ -395,7 +395,7 @@ func (s *svc) applySubscription(ctx context.Context, tx pgx.Tx, wid uuid.UUID, s
 		Scan(&cur.plan, &cur.status, &cur.interval, &cur.seats, &cur.subID, &cur.periodEnd, &cur.cancel); err != nil {
 		return subChange{}, err
 	}
-	wasPaid := cur.plan == plan.Pro && plan.Paid(cur.status)
+	wasPaid := paidPlan(cur.plan, cur.status) != ""
 	if cur.subID != nil && *cur.subID != sub.ID && wasPaid {
 		s.d.Log.Warn("ignoring a second subscription for a paid workspace", "workspace_id", wid)
 		return subChange{}, nil
@@ -406,11 +406,18 @@ func (s *svc) applySubscription(ctx context.Context, tx pgx.Tx, wid uuid.UUID, s
 	}
 	planName := plan.Free
 	if plan.Paid(status) {
+		// The item's price says which paid plan; without one, a paid plan on record stays.
 		planName = plan.Pro
+		if wasPaid {
+			planName = cur.plan
+		}
 	}
 	interval, seats, periodEnd := cur.interval, cur.seats, cur.periodEnd
 	if sub.Items != nil && len(sub.Items.Data) > 0 {
 		it := sub.Items.Data[0]
+		if it.Price != nil && it.Price.ID != "" && planName != plan.Free {
+			planName = s.planOf(it.Price.ID)
+		}
 		if it.Quantity > 0 {
 			seats = int(it.Quantity)
 		}
@@ -430,7 +437,7 @@ func (s *svc) applySubscription(ctx context.Context, tx pgx.Tx, wid uuid.UUID, s
 		wid, planName, status, interval, seats, sub.ID, periodEnd, cancel); err != nil {
 		return subChange{}, err
 	}
-	nowPaid := planName == plan.Pro
+	nowPaid := planName != plan.Free
 	samePeriod := (periodEnd == nil) == (cur.periodEnd == nil) && (periodEnd == nil || periodEnd.Equal(*cur.periodEnd))
 	c := subChange{changed: cur.plan != planName || cur.status != status || cur.interval != interval || cur.seats != seats ||
 		cur.subID == nil || *cur.subID != sub.ID || cur.cancel != cancel || !samePeriod}
@@ -438,9 +445,17 @@ func (s *svc) applySubscription(ctx context.Context, tx pgx.Tx, wid uuid.UUID, s
 		return c, nil
 	}
 	data := map[string]any{"status": status, "interval": interval, "seats": seats, "cancel_at_period_end": cancel}
+	if nowPaid {
+		data["plan"] = planName
+	}
 	action := "billing.updated"
 	props := map[string]any{"plan": planName, "interval": interval, "seats": seats}
 	switch {
+	case nowPaid && wasPaid && cur.plan != planName:
+		action = "billing.plan_changed"
+		data["from"] = cur.plan
+		c.captures = append(c.captures, capture{wid, "subscription_plan_changed", map[string]any{"from": cur.plan, "to": planName,
+			"interval": interval, "seats": seats}})
 	case nowPaid && !wasPaid:
 		action = "billing.subscribed"
 		c.captures = append(c.captures, capture{wid, "subscription_started", props})

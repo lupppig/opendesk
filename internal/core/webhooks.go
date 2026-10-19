@@ -543,14 +543,19 @@ func (w *dispatchWorker) Work(ctx context.Context, job *river.Job[jobs.WebhookDi
 	return w.s.tx(ctx, func(tx pgx.Tx) error {
 		var pl webhookPayload
 		var team *uuid.UUID
-		err := tx.QueryRow(ctx, `SELECT id, seq, workspace_id, type, visibility, data, created_at, team_id FROM events
+		var scoped bool
+		err := tx.QueryRow(ctx, `SELECT id, seq, workspace_id, type, visibility, data, created_at, team_id, user_ids IS NOT NULL FROM events
 			WHERE workspace_id = $1 AND seq = $2`, a.WorkspaceID, a.EventSeq).
-			Scan(&pl.ID, &pl.Seq, &pl.WorkspaceID, &pl.Type, &pl.Visibility, &pl.Data, &pl.OccurredAt, &team)
+			Scan(&pl.ID, &pl.Seq, &pl.WorkspaceID, &pl.Type, &pl.Visibility, &pl.Data, &pl.OccurredAt, &team, &scoped)
 		if db.IsNotFound(err) {
 			return nil // pruned or workspace deleted
 		}
 		if err != nil {
 			return err
+		}
+		// An event scoped to people is theirs alone (contracts/events.md); no webhook receives it.
+		if scoped {
+			return nil
 		}
 		pl.OccurredAt = pl.OccurredAt.UTC()
 		rows, err := tx.Query(ctx, `SELECT id, events, private_team_ids FROM webhooks WHERE workspace_id = $1 AND enabled`, a.WorkspaceID)

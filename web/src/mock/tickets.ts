@@ -12,6 +12,7 @@ import type {
   TagRef,
   Ticket,
   TicketCounts,
+  TicketStats,
   TicketFilters,
   TicketPatch,
   TicketRouted,
@@ -160,24 +161,53 @@ export function matches(ws: WsData, t: Ticket, raw: ListFilters, meId: string): 
   return true;
 }
 
+/** Awaiting a reply (the customer wrote last), urgent, and overdue (past the due time that applies, or breached). */
+export function ticketStats(list: Ticket[], now = Date.now()): TicketStats {
+  let awaiting = 0,
+    urgent = 0,
+    overdue = 0;
+  for (const t of list) {
+    if ((t.status === "open" || t.status === "pending") && t.last_customer_message_at && Date.parse(t.last_customer_message_at) >= Date.parse(t.last_message_at) - 1000) awaiting++;
+    if (t.priority === "urgent") urgent++;
+    if (t.status !== "solved" && t.status !== "closed" && t.sla) {
+      const due = t.first_responded_at ? t.sla.resolution_due_at : t.sla.first_response_due_at;
+      if (t.sla.breached || (due && Date.parse(due) < now)) overdue++;
+    }
+  }
+  return { awaiting, urgent, overdue };
+}
+
 export function counts(ws: WsData, meId: string): TicketCounts {
   const live = ws.tickets.filter((t) => !ws.deletedTickets.has(t.id));
   const ns = live.filter((t) => !t.spam);
   const views: Record<string, number> = {};
   for (const v of ws.views) views[v.id] = live.filter((t) => matches(ws, t, { view_id: v.id }, meId)).length;
-  // Every team the caller can see; private teams' tickets still count in the totals.
-  const teamCount = (list: Ticket[]) => ({
-    open: list.filter((t) => t.status === "open").length,
-    unassigned: list.filter((t) => OPENISH.includes(t.status) && !t.assignee).length,
-  });
+  // Every team the caller can see; private teams' tickets still count in the totals. Like the
+  // server, a team counts its open and pending tickets, and the unassigned ones among them.
+  const teamCount = (list: Ticket[]) => {
+    const active = list.filter((t) => t.status === "open" || t.status === "pending");
+    return { open: active.length, unassigned: active.filter((t) => !t.assignee).length };
+  };
   const teams: Record<string, { open: number; unassigned: number }> = {};
   for (const team of ws.teams) {
     if (team.private && !teamRole(team, meId)) continue;
     teams[team.id] = teamCount(ns.filter((t) => t.team_id === team.id));
   }
   const mine = new Set(myTeamIds(ws, meId));
+  const myTeams = ns.filter((t) => !!t.team_id && mine.has(t.team_id) && (t.status === "open" || t.status === "pending"));
+  // Each sidebar row's stats, over the same tickets as its count (contracts/api.md).
+  const stats: Record<string, TicketStats> = {
+    "ticket_folder:unassigned": ticketStats(ns.filter((t) => OPENISH.includes(t.status) && !t.assignee)),
+    "ticket_folder:mine": ticketStats(ns.filter((t) => OPENISH.includes(t.status) && t.assignee?.id === meId)),
+    "ticket_folder:open": ticketStats(ns.filter((t) => t.status === "open")),
+    "ticket_folder:pending": ticketStats(ns.filter((t) => t.status === "pending" || t.status === "on_hold")),
+    "team:mine": ticketStats(myTeams),
+  };
+  for (const id of Object.keys(teams)) stats[`team:${id}`] = ticketStats(ns.filter((t) => t.team_id === id && (t.status === "open" || t.status === "pending")));
+  for (const v of ws.views) stats[`view:${v.id}`] = ticketStats(live.filter((t) => matches(ws, t, { view_id: v.id }, meId)));
   return {
     teams,
+    stats,
     my_teams: teamCount(ns.filter((t) => !!t.team_id && mine.has(t.team_id))),
     unassigned: ns.filter((t) => OPENISH.includes(t.status) && !t.assignee).length,
     mine: ns.filter((t) => OPENISH.includes(t.status) && t.assignee?.id === meId).length,

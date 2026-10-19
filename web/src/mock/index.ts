@@ -16,6 +16,7 @@ import { registerEmailAnswers } from "./handlers/emailAnswers";
 import { registerAuth, setSignedIn } from "./handlers/auth";
 import { registerBilling } from "./handlers/billing";
 import { registerBots } from "./handlers/bots";
+import { registerCollab } from "./handlers/collab";
 import { registerKnowledge } from "./handlers/knowledge";
 import { registerImports } from "./handlers/imports";
 import { registerIntegrations } from "./handlers/integrations";
@@ -24,6 +25,7 @@ import { applyMockImap, syncReceiving } from "./handlers/mailhost";
 import { registerMcp } from "./handlers/mcp";
 import { registerNotificationPrefs } from "./handlers/notificationPrefs";
 import { registerSupportChannels } from "./handlers/supportChannels";
+import { registerTemplates } from "./handlers/templates";
 import { registerResources } from "./handlers/resources";
 import { registerTickets } from "./handlers/tickets";
 import { registerWorkspace } from "./handlers/workspace";
@@ -81,6 +83,8 @@ export function installMock(): void {
   registerBots();
   registerNotificationPrefs();
   registerSupportChannels();
+  registerTemplates();
+  registerCollab();
 
   setTransport((input, init) => dispatch(input, init));
   setSocketFactory(socketFactory);

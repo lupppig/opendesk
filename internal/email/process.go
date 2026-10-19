@@ -72,9 +72,10 @@ func (s *service) processInbound(ctx context.Context, wid, inboundID uuid.UUID) 
 	var mailboxID uuid.UUID
 	var key, status, rcpt, msgIDHdr, hash string
 	var envFrom *string
-	err := s.d.DB.Pool.QueryRow(ctx, `SELECT mailbox_id, raw_storage_key, status, rcpt_to, message_id_hdr, content_hash, envelope_from
+	var ref *providerRef
+	err := s.d.DB.Pool.QueryRow(ctx, `SELECT mailbox_id, raw_storage_key, status, rcpt_to, message_id_hdr, content_hash, envelope_from, provider_ref
 		FROM inbound_emails WHERE workspace_id = $1 AND id = $2`, wid, inboundID).
-		Scan(&mailboxID, &key, &status, &rcpt, &msgIDHdr, &hash, &envFrom)
+		Scan(&mailboxID, &key, &status, &rcpt, &msgIDHdr, &hash, &envFrom, &ref)
 	if db.IsNotFound(err) || err == nil && status != "pending" {
 		return nil
 	}
@@ -299,6 +300,15 @@ func (s *service) processInbound(ctx context.Context, wid, inboundID uuid.UUID) 
 		if _, err := tx.Exec(ctx, `UPDATE inbound_emails SET status = 'processed', reason = '', processed_at = now()
 			WHERE workspace_id = $1 AND id = $2`, wid, inboundID); err != nil {
 			return err
+		}
+		if ref != nil {
+			// Where the email lives at Gmail or Microsoft: replies join its conversation.
+			if _, err := tx.Exec(ctx, `UPDATE messages SET provider_ref = $3 WHERE workspace_id = $1 AND id = $2`, wid, msg.ID, ref); err != nil {
+				return err
+			}
+			if err := s.queueImportedTidy(ctx, tx, m, ref, ticket.ID, msg.ID); err != nil {
+				return err
+			}
 		}
 		if !authFailed && !internal {
 			if err := s.queueAIAnswer(ctx, tx, m, ticket.ID, msg.ID, pm, sender); err != nil {

@@ -221,7 +221,10 @@ The reply address is `ticket.mailbox_id`:
   reply). Addresses of a private team are only for that team's members (`403 forbidden`); a reply
   that would go out from such an address without naming another is `403 reply_address_forbidden`.
 - Threading headers (`In-Reply-To`, `References`, the `[#n]` subject tag) are kept when the address
-  changes, so the customer's thread stays together.
+  changes, so the customer's thread stays together. A mailbox that reads its inbox through Gmail or
+  Microsoft Graph (`oauth_grant: "api"`, contracts/api.md) answers a conversation it read with
+  `Re: <the customer's subject>` and no tag, since Gmail and Outlook keep a reply in the conversation
+  only when the subject matches; the headers still thread it into the ticket.
 - A reply goes out from the message's `mailbox_id` when set, else the ticket's, else the address picked
   as for a chat or API ticket (above); an email never goes out from another private team's address.
   After sending, the message records the mailbox, From address and From name it actually used; a

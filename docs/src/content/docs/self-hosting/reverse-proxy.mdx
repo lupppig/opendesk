@@ -1,0 +1,275 @@
+---
+title: Your own reverse proxy
+description: Run opendesk behind Traefik, nginx, Nginx Proxy Manager or a Caddy you already run, instead of the bundled Caddy.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+import Steps from '../../../components/Steps.astro';
+import Step from '../../../components/Step.astro';
+
+The self-host bundle comes with Caddy, which takes ports 80 and 443 and gets the certificates itself. If the machine already has a reverse proxy that handles TLS and routing for other services, turn the bundled Caddy off and point your proxy at opendesk instead.
+
+```
+Internet → your proxy (TLS) → opendesk  :8080   everything else
+                            → realtime  :4000   /socket/*  (WebSocket)
+```
+
+## Turn off the bundled Caddy
+
+<Tabs syncKey="install-method">
+<TabItem label="Installer">
+
+```sh
+curl -fsSL https://opendesk.sh/install.sh | sh -s -- --proxy external --domain desk.example.com
+```
+
+On an existing install, run it again with `--proxy external`. Later runs and `opendesk-ctl upgrade` keep the mode, and `--proxy caddy` switches back.
+
+</TabItem>
+<TabItem label="Docker Compose">
+
+In `.env`, add `compose.external-proxy.yml` (published with every release, next to `docker-compose.yml`) and set the public addresses your proxy serves:
+
+```sh
+COMPOSE_FILE=docker-compose.yml:compose.external-proxy.yml
+OPENDESK_DOMAIN=desk.example.com
+OPENDESK_URL=https://desk.example.com
+OPENDESK_GATEWAY_URL=wss://desk.example.com/socket
+```
+
+Then `docker compose up -d --remove-orphans`. If Caddy was running, remove it with `docker compose --profile bundled-proxy rm -sf caddy`.
+
+</TabItem>
+</Tabs>
+
+`compose.external-proxy.yml` changes three things: Caddy no longer starts, opendesk and realtime are published over plain HTTP for your proxy, and both read the client address from your proxy's `X-Forwarded-For` (see [Client addresses](#client-addresses)).
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `OPENDESK_BIND` | `127.0.0.1` | Host address the two ports are published on. `127.0.0.1` is reachable from this machine only. |
+| `OPENDESK_PORT` | `8080` | Host port for opendesk: the API, web app, widget, help centers and admin panel. |
+| `REALTIME_PORT` | `4000` | Host port for the realtime gateway. |
+| `TRUSTED_PROXY_HOPS` | `1` | Proxies in front that append to `X-Forwarded-For`. |
+
+If you use a `docker-compose.override.yml`, add it to `COMPOSE_FILE` as well: once `COMPOSE_FILE` is set, Compose stops loading it on its own.
+
+### A proxy in a container
+
+A proxy running in Docker (Traefik, Nginx Proxy Manager) cannot reach `127.0.0.1` on the host. Connect it to the `opendesk_proxy` network instead, and it reaches the services by name, at `opendesk:8080` and `realtime:4000`:
+
+```sh
+docker network connect opendesk_proxy <your proxy container>
+```
+
+Only opendesk and realtime are on that network. Postgres is not.
+
+## What to route
+
+| Requests | Go to | Notes |
+| --- | --- | --- |
+| `/socket/*` on the main host | realtime, port `4000` | WebSocket upgrades. Agents, the chat widget (`/socket/widget/*`) and the apps connect here. |
+| Everything else on the main host | opendesk, port `8080` | The API, web app, `/widget/v1.js`, `/config.js`, `/help/<slug>`, `/admin/`. |
+| `<slug>.HELP_DOMAIN` and custom help center domains | opendesk, port `8080` | Only if you use them. See [Help centers](#help-centers). |
+
+What opendesk needs from the proxy:
+
+- **TLS.** The proxy serves `https://` and `wss://`. opendesk and realtime speak plain HTTP behind it. opendesk takes the scheme from `OPENDESK_URL`, so `X-Forwarded-Proto` is optional.
+- **The `Host` header as the browser sent it.** Help centers are chosen by host. Most proxies keep it by default; nginx needs `proxy_set_header Host $host`.
+- **WebSocket upgrades on `/socket/`**, with a read timeout of a minute or more. Sockets send a heartbeat every 25 seconds, and the gateway closes one that is silent for 60.
+- **The `Origin` header passed on.** The gateway refuses agent sockets from an origin other than `CHECK_ORIGINS` (default `OPENDESK_URL`).
+- **Request bodies up to 30 MB.** Attachments are up to 25 MB. nginx allows 1 MB unless told otherwise.
+- **No response buffering for streams.** AI answers stream as server-sent events. opendesk sends `X-Accel-Buffering: no`, which nginx honours.
+
+## Client addresses
+
+Rate limits on sign-in, sign-up and the public endpoints, and the IP in the audit log, use the client's address. Behind a proxy, opendesk sees the proxy's address, so it reads the client from `X-Forwarded-For`.
+
+`TRUSTED_PROXY_HOPS` is the number of proxies in front of opendesk that add an entry to `X-Forwarded-For`. opendesk takes the address that many entries from the right: the one your outermost proxy saw. Anything a client puts in the header itself is further left and ignored, so the address cannot be forged to get around a rate limit.
+
+| In front of opendesk | `TRUSTED_PROXY_HOPS` |
+| --- | --- |
+| Your proxy | `1` (the default in `compose.external-proxy.yml`) |
+| Cloudflare (proxied DNS), then your proxy | `2` |
+| A cloud load balancer, then your proxy | `2` |
+
+Set it in `.env`. It applies to opendesk and the realtime gateway. Make sure your proxy appends to `X-Forwarded-For` or sets it to the peer's address (nginx's `$proxy_add_x_forwarded_for`, Traefik's and Caddy's defaults), and that opendesk's ports are reachable only through it. A client that reaches port 8080 directly could write any `X-Forwarded-For` it likes.
+
+## Examples
+
+Replace `desk.example.com` with your domain. These were tested with the services published on the host, or reached by name on `opendesk_proxy`.
+
+<Tabs syncKey="reverse-proxy">
+<TabItem label="nginx">
+
+```nginx
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name desk.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/desk.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/desk.example.com/privkey.pem;
+
+    # Attachments are up to 25 MB.
+    client_max_body_size 30m;
+
+    location /socket/ {
+        proxy_pass http://127.0.0.1:4000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_read_timeout 1h;
+        proxy_send_timeout 1h;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # AI answers stream for a while.
+        proxy_read_timeout 5m;
+    }
+}
+
+server {
+    listen 80;
+    server_name desk.example.com;
+    return 301 https://$host$request_uri;
+}
+```
+
+</TabItem>
+<TabItem label="Traefik">
+
+Traefik passes WebSockets, the `Host` header and `X-Forwarded-For` without extra settings. With the Docker provider, put the labels in a compose file of your own next to `docker-compose.yml`, say `compose.traefik.yml`:
+
+```yaml
+services:
+  opendesk:
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: opendesk_proxy
+      traefik.http.routers.opendesk.rule: Host(`desk.example.com`)
+      traefik.http.routers.opendesk.entrypoints: websecure
+      traefik.http.routers.opendesk.tls.certresolver: letsencrypt
+      traefik.http.services.opendesk.loadbalancer.server.port: "8080"
+  realtime:
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: opendesk_proxy
+      traefik.http.routers.opendesk-socket.rule: Host(`desk.example.com`) && PathPrefix(`/socket/`)
+      traefik.http.routers.opendesk-socket.entrypoints: websecure
+      traefik.http.routers.opendesk-socket.tls.certresolver: letsencrypt
+      traefik.http.services.opendesk-socket.loadbalancer.server.port: "4000"
+```
+
+Add it to `COMPOSE_FILE`, connect Traefik to the network, and start:
+
+```sh
+COMPOSE_FILE=docker-compose.yml:compose.external-proxy.yml:compose.traefik.yml
+```
+
+```sh
+docker network connect opendesk_proxy traefik
+docker compose up -d
+```
+
+Use your own entrypoint and certificate resolver names. The longer rule wins, so `/socket/` goes to realtime. Traefik's default body size has no limit.
+
+</TabItem>
+<TabItem label="Caddy">
+
+A Caddy you already run on the host:
+
+```text
+desk.example.com {
+	@socket path /socket /socket/*
+	reverse_proxy @socket 127.0.0.1:4000
+	reverse_proxy 127.0.0.1:8080
+}
+```
+
+Caddy gets the certificate, passes WebSockets and the `Host` header, and replaces `X-Forwarded-For` with the client's address. For help centers, Caddy can also issue certificates on demand. See [Help centers](#help-centers).
+
+</TabItem>
+<TabItem label="Nginx Proxy Manager">
+
+<Steps>
+<Step title="Connect it to opendesk">
+
+```sh
+docker network connect opendesk_proxy <nginx proxy manager container>
+```
+
+</Step>
+<Step title="Add a proxy host">
+
+**Domain names** `desk.example.com`, **Scheme** `http`, **Forward hostname** `opendesk`, **Forward port** `8080`. Turn on **Websockets support**. On the **SSL** tab, request a certificate and turn on **Force SSL**.
+
+</Step>
+<Step title="Send /socket/ to realtime">
+
+On the **Custom locations** tab, add the location `/socket/` with scheme `http`, hostname `realtime` and port `4000`.
+
+</Step>
+<Step title="Allow attachments">
+
+On the **Advanced** tab:
+
+```nginx
+client_max_body_size 30m;
+proxy_read_timeout 1h;
+```
+
+</Step>
+</Steps>
+
+</TabItem>
+</Tabs>
+
+## Help centers
+
+Each brand's help center is at `https://desk.example.com/help/<slug>` with no more setup. If you give them hosts of their own ([`HELP_DOMAIN`](/self-hosting/docker-compose/#help-center-addresses) or custom domains), your proxy has to serve those hosts too and send them to opendesk on port `8080` with the `Host` header unchanged:
+
+- **`<slug>.HELP_DOMAIN`**: one wildcard certificate for `*.help.example.com` (DNS challenge) and a server or router matching that wildcard.
+- **Custom domains** (`help.acme.com`): the names are not known in advance, so the proxy needs certificates issued on demand. Caddy does it with `on_demand_tls`, asking opendesk whether a name belongs to one of its help centers before it requests a certificate:
+
+  ```text
+  {
+  	on_demand_tls {
+  		ask http://127.0.0.1:8080/v1/public/help-domains/tls
+  	}
+  }
+
+  https:// {
+  	tls {
+  		on_demand
+  	}
+  	reverse_proxy 127.0.0.1:8080
+  }
+  ```
+
+  With a proxy that cannot do this, add each custom domain to it by hand.
+
+## Other things that change
+
+- **Attachments with the `minio` profile.** Downloads are presigned URLs on `S3_ENDPOINT`, so browsers must reach it. Put the `s3` service on the `proxy` network in your own compose file and route a host to `s3:9000`.
+- **Inbound mail.** Unchanged: the built-in SMTP receiver (`smtp-inbound` profile) has its own port and never goes through the proxy.
+- **Logs.** There is no `caddy` service, so `opendesk-ctl logs caddy` has nothing to show. Your proxy's access log should not record query strings on `/socket/`: realtime tokens travel in `?token=`.
+
+## Check it
+
+```sh
+curl -fsS -o /dev/null -w '%{http_code}\n' https://desk.example.com/readyz
+```
+
+`200` means opendesk is up and connected to Postgres and NATS. Then sign in: the inbox updating as you work means the WebSocket goes through. If it does not, the browser's developer tools show the `/socket/websocket` request. A `403` there is an `Origin` that does not match `CHECK_ORIGINS`. Any other failure to upgrade is usually a proxy that does not pass the `Upgrade` and `Connection` headers.

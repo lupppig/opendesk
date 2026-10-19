@@ -7,7 +7,7 @@
 #
 # Operator-supplied secrets (OAuth client secrets, Turnstile, PostHog, Stripe
 # keys and price ids, the OpenRouter, Anthropic and Voyage API keys, the APNs key, the
-# Cloudflare for SaaS token) are
+# Cloudflare for SaaS token, integration app secrets) are
 # created empty. Set them with
 #   scripts/put-secret.sh <KEY>
 # (it reads this list) and then list the key in `optional_secrets` in the environment so the task
@@ -50,6 +50,9 @@ locals {
     "STRIPE_PRICE_PRO",
     "STRIPE_PRICE_PRO_YEARLY",
     "STRIPE_PRICE_CREDITS",
+    # The hidden collab plan (contracts/billing.md "Collab").
+    "STRIPE_PRICE_COLLAB",
+    "STRIPE_PRICE_COLLAB_YEARLY",
     "OPENROUTER_API_KEY",
     "ANTHROPIC_API_KEY",
     "VOYAGE_API_KEY",
@@ -57,6 +60,13 @@ locals {
     # Adds help center custom domains to the Cloudflare for SaaS zone: SSL and
     # Certificates edit on that zone only.
     "CLOUDFLARE_SAAS_TOKEN",
+    # Integrations that only accept apps registered in advance.
+    "MCP_SLACK_CLIENT_SECRET",
+    "MCP_BOX_CLIENT_SECRET",
+    "MCP_GITHUB_CLIENT_SECRET",
+    # Collab mail accounts in their own Google project and Entra app.
+    "COLLAB_GOOGLE_CLIENT_SECRET",
+    "COLLAB_MICROSOFT_CLIENT_SECRET",
   ])
 
   all_keys = setunion(

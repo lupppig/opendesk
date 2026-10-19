@@ -56,7 +56,7 @@ type Server struct {
 // New returns the server for the instance's configuration.
 func New(d *deps.Deps) *Server {
 	cfg := d.Cfg
-	s := &Server{d: d, clientIP: httpx.ClientIP(cfg.TrustProxy), own: map[string]bool{}, scheme: "https"}
+	s := &Server{d: d, clientIP: httpx.ClientIP(cfg.TrustProxy, cfg.ProxyHops), own: map[string]bool{}, scheme: "https"}
 	if strings.HasPrefix(cfg.AppURL, "http://") {
 		s.scheme = "http"
 	}

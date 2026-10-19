@@ -31,7 +31,7 @@ type ipKey struct{}
 // for routes that run before any credential exists (session creation).
 func (h *handler) withClientIP(ctx huma.Context, next func(huma.Context)) {
 	r, _ := humachi.Unwrap(ctx)
-	next(huma.WithValue(ctx, ipKey{}, httpx.ClientIP(h.d.Cfg.TrustProxy)(r)))
+	next(huma.WithValue(ctx, ipKey{}, httpx.ClientIP(h.d.Cfg.TrustProxy, h.d.Cfg.ProxyHops)(r)))
 }
 
 func clientIP(ctx context.Context) string {

@@ -81,7 +81,7 @@ func newEnv(t *testing.T) *testEnv {
 	}
 	httpx.Install(log)
 	r := chi.NewRouter()
-	resolver := &auth.Resolver{Pool: database.Pool, Tokens: d.Tokens, ClientIP: httpx.ClientIP(false)}
+	resolver := &auth.Resolver{Pool: database.Pool, Tokens: d.Tokens, ClientIP: httpx.ClientIP(false, 0)}
 	r.Use(resolver.Middleware)
 	api := humachi.New(r, huma.DefaultConfig("test", "0"))
 	Register(d, api, r)

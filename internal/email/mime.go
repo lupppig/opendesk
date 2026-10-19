@@ -37,6 +37,10 @@ type outMessage struct {
 	// Loop is the sending mailbox's loop token (loopToken), written to X-Loop so the
 	// workspace recognizes its own mail when it comes back.
 	Loop string
+	// GmailThread is the Gmail thread the message joins (providerThread), not a header.
+	GmailThread string
+	// sent is where deliver's message lives at the provider, when it can tell.
+	sent *providerRef
 }
 
 // loopHeader carries the sending mailbox's loop token, on every message we send.

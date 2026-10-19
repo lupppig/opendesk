@@ -2,6 +2,7 @@
 // events, realtime tokens and notifications. Widget settings: handlers/widget.ts.
 
 import type { ApiKey, Member, Role, Webhook, WebhookDelivery, WorkspaceSettings } from "@/lib/api/types";
+import { profileOf } from "../profiles";
 import { db, me, userRef, type WsData } from "../db";
 import { publish } from "../gateway";
 import { HttpError, del, forbidden, get, invalid, notFound, paginate, patch, post, required, respond, s, strArr, type Ctx } from "../router";
@@ -43,6 +44,7 @@ export function memberOut(ws: WsData, user_id: string): Member {
     open_tickets: open,
     last_seen_at: lastSeen,
     created_at: m.created_at,
+    profile: { ...profileOf(ws, m.user_id) },
   };
 }
 

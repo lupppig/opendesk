@@ -84,6 +84,7 @@ func connectionFailed(c mailboxCheck) error {
 type providerOption struct {
 	Configured bool `json:"configured" doc:"The provider's OAuth client is set up on this instance"`
 	OAuth      bool `json:"oauth" doc:"New mailboxes may connect with this provider's sign-in"`
+	APISync    bool `json:"api_sync" doc:"This workspace may connect the provider to read the inbox directly through its API (receive: api): it has Collab and the provider's Collab OAuth client is set up"`
 }
 
 type connectOptions struct {
@@ -93,7 +94,8 @@ type connectOptions struct {
 		Enabled bool   `json:"enabled" doc:"Forwarded mail is received (INBOUND_SECRET or INBOUND_SMTP_ADDR)"`
 		Domain  string `json:"domain" doc:"The domain forwarding addresses live on"`
 	} `json:"forwarding"`
-	MailboxIMAP  bool   `json:"mailbox_imap" doc:"Mailboxes may receive over IMAP (MAILBOX_IMAP): generic IMAP and Google or Microsoft sync. Off, mailboxes receive by forwarding and Google and Microsoft connect send-only"`
+	MailboxIMAP  bool   `json:"mailbox_imap" doc:"This workspace's mailboxes may receive over generic IMAP: the instance has MAILBOX_IMAP on, or the workspace has Collab. Off, mailboxes receive by forwarding or, with api_sync, through the provider's API"`
+	InstanceIMAP bool   `json:"instance_imap" doc:"The instance has MAILBOX_IMAP on: Google and Microsoft may also sync over IMAP (receive: sync)"`
 	SystemSend   bool   `json:"system_send" doc:"Mailboxes may send through opendesk (MAILBOX_SYSTEM_SEND). Off, every mailbox sends through Google, Microsoft or SMTP"`
 	SystemSender string `json:"system_sender" doc:"The address replies come from when a mailbox sends through opendesk"`
 }
@@ -119,16 +121,22 @@ func (s *service) registerConnectRoutes(api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "get-mailbox-connect-options", Method: http.MethodGet, Path: "/v1/mailboxes/connect-options",
 		Summary: "How mailboxes can connect", Description: "The sign-ins, forwarding and sending this instance offers for a new mailbox.", Tags: tags},
 		func(ctx context.Context, _ *struct{}) (*struct{ Body connectOptions }, error) {
-			if _, err := auth.RequireWorkspace(ctx, auth.RoleAdmin, auth.ScopeSettingsRead); err != nil {
+			p, err := auth.RequireWorkspace(ctx, auth.RoleAdmin, auth.ScopeSettingsRead)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			a, err := s.access(ctx, s.d.DB.Pool, p.WorkspaceID)
+			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
 			cfg := s.d.Cfg
 			var out connectOptions
-			out.Google = providerOption{Configured: s.providers[KindGoogle].configured(), OAuth: s.oauthConnect(KindGoogle)}
-			out.Microsoft = providerOption{Configured: s.providers[KindMicrosoft].configured(), OAuth: s.oauthConnect(KindMicrosoft)}
+			out.Google = providerOption{Configured: s.providers[KindGoogle].configured(), OAuth: s.oauthConnect(KindGoogle), APISync: s.apiSync(KindGoogle, a)}
+			out.Microsoft = providerOption{Configured: s.providers[KindMicrosoft].configured(), OAuth: s.oauthConnect(KindMicrosoft), APISync: s.apiSync(KindMicrosoft, a)}
 			out.Forwarding.Enabled = cfg.InboundSecret != "" || cfg.InboundSMTPAddr != ""
 			out.Forwarding.Domain = s.inboundDomain()
-			out.MailboxIMAP = s.mailboxIMAP
+			out.MailboxIMAP = s.imapAllowed(a)
+			out.InstanceIMAP = s.mailboxIMAP
 			out.SystemSend = s.systemSend
 			out.SystemSender = s.systemFrom().Address
 			return &struct{ Body connectOptions }{out}, nil
@@ -284,7 +292,7 @@ func (s *service) verifyPatch(ctx context.Context, wid, id uuid.UUID, in *update
 	if changes, _ := applyPatch(m, &creds, in); len(changes) == 0 {
 		return out, nil
 	}
-	if err := s.checkInboundChange(before.InboundKind, m.InboundKind); err != nil {
+	if err := s.checkInboundChange(ctx, s.d.DB.Pool, wid, before.InboundKind, m.InboundKind); err != nil {
 		return out, err
 	}
 	if err := s.checkOutboundChange(before.OutboundKind, m.OutboundKind); err != nil {
@@ -295,7 +303,15 @@ func (s *service) verifyPatch(ctx context.Context, wid, id uuid.UUID, in *update
 	}
 	prepareMailbox(m, &creds, in.Body.Password != nil || in.Body.SMTPPassword != nil)
 	c, a := before.Config, m.Config
-	inbound := s.mailboxIMAP && m.InboundKind == InboundIMAP && (before.InboundKind != InboundIMAP ||
+	imapOn := s.mailboxIMAP
+	if !imapOn && m.InboundKind == InboundIMAP {
+		a, err := s.access(ctx, s.d.DB.Pool, wid)
+		if err != nil {
+			return out, httpx.Wrap(err)
+		}
+		imapOn = s.imapAllowed(a)
+	}
+	inbound := imapOn && m.InboundKind == InboundIMAP && (before.InboundKind != InboundIMAP ||
 		!strings.EqualFold(a.IMAPHost, c.IMAPHost) || a.IMAPPort != c.IMAPPort ||
 		a.IMAPTLS != c.IMAPTLS || a.IMAPUsername != c.IMAPUsername || creds.Password != beforeCreds.Password)
 	outbound := m.OutboundKind == OutboundSMTP && (before.OutboundKind != OutboundSMTP || !strings.EqualFold(a.SMTPHost, c.SMTPHost) ||

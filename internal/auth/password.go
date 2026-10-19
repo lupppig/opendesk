@@ -106,6 +106,12 @@ func VerifyPassword(pw, encoded string) bool {
 	return subtle.ConstantTimeCompare(got, want) == 1
 }
 
+// PasswordHashSQL reads users.password_hash the way every password check sees it: a
+// password past users.password_expires_at (a test account's generated password,
+// contracts/admin.md "Test workspaces") reads as no password, so it is refused with the
+// same answer and in the same time as an unknown account (DummyVerify).
+const PasswordHashSQL = `CASE WHEN password_expires_at IS NULL OR password_expires_at > now() THEN password_hash END`
+
 // DummyVerify burns the same time as a real check, so unknown emails do not answer faster.
 func DummyVerify(pw string) {
 	VerifyPassword(pw, "$argon2id$v=19$m=65536,t=3,p=2$c29tZXNhbHRzb21lc2FsdA$4Z8hYxqYmN2pJ0m7c8b2nH0Xz2bA9cS1kQe3lQ1tY0M")

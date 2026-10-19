@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { AtSign, Bell, BellOff, ChevronRight, CornerDownLeft, CreditCard, Gauge, Hand, Import, KeyRound, MailX, Moon, Settings2, Sparkles, TimerOff, UserPlus, UsersRound } from "lucide-react";
+import { AtSign, Bell, BellOff, Mail, ChevronRight, CornerDownLeft, CreditCard, Gauge, Hand, Import, KeyRound, MailX, Moon, Settings2, Sparkles, TimerOff, UserPlus, UsersRound } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -17,6 +17,7 @@ import { EmptyState } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Segmented } from "@/components/ui/tabs";
 import { useMarkNotificationsRead } from "./notificationRead";
+import { i18n } from "@/i18n";
 
 // Each kind keeps one icon and one hue, so the list scans by what happened.
 const kind: Record<Notification["type"], { icon: React.ReactNode; tone: Tone }> = {
@@ -32,6 +33,8 @@ const kind: Record<Notification["type"], { icon: React.ReactNode; tone: Tone }> 
   ai_key_failed: { icon: <KeyRound />, tone: "red" },
   team_joined: { icon: <UsersRound />, tone: "cyan" },
   import_finished: { icon: <Import />, tone: "green" },
+  collab_assigned: { icon: <Mail />, tone: "blue" },
+  collab_mention: { icon: <AtSign />, tone: "indigo" },
 };
 
 /** A notification's icon and hue; an import that stopped or waits for credentials is not green. */
@@ -41,8 +44,18 @@ function kindOf(n: Notification): { icon: React.ReactNode; tone: Tone } {
   return k;
 }
 
-/** Where a notification leads: its ticket, or the settings page it is about. */
+/** The mail conversation a Collab notification is about. */
+export function collabThread(n: Notification): string | null {
+  if (n.type !== "collab_assigned" && n.type !== "collab_mention") return null;
+  return typeof n.data.thread_id === "string" && n.data.thread_id ? n.data.thread_id : null;
+}
+
+/** Where a notification leads: its ticket, its mail conversation, or the settings page it is about. */
 export function notificationPath(n: Notification): string | null {
+  if (n.type === "collab_assigned" || n.type === "collab_mention") {
+    const id = collabThread(n);
+    return id ? `/mail/${n.type === "collab_assigned" ? "assigned" : "all"}/${encodeURIComponent(id)}` : "/mail/assigned";
+  }
   if (n.type === "ai_cap_reached") return "/settings/ai/behaviour";
   if (n.type === "ai_key_failed") return "/settings/ai";
   if (n.type === "ai_balance_low" || n.type === "ai_balance_out" || n.type === "auto_recharge_failed") return "/settings/billing";
@@ -117,9 +130,21 @@ export function describe(n: Notification, t: TFunction<"shell">): string {
       const counts = parts.length === 2 ? t("notifications.type.importAnd", { a: parts[0], b: parts[1] }) : parts[0];
       return t("notifications.type.importDoneCounts", { source, counts });
     }
+    case "collab_assigned":
+    case "collab_mention": {
+      const c = i18n.getFixedT(null, "collab");
+      if (n.type === "collab_assigned") return who ? c("notifications.assigned", { who }) : c("notifications.assignedAnon");
+      return who ? c("notifications.mention", { who }) : c("notifications.mentionAnon");
+    }
     default:
       return t("notifications.type.other");
   }
+}
+
+/** A Collab notification's conversation subject, when the server sent one. */
+function collabSubject(n: Notification): string | null {
+  const s = n.data.subject;
+  return collabThread(n) && typeof s === "string" && s ? s : null;
 }
 
 export function NotificationsButton() {
@@ -153,6 +178,10 @@ export function NotificationsButton() {
       if (id) void navigate({ to: "/settings/teams/$teamId", params: { teamId: id } });
       else void navigate({ to: "/settings/teams" });
     } else if (n.type === "import_finished") void navigate({ to: "/settings/import" });
+    else if (n.type === "collab_assigned" || n.type === "collab_mention") {
+      const id = collabThread(n);
+      void navigate({ to: "/mail/$box/{-$threadId}", params: { box: n.type === "collab_assigned" ? "assigned" : "all", threadId: id ?? undefined }, search: {} });
+    }
     else if (n.ticket)
       void navigate({
         to: "/inbox/$folder/{-$ticketId}",
@@ -275,6 +304,11 @@ export function NotificationsButton() {
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className={cn("block truncate text-[12.5px]", n.read_at ? "text-fg-2" : "font-medium text-fg")}>{describe(n, t)}</span>
+                        {!n.ticket && collabSubject(n) && (
+                          <span className="mt-0.5 block truncate text-xs text-fg-3" data-ph-mask>
+                            {collabSubject(n)}
+                          </span>
+                        )}
                         {n.ticket && (
                           <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-fg-3">
                             <span className="mono shrink-0 text-fg-4">#{n.ticket.number}</span>

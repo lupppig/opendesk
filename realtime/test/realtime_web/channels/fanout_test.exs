@@ -192,6 +192,39 @@ defmodule RealtimeWeb.FanoutTest do
     end
   end
 
+  describe "events scoped to people" do
+    test "go in full to the listed users, as a stand-in to the workspace", c do
+      ws = "workspace:#{c.wid}"
+      user = "user:#{c.uid}"
+      env = envelope(c, "agents", ["private", user])
+
+      assert {:ok, topics} = publish(c, env)
+      assert Enum.sort(topics) == Enum.sort([ws, user])
+
+      full = Map.delete(env, "topics")
+      assert_receive %Message{topic: ^user, event: "event", payload: ^full}
+
+      assert_receive %Message{
+        topic: ^ws,
+        event: "event",
+        payload: %{"type" => "event.hidden", "data" => %{}} = stand_in
+      }
+
+      refute Map.has_key?(stand_in, "topics")
+      assert stand_in["seq"] == env["seq"]
+      refute_receive %Message{}, 50
+    end
+
+    test "with nobody listed reach nobody in full", c do
+      ws = "workspace:#{c.wid}"
+      env = envelope(c, "agents", ["private"])
+
+      assert publish(c, env) == {:ok, [ws]}
+      assert_receive %Message{topic: ^ws, payload: %{"type" => "event.hidden"}}
+      refute_receive %Message{}, 50
+    end
+  end
+
   test "the broadcast function is injectable", c do
     test = self()
     env = envelope(c, "public", ["contact:#{c.wid}:#{c.cid}"])

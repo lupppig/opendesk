@@ -76,5 +76,10 @@
       "numbers": "Numbers",
       "dates": "Dates"
     }
+  },
+  "loadError": {
+    "title": "Email design didn't load",
+    "description": "Something went wrong while loading this brand's emails. Try again in a moment.",
+    "retry": "Try again"
   }
 }

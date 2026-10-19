@@ -113,6 +113,11 @@ export function signedInProvider(m: Pick<Mailbox, "inbound_kind" | "outbound_kin
   return null;
 }
 
+/** Reads its Google or Microsoft inbox directly, through the provider's API rather than IMAP. */
+export function readsDirectly(m: Pick<Mailbox, "inbound_kind" | "config">): boolean {
+  return (m.inbound_kind === "google" || m.inbound_kind === "microsoft") && m.config?.oauth_grant === "api";
+}
+
 /** Signed in to Google or Microsoft only to send: mail arrives by forwarding. */
 export function sendOnly(m: Pick<Mailbox, "inbound_kind" | "outbound_kind">): boolean {
   return m.inbound_kind === "forwarding" && (m.outbound_kind === "google" || m.outbound_kind === "microsoft");

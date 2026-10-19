@@ -121,7 +121,7 @@ type ipKey struct{}
 
 // clientIPMiddleware puts the caller's address in the context for public rate limits.
 func clientIPMiddleware(d *deps.Deps) func(huma.Context, func(huma.Context)) {
-	ipOf := httpx.ClientIP(d.Cfg.TrustProxy)
+	ipOf := httpx.ClientIP(d.Cfg.TrustProxy, d.Cfg.ProxyHops)
 	return func(ctx huma.Context, next func(huma.Context)) {
 		r, _ := humachi.Unwrap(ctx)
 		next(huma.WithValue(ctx, ipKey{}, ipOf(r)))

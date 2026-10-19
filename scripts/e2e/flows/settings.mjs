@@ -45,13 +45,20 @@ export async function run(t) {
     await owner.getByRole("button", { name: "New team" }).first().click();
     const drawer = owner.getByRole("dialog", { name: "New team" });
     await drawer.getByLabel("Name").fill(team);
-    await drawer.getByRole("button", { name: "Add members" }).click();
-    await owner.getByRole("option", { name: /Ben Agent/ }).click();
-    await owner.keyboard.press("Escape");
-    await drawer.getByText("Ben Agent").waitFor();
     await drawer.getByRole("button", { name: "Create team" }).click();
-    const x = await until(async () => (await api("GET", "/v1/teams", opts())).json?.data?.find((g) => g.name === team), "team saved");
-    assert(x.member_ids?.length === 1 || x.members?.length === 1, `one member (${JSON.stringify(x).slice(0, 200)})`);
+    await until(async () => (await api("GET", "/v1/teams", opts())).json?.data?.find((g) => g.name === team), "team saved");
+
+    const ben = (await api("GET", "/v1/members", opts())).json?.data?.find((m) => m.user.name === "Ben Agent");
+    assert(ben, "Ben Agent is a workspace member");
+    await owner.getByRole("button", { name: "Add people" }).click();
+    await owner.getByRole("option", { name: /Ben Agent/ }).click();
+    await owner.getByRole("button", { name: "Save changes" }).click();
+
+    const x = await until(async () => {
+      const saved = (await api("GET", "/v1/teams", opts())).json?.data?.find((g) => g.name === team);
+      return saved?.member_ids?.includes(ben.user.id) ? saved : null;
+    }, "team member saved");
+    assert(x.members?.some((m) => m.user_id === ben.user.id), "Ben Agent is on the team");
   });
 
   await t.step("labels: create a label", async () => {
@@ -79,7 +86,7 @@ export async function run(t) {
     await owner.getByLabel("Name").fill("Tag refund requests");
     // A new automation starts with one "subject contains" condition and one "add tag" action.
     await owner.getByLabel("Subject value").fill("refund");
-    await owner.getByRole("button", { name: "Choose a tag" }).click();
+    await owner.getByRole("button", { name: "Choose a label" }).click();
     await owner.keyboard.type("refund");
     await owner.getByRole("option", { name: /refund/i }).first().click();
     await owner.getByRole("button", { name: "Create automation" }).click();

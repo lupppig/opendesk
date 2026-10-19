@@ -230,7 +230,7 @@ func registerTickets(d *deps.Deps, api huma.API) {
 
 	huma.Register(api, huma.Operation{OperationID: "ticket-counts", Method: http.MethodGet, Path: "/v1/tickets/counts",
 		Summary: "Sidebar counts", Tags: tags,
-		Description: "unassigned and mine count open, pending and on_hold tickets; status counts exclude spam; spam counts spam that is not closed; views counts each visible view."},
+		Description: "unassigned and mine count open, pending and on_hold tickets; status counts exclude spam; spam counts spam that is not closed; views counts each visible view; stats breaks each sidebar row down into tickets awaiting a reply, urgent and overdue."},
 		func(ctx context.Context, _ *struct{}) (*struct{ Body TicketCounts }, error) {
 			p, err := auth.RequireWorkspace(ctx, auth.RoleViewer, auth.ScopeTicketsRead)
 			if err != nil {

@@ -10,7 +10,7 @@ export const ROLE_LABEL: Record<AdminRole, string> = { viewer: "Viewer", support
 
 export const ROLE_HINT: Record<AdminRole, string> = {
   viewer: "Reads every page, changes nothing",
-  support: "Sessions, suspensions, limits, AI grants and jobs",
+  support: "Sessions, suspensions, limits, AI grants, test workspaces and jobs",
   super: "Everything, including 2FA, deletion and admins",
 };
 
@@ -21,6 +21,7 @@ export const MIN_ROLE: Record<AdminPermission, AdminRole> = {
   "users.suspend": "support",
   "workspaces.suspend": "support",
   "workspaces.limits": "support",
+  "workspaces.test": "support",
   "jobs.manage": "support",
   "users.mfa": "super",
   "users.delete": "super",

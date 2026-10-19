@@ -105,10 +105,11 @@ func (s *svc) registerAPI(api huma.API) {
 		})
 
 	huma.Register(api, huma.Operation{OperationID: "create-billing-checkout", Method: http.MethodPost, Path: "/v1/billing/checkout",
-		Summary: "Start a Stripe Checkout for the Pro plan", Tags: tags},
+		Summary: "Start a Stripe Checkout for a paid plan", Tags: tags},
 		func(ctx context.Context, in *struct {
 			Body *struct {
 				Interval string `json:"interval,omitempty" enum:"month,year" default:"month"`
+				Plan     string `json:"plan,omitempty" enum:"pro,collab" default:"pro" doc:"collab only when the plan is offered to the workspace"`
 			}
 		}) (*urlBody, error) {
 			if !s.enabled() {
@@ -118,21 +119,44 @@ func (s *svc) registerAPI(api huma.API) {
 			if err != nil {
 				return nil, err
 			}
-			price := s.d.Cfg.StripePricePro
-			if in.Body != nil && in.Body.Interval == "year" {
-				if price = s.d.Cfg.StripePriceProYear; price == "" {
+			planName, interval := plan.Pro, "month"
+			if in.Body != nil {
+				if in.Body.Plan == plan.Collab {
+					planName = plan.Collab
+				}
+				if in.Body.Interval == "year" {
+					interval = "year"
+				}
+			}
+			if err := plan.Ensure(ctx, s.d.DB.Pool, p.WorkspaceID); err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			var curPlan, curStatus, access string
+			if err := s.d.DB.Pool.QueryRow(ctx, `SELECT plan, status, collab_access FROM subscriptions WHERE workspace_id = $1`, p.WorkspaceID).
+				Scan(&curPlan, &curStatus, &access); err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			if planName == plan.Collab && !collabOpen(access) {
+				return nil, errPlanUnavailable()
+			}
+			price := s.planPrice(planName, interval)
+			if price == "" {
+				if planName == plan.Collab && !s.collabPriced() {
+					return nil, errPlanNotPriced()
+				}
+				if interval == "year" {
 					return nil, httpx.E(422, "interval_unavailable", "Yearly billing is not available.")
 				}
+				return nil, httpx.E(422, "interval_unavailable", "Monthly billing is not available.")
 			}
 			if !s.d.Limiter.Allow("billing:checkout:"+p.WorkspaceID.String(), 30, time.Hour) {
 				return nil, httpx.RateLimited()
 			}
-			e, err := s.d.Plan.Entitlements(ctx, s.d.DB.Pool, p.WorkspaceID)
-			if err != nil {
-				return nil, httpx.Wrap(err)
-			}
-			if e.Plan == plan.Pro {
+			switch paidPlan(curPlan, curStatus) {
+			case plan.Pro:
 				return nil, httpx.E(409, "already_subscribed", "This workspace is already on Pro. Manage the subscription in the billing portal.")
+			case plan.Collab:
+				return nil, httpx.E(409, "already_subscribed", "This workspace already has a subscription. Switch plans or manage it on the billing page.")
 			}
 			cus, err := s.customer(ctx, p.WorkspaceID)
 			if err != nil {
@@ -143,7 +167,7 @@ func (s *svc) registerAPI(api huma.API) {
 				return nil, httpx.Wrap(err)
 			}
 			wid := p.WorkspaceID.String()
-			meta := map[string]string{"workspace_id": wid}
+			meta := map[string]string{"workspace_id": wid, "plan": planName}
 			params := &stripe.CheckoutSessionCreateParams{
 				Mode:                stripe.String(string(stripe.CheckoutSessionModeSubscription)),
 				Customer:            stripe.String(cus),
@@ -402,6 +426,14 @@ func usageReport(ctx context.Context, q db.Querier, wid uuid.UUID, from, to time
 	}
 	err = q.QueryRow(ctx, `SELECT count(*)::int`+where+` AND a.source = 'own_key'`, wid, from, to).Scan(&r.OwnKeyCalls)
 	return r, err
+}
+
+func errPlanUnavailable() *httpx.Error {
+	return httpx.E(http.StatusForbidden, "plan_unavailable", "This plan is not available to this workspace.")
+}
+
+func errPlanNotPriced() *httpx.Error {
+	return httpx.E(422, "plan_unavailable", "This plan cannot be bought on this instance yet.")
 }
 
 func (s *svc) appURL(key, value string) string {

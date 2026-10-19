@@ -19,6 +19,7 @@ import (
 	"github.com/riverqueue/river"
 
 	"github.com/useopendesk/opendesk/internal/auth"
+	"github.com/useopendesk/opendesk/internal/billing"
 	"github.com/useopendesk/opendesk/internal/core"
 	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/deps"
@@ -47,16 +48,18 @@ const (
 	PermWorkspaceSuspend = "workspaces.suspend"
 	PermWorkspaceLimits  = "workspaces.limits"
 	PermWorkspaceDelete  = "workspaces.delete"
-	PermJobsManage       = "jobs.manage"
-	PermAdminsManage     = "admins.manage"
+	// PermWorkspaceTest creates, extends, fills and deletes test workspaces.
+	PermWorkspaceTest = "workspaces.test"
+	PermJobsManage    = "jobs.manage"
+	PermAdminsManage  = "admins.manage"
 )
 
 var rolePermissions = map[Role][]string{
 	RoleViewer: {PermRead},
 	RoleSupport: {PermRead, PermUserSessions, PermUserSuspend, PermWorkspaceSuspend, PermWorkspaceLimits,
-		PermJobsManage},
+		PermWorkspaceTest, PermJobsManage},
 	RoleSuper: {PermRead, PermUserSessions, PermUserSuspend, PermUserMFA, PermUserDelete, PermWorkspaceSuspend,
-		PermWorkspaceLimits, PermWorkspaceDelete, PermJobsManage, PermAdminsManage},
+		PermWorkspaceLimits, PermWorkspaceTest, PermWorkspaceDelete, PermJobsManage, PermAdminsManage},
 }
 
 // Permissions lists what a role may do.
@@ -84,6 +87,8 @@ func (a *Admin) principal() *auth.Principal { return &auth.Principal{IP: a.IP, U
 type svc struct {
 	d   *deps.Deps
 	ops *core.Ops
+	// billing publishes billing.updated after a change to a workspace's plan or limits.
+	billing *billing.Publisher
 	// started is when this process began, for the health page.
 	started time.Time
 	// releaseAPI and http are where and how the update worker looks for releases.
@@ -94,7 +99,8 @@ type svc struct {
 var processStart = time.Now()
 
 func newSvc(d *deps.Deps) *svc {
-	return &svc{d: d, ops: core.NewOps(d), started: processStart, releaseAPI: latestReleaseAPI, http: &http.Client{Timeout: 20 * time.Second}}
+	return &svc{d: d, ops: core.NewOps(d), billing: billing.NewPublisher(d), started: processStart, releaseAPI: latestReleaseAPI,
+		http: &http.Client{Timeout: 20 * time.Second}}
 }
 
 // Register adds the /v1/admin/* routes. They are left out of the public OpenAPI spec.
@@ -106,6 +112,7 @@ func Register(d *deps.Deps, api huma.API, _ chi.Router) {
 	s.registerUpdates(api)
 	s.registerUsers(api)
 	s.registerWorkspaces(api)
+	s.registerTestWorkspaces(api)
 	s.registerJobs(api)
 	s.registerAdmins(api)
 	s.registerAudit(api)
@@ -114,15 +121,19 @@ func Register(d *deps.Deps, api huma.API, _ chi.Router) {
 // RegisterWorkers adds the admin area's workers.
 func RegisterWorkers(d *deps.Deps, w *river.Workers) {
 	river.AddWorker(w, &cleanupWorker{d: d})
+	river.AddWorker(w, &seedWorker{d: d})
+	river.AddWorker(w, &expireTestWorker{d: d})
 	river.AddWorker(w, &updatesWorker{s: newSvc(d)})
 }
 
-// Periodic prunes ended admin sessions and old admin audit rows, and keeps the update
-// status current (updates.go).
+// Periodic prunes ended admin sessions and old admin audit rows, deletes test workspaces
+// whose time is up, and keeps the update status current (updates.go).
 func Periodic(_ *deps.Deps) []*river.PeriodicJob {
 	return []*river.PeriodicJob{
 		river.NewPeriodicJob(river.PeriodicInterval(6*time.Hour),
 			func() (river.JobArgs, *river.InsertOpts) { return cleanupArgs{}, nil }, &river.PeriodicJobOpts{RunOnStart: true}),
+		river.NewPeriodicJob(river.PeriodicInterval(time.Hour),
+			func() (river.JobArgs, *river.InsertOpts) { return expireTestArgs{}, nil }, &river.PeriodicJobOpts{RunOnStart: true}),
 		river.NewPeriodicJob(river.PeriodicInterval(time.Hour),
 			func() (river.JobArgs, *river.InsertOpts) { return updatesArgs{}, nil }, &river.PeriodicJobOpts{RunOnStart: true}),
 	}
@@ -185,7 +196,7 @@ func op[I, O any](s *svc, api huma.API, o huma.Operation, h func(context.Context
 func (s *svc) resolve(ctx huma.Context, next func(huma.Context)) {
 	ri := reqInfo{}
 	if r, _ := humachi.Unwrap(ctx); r != nil {
-		ri.IP = httpx.ClientIP(s.d.Cfg.TrustProxy)(r)
+		ri.IP = httpx.ClientIP(s.d.Cfg.TrustProxy, s.d.Cfg.ProxyHops)(r)
 		ri.UserAgent = truncate(r.UserAgent(), 400)
 		ri.Origin = r.Header.Get("Origin")
 		if c, err := r.Cookie(RefreshCookie); err == nil {

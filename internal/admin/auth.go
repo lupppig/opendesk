@@ -206,7 +206,7 @@ func (s *svc) login(ctx context.Context, email, password, turnstile string) (str
 	var role *Role
 	found := false
 	if email != "" {
-		err := s.d.DB.Pool.QueryRow(ctx, `SELECT u.id, u.password_hash, u.totp_enabled, u.suspended_at IS NOT NULL, a.role
+		err := s.d.DB.Pool.QueryRow(ctx, `SELECT u.id, `+auth.PasswordHashSQL+`, u.totp_enabled, u.suspended_at IS NOT NULL, a.role
 			FROM users u LEFT JOIN instance_admins a ON a.user_id = u.id WHERE u.email = $1`, email).Scan(&uid, &hash, &totp, &suspended, &role)
 		if err != nil && !db.IsNotFound(err) {
 			return "", err

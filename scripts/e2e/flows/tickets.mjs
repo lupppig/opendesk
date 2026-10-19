@@ -37,7 +37,7 @@ export async function run(t) {
     await tagBtn.click();
     // New workspaces start with a few labels; create one that is not among them.
     const tagName = `e2e-${uid()}`;
-    const input = owner.getByPlaceholder("Add or create a tag");
+    const input = owner.getByPlaceholder("Add or create a label");
     await input.fill(tagName);
     await owner.getByRole("option", { name: /create/i }).first().click();
     await owner.keyboard.press("Escape");
@@ -100,10 +100,10 @@ export async function run(t) {
     }
     const bar = owner.getByRole("toolbar", { name: "Bulk actions" }).or(owner.locator('[aria-label="Bulk actions"]')).first();
     await bar.waitFor();
-    await bar.getByRole("button", { name: "Tag" }).click();
-    await owner.getByPlaceholder("Add tags").fill("bulk");
+    await bar.getByRole("button", { name: "Label" }).click();
+    await owner.getByPlaceholder("Add labels").fill("bulk");
     await shot(owner, "bulk-tag-typed");
-    await owner.getByRole("option", { name: /Add tag/ }).first().click();
+    await owner.getByRole("option", { name: /Add label/ }).first().click();
     await shot(owner, "bulk-tag-picked");
     await owner.keyboard.press("Escape");
     const list = await until(async () => {

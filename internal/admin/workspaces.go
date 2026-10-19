@@ -22,11 +22,16 @@ type AdminWorkspaceRow struct {
 	AdminWorkspaceRef
 	AvatarURL      domain.Avatar `json:"avatar_url"`
 	Members        int           `json:"members"`
-	Plan           string        `json:"plan" enum:"free,pro,self_hosted"`
+	Plan           string        `json:"plan" enum:"free,pro,collab,self_hosted"`
 	Status         string        `json:"status"`
 	SuspendedAt    *time.Time    `json:"suspended_at"`
 	LastActivityAt *time.Time    `json:"last_activity_at"`
 	CreatedAt      time.Time     `json:"created_at"`
+	// Test marks a test workspace (contracts/admin.md "Test workspaces"); TestExpiresAt is
+	// when the cleanup deletes it (null: kept).
+	Test          bool            `json:"test"`
+	TestExpiresAt *time.Time      `json:"test_expires_at"`
+	SampleData    AdminSampleData `json:"sample_data"`
 }
 
 type AdminMember struct {
@@ -76,7 +81,7 @@ type AdminLimits struct {
 }
 
 type AdminSubscription struct {
-	Plan                 string     `json:"plan" enum:"free,pro"`
+	Plan                 string     `json:"plan" enum:"free,pro,collab"`
 	Status               string     `json:"status"`
 	Interval             string     `json:"interval" enum:"month,year"`
 	Seats                int        `json:"seats"`
@@ -85,6 +90,17 @@ type AdminSubscription struct {
 	CancelAtPeriodEnd    bool       `json:"cancel_at_period_end"`
 	StripeCustomerID     *string    `json:"stripe_customer_id"`
 	StripeSubscriptionID *string    `json:"stripe_subscription_id"`
+}
+
+// AdminCollab is the workspace's Collab: the instance admin's access and whether it is on.
+type AdminCollab struct {
+	Access string     `json:"access" enum:"none,offered,complimentary"`
+	Until  *time.Time `json:"until"`
+	Note   string     `json:"note"`
+	// Enabled is plan.Entitlements.Collab: the workspace has Collab now.
+	Enabled bool `json:"enabled"`
+	// Accounts counts the mail accounts its members connected (collab_accounts).
+	Accounts int `json:"accounts"`
 }
 
 type AdminAIFeature struct {
@@ -122,24 +138,34 @@ type AdminWorkspace struct {
 	Entitlements       AdminEntitlements   `json:"entitlements"`
 	Limits             AdminLimits         `json:"limits"`
 	Subscription       *AdminSubscription  `json:"subscription"`
+	Collab             AdminCollab         `json:"collab"`
 	AI                 AdminAI             `json:"ai"`
 	RecentAudit        []core.CoreAuditLog `json:"recent_audit"`
 }
 
-// workspaceRowCols reads a workspace row; the plan is resolved after (self_hosted without billing).
+// Workspace list conditions on subscriptions sub: a paid Stripe subscription, and
+// complimentary Collab in effect (the collab plan without one).
+const (
+	paidSQL          = `(sub.plan IN ('pro', 'collab') AND sub.status IN ('active', 'trialing', 'past_due'))`
+	complimentarySQL = `(sub.collab_access = 'complimentary' AND (sub.collab_until IS NULL OR sub.collab_until > now()))`
+)
+
+// workspaceRowCols reads a workspace row with its plan as the entitlements resolve it
+// (self_hosted without billing is set after).
 const workspaceRowCols = `w.id, w.name, w.slug, w.avatar_url, (SELECT count(*) FROM members m WHERE m.workspace_id = w.id),
-	COALESCE(sub.plan, 'free'), COALESCE(sub.status, 'none'), w.suspended_at,
-	(SELECT e.created_at FROM events e WHERE e.workspace_id = w.id ORDER BY e.seq DESC LIMIT 1), w.created_at`
+	CASE WHEN COALESCE(` + complimentarySQL + `, false) THEN 'collab' WHEN COALESCE(` + paidSQL + `, false) THEN sub.plan ELSE 'free' END,
+	COALESCE(sub.status, 'none'), w.suspended_at,
+	(SELECT e.created_at FROM events e WHERE e.workspace_id = w.id ORDER BY e.seq DESC LIMIT 1), w.created_at,
+	w.test, w.test_expires_at, w.sample_data`
 
 func (s *svc) scanWorkspaceRow(r pgx.Row, extra ...any) (AdminWorkspaceRow, error) {
 	var x AdminWorkspaceRow
+	var sample []byte
 	err := r.Scan(append([]any{&x.ID, &x.Name, &x.Slug, &x.AvatarURL, &x.Members, &x.Plan, &x.Status, &x.SuspendedAt,
-		&x.LastActivityAt, &x.CreatedAt}, extra...)...)
-	switch {
-	case !s.d.Cfg.BillingEnabled():
+		&x.LastActivityAt, &x.CreatedAt, &x.Test, &x.TestExpiresAt, &sample}, extra...)...)
+	x.SampleData = parseSampleData(sample)
+	if !s.d.Cfg.BillingEnabled() {
 		x.Plan, x.Status = plan.SelfHosted, "active"
-	case x.Plan == plan.Pro && !plan.Paid(x.Status):
-		x.Plan = plan.Free
 	}
 	return x, err
 }
@@ -221,6 +247,14 @@ func (s *svc) loadWorkspace(ctx context.Context, q db.Querier, wid uuid.UUID) (A
 		}
 		w.Subscription = sub
 	}
+	ca, err := plan.LoadCollabAccess(ctx, q, wid)
+	if err != nil {
+		return w, err
+	}
+	w.Collab = AdminCollab{Access: ca.Access, Until: ca.Until, Note: ca.Note, Enabled: e.Collab}
+	if err := q.QueryRow(ctx, `SELECT count(*) FROM collab_accounts WHERE workspace_id = $1`, wid).Scan(&w.Collab.Accounts); err != nil {
+		return w, err
+	}
 	b, err := s.d.Plan.Balance(ctx, q, wid)
 	if err != nil {
 		return w, err
@@ -267,7 +301,7 @@ func (s *svc) registerWorkspaces(api huma.API) {
 		func(ctx context.Context, in *struct {
 			httpx.ListParams
 			Q      string `query:"q" maxLength:"200"`
-			Filter string `query:"filter" enum:"suspended,paid,free,"`
+			Filter string `query:"filter" enum:"suspended,paid,free,collab,test,"`
 		}) (*struct{ Body httpx.Page[AdminWorkspaceRow] }, error) {
 			if _, err := require(ctx, PermRead); err != nil {
 				return nil, err
@@ -287,14 +321,16 @@ func (s *svc) registerWorkspaces(api huma.API) {
 			if id, err := uuid.Parse(q); err == nil {
 				byID = &id
 			}
-			paid := `(sub.plan = 'pro' AND sub.status IN ('active', 'trialing', 'past_due'))`
 			rows, err := s.d.DB.Pool.Query(ctx, `SELECT `+workspaceRowCols+` FROM workspaces w
 				LEFT JOIN subscriptions sub ON sub.workspace_id = w.id
 				WHERE (w.created_at, w.id) < ($1, $2)
 				AND ($3 = '' OR ($4::uuid IS NOT NULL AND w.id = $4) OR w.name ILIKE $5 OR w.slug ILIKE $5
 					OR EXISTS (SELECT 1 FROM members m JOIN users u ON u.id = m.user_id WHERE m.workspace_id = w.id AND u.email ILIKE $5))
 				AND ($6 = '' OR ($6 = 'suspended' AND w.suspended_at IS NOT NULL)
-					OR ($6 = 'paid' AND `+paid+`) OR ($6 = 'free' AND NOT COALESCE(`+paid+`, false)))
+					OR ($6 = 'paid' AND `+paidSQL+`)
+					OR ($6 = 'free' AND NOT COALESCE(`+paidSQL+`, false) AND NOT COALESCE(`+complimentarySQL+`, false))
+					OR ($6 = 'collab' AND ((sub.plan = 'collab' AND `+paidSQL+`) OR sub.collab_access IN ('offered', 'complimentary')))
+					OR ($6 = 'test' AND w.test))
 				ORDER BY w.created_at DESC, w.id DESC LIMIT $7`, cur.T, cur.ID, q, byID, likePattern(q), in.Filter, in.Limit+1)
 			if err != nil {
 				return nil, httpx.Wrap(err)
@@ -432,6 +468,7 @@ func (s *svc) registerWorkspaces(api huma.API) {
 				m := plan.FromUSD(*v)
 				o.MonthlyUSD = &m
 			}
+			prices := s.billing.Prices(ctx)
 			var w AdminWorkspace
 			err = s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
 				if err := workspaceExists(ctx, tx, wid); err != nil {
@@ -445,6 +482,9 @@ func (s *svc) registerWorkspaces(api huma.API) {
 					return err
 				}
 				if err := s.audit(ctx, tx, a, "workspace.limits_changed", "workspace", wid.String(), data); err != nil {
+					return err
+				}
+				if err := s.billing.Publish(ctx, tx, wid, prices); err != nil {
 					return err
 				}
 				w, err = s.loadWorkspace(ctx, tx, wid)
@@ -478,6 +518,7 @@ func (s *svc) registerWorkspaces(api huma.API) {
 			if amount <= 0 || note == "" {
 				return nil, httpx.Validation("Give an amount of at least $0.01 and a note.")
 			}
+			prices := s.billing.Prices(ctx)
 			var w AdminWorkspace
 			err = s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
 				if err := workspaceExists(ctx, tx, wid); err != nil {
@@ -492,6 +533,71 @@ func (s *svc) registerWorkspaces(api huma.API) {
 					return err
 				}
 				if err := s.audit(ctx, tx, a, "workspace.ai_granted", "workspace", wid.String(), data); err != nil {
+					return err
+				}
+				if err := s.billing.Publish(ctx, tx, wid, prices); err != nil {
+					return err
+				}
+				w, err = s.loadWorkspace(ctx, tx, wid)
+				return err
+			})
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			return &struct{ Body AdminWorkspace }{w}, nil
+		})
+
+	op(s, api, huma.Operation{OperationID: "admin-set-workspace-collab", Method: http.MethodPut, Path: "/v1/admin/workspaces/{id}/collab",
+		Summary: "Set a workspace's Collab access"},
+		func(ctx context.Context, in *struct {
+			ID   string `path:"id"`
+			Body struct {
+				Access string  `json:"access" enum:"none,offered,complimentary" doc:"offered: the workspace may subscribe to the collab plan; complimentary: it has the plan without paying"`
+				Until  *string `json:"until,omitempty" doc:"RFC 3339, in the future: when complimentary access ends (complimentary only); null: until changed"`
+				Note   string  `json:"note,omitempty" maxLength:"200"`
+			}
+		}) (*struct{ Body AdminWorkspace }, error) {
+			a, err := require(ctx, PermWorkspaceLimits)
+			if err != nil {
+				return nil, err
+			}
+			wid, err := parseID(in.ID, "Workspace")
+			if err != nil {
+				return nil, err
+			}
+			ca := plan.CollabAccess{Access: in.Body.Access, Note: strings.TrimSpace(in.Body.Note)}
+			if v := in.Body.Until; v != nil && strings.TrimSpace(*v) != "" {
+				if ca.Access != plan.CollabComplimentary {
+					return nil, httpx.Validation("An end date applies to complimentary access only.")
+				}
+				t, err := time.Parse(time.RFC3339, strings.TrimSpace(*v))
+				if err != nil {
+					return nil, httpx.Validation("until must be an RFC 3339 time.")
+				}
+				if !t.After(time.Now()) {
+					return nil, httpx.Validation("until must be in the future.")
+				}
+				t = t.UTC()
+				ca.Until = &t
+			}
+			prices := s.billing.Prices(ctx)
+			var w AdminWorkspace
+			err = s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
+				if err := workspaceExists(ctx, tx, wid); err != nil {
+					return err
+				}
+				if err := plan.SetCollabAccess(ctx, tx, wid, ca); err != nil {
+					return err
+				}
+				data := map[string]any{"access": ca.Access, "until": ca.Until}
+				if err := s.ops.AuditWorkspace(ctx, tx, a.principal(), wid, "workspace.collab_changed", data); err != nil {
+					return err
+				}
+				if err := s.audit(ctx, tx, a, "workspace.collab_changed", "workspace", wid.String(),
+					map[string]any{"access": ca.Access, "until": ca.Until, "note": ca.Note}); err != nil {
+					return err
+				}
+				if err := s.billing.Publish(ctx, tx, wid, prices); err != nil {
 					return err
 				}
 				w, err = s.loadWorkspace(ctx, tx, wid)
@@ -512,40 +618,62 @@ func (s *svc) registerWorkspaces(api huma.API) {
 				ConfirmName string `json:"confirm_name" maxLength:"200"`
 			}
 		}) (*struct{}, error) {
-			a, err := require(ctx, PermWorkspaceDelete)
+			// workspaces.delete deletes any workspace; workspaces.test only test workspaces.
+			a, err := require(ctx, PermRead)
 			if err != nil {
 				return nil, err
+			}
+			if !a.Role.Can(PermWorkspaceDelete) && !a.Role.Can(PermWorkspaceTest) {
+				return nil, httpx.E(403, "forbidden", "Your admin role does not allow this.")
 			}
 			wid, err := parseID(in.ID, "Workspace")
 			if err != nil {
 				return nil, err
 			}
-			var removal core.Removal
+			var removals []core.Removal
 			err = s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
-				if err := s.stepUp(ctx, tx, a, in.Body.Code); err != nil {
-					return err
-				}
 				var name string
-				err := tx.QueryRow(ctx, `SELECT name FROM workspaces WHERE id = $1 FOR UPDATE`, wid).Scan(&name)
+				var test bool
+				err := tx.QueryRow(ctx, `SELECT name, test FROM workspaces WHERE id = $1 FOR UPDATE`, wid).Scan(&name, &test)
 				if db.IsNotFound(err) {
 					return httpx.NotFound("Workspace")
 				}
 				if err != nil {
 					return err
 				}
+				if !test && !a.Role.Can(PermWorkspaceDelete) {
+					return httpx.E(403, "forbidden", "Your admin role deletes test workspaces only.")
+				}
+				if err := s.stepUp(ctx, tx, a, in.Body.Code); err != nil {
+					return err
+				}
 				if strings.TrimSpace(in.Body.ConfirmName) != name {
 					return httpx.E(422, "confirm_name_mismatch", "Type the workspace name exactly to confirm.")
 				}
-				if removal, err = s.ops.DeleteWorkspace(ctx, tx, wid); err != nil {
-					return err
+				var data map[string]any
+				if test {
+					// A test workspace's own test accounts go with it.
+					var n int
+					if removals, n, err = DeleteTestWorkspace(ctx, tx, s.ops, a.principal(), wid); err != nil {
+						return err
+					}
+					data = map[string]any{"test": true, "accounts_deleted": n}
+				} else {
+					r, err := s.ops.DeleteWorkspace(ctx, tx, wid)
+					if err != nil {
+						return err
+					}
+					removals = []core.Removal{r}
 				}
-				return s.audit(ctx, tx, a, "workspace.deleted", "workspace", wid.String(), nil)
+				return s.audit(ctx, tx, a, "workspace.deleted", "workspace", wid.String(), data)
 			})
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
 			s.d.Log.Info("workspace deleted by an instance admin", "workspace_id", wid, "admin_user_id", a.UserID, "ip", a.IP)
-			s.ops.Finish(removal)
+			for _, r := range removals {
+				s.ops.Finish(r)
+			}
 			return nil, nil
 		})
 }

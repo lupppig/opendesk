@@ -36,7 +36,7 @@ func (w *syncSeatsWorker) Work(ctx context.Context, job *river.Job[jobs.SyncSeat
 	if err != nil {
 		return err
 	}
-	if subID == nil || planName != plan.Pro || !plan.Paid(status) {
+	if subID == nil || paidPlan(planName, status) == "" {
 		return nil
 	}
 	// Members can change while Stripe is called; check again until the count holds.
@@ -102,7 +102,7 @@ func (w *reconcileWorker) Work(ctx context.Context, _ *river.Job[jobs.ReconcileB
 		return err
 	}
 	rows, err := s.d.DB.Pool.Query(ctx, `SELECT workspace_id FROM subscriptions
-		WHERE plan = 'pro' AND status IN ('active', 'trialing', 'past_due') AND stripe_subscription_id IS NOT NULL`)
+		WHERE plan IN ('pro', 'collab') AND status IN ('active', 'trialing', 'past_due') AND stripe_subscription_id IS NOT NULL`)
 	if err != nil {
 		return err
 	}

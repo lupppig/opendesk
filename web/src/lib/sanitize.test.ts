@@ -32,6 +32,13 @@ describe("sanitize", () => {
       `<img src="https://t.example/open.gif" width="1" height="1"><img src="//t.example/d.gif"><img src="${ours}" alt="shot"><img src="data:image/png;base64,AAAA">` +
       `</td></tr></table>`;
 
+    it("keeps a mail account's own signed attachments as inline images", () => {
+      const mine = `${location.origin}/v1/collab/attachments/0192f0c4-0000-7000-8000-000000000000/0?exp=1&sig=ab`;
+      const { html, held } = sanitizeEmailHtml(`<p><img src="${mine}" alt="logo"><img src="https://t.example/x.png"></p>`, { blockRemoteImages: true });
+      expect(held).toBe(1);
+      expect(html).toContain(mine.replace("&", "&amp;"));
+    });
+
     it("holds back every image from another site until loaded", () => {
       const { html, held } = sanitizeEmailHtml(email, { blockRemoteImages: true });
       expect(html).not.toContain("t.example");

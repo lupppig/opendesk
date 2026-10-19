@@ -2,14 +2,19 @@ package core
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/useopendesk/opendesk/internal/audit"
 	"github.com/useopendesk/opendesk/internal/auth"
+	"github.com/useopendesk/opendesk/internal/core/oauthgrant"
+	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/deps"
 	"github.com/useopendesk/opendesk/internal/emails"
+	"github.com/useopendesk/opendesk/internal/httpx"
+	"github.com/useopendesk/opendesk/internal/ids"
 )
 
 // Ops is what the instance admin area (internal/admin, contracts/admin.md) does through
@@ -29,6 +34,50 @@ func (o *Ops) CheckSecondFactor(ctx context.Context, tx pgx.Tx, uid uuid.UUID, c
 func (o *Ops) DeleteWorkspace(ctx context.Context, tx pgx.Tx, wid uuid.UUID) (Removal, error) {
 	members, keys, err := o.s.deleteWorkspace(ctx, tx, wid)
 	return Removal{disconnect: members, files: keys}, err
+}
+
+// CreateWorkspace creates a workspace owned by owner with the defaults of the app's own
+// "Create workspace" (default brand and widget, views, labels, SLA policy). actor is who
+// created it, for the workspace's audit log.
+func (o *Ops) CreateWorkspace(ctx context.Context, tx pgx.Tx, actor *auth.Principal, owner uuid.UUID, name string) (uuid.UUID, error) {
+	w, err := o.s.createWorkspace(ctx, tx, actor, owner, name)
+	return w.ID, err
+}
+
+// CreateTestAccount creates the owner account of a test workspace (contracts/admin.md
+// "Test workspaces"): the operator hands over its password, which stops working at
+// expires; its address is a reserved .invalid one that receives nothing, so it is marked
+// confirmed and no email is sent. 409 email_taken when the address has an account.
+func (o *Ops) CreateTestAccount(ctx context.Context, tx pgx.Tx, email, name, passwordHash string, expires time.Time) (uuid.UUID, error) {
+	uid := ids.New()
+	_, err := tx.Exec(ctx, `INSERT INTO users (id, email, name, password_hash, email_verified_at, test_account, password_expires_at)
+		VALUES ($1, $2, $3, $4, now(), true, $5)`, uid, email, name, passwordHash, expires)
+	if db.IsUniqueViolation(err, "") {
+		return uuid.Nil, httpx.E(409, "email_taken", "An account with this email already exists.")
+	}
+	return uid, err
+}
+
+// SetTestPassword gives a test account a new password and expiry, and ends its sessions
+// and connected apps like a password reset. Call Disconnect after the commit. 409
+// not_test_account for any other account.
+func (o *Ops) SetTestPassword(ctx context.Context, tx pgx.Tx, actor *auth.Principal, uid uuid.UUID, passwordHash string, expires time.Time) error {
+	tag, err := tx.Exec(ctx, `UPDATE users SET password_hash = $2, password_expires_at = $3, updated_at = now() WHERE id = $1 AND test_account`,
+		uid, passwordHash, expires)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return httpx.E(409, "not_test_account", "Only a test account's password is set by an admin.")
+	}
+	if err := revokeOtherSessions(ctx, tx, uid, uuid.Nil); err != nil {
+		return err
+	}
+	if _, err := oauthgrant.Revoke(ctx, tx, actor, uid, uuid.Nil, uuid.Nil, oauthgrant.ReasonSignedOut); err != nil {
+		return err
+	}
+	_, err = auditUser(ctx, tx, actor, uid, "password.reset", InstanceAdminData(nil))
+	return err
 }
 
 // DeleteAccount removes a user like their own "Delete account": the workspaces they own

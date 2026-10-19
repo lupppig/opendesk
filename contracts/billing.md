@@ -11,20 +11,47 @@ Same code, same API.
 | --- | --- | --- | --- | --- |
 | `free` | $0, per workspace, forever | 1 | 1 | $0.50 per workspace |
 | `pro` | $18 per seat per month (Stripe recurring per-seat price `STRIPE_PRICE_PRO`; optional yearly `STRIPE_PRICE_PRO_YEARLY`) | unlimited | unlimited | $10 per paid seat, pooled |
+| `collab` (hidden, see "Collab") | $38 per seat per month (Stripe recurring per-seat price `STRIPE_PRICE_COLLAB`; optional yearly `STRIPE_PRICE_COLLAB_YEARLY`) | unlimited | unlimited | $20 per paid seat, pooled; plus Collab |
 | `self_hosted` | free | unlimited | unlimited | unlimited (own key) |
 
-- Every feature is on every plan. Plans differ only in the limits above.
+- Every feature is on every plan. Plans differ only in the limits above. The one deliberate
+  exception is Collab (members' own mail accounts, contracts/collab.md), which only the
+  `collab` plan has.
 - Seats (Stripe quantity) = members whose role is owner, admin or agent. **Viewers are free.**
   The quantity is synced to Stripe whenever members change (prorated).
 - On free, "members" counts all members plus pending invitations; the owner is the 1.
 - Downgrade (subscription ends): existing mailboxes and members stay; creating new ones is
   refused until the workspace is within the free limits. Nothing is deleted.
-- `past_due` keeps Pro while Stripe retries; `unpaid`/`canceled` fall back to free.
+- `past_due` keeps Pro (or Collab) while Stripe retries; `unpaid`/`canceled` fall back to free.
 - AI top-ups: one-time purchases of **any amount from $5 to $5,000** of AI usage, dollar for
   dollar, priced on the product of `STRIPE_PRICE_AI_TOPUP` (or the older name
   `STRIPE_PRICE_CREDITS`), a $10 price that sets the rate. They never expire and are spent
   after the monthly allowance. Available on free and pro. See "AI top-ups".
 - Constants live in `internal/plan` (single source). Prices are Stripe objects, never hard-coded.
+
+## Collab
+
+The `collab` plan is Pro with a larger AI allowance plus Collab (contracts/collab.md). It is
+**hidden**: no workspace sees it, its prices or its card until an instance admin opens it to
+that workspace (contracts/admin.md "Collab access"), as `subscriptions.collab_access`:
+
+| access | the workspace |
+| --- | --- |
+| `none` (default) | cannot see or buy the collab plan; `prices.collab_month`/`collab_year` are left out of `Billing` |
+| `offered` | may subscribe (`POST /v1/billing/checkout {plan: "collab"}`) or switch a Pro subscription to it (`POST /v1/billing/change-plan`) |
+| `complimentary` | has the collab plan without a subscription, until `collab_until` (or until changed): plan `collab`, unlimited mailboxes and members, $20 of AI per billed seat (`plan.BilledSeats`, pooled), and Collab. It may still subscribe to pay for it |
+
+- The plan of a Stripe subscription comes from its item's price: a collab price (monthly or
+  yearly) is `collab`, any other `pro`. Seats sync, `past_due`, cancellation and the fall back to
+  free work as on Pro. A plan change in the Customer Portal arrives by webhook the same way.
+- `Billing.collab.available` is true when access is `offered` or `complimentary` and a collab price
+  is configured. Without a collab price the plan cannot be bought (`422 plan_unavailable`).
+- Removing access does not cancel a subscription already on the collab plan; the workspace just
+  cannot subscribe or switch to it again. Complimentary access that ends leaves the workspace on
+  its own plan (free, or its Pro subscription).
+- `plan.Entitlements.Collab` decides whether a workspace has Collab: the collab plan (paid or
+  complimentary) with billing on; every workspace with billing off, unless `COLLAB=false`.
+  Collab access is stored with billing off too, and has no effect there.
 
 ## Metered usage
 
@@ -123,7 +150,8 @@ Go API (`internal/plan`, `d.Plan`):
 | method | path | who | notes |
 | --- | --- | --- | --- |
 | GET | `/v1/billing` | member | `Billing` below |
-| POST | `/v1/billing/checkout` | owner/admin | `{interval: "month"\|"year"}` → `{url}` Stripe Checkout (subscription, quantity = billed seats, a business purchase (see "Tax"), promotion codes, `client_reference_id` = workspace id) |
+| POST | `/v1/billing/checkout` | owner/admin | `{interval: "month"\|"year", plan?: "pro"\|"collab"}` (default pro) → `{url}` Stripe Checkout (subscription, quantity = billed seats, a business purchase (see "Tax"), promotion codes, `client_reference_id` = workspace id, `metadata.plan`). `collab` needs Collab access offered or complimentary (`403 plan_unavailable`) |
+| POST | `/v1/billing/change-plan` | owner/admin | `{plan: "pro"\|"collab"}` → `Billing`: swaps an active, trialing or past_due subscription's price to the other plan's price of the same interval, same seats, prorated (`create_prorations`, Stripe idempotency key). `409 no_subscription`, `409 already_on_plan`; `collab` needs access offered or complimentary (`403 plan_unavailable`) |
 | POST | `/v1/billing/portal` | owner/admin | `{url}` Stripe Customer Portal (payment method, invoices, cancel, tax ids) |
 | POST | `/v1/billing/top-up` | owner/admin | `{amount_usd: 5..5000}` → `TopUpResult`: buys AI usage now with the saved payment method. See "AI top-ups" |
 | POST | `/v1/billing/top-up/checkout` | owner/admin | `{amount_usd: 5..5000}` (or the older `{top_ups: 1..20}`, $10 each) → `{url}` one-time Checkout for AI usage, a business purchase; saves the card for off-session use (`setup_future_usage: off_session`) |
@@ -138,7 +166,7 @@ All billing routes answer `404 billing_disabled` on an instance without Stripe, 
 
 ```ts
 interface Billing {
-  plan: "free" | "pro" | "self_hosted"
+  plan: "free" | "pro" | "collab" | "self_hosted"   // collab: the collab plan, paid or complimentary
   billing_enabled: boolean
   status: "none" | "trialing" | "active" | "past_due" | "unpaid" | "canceled" | "incomplete" | "incomplete_expired" | "paused"
   interval: "month" | "year"
@@ -149,14 +177,21 @@ interface Billing {
   limits: { max_mailboxes: number; max_members: number }   // 0 = unlimited
   usage: { mailboxes: number; members: number }
   ai: AIBalance
-  prices: { pro_month: Price | null; pro_year: Price | null; ai_top_up: Price | null }  // read from Stripe, cached
+  prices: { pro_month: Price | null; pro_year: Price | null; ai_top_up: Price | null
+    collab_month?: Price; collab_year?: Price }  // read from Stripe, cached; collab_* only with Collab access offered or complimentary
+  collab: {
+    access: "none" | "offered" | "complimentary"  // an instance admin's Collab access (see "Collab")
+    until: string | null   // complimentary access ends then; null: until changed
+    enabled: boolean       // the workspace has Collab now (plan.Entitlements.Collab)
+    available: boolean     // it may subscribe or switch to collab: access offered or complimentary, and a collab price is configured
+  }
   auto_recharge: AutoRecharge | null   // null when billing is disabled
   payment_method: PaymentMethod | null // what top-ups and auto-recharge charge; null when none is saved
 }
 // Every *_usd value is US dollars, a number with up to 6 decimals.
 interface AIBalance {
   unlimited: boolean         // self-hosted: no allowance, nothing refused
-  monthly_usd: number        // the monthly AI usage allowance ($0.50 free; $10 × paid seats on pro)
+  monthly_usd: number        // the monthly AI usage allowance ($0.50 free; $10 × paid seats on pro; $20 × paid seats on collab)
   used_usd: number           // used of the allowance this period (with unlimited AI: all usage this period)
   purchased_usd: number      // AI usage bought and not yet spent; never expires, spent after the allowance
   remaining_usd: number      // what is left of the allowance + purchased_usd
@@ -194,7 +229,8 @@ Stripe webhook events handled: `checkout.session.completed`, `checkout.session.a
 `invoice.payment_failed` (the subscription only), `customer.updated`, `payment_method.attached`,
 `payment_method.detached`, `payment_method.updated` and `payment_method.automatically_updated` (they
 refresh `payment_method`). Each change publishes `billing.updated` (agents visibility, data = `Billing`)
-and is audit-logged (`billing.subscribed`, `billing.canceled`, `billing.ai_top_up_purchased` (`{usd}`),
+and is audit-logged (`billing.subscribed`, `billing.canceled`, `billing.plan_changed` (`{plan, from, ...}`, between
+pro and collab), `billing.ai_top_up_purchased` (`{usd}`),
 `billing.ai_recharged` (`{usd}`), `billing.auto_recharge_updated` (with the changed fields),
 `billing.auto_recharge_failed` (with `reason`)).
 
@@ -313,8 +349,10 @@ Running low (auto-recharge off, or at its monthly limit):
 
 Errors: `402 plan_limit` (`detail` names the limit), `402 ai_balance_empty` (the AI balance does not
 cover the call's estimate, "Starting a call"), `404 billing_disabled`,
-`409 already_subscribed` (checkout while on Pro: use the portal), `409 no_billing_account`
+`409 already_subscribed` (checkout while on a paid plan: use the portal, or change plan), `409 no_billing_account`
 (portal before any purchase), `422 interval_unavailable` (no yearly price),
+`403 plan_unavailable` (the collab plan is not offered to the workspace), `422 plan_unavailable` (no collab
+price configured), `409 no_subscription` and `409 already_on_plan` (change plan),
 `422 top_up_unavailable` (no AI top-up price configured), `409 payment_method_required` (turning
 auto-recharge on, or a top-up with the saved card, without a saved payment method),
 `402 card_declined` and `402 authentication_required` (a top-up with the saved card, see

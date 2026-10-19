@@ -17,6 +17,7 @@ import { tagFor } from "@/components/templates/catalog";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm";
 import { copyText } from "@/components/ui/copy-button";
+import { EmptyState } from "@/components/ui/empty";
 import { TextInput } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -36,7 +37,7 @@ const tag = (k: string) => ({ [k]: `{{ ${k} }}`, interpolation: { escapeValue: f
 export default function EmailDesign() {
   const { t } = useTranslation("emailDesign");
   const admin = atLeast(useRole(), "admin");
-  const { data: brands, isLoading } = useQuery(q.brands());
+  const { data: brands, isLoading, isError, refetch } = useQuery(q.brands());
   const [brandId, setBrandId] = useState<string | null>(null);
   const brand = brands?.find((b) => b.id === brandId) ?? brands?.find((b) => b.is_default) ?? brands?.[0];
   const [tab, setTab] = useState("layout");
@@ -74,7 +75,9 @@ export default function EmailDesign() {
           <TabsTrigger value="variables">{t("tabs.variables")}</TabsTrigger>
         </TabsList>
         <div className="pt-6">
-          {isLoading || !brand ? (
+          {isError ? (
+            <LoadError onRetry={() => void refetch()} />
+          ) : isLoading || !brand ? (
             <Skeleton className="h-[480px] w-full rounded-lg" />
           ) : (
             <>
@@ -98,12 +101,25 @@ export default function EmailDesign() {
 type Draft = { subject: string; body_html: string; options: EmailLayoutOptions };
 const toDraft = (x: EmailTemplate): Draft => ({ subject: x.subject, body_html: x.body_html, options: { ...x.options } });
 
+/** A load that failed: say so and offer to try again, rather than loading forever. */
+function LoadError({ onRetry }: { onRetry: () => void }) {
+  const { t } = useTranslation("emailDesign");
+  return (
+    <EmptyState
+      lit={3}
+      title={t("loadError.title")}
+      description={t("loadError.description")}
+      action={<Button onClick={onRetry}>{t("loadError.retry")}</Button>}
+    />
+  );
+}
+
 /** Loads a brand's template and owns its draft, save and reset. */
 function BrandTemplates({ brand, kind, admin }: { brand: Brand; kind: "layout" | "csat"; admin: boolean }) {
   const { t } = useTranslation("emailDesign");
   const qc = useQueryClient();
   const confirm = useConfirm();
-  const { data } = useQuery(q.emailTemplates(brand.id));
+  const { data, isError, refetch } = useQuery(q.emailTemplates(brand.id));
   const saved = data ? data[kind] : undefined;
   const [draft, setDraft] = useState<Draft | null>(null);
   const [problems, setProblems] = useState<TemplateProblem[]>([]);
@@ -153,6 +169,7 @@ function BrandTemplates({ brand, kind, admin }: { brand: Brand; kind: "layout" |
     [draft, kind, brand.id],
   );
 
+  if (isError && !saved) return <LoadError onRetry={() => void refetch()} />;
   if (!draft || !saved || !previewBody) return <Skeleton className="h-[480px] w-full rounded-lg" />;
   const set = (p: Partial<Draft>) => setDraft((d) => (d ? { ...d, ...p } : d));
   const setOpt = (p: Partial<EmailLayoutOptions>) => setDraft((d) => (d ? { ...d, options: { ...d.options, ...p } } : d));

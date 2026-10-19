@@ -27,13 +27,13 @@ let pass: Pass | null = null;
 
 const CSS_URL = /url\s*\(\s*(['"]?)([^'"()]*)\1\s*\)/gi;
 
-/** Our own images: data and blob URLs, and attachments served by the API (inline images). */
+/** Our own images: data and blob URLs, and attachments served by the API (inline images, a mail account's signed files). */
 function ownImage(src: string): boolean {
   if (/^(data|blob):/i.test(src.trim())) return true;
   try {
     const u = new URL(src, location.href);
     const api = new URL(config.apiUrl || location.origin, location.href);
-    return (u.origin === api.origin || u.origin === location.origin) && u.pathname.startsWith("/v1/attachments/");
+    return (u.origin === api.origin || u.origin === location.origin) && (u.pathname.startsWith("/v1/attachments/") || u.pathname.startsWith("/v1/collab/attachments/"));
   } catch {
     return false;
   }

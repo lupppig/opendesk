@@ -53,7 +53,7 @@ func newEnv(t *testing.T) *env {
 	httpx.Install(d.Log)
 	r := chi.NewRouter()
 	r.Use(httpx.RequestID, httpx.Logger(d.Log), httpx.SecurityHeaders(false), httpx.CORS(cfg.CORSOrigins))
-	resolver := &auth.Resolver{Pool: d.DB.Pool, Tokens: d.Tokens, ClientIP: httpx.ClientIP(false)}
+	resolver := &auth.Resolver{Pool: d.DB.Pool, Tokens: d.Tokens, ClientIP: httpx.ClientIP(false, 0)}
 	r.Use(resolver.Middleware, idempotency.New(d.DB.Pool, d.Box, cfg.AuthSecret, d.Log).Middleware)
 	api := humachi.New(r, huma.DefaultConfig("opendesk test", "test"))
 	core.Register(&d, api, r)

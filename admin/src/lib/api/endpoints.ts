@@ -4,6 +4,7 @@ import { authRequest, http, setSession } from "./client";
 import type {
   AdminAuditLog,
   AdminAuthResult,
+  AdminCollabInput,
   AdminHealth,
   AdminJob,
   AdminJobStats,
@@ -16,8 +17,13 @@ import type {
   AdminUserRow,
   AdminWorkspace,
   AdminWorkspaceRow,
+  AdminTestWorkspace,
+  ChangeTestWorkspaceInput,
+  CreateTestWorkspaceInput,
   InstanceAdmin,
   Page,
+  SampleRequest,
+  TestWorkspaceResult,
 } from "./types";
 
 const id = encodeURIComponent;
@@ -64,8 +70,16 @@ export const api = {
     suspend: (wid: string, reason: string) => http.post<AdminWorkspace>(`/v1/admin/workspaces/${id(wid)}/suspend`, { reason }),
     unsuspend: (wid: string) => http.post<AdminWorkspace>(`/v1/admin/workspaces/${id(wid)}/unsuspend`),
     setLimits: (wid: string, limits: AdminLimits) => http.put<AdminWorkspace>(`/v1/admin/workspaces/${id(wid)}/limits`, limits),
+    setCollab: (wid: string, body: AdminCollabInput) => http.put<AdminWorkspace>(`/v1/admin/workspaces/${id(wid)}/collab`, body),
     grantAi: (wid: string, amountUsd: number, note: string) => http.post<AdminWorkspace>(`/v1/admin/workspaces/${id(wid)}/ai-grants`, { amount_usd: amountUsd, note }),
     remove: (wid: string, code: string, confirmName: string) => http.del(`/v1/admin/workspaces/${id(wid)}`, { code, confirm_name: confirmName }),
+  },
+
+  testWorkspaces: {
+    list: (p: { cursor?: string | null; limit?: number }) => http.get<Page<AdminTestWorkspace>>("/v1/admin/test-workspaces", p),
+    create: (b: CreateTestWorkspaceInput) => http.post<TestWorkspaceResult>("/v1/admin/test-workspaces", b),
+    change: (wid: string, b: ChangeTestWorkspaceInput) => http.patch<TestWorkspaceResult>(`/v1/admin/test-workspaces/${id(wid)}`, b),
+    addSample: (wid: string, b: SampleRequest) => http.post<AdminTestWorkspace>(`/v1/admin/workspaces/${id(wid)}/sample-data`, b),
   },
 
   jobs: {

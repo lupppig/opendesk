@@ -491,6 +491,7 @@
     "groups": {
       "tickets": "Tickets",
       "team": "Team",
+      "mail": "Mail",
       "ai_billing": "AI and billing",
       "workspace": "Workspace"
     },
@@ -527,6 +528,14 @@
       "ai_handoff": {
         "label": "Handoffs to a person",
         "hint": "Ollie hands a conversation to the team"
+      },
+      "collab_assigned": {
+        "label": "Mail assigned to you",
+        "hint": "A teammate assigns you a conversation from a mail account"
+      },
+      "collab_mention": {
+        "label": "Mail comment mentions",
+        "hint": "Someone mentions you in a comment on a mail conversation"
       },
       "team_joined": {
         "label": "Team changes",

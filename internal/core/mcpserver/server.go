@@ -221,7 +221,7 @@ func (h *Handler) oauthPrincipal(r *http.Request) *auth.Principal {
 }
 
 func (h *Handler) clientIP(r *http.Request) string {
-	return httpx.ClientIP(h.d.Cfg.TrustProxy)(r)
+	return httpx.ClientIP(h.d.Cfg.TrustProxy, h.d.Cfg.ProxyHops)(r)
 }
 
 // problem writes an RFC 9457 problem body like the API's.

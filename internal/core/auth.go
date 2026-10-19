@@ -257,7 +257,7 @@ func (s *svc) registerAuth(api huma.API) {
 					return errInvalidToken()
 				}
 				uid = *o.UserID
-				tag, err := tx.Exec(ctx, `UPDATE users SET password_hash = $2, updated_at = now(),
+				tag, err := tx.Exec(ctx, `UPDATE users SET password_hash = $2, password_expires_at = NULL, updated_at = now(),
 					email_verified_at = CASE WHEN email = $3 THEN COALESCE(email_verified_at, now()) ELSE email_verified_at END
 					WHERE id = $1`, uid, hash, o.Email)
 				if err != nil {
@@ -435,7 +435,7 @@ func (s *svc) handleLogin(ctx context.Context, in *coreLoginBody) (*authOut, err
 	var totp bool
 	found := false
 	if email != "" {
-		err := s.d.DB.Pool.QueryRow(ctx, `SELECT id, password_hash, totp_enabled FROM users WHERE email = $1`, email).Scan(&uid, &hash, &totp)
+		err := s.d.DB.Pool.QueryRow(ctx, `SELECT id, `+auth.PasswordHashSQL+`, totp_enabled FROM users WHERE email = $1`, email).Scan(&uid, &hash, &totp)
 		if err != nil && !db.IsNotFound(err) {
 			return nil, httpx.Wrap(err)
 		}

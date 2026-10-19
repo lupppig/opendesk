@@ -11,8 +11,11 @@ import (
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapserver"
 	"github.com/emersion/go-imap/v2/imapserver/imapmemserver"
+	"github.com/jackc/pgx/v5"
+	"github.com/riverqueue/river"
 
 	"github.com/useopendesk/opendesk/internal/crypto"
+	"github.com/useopendesk/opendesk/internal/jobs"
 )
 
 type literal struct {
@@ -102,9 +105,17 @@ func TestIMAPSync(t *testing.T) {
 	if n := inboundCount(); n != 3 || m2.LastUID != 4 {
 		t.Fatalf("incremental: %d messages, cursor %d", n, m2.LastUID)
 	}
-	// Nothing new: nothing changes.
+	// Nothing new: the last-synced time advances without an event.
+	before := w.eventCount("mailbox.updated")
+	mustExec(t, w.d, `UPDATE mailboxes SET last_synced_at = now() - interval '1 hour' WHERE id = $1`, m.ID)
 	if err := w.s.syncMailbox(w.ctx, m.ID); err != nil || inboundCount() != 3 {
 		t.Fatalf("idle pass: %v %d", err, inboundCount())
+	}
+	if got := w.eventCount("mailbox.updated") - before; got != 0 {
+		t.Fatalf("idle sync published %d mailbox.updated events, want 0", got)
+	}
+	if got := w.count(`SELECT count(*) FROM mailboxes WHERE id = $1 AND last_synced_at > now() - interval '1 minute'`, m.ID); got != 1 {
+		t.Fatal("idle sync did not advance last_synced_at")
 	}
 
 	// A changed UIDVALIDITY restarts the import; dedupe keeps one row per message.
@@ -118,7 +129,7 @@ func TestIMAPSync(t *testing.T) {
 	}
 
 	// Wrong password: error state, safe message, one event, backoff.
-	before := w.eventCount("mailbox.updated")
+	before = w.eventCount("mailbox.updated")
 	sealed, _ := w.s.sealCreds(credentials{Password: "wrong-pass-zz"})
 	mustExec(t, w.d, `UPDATE mailboxes SET credentials_enc = $2 WHERE id = $1`, m.ID, sealed)
 	for range 2 {
@@ -153,6 +164,49 @@ func TestIMAPSync(t *testing.T) {
 	m2, _ = loadMailbox(w.ctx, w.d.DB.Pool, w.wid, m.ID)
 	if m2.Status != "active" || m2.LastError != "" || m2.SyncFailures != 0 {
 		t.Fatalf("recovery %s %q", m2.Status, m2.LastError)
+	}
+}
+
+func TestEnqueueDueRequeuesAfterCompletedSync(t *testing.T) {
+	w := newWorld(t)
+	m := w.mailbox(InboundIMAP, OutboundSystem, nil)
+
+	// Seed the job shape created before recurring syncs excluded completed jobs
+	// from River uniqueness. Existing self-hosted instances retain these rows.
+	legacyOpts := &river.InsertOpts{Queue: jobs.QueueEmail, MaxAttempts: 1,
+		UniqueOpts: river.UniqueOpts{ByArgs: true}}
+	if err := w.d.DB.Tx(w.ctx, func(tx pgx.Tx) error {
+		_, err := w.d.Jobs.InsertTx(w.ctx, tx, jobs.SyncMailboxArgs{MailboxID: m.ID}, legacyOpts)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, w.d, `UPDATE river_job SET state = 'completed', finalized_at = now()
+		WHERE kind = 'email.sync_mailbox' AND args->>'mailbox_id' = $1 AND state = 'available'`, m.ID.String())
+
+	if err := w.s.enqueueDue(w.ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := w.count(`SELECT count(*) FROM river_job WHERE kind = 'email.sync_mailbox'
+		AND args->>'mailbox_id' = $1 AND state = 'available'`, m.ID.String()); got != 1 {
+		t.Fatalf("due syncs after a legacy completed job: %d available jobs, want 1", got)
+	}
+	if err := w.s.enqueueDue(w.ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := w.count(`SELECT count(*) FROM river_job WHERE kind = 'email.sync_mailbox'
+		AND args->>'mailbox_id' = $1 AND state = 'available'`, m.ID.String()); got != 1 {
+		t.Fatalf("duplicate due sweep: %d available jobs, want 1", got)
+	}
+
+	mustExec(t, w.d, `UPDATE river_job SET state = 'completed', finalized_at = now()
+		WHERE kind = 'email.sync_mailbox' AND args->>'mailbox_id' = $1 AND state = 'available'`, m.ID.String())
+	if err := w.s.enqueueDue(w.ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := w.count(`SELECT count(*) FROM river_job WHERE kind = 'email.sync_mailbox'
+		AND args->>'mailbox_id' = $1 AND state = 'available'`, m.ID.String()); got != 1 {
+		t.Fatalf("due syncs after a completed job: %d available jobs, want 1", got)
 	}
 }
 

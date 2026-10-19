@@ -34,9 +34,23 @@ export function useMailDetection(email: string | null) {
 
 export type Provider = "google" | "microsoft";
 
-/** Receiving over IMAP is offered when the runtime config and the API both have it on. */
+/**
+ * Receiving over IMAP and SMTP is offered when the runtime config and the API both have
+ * it on, or the workspace has it through Collab on an instance that otherwise doesn't.
+ */
 export function imapOn(opts?: MailboxConnectOptions): boolean {
+  if (opts?.mailbox_imap && opts.instance_imap === false) return true;
   return config.mailboxImap && opts?.mailbox_imap !== false;
+}
+
+/** Syncing Google or Microsoft over IMAP is the instance's alone (MAILBOX_IMAP). */
+export function syncOn(opts?: MailboxConnectOptions): boolean {
+  return config.mailboxImap && opts?.mailbox_imap !== false && opts?.instance_imap !== false;
+}
+
+/** Reading a Google or Microsoft inbox directly, through the provider's API: workspaces with Collab. */
+export function apiOn(opts: MailboxConnectOptions | undefined, p: Provider): boolean {
+  return !!opts?.[p]?.api_sync;
 }
 
 /** Sending through opendesk is offered unless the API has it off. */

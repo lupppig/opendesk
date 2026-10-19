@@ -21,7 +21,7 @@ export function actionTone(action: string): Tone {
   if (/failed|deleted|revoked|mfa_disabled/.test(action)) return "red";
   if (/suspended|cancelled/.test(action)) return "amber";
   if (/granted|role_changed/.test(action)) return "indigo";
-  if (/unsuspended|retried|limits_changed|ai_granted/.test(action)) return "blue";
+  if (/unsuspended|retried|limits_changed|ai_granted|collab_changed/.test(action)) return "blue";
   return "gray";
 }
 
@@ -62,6 +62,12 @@ function Actor({ e }: { e: AdminAuditLog }) {
     return (
       <span className="flex items-center gap-1.5">
         <Badge tone="outline">Command line</Badge>
+      </span>
+    );
+  if (e.actor.type === "system")
+    return (
+      <span className="flex items-center gap-1.5">
+        <Badge tone="outline">Instance cleanup</Badge>
       </span>
     );
   if (e.actor.id)

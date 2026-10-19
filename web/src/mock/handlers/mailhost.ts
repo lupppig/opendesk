@@ -10,6 +10,9 @@
 //
 // Sending through opendesk is on; localStorage["od.mock.systemSend"] = "off" turns it off,
 // as on opendesk Cloud, where every mailbox sends through Google, Microsoft or SMTP.
+//
+// Reading a Google or Microsoft inbox directly (a workspace with Collab) is off;
+// localStorage["od.mock.apiSync"] = "on" offers it.
 
 import type { Mailbox, MailDetection, MailEndpoint, MailHost, MailboxCause, MailboxTestLeg, PasswordAuth } from "@/lib/api/types";
 import { config } from "@/lib/config";
@@ -20,6 +23,16 @@ import catalogue from "../mailCauses.json";
 const OAUTH_KEY = "od.mock.mailboxOAuth";
 const IMAP_KEY = "od.mock.mailboxImap";
 const SYSTEM_SEND_KEY = "od.mock.systemSend";
+const API_SYNC_KEY = "od.mock.apiSync";
+
+/** Whether the workspace may read Google and Microsoft inboxes directly (it has Collab). */
+export function mockApiSyncOn(): boolean {
+  try {
+    return localStorage.getItem(API_SYNC_KEY) === "on";
+  } catch {
+    return false;
+  }
+}
 
 /** Applies the localStorage override of IMAP receiving to the app's config, before anything renders. */
 export function applyMockImap(): void {
@@ -42,8 +55,8 @@ export const IMAP_OFF_DETAIL = "Receiving over IMAP is off on this instance. For
 export const imapOff = () => new HttpError(422, "imap_off", IMAP_OFF_DETAIL);
 
 /** The read-only receiving state the API reports. */
-export function receivingOf(m: Pick<Mailbox, "inbound_kind">): NonNullable<Mailbox["receiving"]> {
-  return m.inbound_kind === "forwarding" || mockImapOn() ? "ok" : "imap_off";
+export function receivingOf(m: Pick<Mailbox, "inbound_kind"> & { config?: Mailbox["config"] }): NonNullable<Mailbox["receiving"]> {
+  return m.inbound_kind === "forwarding" || m.config?.oauth_grant === "api" || mockImapOn() ? "ok" : "imap_off";
 }
 
 /** Whether mailboxes may send through opendesk. */
@@ -89,12 +102,13 @@ export function mockOAuthEnabled(p: "google" | "microsoft"): boolean {
 
 export function connectOptions(forwardingDomain: string) {
   return {
-    google: { configured: true, oauth: mockOAuthEnabled("google") },
-    microsoft: { configured: true, oauth: mockOAuthEnabled("microsoft") },
+    google: { configured: true, oauth: mockOAuthEnabled("google"), api_sync: mockApiSyncOn() },
+    microsoft: { configured: true, oauth: mockOAuthEnabled("microsoft"), api_sync: mockApiSyncOn() },
     forwarding: { enabled: true, domain: forwardingDomain },
     system_sender: "noreply@opendesk.sh",
     system_send: mockSystemSendOn(),
     mailbox_imap: mockImapOn(),
+    instance_imap: mockImapOn(),
   };
 }
 

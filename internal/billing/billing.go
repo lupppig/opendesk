@@ -24,7 +24,7 @@ import (
 
 // Billing is the GET /v1/billing body and the billing.updated event data.
 type Billing struct {
-	Plan              string      `json:"plan" enum:"free,pro,self_hosted"`
+	Plan              string      `json:"plan" enum:"free,pro,collab,self_hosted"`
 	BillingEnabled    bool        `json:"billing_enabled"`
 	Status            string      `json:"status" enum:"none,trialing,active,past_due,unpaid,canceled,incomplete,incomplete_expired,paused"`
 	Interval          string      `json:"interval" enum:"month,year"`
@@ -36,6 +36,8 @@ type Billing struct {
 	Usage             UsageCounts `json:"usage"`
 	AI                AIBalance   `json:"ai" doc:"The AI balance, in US dollars (up to 6 decimals)"`
 	Prices            Prices      `json:"prices"`
+	// Collab is the workspace's Collab (contracts/billing.md "Collab").
+	Collab CollabBilling `json:"collab"`
 	// AutoRecharge is null when billing is disabled.
 	AutoRecharge *AutoRecharge `json:"auto_recharge"`
 	// PaymentMethod is what top-ups and auto-recharge charge; null when none is saved.
@@ -64,10 +66,25 @@ type AIBalance struct {
 	PeriodEnd    time.Time `json:"period_end"`
 }
 
+// CollabBilling is Billing.collab.
+type CollabBilling struct {
+	// Access is the instance admin's Collab access; the collab plan is hidden without it.
+	Access string     `json:"access" enum:"none,offered,complimentary"`
+	Until  *time.Time `json:"until" doc:"Complimentary access ends then; null: until an instance admin changes it"`
+	// Enabled is whether the workspace has Collab now (plan.Entitlements.Collab).
+	Enabled bool `json:"enabled"`
+	// Available is whether the workspace may subscribe or switch to the collab plan.
+	Available bool `json:"available"`
+}
+
 type Prices struct {
 	ProMonth *Price `json:"pro_month"`
 	ProYear  *Price `json:"pro_year"`
 	AITopUp  *Price `json:"ai_top_up"`
+	// CollabMonth and CollabYear are present only for a workspace the collab plan is
+	// offered to (or given complimentary): the plan is hidden from everyone else.
+	CollabMonth *Price `json:"collab_month,omitempty"`
+	CollabYear  *Price `json:"collab_year,omitempty"`
 }
 
 type Price struct {
@@ -164,6 +181,8 @@ func (s *svc) pricesFor(ctx context.Context) Prices {
 	out.ProMonth = get(cfg.StripePricePro, 0)
 	out.ProYear = get(cfg.StripePriceProYear, 0)
 	out.AITopUp = get(cfg.StripePriceTopUp, plan.TopUpUSD)
+	out.CollabMonth = get(cfg.StripePriceCollab, 0)
+	out.CollabYear = get(cfg.StripePriceCollabYear, 0)
 	s.prices.at = time.Now()
 	if failed {
 		if s.prices.fetched {
@@ -202,6 +221,16 @@ func (s *svc) load(ctx context.Context, q db.Querier, wid uuid.UUID, prices Pric
 		return b, err
 	}
 	b.Plan, b.BillingEnabled = e.Plan, e.BillingEnabled
+	b.Collab = CollabBilling{Access: e.CollabAccess, Until: e.CollabUntil, Enabled: e.Collab}
+	if b.Collab.Access == "" {
+		b.Collab.Access = plan.CollabNone
+	}
+	if collabOpen(e.CollabAccess) {
+		b.Collab.Available = e.BillingEnabled && s.collabPriced()
+	} else {
+		// The collab plan is hidden: its prices never reach a workspace it is not offered to.
+		b.Prices.CollabMonth, b.Prices.CollabYear = nil, nil
+	}
 	b.Limits = Limits{MaxMailboxes: e.MaxMailboxes, MaxMembers: e.MaxMembers}
 	if e.BillingEnabled {
 		if err := q.QueryRow(ctx, `SELECT status, interval, seats, current_period_end, cancel_at_period_end
@@ -245,6 +274,64 @@ func (s *svc) load(ctx context.Context, q db.Querier, wid uuid.UUID, prices Pric
 		}
 	}
 	return b, nil
+}
+
+// collabOpen reports whether Collab access lets a workspace buy or switch to the collab plan.
+func collabOpen(access string) bool {
+	return access == plan.CollabOffered || access == plan.CollabComplimentary
+}
+
+// collabPriced reports whether the collab plan has a Stripe price on this instance.
+func (s *svc) collabPriced() bool {
+	return s.d.Cfg.StripePriceCollab != "" || s.d.Cfg.StripePriceCollabYear != ""
+}
+
+// paidPlan is the plan of a workspace's Stripe subscription while it grants it (pro or
+// collab), or "" without one. Complimentary Collab is not a subscription.
+func paidPlan(planName, status string) string {
+	if (planName == plan.Pro || planName == plan.Collab) && plan.Paid(status) {
+		return planName
+	}
+	return ""
+}
+
+// planPrice is the Stripe price of a paid plan for an interval; "" when not configured.
+func (s *svc) planPrice(planName, interval string) string {
+	cfg := s.d.Cfg
+	switch {
+	case planName == plan.Collab && interval == "year":
+		return cfg.StripePriceCollabYear
+	case planName == plan.Collab:
+		return cfg.StripePriceCollab
+	case interval == "year":
+		return cfg.StripePriceProYear
+	}
+	return cfg.StripePricePro
+}
+
+// planOf is the paid plan a subscription item's price stands for: a collab price (monthly
+// or yearly) is the collab plan, any other the pro plan.
+func (s *svc) planOf(priceID string) string {
+	cfg := s.d.Cfg
+	if priceID != "" && (priceID == cfg.StripePriceCollab || priceID == cfg.StripePriceCollabYear) {
+		return plan.Collab
+	}
+	return plan.Pro
+}
+
+// Publisher publishes billing.updated for a workspace from outside billing (the instance
+// admin's Collab access). It keeps its own Stripe price cache.
+type Publisher struct{ s *svc }
+
+// NewPublisher returns a Publisher for d.
+func NewPublisher(d *deps.Deps) *Publisher { return &Publisher{s: newSvc(d)} }
+
+// Prices reads the prices to publish with; call it before opening the transaction.
+func (p *Publisher) Prices(ctx context.Context) Prices { return p.s.pricesFor(ctx) }
+
+// Publish sends billing.updated with the workspace's current Billing in tx.
+func (p *Publisher) Publish(ctx context.Context, tx pgx.Tx, wid uuid.UUID, prices Prices) error {
+	return p.s.publish(ctx, tx, wid, prices)
 }
 
 // publish sends billing.updated with the current Billing in tx.

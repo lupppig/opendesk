@@ -261,9 +261,9 @@ func slugify(name string) string {
 	return s
 }
 
-// createWorkspace creates a workspace owned by uid and seeds its defaults, including its
-// default brand and widget.
-func (s *svc) createWorkspace(ctx context.Context, tx pgx.Tx, p *auth.Principal, name string) (CoreWorkspace, error) {
+// createWorkspace creates a workspace owned by owner and seeds its defaults, including its
+// default brand and widget. p is who created it, for the audit log.
+func (s *svc) createWorkspace(ctx context.Context, tx pgx.Tx, p *auth.Principal, owner uuid.UUID, name string) (CoreWorkspace, error) {
 	wid := ids.New()
 	base := slugify(name)
 	slug := base
@@ -299,7 +299,7 @@ func (s *svc) createWorkspace(ctx context.Context, tx pgx.Tx, p *auth.Principal,
 	if _, err := brands.CreateDefaults(ctx, tx, s.d.Box, wid, name, slug, settings["help_center_title"].(string), widgetKey); err != nil {
 		return CoreWorkspace{}, err
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO members (workspace_id, user_id, role) VALUES ($1, $2, 'owner')`, wid, p.UserID); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO members (workspace_id, user_id, role) VALUES ($1, $2, 'owner')`, wid, owner); err != nil {
 		return CoreWorkspace{}, err
 	}
 	if err := plan.Ensure(ctx, tx, wid); err != nil {
@@ -454,7 +454,7 @@ func (s *svc) registerWorkspaces(api huma.API) {
 			}
 			var w CoreWorkspace
 			err = s.tx(ctx, func(tx pgx.Tx) error {
-				w, err = s.createWorkspace(ctx, tx, p, name)
+				w, err = s.createWorkspace(ctx, tx, p, p.UserID, name)
 				return err
 			})
 			if err != nil {

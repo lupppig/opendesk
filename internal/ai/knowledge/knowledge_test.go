@@ -166,7 +166,7 @@ func newEnv(t *testing.T, embeddings bool) *env {
 	httpx.Install(d.Log)
 	r := chi.NewRouter()
 	r.Use(httpx.RequestID)
-	resolver := &auth.Resolver{Pool: d.DB.Pool, Tokens: d.Tokens, ClientIP: httpx.ClientIP(false)}
+	resolver := &auth.Resolver{Pool: d.DB.Pool, Tokens: d.Tokens, ClientIP: httpx.ClientIP(false, 0)}
 	r.Use(resolver.Middleware)
 	api := humachi.New(r, huma.DefaultConfig("opendesk test", "test"))
 	s.register(api)

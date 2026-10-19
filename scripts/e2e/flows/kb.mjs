@@ -116,14 +116,14 @@ export async function run(t) {
   await t.step("public help center: home, collection, article and search", async () => {
     const { page, problems } = await newPage("visitor");
     t.problems.push(problems);
-    await page.goto(`${cfg.app}/help/${t.slug}`);
+    await page.goto(`${cfg.api}/help/${t.slug}`);
     await page.getByText(collection).first().click();
     await page.getByRole("heading", { name: collection }).waitFor();
     await page.getByText(title).first().click();
     await page.getByRole("heading", { name: title }).waitFor();
     await page.getByText("works for one hour").waitFor();
     await shot(page, "help-article");
-    await page.goto(`${cfg.app}/help/${t.slug}`);
+    await page.goto(`${cfg.api}/help/${t.slug}`);
     const search = page.getByPlaceholder("Search articles").first();
     await search.fill("password");
     await search.press("Enter");

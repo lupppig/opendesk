@@ -7,7 +7,6 @@ import (
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 
 	"github.com/useopendesk/opendesk/internal/db"
@@ -83,10 +82,17 @@ func (s *service) syncMailbox(ctx context.Context, id uuid.UUID) error {
 		}
 		return err
 	}
-	// While IMAP is off the mailbox is kept as it is, unpolled.
-	if !receivesIMAP(m.InboundKind) || m.Status == "disabled" || !s.mailboxIMAP {
+	if m.Status == "disabled" || !m.polled() {
 		return nil
 	}
+	if m.readsAPI() {
+		return s.syncAPI(ctx, m)
+	}
+	// While IMAP is off for its workspace the mailbox is kept as it is, unpolled.
+	if ok, err := s.imapReceivesNow(ctx, m); err != nil || !ok {
+		return err
+	}
+	start := time.Now()
 	sess, err := s.dialIMAP(ctx, m)
 	if err != nil {
 		return s.recordSyncError(ctx, m, err)
@@ -105,7 +111,7 @@ func (s *service) syncMailbox(ctx context.Context, id uuid.UUID) error {
 		lastUID = 0
 	}
 	if upToDate {
-		return s.setSyncOK(ctx, m, int64(sel.Validity), int64(finalCursor(initial, lastUID, sel, true)))
+		return s.finishSync(ctx, m, sel, finalCursor(initial, lastUID, sel, true), 0, start)
 	}
 
 	var cands []candidate
@@ -149,7 +155,7 @@ func (s *service) syncMailbox(ctx context.Context, id uuid.UUID) error {
 		cands, complete = cands[:syncBatch], false
 	}
 
-	cursor := lastUID
+	cursor, ingested := lastUID, 0
 	for _, cand := range cands {
 		if cand.size > maxRawBytes {
 			s.log.Warn("skipping oversized message", "mailbox_id", m.ID, "uid", cand.uid, "bytes", cand.size)
@@ -174,10 +180,21 @@ func (s *service) syncMailbox(ctx context.Context, id uuid.UUID) error {
 				_ = s.saveProgress(ctx, m, int64(sel.Validity), int64(cursor))
 				return err // storage or database trouble: let River log it
 			}
+			ingested++
 		}
 		cursor = cand.uid
 	}
-	return s.setSyncOK(ctx, m, int64(sel.Validity), int64(finalCursor(initial, cursor, sel, complete)))
+	return s.finishSync(ctx, m, sel, finalCursor(initial, cursor, sel, complete), ingested, start)
+}
+
+// finishSync records a successful pass and logs it at debug level.
+func (s *service) finishSync(ctx context.Context, m *mailboxRow, sel selectInfo, lastUID uint32, ingested int, start time.Time) error {
+	if err := s.setSyncOK(ctx, m, int64(sel.Validity), int64(lastUID)); err != nil {
+		return err
+	}
+	s.log.Debug("mailbox synced", "mailbox_id", m.ID, "workspace_id", m.WorkspaceID,
+		"last_uid", lastUID, "new_messages", ingested, "duration", time.Since(start))
+	return nil
 }
 
 func (s *service) recordSyncError(ctx context.Context, m *mailboxRow, err error) error {
@@ -189,7 +206,7 @@ func (s *service) recordSyncError(ctx context.Context, m *mailboxRow, err error)
 	return nil
 }
 
-// syncDueArgs is the minute tick that enqueues a sync for every due IMAP/OAuth mailbox.
+// syncDueArgs is the minute tick that enqueues a sync for every due polled mailbox.
 type syncDueArgs struct{}
 
 func (syncDueArgs) Kind() string { return "email.sync_due" }
@@ -204,16 +221,9 @@ func (w *syncDueWorker) Work(ctx context.Context, _ *river.Job[syncDueArgs]) err
 }
 
 func (s *service) enqueueDue(ctx context.Context) error {
-	var list []uuid.UUID
-	if s.mailboxIMAP {
-		rows, err := s.d.DB.Pool.Query(ctx, `SELECT id FROM mailboxes WHERE inbound_kind IN ('imap', 'google', 'microsoft')
-			AND status <> 'disabled' AND (next_sync_at IS NULL OR next_sync_at <= now())`)
-		if err != nil {
-			return err
-		}
-		if list, err = pgx.CollectRows(rows, pgx.RowTo[uuid.UUID]); err != nil {
-			return err
-		}
+	list, err := s.dueMailboxes(ctx)
+	if err != nil {
+		return err
 	}
 	if len(list) > 0 {
 		params := make([]river.InsertManyParams, 0, len(list))
@@ -224,7 +234,7 @@ func (s *service) enqueueDue(ctx context.Context) error {
 			return err
 		}
 	}
-	_, err := s.d.DB.Pool.Exec(ctx, `DELETE FROM email_auto_replies WHERE sent_at < now() - interval '1 day'`)
+	_, err = s.d.DB.Pool.Exec(ctx, `DELETE FROM email_auto_replies WHERE sent_at < now() - interval '1 day'`)
 	return err
 }
 
@@ -239,4 +249,61 @@ func (w *syncMailboxWorker) Timeout(*river.Job[jobs.SyncMailboxArgs]) time.Durat
 
 func (w *syncMailboxWorker) Work(ctx context.Context, job *river.Job[jobs.SyncMailboxArgs]) error {
 	return w.s.syncMailbox(ctx, job.Args.MailboxID)
+}
+
+// dueMailboxes lists the polled mailboxes due for a sync: those that read through the
+// provider's API (of workspaces that are not suspended; one that lost Collab is queued
+// so its sync reports why it stopped), and those that read over IMAP while that is on
+// for their workspace. Entitlements are read once per workspace per tick.
+func (s *service) dueMailboxes(ctx context.Context) ([]uuid.UUID, error) {
+	rows, err := s.d.DB.Pool.Query(ctx, `SELECT m.id, m.workspace_id, m.inbound_kind, coalesce(m.config->>'oauth_grant', '')
+		FROM mailboxes m JOIN workspaces w ON w.id = m.workspace_id
+		WHERE m.inbound_kind IN ('imap', 'google', 'microsoft') AND m.status <> 'disabled'
+		AND (m.next_sync_at IS NULL OR m.next_sync_at <= now())
+		AND (coalesce(m.config->>'oauth_grant', '') <> 'api' OR w.suspended_at IS NULL)
+		AND ($1 OR m.inbound_kind = 'imap' OR m.config->>'oauth_grant' = 'api')`, s.mailboxIMAP)
+	if err != nil {
+		return nil, err
+	}
+	type due struct {
+		id, wid     uuid.UUID
+		kind, grant string
+	}
+	var all []due
+	for rows.Next() {
+		var d due
+		if err := rows.Scan(&d.id, &d.wid, &d.kind, &d.grant); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		all = append(all, d)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	allowed := map[uuid.UUID]bool{}
+	out := make([]uuid.UUID, 0, len(all))
+	for _, d := range all {
+		if d.kind != InboundIMAP || s.mailboxIMAP {
+			out = append(out, d.id) // api, or IMAP while the instance has it on
+			continue
+		}
+		if !s.d.Cfg.CollabIMAP {
+			continue
+		}
+		ok, seen := allowed[d.wid]
+		if !seen {
+			a, err := s.access(ctx, s.d.DB.Pool, d.wid)
+			if err != nil {
+				return nil, err
+			}
+			ok = s.imapAllowed(a)
+			allowed[d.wid] = ok
+		}
+		if ok {
+			out = append(out, d.id)
+		}
+	}
+	return out, nil
 }

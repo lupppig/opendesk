@@ -150,7 +150,7 @@ func (s *Service) registerRoutes(api huma.API, r chi.Router) {
 					Data []Provider `json:"data"`
 				}
 			}{}
-			out.Body.Data = Catalog
+			out.Body.Data = catalog()
 			return out, nil
 		})
 
@@ -649,7 +649,7 @@ func (s *Service) oauthCallback(w http.ResponseWriter, r *http.Request) {
 	s.forget(x.ID)
 	syncErr := s.sync(ctx, x)
 	p := &auth.Principal{Kind: auth.KindUser, UserID: uid, WorkspaceID: wid, Role: auth.Role(role),
-		IP: httpx.ClientIP(s.d.Cfg.TrustProxy)(r), UserAgent: clip(r.UserAgent(), 400)}
+		IP: httpx.ClientIP(s.d.Cfg.TrustProxy, s.d.Cfg.ProxyHops)(r), UserAgent: clip(r.UserAgent(), 400)}
 	_ = s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
 		if err := s.publish(ctx, tx, "integration.updated", wid, map[string]any{"integration": x.api()}); err != nil {
 			return err

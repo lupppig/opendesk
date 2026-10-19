@@ -6,7 +6,7 @@ import { ActionButton, ActionMenuItem } from "@/components/ActionButton";
 import { DataPairs, ExtLink, IdChip, None } from "@/components/bits";
 import { ErrorState } from "@/components/ErrorState";
 import { BackLink, Banner, DetailSkeleton, KV, Notice, PageBody, PageColumn, PageHeader, Section } from "@/components/layout";
-import { MailboxStatusPill, PlanPill, SubscriptionPill, SuspendedPill } from "@/components/pills";
+import { MailboxStatusPill, PlanPill, SubscriptionPill, SuspendedPill, TestPill } from "@/components/pills";
 import { ReasonDialog } from "@/components/ReasonDialog";
 import { StepUpDialog } from "@/components/StepUpDialog";
 import { Table, TD, TH, THead, TR } from "@/components/table";
@@ -27,7 +27,10 @@ import { api } from "@/lib/api/endpoints";
 import type { AdminLimits, AdminWorkspace, AuditLog } from "@/lib/api/types";
 import { humanize, number, shortDate, usd } from "@/lib/format";
 import { q, qk } from "@/lib/queries";
+import { can } from "@/lib/permissions";
 import { useSession } from "@/lib/session";
+import { countsLine } from "@/lib/testWorkspaces";
+import { CollabSection } from "./WorkspaceCollab";
 
 export default function WorkspaceDetail() {
   const { id } = useParams({ from: "/shell/workspaces/$id" });
@@ -63,6 +66,7 @@ function WorkspaceView({ w }: { w: AdminWorkspace }) {
   const navigate = useNavigate();
   const confirm = useConfirm();
   const billing = useSession((s) => s.me?.instance.billing_enabled ?? false);
+  const canDelete = useSession((s) => can(s.me, "workspaces.delete"));
   const [dialog, setDialog] = useState<null | "suspend" | "delete" | "limits" | "grant">(null);
   const [confirmName, setConfirmName] = useState("");
 
@@ -93,6 +97,7 @@ function WorkspaceView({ w }: { w: AdminWorkspace }) {
             <h1 className="truncate text-[18px] font-semibold tracking-[-0.02em]">{w.name}</h1>
             <PlanPill plan={w.plan} />
             {billing && <SubscriptionPill status={w.status} />}
+            {w.test && <TestPill />}
             {w.suspended_at && <SuspendedPill />}
           </div>
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
@@ -126,13 +131,32 @@ function WorkspaceView({ w }: { w: AdminWorkspace }) {
                 </ActionMenuItem>
               )}
               <MenuSeparator />
-              <ActionMenuItem perm="workspaces.delete" icon={<Trash2 />} danger onSelect={() => setDialog("delete")}>
+              <ActionMenuItem perm={w.test && !canDelete ? "workspaces.test" : "workspaces.delete"} icon={<Trash2 />} danger onSelect={() => setDialog("delete")}>
                 Delete workspace
               </ActionMenuItem>
             </MenuContent>
           </Menu>
         </div>
       </div>
+
+      {w.test && (
+        <Banner
+          tone="blue"
+          title={w.test_expires_at ? <>Test workspace, deleted <Time iso={w.test_expires_at} /></> : "Test workspace, kept until deleted"}
+          action={
+            <Button variant="secondary" size="xs" asChild>
+              <Link to="/test-workspaces">Test workspaces</Link>
+            </Button>
+          }
+        >
+          {w.sample_data.status === "running"
+            ? "Sample data is being added."
+            : w.sample_data.counts
+              ? `Sample data: ${countsLine(w.sample_data.counts, 5)}.`
+              : "No sample data."}{" "}
+          It stays out of the overview's counts.
+        </Banner>
+      )}
 
       {w.suspended_at && (
         <Banner title={<>Suspended <Time iso={w.suspended_at} /></>}>
@@ -162,6 +186,7 @@ function WorkspaceView({ w }: { w: AdminWorkspace }) {
             />
           </Section>
           <PlanLimits w={w} billing={billing} onEdit={() => setDialog("limits")} />
+          <CollabSection w={w} billing={billing} onSaved={apply} />
           <Subscription w={w} billing={billing} />
         </div>
       </div>

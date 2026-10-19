@@ -13,7 +13,8 @@
 # OPENDESK_DOMAIN is the site address. A public hostname gets a Let's Encrypt
 # (or ZeroSSL) certificate as soon as its DNS points here and ports 80 and 443
 # are open. "localhost" gets a certificate from Caddy's local CA. ":80" serves
-# plain HTTP, for when another proxy in front of this one terminates TLS.
+# plain HTTP. With a reverse proxy of your own in front, compose.external-proxy.yml
+# replaces this Caddy instead (docs: self-hosting/reverse-proxy).
 #
 # CADDY_GLOBAL_OPTIONS carries the global block, e.g. "email you@example.com",
 # so this file stays the same on every install.

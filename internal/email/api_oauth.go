@@ -41,7 +41,7 @@ type oauthStartInput struct {
 		MailboxID string `json:"mailbox_id,omitempty" doc:"Reconnect this mailbox instead of adding one"`
 		Name      string `json:"name,omitempty" maxLength:"64"`
 		Email     string `json:"email,omitempty" maxLength:"254" doc:"Login hint for the provider"`
-		Receive   string `json:"receive,omitempty" enum:"forwarding,sync" doc:"How a new mailbox receives: forwarding (default; the connection only sends) or sync (read the inbox over IMAP, while this instance has IMAP on). A reconnect keeps the mailbox's own."`
+		Receive   string `json:"receive,omitempty" enum:"forwarding,sync,api" doc:"How a new mailbox receives: forwarding (default; the connection only sends), sync (read the inbox over IMAP, while this instance has IMAP on) or api (read the inbox through the Gmail API or Microsoft Graph, while the workspace has Collab). A reconnect keeps the mailbox's own, or moves it to api."`
 	}
 }
 
@@ -65,17 +65,23 @@ func (s *service) registerOAuthRoutes(api huma.API, r chi.Router) {
 			if p.Kind != auth.KindUser {
 				return nil, httpx.Forbidden()
 			}
-			prov := s.providers[in.Provider]
-			if !prov.configured() {
+			b := in.Body
+			a, err := s.access(ctx, s.d.DB.Pool, p.WorkspaceID)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			if b.Receive != "api" && b.MailboxID == "" && !s.providers[in.Provider].configured() {
 				return nil, httpx.E(422, "provider_not_configured", providerLabel(in.Provider)+" sign-in is not configured on this instance.")
 			}
-			b := in.Body
 			if b.Receive == "sync" && !s.mailboxIMAP {
 				return nil, imapOff()
 			}
 			grant := GrantSend
-			if b.Receive == "sync" {
+			switch b.Receive {
+			case "sync":
 				grant = GrantSync
+			case "api":
+				grant = GrantAPI
 			}
 			data := map[string]string{"flow": oauthFlow, "provider": in.Provider, "wid": p.WorkspaceID.String()}
 			if b.MailboxID != "" {
@@ -87,23 +93,41 @@ func (s *service) registerOAuthRoutes(api huma.API, r chi.Router) {
 				if err != nil {
 					return nil, wrapMailboxErr(err)
 				}
+				// A reconnect keeps how the mailbox receives, or moves it to reading through
+				// the provider's API when asked. One that reads through the API while the
+				// workspace no longer may, or over IMAP while IMAP is off, moves to forwarding.
+				switch {
+				case b.Receive == "api" || (m.readsAPI() && m.InboundKind == in.Provider):
+					grant = GrantAPI
+					if !s.apiReceives(in.Provider, a) {
+						if b.Receive == "api" {
+							return nil, apiSyncUnavailable(in.Provider, a)
+						}
+						grant = GrantSend
+					}
+				case receivesIMAP(m.InboundKind) && !m.readsAPI() && s.mailboxIMAP:
+					grant = GrantSync
+				default:
+					grant = GrantSend
+				}
 				// Reconnecting a mailbox that already uses this sign-in is always allowed;
 				// moving one onto it is a new connection.
-				if m.oauthProvider() != in.Provider && !s.oauthConnect(in.Provider) {
+				same := m.oauthProvider() == in.Provider && (grant != GrantAPI || m.Config.OAuthClient == ClientCollab)
+				if !same && !s.connectAllowed(in.Provider, grant) {
+					if grant == GrantAPI {
+						return nil, apiSyncUnavailable(in.Provider, a)
+					}
 					return nil, oauthDisabled(in.Provider)
-				}
-				// A reconnect keeps how the mailbox receives; with IMAP off, one that
-				// received over IMAP moves to forwarding.
-				grant = GrantSend
-				if receivesIMAP(m.InboundKind) && s.mailboxIMAP {
-					grant = GrantSync
 				}
 				data["mailbox_id"] = id.String()
 				if b.Email == "" {
 					b.Email = m.Email
 				}
 			} else {
-				if !s.oauthConnect(in.Provider) {
+				if grant == GrantAPI && !s.apiSync(in.Provider, a) {
+					return nil, apiSyncUnavailable(in.Provider, a)
+				}
+				if !s.connectAllowed(in.Provider, grant) {
 					return nil, oauthDisabled(in.Provider)
 				}
 				if err := s.d.Plan.CheckMailbox(ctx, s.d.DB.Pool, p.WorkspaceID); err != nil {
@@ -117,6 +141,13 @@ func (s *service) registerOAuthRoutes(api huma.API, r chi.Router) {
 					return nil, httpx.Wrap(err)
 				}
 				data["name"] = name
+			}
+			prov := s.client(in.Provider, grant)
+			if !prov.configured() {
+				if grant == GrantAPI {
+					return nil, apiSyncUnavailable(in.Provider, a)
+				}
+				return nil, httpx.E(422, "provider_not_configured", providerLabel(in.Provider)+" sign-in is not configured on this instance.")
 			}
 			data["grant"] = grant
 			verifier := oauth2.GenerateVerifier()
@@ -148,9 +179,13 @@ func systemSendOff() error {
 		"Sending through opendesk is off on this instance. Connect Google or Microsoft, or add SMTP.")
 }
 
-// imapOff answers a request to receive over IMAP while this instance has it off.
-func imapOff() error {
-	return httpx.E(http.StatusUnprocessableEntity, "imap_off", "Receiving over IMAP is off on this instance. Forward the address to opendesk instead.")
+// connectAllowed reports whether a new connection with provider's client for grant is
+// allowed: the Collab client for an api grant (apiConnect), else the mailbox sign-in.
+func (s *service) connectAllowed(provider, grant string) bool {
+	if grant == GrantAPI {
+		return s.apiConnect(provider)
+	}
+	return s.oauthConnect(provider)
 }
 
 // oauthDisabled answers a new connection with a sign-in this instance does not offer
@@ -178,8 +213,7 @@ func (s *service) oauthCallback(w http.ResponseWriter, r *http.Request) {
 	clear := s.stateCookie("", -1)
 	http.SetCookie(w, &clear)
 
-	prov := s.providers[provider]
-	if !prov.configured() {
+	if s.providers[provider] == nil {
 		fail("provider_not_configured")
 		return
 	}
@@ -224,8 +258,13 @@ func (s *service) oauthCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	// A state signed before grants were recorded asked for the sync scopes.
 	grant := claims.Data["grant"]
-	if grant != GrantSend {
+	if grant != GrantSend && grant != GrantAPI {
 		grant = GrantSync
+	}
+	prov := s.client(provider, grant)
+	if !prov.configured() {
+		fail("provider_not_configured")
+		return
 	}
 	creds, email, username, err := s.completeOAuth(ctx, prov, grant, code, verifier)
 	if err != nil {
@@ -234,7 +273,7 @@ func (s *service) oauthCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := &auth.Principal{Kind: auth.KindUser, UserID: uid, WorkspaceID: wid, Role: auth.Role(role),
-		IP: httpx.ClientIP(s.d.Cfg.TrustProxy)(r), UserAgent: truncate(r.UserAgent(), 400)}
+		IP: httpx.ClientIP(s.d.Cfg.TrustProxy, s.d.Cfg.ProxyHops)(r), UserAgent: truncate(r.UserAgent(), 400)}
 	var mailboxID *uuid.UUID
 	if v := claims.Data["mailbox_id"]; v != "" {
 		id, err := uuid.Parse(v)
@@ -244,7 +283,12 @@ func (s *service) oauthCallback(w http.ResponseWriter, r *http.Request) {
 		}
 		mailboxID = &id
 	}
-	id, err := s.saveOAuthMailbox(ctx, p, provider, grant, mailboxID, claims.Data["name"], email, username, creds)
+	// An api connection names the mailbox's sender as the account does, when it has no name yet.
+	var names providerNames
+	if grant == GrantAPI {
+		names = s.fromNames(ctx, provider, creds, email)
+	}
+	id, err := s.saveOAuthMailbox(ctx, p, provider, grant, mailboxID, claims.Data["name"], email, username, creds, names)
 	if err != nil {
 		switch {
 		case db.IsUniqueViolation(err, "mailboxes_workspace_id_email_key"):
@@ -265,7 +309,7 @@ func (s *service) oauthCallback(w http.ResponseWriter, r *http.Request) {
 // completeOAuth redeems the code and reads the account identity. For a Microsoft sync
 // grant the code yields the IMAP (outlook.office.com) token; the refresh token is then
 // exchanged for a Graph token, which also proves the send consent was granted. A
-// Microsoft send grant redeems the code for the Graph token alone.
+// Microsoft send or api grant redeems the code for the Graph token alone.
 func (s *service) completeOAuth(ctx context.Context, p *oauthProvider, grant, code, verifier string) (credentials, string, string, error) {
 	tr, err := s.exchangeCode(ctx, p, grant, code, verifier)
 	if err != nil {
@@ -277,7 +321,7 @@ func (s *service) completeOAuth(ctx context.Context, p *oauthProvider, grant, co
 	now := timeNow()
 	c := credentials{RefreshToken: tr.RefreshToken, AccessToken: tr.AccessToken, Expiry: expiryOf(tr, now)}
 	identityToken := tr.AccessToken
-	if p.name == KindMicrosoft && grant == GrantSend {
+	if p.name == KindMicrosoft && (grant == GrantSend || grant == GrantAPI) {
 		c.AccessToken, c.Expiry = "", time.Time{}
 		c.GraphAccessToken, c.GraphExpiry = tr.AccessToken, expiryOf(tr, now)
 	} else if p.name == KindMicrosoft {
@@ -300,16 +344,31 @@ func (s *service) completeOAuth(ctx context.Context, p *oauthProvider, grant, co
 
 // saveOAuthMailbox creates the mailbox, or updates the one being reconnected (or the
 // one with the same address), and returns its id. A sync grant receives over IMAP
-// while this instance has it on; otherwise the mailbox receives by forwarding and
-// sends through the provider.
+// while this instance has it on; an api grant reads the inbox through the provider's
+// API while the workspace may; otherwise the mailbox receives by forwarding and sends
+// through the provider. A mailbox without a display name takes the one names gives its
+// address (an api connection's send-as name); a reconnect that keeps reading through the
+// API keeps the mailbox's tidy-up options.
 func (s *service) saveOAuthMailbox(ctx context.Context, p *auth.Principal, provider, grant string, mailboxID *uuid.UUID,
-	name, email, username string, creds credentials) (uuid.UUID, error) {
+	name, email, username string, creds credentials, names providerNames) (uuid.UUID, error) {
 	prov := s.providers[provider]
 	inbound := InboundForwarding
 	cfg := MailboxConfig{OAuthEmail: email, OAuthGrant: grant, MailHost: string(mailhost.ForMailbox("", provider, "", email))}
-	if grant == GrantSync && s.mailboxIMAP {
-		inbound = provider
-		cfg.IMAPHost, cfg.IMAPPort, cfg.IMAPTLS, cfg.IMAPUsername = prov.imapHost, 993, TLSImplicit, username
+	switch grant {
+	case GrantSync:
+		if s.mailboxIMAP {
+			inbound = provider
+			cfg.IMAPHost, cfg.IMAPPort, cfg.IMAPTLS, cfg.IMAPUsername = prov.imapHost, 993, TLSImplicit, username
+		}
+	case GrantAPI:
+		cfg.OAuthClient = ClientCollab
+		a, err := s.access(ctx, s.d.DB.Pool, p.WorkspaceID)
+		if err != nil {
+			return uuid.Nil, err
+		}
+		if s.apiReceives(provider, a) {
+			inbound = provider
+		}
 	}
 	sealed, err := s.sealCreds(creds)
 	if err != nil {
@@ -343,11 +402,21 @@ func (s *service) saveOAuthMailbox(ctx context.Context, p *auth.Principal, provi
 				addr = email
 			}
 			resetCursor := !strings.EqualFold(existing.Config.IMAPUsername, cfg.IMAPUsername) || existing.InboundKind != inbound
+			// The API cursor is the account's: another account, or a mailbox that did not
+			// read through the API, starts over.
+			resetAPI := !existing.readsAPI() || !strings.EqualFold(existing.Config.OAuthEmail, email) || existing.InboundKind != inbound
+			if grant == GrantAPI && inbound == provider && existing.readsAPI() {
+				cfg.ProviderMarkRead = existing.Config.ProviderMarkRead
+				cfg.ProviderArchiveOnSolve = existing.Config.ProviderArchiveOnSolve
+				cfg.ProviderLabel = existing.Config.ProviderLabel
+			}
 			_, err = tx.Exec(ctx, `UPDATE mailboxes SET email = $3, inbound_kind = $4, outbound_kind = $5, config = $6,
 				credentials_enc = $7, status = 'active', last_error = '', sync_failures = 0, next_sync_at = NULL,
 				imap_uid_validity = CASE WHEN $8 THEN 0 ELSE imap_uid_validity END,
-				imap_last_uid = CASE WHEN $8 THEN 0 ELSE imap_last_uid END, updated_at = now()
-				WHERE workspace_id = $1 AND id = $2`, wid, id, addr, inbound, provider, cfg, sealed, resetCursor)
+				imap_last_uid = CASE WHEN $8 THEN 0 ELSE imap_last_uid END,
+				api_sync_state = CASE WHEN $9 THEN '{}'::jsonb ELSE api_sync_state END,
+				display_name = CASE WHEN btrim(display_name) = '' THEN $10 ELSE display_name END, updated_at = now()
+				WHERE workspace_id = $1 AND id = $2`, wid, id, addr, inbound, provider, cfg, sealed, resetCursor, resetAPI, names.forAddress(addr))
 			if err != nil {
 				return err
 			}
@@ -363,6 +432,7 @@ func (s *service) saveOAuthMailbox(ctx context.Context, p *auth.Principal, provi
 			m := &mailboxRow{WorkspaceID: wid}
 			m.ID = ids.New()
 			m.Name, m.Email, m.InboundKind, m.OutboundKind, m.Config, m.Status = name, email, inbound, provider, cfg, "active"
+			m.DisplayName = names.forAddress(email)
 			if m.Name == "" {
 				m.Name = providerLabel(provider) + " mailbox"
 			}

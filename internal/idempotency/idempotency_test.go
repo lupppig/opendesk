@@ -62,7 +62,7 @@ func newEnv(t *testing.T) *env {
 	e := &env{t: t, db: database, tokens: auth.NewTokens(secret), gate: make(chan struct{}), inside: make(chan struct{}, 1)}
 
 	r := chi.NewRouter()
-	r.Use(httpx.RequestID, (&auth.Resolver{Pool: database.Pool, Tokens: e.tokens, ClientIP: httpx.ClientIP(false)}).Middleware,
+	r.Use(httpx.RequestID, (&auth.Resolver{Pool: database.Pool, Tokens: e.tokens, ClientIP: httpx.ClientIP(false, 0)}).Middleware,
 		New(database.Pool, box, secret, log).Middleware)
 	r.Post("/v1/things", func(w http.ResponseWriter, r *http.Request) {
 		n := e.calls.Add(1)

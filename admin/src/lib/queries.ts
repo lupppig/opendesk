@@ -18,6 +18,7 @@ export const qk = {
   health: ["health"] as const,
   workspaces: ["workspaces"] as const,
   workspace: (id: string) => ["workspace", id] as const,
+  testWorkspaces: ["test-workspaces"] as const,
   users: ["users"] as const,
   user: (id: string) => ["user", id] as const,
   jobs: ["jobs"] as const,
@@ -26,7 +27,7 @@ export const qk = {
   audit: ["audit"] as const,
 };
 
-export type WorkspaceFilter = "all" | "suspended" | "paid" | "free";
+export type WorkspaceFilter = "all" | "suspended" | "paid" | "free" | "collab" | "test";
 export type UserFilter = "all" | "suspended" | "admins" | "unverified";
 
 const filterParam = (f: string | undefined) => (f && f !== "all" ? f : undefined);
@@ -41,6 +42,11 @@ export const q = {
       ...pager((cursor) => api.workspaces.list({ q: p.q, filter: filterParam(p.filter), cursor, limit: PAGE_SIZE } satisfies ListParams)),
     }),
   workspace: (id: string) => queryOptions({ queryKey: qk.workspace(id), queryFn: () => api.workspaces.get(id) }),
+  testWorkspaces: () =>
+    infiniteQueryOptions({
+      queryKey: [...qk.testWorkspaces, "list"],
+      ...pager((cursor) => api.testWorkspaces.list({ cursor, limit: PAGE_SIZE })),
+    }),
 
   users: (p: { q?: string; filter?: UserFilter }) =>
     infiniteQueryOptions({

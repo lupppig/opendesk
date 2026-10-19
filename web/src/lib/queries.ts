@@ -3,7 +3,7 @@
 // its component reads.
 
 import { infiniteQueryOptions, queryOptions, type QueryClient } from "@tanstack/react-query";
-import { api, rows, type TicketListQuery } from "./api/endpoints";
+import { api, rows, type CollabThreadQuery, type TicketListQuery } from "./api/endpoints";
 import type { Page, ReportsQuery, ReportsRange } from "./api/types";
 
 export const qk = {
@@ -90,6 +90,18 @@ export const qk = {
   triage: ["triage"] as const,
   businessHours: ["business-hours"] as const,
   onboarding: ["onboarding"] as const,
+  // Collab (contracts/collab.md): everything under "collab", so a workspace switch or a refetch reaches it all.
+  collab: ["collab"] as const,
+  collabStatus: ["collab", "status"] as const,
+  mailAccounts: ["collab", "accounts"] as const,
+  /** With the shared accounts of people who left, for admins (settings). */
+  mailAccountsManage: ["collab", "accounts", "manage"] as const,
+  mailFolders: (accountId: string) => ["collab", "folders", accountId] as const,
+  mailCounts: ["collab", "counts"] as const,
+  mailSidebar: ["collab", "sidebar"] as const,
+  mailThreadLists: ["collab", "threads"] as const,
+  mailThreads: (q: CollabThreadQuery) => ["collab", "threads", q] as const,
+  mailThread: (id: string) => ["collab", "thread", id] as const,
 };
 
 const list = <R>(key: readonly unknown[], fn: () => Promise<R[] | Page<R> | { data: R[] }>, opts: { staleTime?: number } = {}) =>
@@ -211,6 +223,27 @@ export const q = {
   triage: () => queryOptions({ queryKey: qk.triage, queryFn: api.triage.get }),
   businessHours: () => queryOptions({ queryKey: qk.businessHours, queryFn: api.businessHours.get }),
   onboarding: () => queryOptions({ queryKey: qk.onboarding, queryFn: api.onboarding.get, staleTime: 30_000 }),
+  /** Collab availability. A failure (an older server without the route) reads as "off". */
+  collabStatus: () =>
+    queryOptions({
+      queryKey: qk.collabStatus,
+      queryFn: () => api.collab.status().catch(() => null),
+      staleTime: 5 * 60_000,
+    }),
+  mailAccounts: () => list(qk.mailAccounts, () => api.collab.accounts.list(), { staleTime: 30_000 }),
+  mailAccountsManage: () => list(qk.mailAccountsManage, () => api.collab.accounts.list({ manage: true }), { staleTime: 30_000 }),
+  mailFolders: (accountId: string) => list(qk.mailFolders(accountId), () => api.collab.accounts.folders(accountId), { staleTime: 60_000 }),
+  mailCounts: () => queryOptions({ queryKey: qk.mailCounts, queryFn: api.collab.counts, staleTime: 30_000 }),
+  mailSidebar: () => queryOptions({ queryKey: qk.mailSidebar, queryFn: api.collab.sidebar.get, staleTime: 5 * 60_000 }),
+  mailThreads: (query: CollabThreadQuery) =>
+    infiniteQueryOptions({
+      queryKey: qk.mailThreads(query),
+      queryFn: ({ pageParam }) => api.collab.threads.list({ ...query, limit: 50, cursor: pageParam }),
+      initialPageParam: null as string | null,
+      getNextPageParam: (last) => last.next_cursor,
+      staleTime: 15_000,
+    }),
+  mailThread: (id: string) => queryOptions({ queryKey: qk.mailThread(id), queryFn: () => api.collab.threads.get(id) }),
   csat: (token: string) => queryOptions({ queryKey: qk.csat(token), queryFn: () => api.public.csat(token), retry: false }),
   invitationLookup: (token: string) =>
     queryOptions({ queryKey: qk.invitationLookup(token), queryFn: () => api.invitations.lookup(token), retry: false }),

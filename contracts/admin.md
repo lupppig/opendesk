@@ -37,7 +37,8 @@ one-off ECS task. Every CLI change is in the admin audit log with actor `cli`. A
 | `read`: every page | yes | yes | yes |
 | `users.sessions`: revoke a user's sessions, resend the verification email | | yes | yes |
 | `users.suspend`, `workspaces.suspend`: suspend and restore | | yes | yes |
-| `workspaces.limits`: limit overrides, AI usage grants | | yes | yes |
+| `workspaces.limits`: limit overrides, AI usage grants, Collab access | | yes | yes |
+| `workspaces.test`: create, fill, extend and delete test workspaces (not other workspaces) | | yes | yes |
 | `jobs.manage`: retry and cancel background jobs | | yes | yes |
 | `users.mfa`: turn off a user's two-factor authentication | | | yes |
 | `users.delete`, `workspaces.delete` | | | yes |
@@ -90,8 +91,9 @@ GET  /v1/admin/me           → AdminMe
 
 ### Step-up
 
-Turning off a user's two-factor authentication, deleting a user or a workspace, and granting,
-changing or revoking an admin carry `code` in the body: a current TOTP code (or a recovery code)
+Turning off a user's two-factor authentication, deleting a user or a workspace, granting,
+changing or revoking an admin, and creating or changing a test workspace (which hands out
+credentials) carry `code` in the body: a current TOTP code (or a recovery code)
 of the acting admin, checked like sign-in. A wrong code is `401 invalid_code`, a missing one
 `403 mfa_required`.
 
@@ -100,7 +102,7 @@ of the acting admin, checked like sign-in. A wrong code is `401 invalid_code`, a
 ```ts
 type AdminRole = "viewer" | "support" | "super";
 type AdminPermission = "read" | "users.sessions" | "users.suspend" | "users.mfa" | "users.delete"
-  | "workspaces.suspend" | "workspaces.limits" | "workspaces.delete" | "jobs.manage" | "admins.manage";
+  | "workspaces.suspend" | "workspaces.limits" | "workspaces.test" | "workspaces.delete" | "jobs.manage" | "admins.manage";
 
 type AdminAuthResult = { access_token: string; expires_in: number; admin: AdminMe };
 type AdminMe = { id: string; email: string; name: string; role: AdminRole; permissions: AdminPermission[];
@@ -121,8 +123,11 @@ type AdminUser = AdminUserRow & {
 };
 
 type AdminWorkspaceRef = { id: string; name: string; slug: string };
-type AdminWorkspaceRow = AdminWorkspaceRef & { avatar_url: string | null; members: number; plan: "free" | "pro" | "self_hosted";
-  status: string /* subscription status */; suspended_at: string | null; last_activity_at: string | null; created_at: string };
+type AdminWorkspaceRow = AdminWorkspaceRef & { avatar_url: string | null; members: number;
+  plan: "free" | "pro" | "collab" | "self_hosted";  // as the entitlements resolve it: complimentary Collab is collab
+  status: string /* subscription status */; suspended_at: string | null; last_activity_at: string | null; created_at: string;
+  test: boolean /* a test workspace */; test_expires_at: string | null /* the cleanup deletes it then; null = kept */;
+  sample_data: AdminSampleData };
 type AdminWorkspace = AdminWorkspaceRow & {
   suspended_reason: string;
   members_list: { user: { id: string; email: string; name: string }; role: Role; created_at: string }[];
@@ -132,8 +137,9 @@ type AdminWorkspace = AdminWorkspaceRow & {
     last_error: string; last_synced_at: string | null; created_at: string }[];
   entitlements: { max_mailboxes: number; max_members: number; monthly_ai_usd: number; unlimited_ai: boolean }; // 0 = unlimited, after overrides
   limits: AdminLimits;                       // the overrides themselves
-  subscription: { plan: "free" | "pro"; status: string; interval: "month" | "year"; seats: number; billed_seats: number;
+  subscription: { plan: "free" | "pro" | "collab"; status: string; interval: "month" | "year"; seats: number; billed_seats: number;
     current_period_end: string | null; cancel_at_period_end: boolean; stripe_customer_id: string | null; stripe_subscription_id: string | null } | null; // null without billing
+  collab: AdminCollab;
   ai: { remaining_usd: number; monthly_usd: number; included_used_usd: number; purchased_usd: number; unlimited: boolean;
     period_start: string; period_end: string;
     month: { charged_usd: number; provider_cost_usd: number; calls: number;
@@ -141,7 +147,30 @@ type AdminWorkspace = AdminWorkspaceRow & {
   recent_audit: AuditLog[];                  // the workspace's own audit log, last 20 (contracts/api.md)
 };
 type AdminLimits = { max_mailboxes: number | null; max_members: number | null; monthly_ai_usd: number | null }; // null = the plan's
+type AdminCollab = { access: "none" | "offered" | "complimentary"; until: string | null /* complimentary ends then; null = until changed */;
+  note: string; enabled: boolean /* the workspace has Collab now (plan.Entitlements.Collab) */; accounts: number /* mail accounts connected */ };
 
+// Test workspaces (see "Test workspaces").
+type SampleSize = "small" | "realistic" | "large";
+type SampleKind = "tickets" | "chat" | "kb" | "team" | "collab" | "history";
+type AdminSampleCounts = { members: number; teams: number; contacts: number; companies: number; tickets: number; messages: number;
+  chats: number; articles: number; collections: number; mail_accounts: number; mail_threads: number; views: number; saved_replies: number };
+type AdminSampleData = { status: "none" | "running" | "done" | "failed"; size: SampleSize | ""; kinds: SampleKind[] /* the last batch's */;
+  counts: AdminSampleCounts | null /* every finished batch added together */; batches: number; started_at: string | null;
+  seeded_at: string | null /* the last batch finished then */; error: string /* the last batch's, when it failed */ };
+type AdminTestWorkspace = { workspace: AdminWorkspaceRef;
+  owner: { id: string; email: string; name: string; test_account: boolean; password_expires_at: string | null } | null;
+  created_by: { id: string; email: string } | null /* the admin; null from the command line */; reason: string;
+  plan: "free" | "pro" | "collab" /* as asked at creation */; test_expires_at: string | null; sample_data: AdminSampleData;
+  members: number; suspended_at: string | null; created_at: string };
+type TestWorkspaceResult = { workspace: AdminTestWorkspace;
+  owner: { id: string; email: string; new_account: boolean; password: string | null /* only when generated by this request */;
+    password_expires_at: string | null };
+  sign_in_url: string /* APP_URL + "/login?email=…" */ };
+
+// Test workspaces and test accounts are left out of every count (and of daily signups and
+// workspaces); billing never counts them (they have no Stripe subscription). AI usage is the
+// instance's real spend and includes theirs.
 type AdminSummary = {
   users: { total: number; new_7d: number; new_30d: number; active_7d: number /* seen in the app */ };
   workspaces: { total: number; new_7d: number; new_30d: number; active_7d: number /* with any event */; suspended: number };
@@ -185,7 +214,7 @@ type AdminJobStats = { states: Record<string, number>; kinds: { kind: string; av
 
 type InstanceAdmin = { user: { id: string; email: string; name: string }; role: AdminRole;
   granted_by: { id: string; email: string } | null; totp_enabled: boolean; created_at: string };
-type AdminAuditLog = { id: string; actor: { type: "admin" | "cli"; id: string | null; email: string };
+type AdminAuditLog = { id: string; actor: { type: "admin" | "cli" | "system" /* the test workspace cleanup */; id: string | null; email: string };
   action: string; target_type: "user" | "workspace" | "admin" | "job" | "instance"; target_id: string | null;
   data: Record<string, unknown>; ip: string; created_at: string };
 ```
@@ -212,13 +241,18 @@ are left out of the public OpenAPI spec. Lists take `?limit=&cursor=` and answer
 | POST | `/v1/admin/users/{id}/unsuspend` | users.suspend | → `AdminUser` |
 | POST | `/v1/admin/users/{id}/mfa/disable` | users.mfa | `{code}` step-up → `AdminUser`; emails the user; `409 mfa_not_enabled` |
 | DELETE | `/v1/admin/users/{id}` | users.delete | `{code, confirm_email}` → 204; `422 confirm_email_mismatch`; `409 sole_owner` while they own a workspace with other members; `409` for yourself or an admin |
-| GET | `/v1/admin/workspaces` | read | `?q=` name, slug, id or a member's email; `?filter=suspended\|paid\|free`; newest first → `Page<AdminWorkspaceRow>` |
+| GET | `/v1/admin/workspaces` | read | `?q=` name, slug, id or a member's email; `?filter=suspended\|paid\|free\|collab\|test` (paid: a paid Stripe subscription; free: neither that nor complimentary Collab; collab: on the collab plan or with Collab access offered or complimentary; test: test workspaces); newest first → `Page<AdminWorkspaceRow>` |
 | GET | `/v1/admin/workspaces/{id}` | read | `AdminWorkspace` |
 | POST | `/v1/admin/workspaces/{id}/suspend` | workspaces.suspend | `{reason: 1..500}` → `AdminWorkspace` |
 | POST | `/v1/admin/workspaces/{id}/unsuspend` | workspaces.suspend | → `AdminWorkspace` |
 | PUT | `/v1/admin/workspaces/{id}/limits` | workspaces.limits | `AdminLimits` (every member; `null` clears one) → `AdminWorkspace` |
 | POST | `/v1/admin/workspaces/{id}/ai-grants` | workspaces.limits | `{amount_usd: 0.01..10000, note: 1..200}` → `AdminWorkspace` |
-| DELETE | `/v1/admin/workspaces/{id}` | workspaces.delete | `{code, confirm_name}` → 204; `422 confirm_name_mismatch` |
+| PUT | `/v1/admin/workspaces/{id}/collab` | workspaces.limits | `{access: "none"\|"offered"\|"complimentary", until?: string \| null, note?: ..200}` → `AdminWorkspace`; `until` is RFC 3339, in the future, complimentary only (`422` otherwise). See "Collab access" |
+| DELETE | `/v1/admin/workspaces/{id}` | workspaces.delete (any), workspaces.test (a test workspace) | `{code, confirm_name}` → 204; `422 confirm_name_mismatch`. A test workspace's test accounts go with it (see "Test workspaces") |
+| POST | `/v1/admin/workspaces/{id}/sample-data` | workspaces.test | `{size, kinds}` (kinds: 1..6 of the six) → 202 `AdminTestWorkspace`; another batch on top of the last. `409 not_test` for any other workspace, `409 seeding` while a batch runs |
+| GET | `/v1/admin/test-workspaces` | read | oldest first → `Page<AdminTestWorkspace>` |
+| POST | `/v1/admin/test-workspaces` | workspaces.test | `{code, name, owner: {email, name?} \| {user_id}, password_days?: 1..90 (default 30), plan: "free"\|"pro"\|"collab", sample?: {size, kinds}, delete_after_days?: 1..365 \| null (default 30; null keeps it), reason: 1..500}` → 201 `TestWorkspaceResult`. `422 test_email_required` (a new account's address must end in `.invalid`), `404 user_not_found`, `409 account_suspended`; 30 per admin per hour |
+| PATCH | `/v1/admin/test-workspaces/{id}` | workspaces.test | `{code, delete_after_days?: 1..365 \| null, password_days?: 1..90}` (at least one) → `TestWorkspaceResult`, with a new password when `password_days` was given; `409 not_test_account` to renew an owner's own account; `404` for any other workspace |
 | GET | `/v1/admin/jobs` | read | `?state=` (default `retryable`), `?kind=`, `?queue=`; newest first → `Page<AdminJob>` |
 | GET | `/v1/admin/jobs/stats` | read | `AdminJobStats` |
 | POST | `/v1/admin/jobs/{id}/retry` | jobs.manage | runs a retryable, discarded or cancelled job now → `AdminJob` |
@@ -253,6 +287,15 @@ email jobs carry whole emails with their sign-in links. `last_error` is cut to 2
   (`0` = unlimited), `monthly_ai_usd` replaces the monthly AI allowance. They apply on every plan and
   survive plan changes; `null` returns to the plan's. Without billing every limit is already
   unlimited and the overrides are kept but have no effect.
+- **Collab access** (contracts/billing.md "Collab"): the collab plan ($38 per seat per month) is hidden
+  until an operator opens it to a workspace. `offered` lets its owners and admins subscribe to it, or
+  switch a Pro subscription to it, from the billing page. `complimentary` gives the workspace the collab
+  plan without paying (unlimited mailboxes and members, $20 of AI per billed seat, Collab) until `until`,
+  or until changed. `none` hides the plan again and ends complimentary access; a subscription already
+  on the collab plan is not canceled. The note is the operator's own and stays in the admin audit log
+  and on this page; the workspace never sees it. Each change publishes `billing.updated` to the
+  workspace (so do limit overrides and AI grants). Without billing the access is stored and has no
+  effect: every workspace has Collab unless the instance sets `COLLAB=false`.
 - **AI grant**: adds purchased AI usage (`ai_balance_grants`, source `admin`), spent after the
   monthly allowance like a top-up; it never expires.
 - **Turn off two-factor authentication**: TOTP and recovery codes are removed (passkeys stay), every
@@ -262,6 +305,51 @@ email jobs carry whole emails with their sign-in links. `last_error` is cut to 2
 - Each action is written to the admin audit log. Actions on a workspace, and on a user's account,
   are also written to the workspace's own audit log (each of the user's workspaces), with no actor
   user and `data.actor = "instance_admin"`, so the workspace's admins see that the operator acted.
+
+## Test workspaces
+
+A test workspace is a workspace an operator makes for a demo or a test: created through core
+like any other (default brand and widget, views, labels, SLA policy), flagged (`workspaces.test` = true),
+and deleted by the instance on the day the operator chose. It is never a customer's: a real person
+is given one only as the owner of their existing account.
+
+- **The owner** is an existing account (`{user_id}`, or the address of an account that exists),
+  which is made owner and keeps its own password, or a new **test account**: its address must end
+  in `.invalid` (RFC 2606: it never resolves, so nothing can reach it; the panel suggests
+  `owner-…@<workspace>.invalid`), it is marked confirmed, `users.test_account` is set, and it gets
+  a generated password (24 characters in four groups, upper and lower case and digits without
+  look-alikes, Argon2id like every password, accepted by `auth.CheckPassword`) that stops working at
+  `users.password_expires_at`. No verification or welcome email is sent, and the setup checklist
+  starts dismissed.
+- **Passwords are shown once**: in the create (or renew) response, never stored or logged in the
+  clear, never in the audit log. A password past its expiry reads as no password: sign-in answers
+  `401 invalid_credentials` exactly like an unknown account, in the same time. Renewing
+  (`PATCH … {password_days}`) sets a new one and ends the account's sessions and connected apps
+  like a password reset; the owner setting a password of their own clears the expiry.
+- **The plan** applies without Stripe. With billing on, `pro` sets the limit overrides to unlimited
+  mailboxes and members with a $20 monthly AI allowance and grants $50 of AI usage (source `admin`);
+  `collab` gives complimentary Collab until the workspace's deletion day (moved with it); `free`
+  changes nothing. Without billing every workspace is already unlimited, and the plan is recorded only.
+- **Sample data** (`internal/sample`) is added by a background job (`admin.seed_test_workspace`,
+  one attempt, 30 minutes) with a seed taken from the workspace id and the batch number, so a batch
+  can be reproduced and batches differ. `sample_data` shows it running, then done with the counts
+  (every batch added together) or failed with the error. Everything generated is on `.invalid`
+  addresses; generated teammates have no password and become test accounts; nothing is sent,
+  queued to send, charged or run by automations or AI.
+- **No mail leaves for a test account**: the platform mailer skips any `.invalid` recipient.
+- **Deletion** uses the normal workspace removal (`core.Ops`), then deletes the workspace's test
+  accounts that are left in no other workspace and are not admins. The **cleanup** runs every
+  hour: test workspaces past `test_expires_at` are deleted that way, each with
+  `test_workspace.expired` in the admin audit log (actor `system`).
+- Test workspaces and test accounts are left out of the overview's counts (`AdminSummary`).
+- The command line does the same on the machine that runs the instance (actor `cli`), handy for
+  local demo data; it adds the sample data at once unless `--queue`:
+
+```sh
+opendesk admin test-workspace create --name "Acme demo" --plan pro --sample realistic --delete-after 30
+opendesk admin test-workspace list
+opendesk admin test-workspace delete <id or slug>
+```
 
 ## Updates
 
@@ -300,5 +388,11 @@ target while it exists. It is kept for 2 years.
 
 Actions: `login`, `login.failed`, `logout`, `user.sessions_revoked`, `user.verification_sent`,
 `user.suspended`, `user.unsuspended`, `user.mfa_disabled`, `user.deleted`, `workspace.suspended`,
-`workspace.unsuspended`, `workspace.limits_changed`, `workspace.ai_granted`, `workspace.deleted`,
+`workspace.unsuspended`, `workspace.limits_changed`, `workspace.ai_granted`, `workspace.collab_changed`
+(`{access, until, note}`; the workspace's own log gets `{access, until}`), `workspace.deleted` (a test
+workspace: `{test, accounts_deleted}`), `test_workspace.created` (`{plan, owner_id, new_account,
+password_days, delete_after_days, test_expires_at, sample, reason}`; the workspace's own log gets
+`workspace.test_created`), `test_workspace.changed` (`{delete_after_days, test_expires_at,
+password_renewed, password_days, owner_id}`), `test_workspace.sample_added` (`{size, kinds, batch}`),
+`test_workspace.expired` (`{accounts_deleted}`),
 `job.retried`, `job.cancelled`, `admin.granted`, `admin.role_changed`, `admin.revoked`.

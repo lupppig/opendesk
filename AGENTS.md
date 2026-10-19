@@ -44,8 +44,10 @@ Self-hosted = `opendesk` + `realtime` + `postgres` behind Caddy on one domain: `
   (mailboxes, inbound, outbound), `internal/helpdesk` (tickets, contacts, KB, widget,
   SLA, automations, reports), `internal/billing` (Stripe, plans; Cloud only),
   `internal/ai` (AI features, providers, embeddings) and `internal/integrations`
-  (connected products over MCP, ticket links; `contracts/integrations.md`), and `internal/admin`
-  (the instance admin API `/v1/admin/*`, its own sessions and audit log; `contracts/admin.md`). Plan limits and AI usage go
+  (connected products over MCP, ticket links; `contracts/integrations.md`), `internal/admin`
+  (the instance admin API `/v1/admin/*`, its own sessions and audit log; `contracts/admin.md`),
+  and `internal/collab` (Collab: members' own mail accounts, private or shared, synced both ways
+  with Gmail, Microsoft Graph or IMAP; never tickets; `contracts/collab.md`). Plan limits and AI usage go
   through `d.Plan` (`internal/plan`, `contracts/billing.md`); AI through `internal/ai`
   (`contracts/ai.md`). Each exposes `Register`, `RegisterWorkers`, `Periodic`,
   `Background` (see `internal/app`). Shared ticket writes live in `internal/domain`:
@@ -82,7 +84,9 @@ Self-hosted = `opendesk` + `realtime` + `postgres` behind Caddy on one domain: `
 The cloud is the self-host plus configuration. Billing is on only when `STRIPE_SECRET_KEY`
 is set; without it every workspace is `self_hosted` with no limits. AI is on when a provider
 key is set (`ANTHROPIC_API_KEY`, or any OpenAI-compatible endpoint, including local models).
-Never gate a feature on plan: plans differ only in limits (`contracts/billing.md`).
+Never gate a feature on plan: plans differ only in limits (`contracts/billing.md`). The one
+exception is Collab, which is the collab plan's (`plan.Entitlements.Collab`, `d.Plan.RequireCollab`);
+a self-hosted instance has it for every workspace unless `COLLAB=false`.
 Customer replies go out through each mailbox's own Google, Microsoft or SMTP connection; the
 platform mailer (SES on the cloud) sends only platform mail. Sending replies through it is an
 instance option (`MAILBOX_SYSTEM_SEND`), off on the cloud.
@@ -100,7 +104,9 @@ an apply from a local copy alone is undone by the next deploy (`deploy/terraform
 
 opendesk Cloud connects Google mailboxes send-only (`gmail.send`); IMAP sync, which needs the
 restricted `https://mail.google.com/` scope, is an instance option (`MAILBOX_IMAP`) for
-self-hosters with their own Google client. The invariants below follow **ADA CASA Tier 1**
+self-hosters with their own Google client. Collab mail accounts (`gmail.modify`) connect through
+`COLLAB_GOOGLE_CLIENT_ID`, on opendesk Cloud a Google project of its own, so the mailbox
+client's consent stays `gmail.send`. The invariants below follow **ADA CASA Tier 1**
 (ASVS 4.0.3 Level 1) and hold for every change. The repo is public and self-hosted:
 **describe the invariant, never the gap** in comments, commits and docs.
 
@@ -149,6 +155,9 @@ Input and output
   stored HTML without that.
 - Inbound email renders in a sandboxed frame without scripts, and its images from other
   sites (including CSS `url()`) load only when the reader asks (`web/src/lib/sanitize.ts`).
+  Collab mail is inbound email: the same sanitizing before storage and the same frame.
+- A private Collab account and its mail are visible to the member who connected it alone,
+  admins included; Collab events go only to the people who see what changed (`events.Event.Users`).
 - Webhook and other outbound URLs are HTTPS and refuse private, loopback and link-local
   targets (SSRF), except on a development instance.
 

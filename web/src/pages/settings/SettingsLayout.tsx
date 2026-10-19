@@ -7,6 +7,7 @@ import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/cn";
 import { motion } from "motion/react";
 import {
+  AtSign,
   Bell,
   BookOpen,
   Bot,
@@ -44,6 +45,7 @@ import {
 } from "lucide-react";
 import { Fragment, type ReactNode } from "react";
 import { BrandMark } from "@/components/settings2/teams";
+import { useCollab } from "@/lib/collab/hooks";
 
 type NavPath =
   | "/settings/profile"
@@ -54,6 +56,7 @@ type NavPath =
   | "/settings/teams"
   | "/settings/mailboxes"
   | "/settings/support-channels"
+  | "/settings/mail-accounts"
   | "/settings/brands"
   | "/settings/email-design"
   | "/settings/routing"
@@ -124,6 +127,7 @@ const groups: { title: string; items: { to: NavPath; label: string; icon: ReactN
     items: [
       { to: "/settings/mailboxes", label: "Mailboxes", icon: <Inbox /> },
       { to: "/settings/support-channels", label: "Support channels", icon: <MessageSquareShare /> },
+      { to: "/settings/mail-accounts", label: "Mail accounts", icon: <AtSign /> },
       { to: "/settings/routing", label: "Routing", icon: <Route /> },
       { to: "/settings/brands", label: "Brands and widgets", icon: <MessageCircle /> },
       { to: "/settings/email-design", label: "Email design", icon: <Palette /> },
@@ -162,9 +166,12 @@ function useVisibleGroups() {
   const admin = atLeast(useRole(), "admin");
   const hideAi = isFetched && !ai?.enabled && !admin;
   const hideAgent = !admin || (isFetched && !ai?.enabled);
+  // Mail accounts are Collab's, listed only while the workspace has it.
+  const collab = useCollab();
   return groups
     .filter((g) => !(hideAgent && g.title === AGENT_GROUP))
-    .map((g) => (hideAi ? { ...g, items: g.items.filter((i) => i.to !== "/settings/ai") } : g));
+    .map((g) => (hideAi ? { ...g, items: g.items.filter((i) => i.to !== "/settings/ai") } : g))
+    .map((g) => (collab.enabled ? g : { ...g, items: g.items.filter((i) => i.to !== "/settings/mail-accounts") }));
 }
 
 /** With a second brand, each brand is listed under Brands (contracts/teams.md). */

@@ -32,9 +32,16 @@ github_repo = "useopendesk/opendesk"
 google_client_id    = ""
 # google_mailbox_client_id = ""   # Gmail mailboxes in their own Google project (secret GOOGLE_MAILBOX_CLIENT_SECRET)
 # microsoft_mailbox_client_id = "" # Microsoft mailboxes in their own Entra app (secret MICROSOFT_MAILBOX_CLIENT_SECRET)
+# collab_google_client_id = ""    # Collab mail accounts in their own Google project (gmail.modify; secret COLLAB_GOOGLE_CLIENT_SECRET)
+# collab_microsoft_client_id = "" # Collab mail accounts in their own Entra app (secret COLLAB_MICROSOFT_CLIENT_SECRET)
 microsoft_client_id = ""
 github_client_id    = ""
 turnstile_site_key  = ""
+# Integrations that sign in with apps registered in advance (secrets MCP_SLACK_CLIENT_SECRET,
+# MCP_BOX_CLIENT_SECRET, MCP_GITHUB_CLIENT_SECRET)
+# mcp_slack_client_id  = ""
+# mcp_box_client_id    = ""
+# mcp_github_client_id = ""   # a GitHub App; empty asks for a token
 
 # Mailbox sign-in per provider (user sign-in is not affected). Match the Pages
 # variable MAILBOX_OAUTH so the wizard and the API agree.
@@ -48,6 +55,8 @@ microsoft_mailbox_oauth = true
 #   "GOOGLE_CLIENT_SECRET", "MICROSOFT_CLIENT_SECRET", "TURNSTILE_SECRET", "POSTHOG_KEY",
 #   # Billing (opendesk Cloud only): turns plans and limits on.
 #   "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STRIPE_PRICE_PRO", "STRIPE_PRICE_PRO_YEARLY", "STRIPE_PRICE_CREDITS",
+#   # The hidden collab plan, and its own Google and Microsoft clients (collab_google_client_id, collab_microsoft_client_id).
+#   "STRIPE_PRICE_COLLAB", "COLLAB_GOOGLE_CLIENT_SECRET", "COLLAB_MICROSOFT_CLIENT_SECRET",
 #   # AI: OPENROUTER_API_KEY sets AI_PROVIDER=openrouter (chat, Jev and embeddings),
 #   # else ANTHROPIC_API_KEY sets AI_PROVIDER=anthropic; VOYAGE_API_KEY sets EMBEDDINGS_DRIVER=voyage.
 #   "OPENROUTER_API_KEY",
@@ -56,6 +65,8 @@ microsoft_mailbox_oauth = true
 #   # Help center custom domains: a token with SSL and Certificates edit on the
 #   # help zone only. Sets CLOUDFLARE_SAAS_ZONE_ID to that zone.
 #   "CLOUDFLARE_SAAS_TOKEN",
+#   # Integrations: the Slack, Box and GitHub apps (with mcp_slack_client_id, mcp_box_client_id, mcp_github_client_id).
+#   "MCP_SLACK_CLIENT_SECRET", "MCP_BOX_CLIENT_SECRET", "MCP_GITHUB_CLIENT_SECRET",
 # ]
 # Empty uses the app's default for the provider; ids are the provider's own.
 # ai_model      = "anthropic/claude-sonnet-5.5"

@@ -1,11 +1,15 @@
-import { useInfiniteQuery } from "@tanstack/react-query";
-import { useEffect, useMemo } from "react";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo } from "react";
+import type { TicketListQuery } from "@/lib/api/endpoints";
 import type { Ticket } from "@/lib/api/types";
+import { folderById, type FolderId } from "@/lib/folders";
+import { ticketMatches } from "@/lib/ticketCache";
 import { q } from "@/lib/queries";
 import { realtime } from "@/lib/realtime/manager";
 import { useRealtime } from "@/lib/realtime/store";
 import { useSession } from "@/lib/session";
 import { useNow } from "@/lib/useNow";
+import { useTeamsCtx } from "./teams";
 import { chatWait, handlerOf, useAgentOn, type ChatWait } from "./waiting";
 
 // Live chat visitors waiting with nobody on it, for the whole app: the sidebar, the
@@ -43,4 +47,33 @@ export function useUrgentChats(enabled = true, watch = false) {
     [tickets, agentOn, now, presence, me, active],
   );
   return { urgent, now, ready: list.isSuccess };
+}
+
+/** A sidebar row that lists tickets: an inbox folder, a team ("mine": the caller's teams) or a view. */
+export type WaitingScope = { kind: "ticket_folder"; id: FolderId } | { kind: "team"; id: string } | { kind: "view"; id: string };
+
+/**
+ * How many waiting chats each row would list, by the same rules the lists use, so a team,
+ * a view or a favorite shows its own red count, not only Unassigned.
+ */
+export function useWaitingFor(): (scope: WaitingScope) => number {
+  const { urgent } = useUrgentChats();
+  const { data: views } = useQuery(q.views());
+  const teams = useTeamsCtx();
+  const me = useSession((s) => s.user?.id) ?? "";
+  return useCallback(
+    (scope: WaitingScope) => {
+      if (!urgent.length) return 0;
+      const mine = [...teams.myTeams];
+      const query: TicketListQuery | null =
+        scope.kind === "ticket_folder"
+          ? (folderById(scope.id)?.query ?? null)
+          : scope.kind === "team"
+            ? { team_id: scope.id === "mine" ? "mine" : scope.id }
+            : { view_id: scope.id };
+      if (!query) return 0;
+      return urgent.filter((x) => ticketMatches(query, x.ticket, me, views, mine) === true).length;
+    },
+    [urgent, views, teams.myTeams, me],
+  );
 }

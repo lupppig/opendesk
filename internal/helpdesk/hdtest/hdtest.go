@@ -119,7 +119,7 @@ func New(t testing.TB, regs ...RegisterFunc) *Env {
 	httpx.Install(d.Log)
 	r := chi.NewRouter()
 	r.Use(httpx.RequestID, httpx.SecurityHeaders(false), httpx.CORS([]string{"http://app.test"}))
-	resolver := &auth.Resolver{Pool: d.DB.Pool, Tokens: d.Tokens, ClientIP: httpx.ClientIP(false)}
+	resolver := &auth.Resolver{Pool: d.DB.Pool, Tokens: d.Tokens, ClientIP: httpx.ClientIP(false, 0)}
 	r.Use(resolver.Middleware)
 	api := humachi.New(r, huma.DefaultConfig("opendesk test", "test"))
 	for _, reg := range regs {

@@ -1,6 +1,6 @@
 // Pure billing helpers: money, limits, the AI balance and usage series. No React.
 
-import type { AIBalance, AIFeature, AutoRecharge, Billing, BillingUsage, PaymentMethod, Price } from "@/lib/api/types";
+import type { AIBalance, AIFeature, AutoRecharge, Billing, BillingStatus, BillingUsage, PaymentMethod, Price } from "@/lib/api/types";
 
 /** Fraction digits a currency uses (USD 2, JPY 0). Stripe amounts are in those minor units. */
 export function currencyDigits(currency: string, locale = "en"): number {
@@ -201,9 +201,24 @@ export function withPatch(ar: AutoRecharge, patch: Partial<AutoRecharge>): AutoR
   return next;
 }
 
+const PAID_STATUSES: BillingStatus[] = ["active", "trialing", "past_due"];
+
 /** The workspace has a Stripe subscription to manage. */
 export function hasSubscription(b: Billing): boolean {
-  return b.billing_enabled && b.plan === "pro" && b.status !== "none";
+  if (!b.billing_enabled) return false;
+  if (b.plan === "pro") return b.status !== "none";
+  // Complimentary Collab is the collab plan without a subscription.
+  return b.plan === "collab" && PAID_STATUSES.includes(b.status);
+}
+
+/** Collab is on for free: complimentary access from an instance admin, without a subscription. */
+export function isComplimentary(b: Billing): boolean {
+  return b.plan === "collab" && b.collab?.access === "complimentary" && !hasSubscription(b);
+}
+
+/** The Collab plan card shows: the plan is offered (or given) to the workspace, or it is on it. */
+export function showCollab(b: Billing): boolean {
+  return b.billing_enabled && (!!b.collab?.available || b.plan === "collab");
 }
 
 export function isSelfHosted(b: Billing): boolean {

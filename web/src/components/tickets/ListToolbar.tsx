@@ -92,6 +92,9 @@ export function ListToolbar({
       first.current = false;
       return;
     }
+    // Only a real change: a spurious run (React's double mount in development) must not
+    // navigate, or it can pull the page back while the person is leaving it.
+    if ((term.trim() || undefined) === (search.q || undefined)) return;
     const tm = setTimeout(() => onSearch({ ...search, q: term.trim() || undefined }), 250);
     return () => clearTimeout(tm);
     // Only the typed term drives this.

@@ -19,7 +19,7 @@ The installer is a convenience around Docker Compose. The same `docker-compose.y
 | `realtime` | `ghcr.io/useopendesk/realtime:${OPENDESK_VERSION}` | The Phoenix gateway, connected to opendesk's NATS with `NATS_TOKEN`. |
 | `postgres` | `pgvector/pgvector:pg17` | Postgres 17 with pgvector for semantic search, data in the `postgres-data` volume. |
 
-Postgres, NATS and the app ports are on an `internal` network and are never published. Only Caddy (and the optional SMTP relay) face the host.
+Postgres, NATS and the app ports are on an `internal` network and are never published. Only Caddy (and the optional SMTP relay) face the host. To use a reverse proxy you already run instead of Caddy, add `compose.external-proxy.yml`: see [Your own reverse proxy](/self-hosting/reverse-proxy/).
 
 <Diagram name="self-host" caption="Caddy is the only way in. realtime, opendesk and postgres share the internal network, and the gateway reaches opendesk's embedded NATS there." />
 
@@ -30,7 +30,7 @@ Every service runs with `no-new-privileges`, and the app containers run with a r
 <Steps>
 <Step title="Download the release files">
 
-From the GitHub release for the version you want, download `docker-compose.yml`, `Caddyfile`, `env.template`, `opendesk-ctl` and `SHA256SUMS` into one directory, then check them:
+From the GitHub release for the version you want, download `docker-compose.yml`, `compose.external-proxy.yml`, `Caddyfile`, `env.template`, `opendesk-ctl` and `SHA256SUMS` into one directory, then check them:
 
 ```sh
 mkdir -p /opt/opendesk && cd /opt/opendesk
@@ -73,12 +73,14 @@ From a checkout, `make selfhost-env` writes `.env` with fresh secrets (it never 
 | --- | --- | --- |
 | `OPENDESK_VERSION` | pinned by the installer | Release of the `opendesk` and `realtime` images. Change it, then `docker compose pull && docker compose up -d`, to upgrade. |
 | `OPENDESK_IMAGE`, `REALTIME_IMAGE` | `ghcr.io/useopendesk/...` | Image names, for a mirror. |
-| `OPENDESK_DOMAIN` | `localhost` | The hostname Caddy serves. `localhost` uses Caddy's local CA; `:80` serves plain HTTP behind another proxy. |
+| `OPENDESK_DOMAIN` | `localhost` | The hostname Caddy serves. `localhost` uses Caddy's local CA; `:80` serves plain HTTP. |
 | `OPENDESK_URL` | `https://localhost` | Public URL. Sets `API_URL`, `APP_URL`, `CORS_ORIGINS` and `SITE_URL`. |
 | `OPENDESK_GATEWAY_URL` | `wss://localhost/socket` | Public WebSocket URL (`GATEWAY_URL`). |
 | `CADDY_GLOBAL_OPTIONS` | empty | Caddy global options, such as `email you@example.com` for the ACME account. |
 | `HTTP_PORT`, `HTTPS_PORT` | `80`, `443` | Host ports Caddy publishes. |
 | `OPENDESK_CADDYFILE` | `./deploy/caddy/Caddyfile` | The Caddyfile to mount. |
+| `COMPOSE_FILE` | unset | `docker-compose.yml:compose.external-proxy.yml` runs without Caddy, behind [your own reverse proxy](/self-hosting/reverse-proxy/). |
+| `OPENDESK_BIND`, `OPENDESK_PORT`, `REALTIME_PORT`, `TRUSTED_PROXY_HOPS` | `127.0.0.1`, `8080`, `4000`, `1` | With `compose.external-proxy.yml`: where opendesk and realtime are published for your proxy, and how many proxies append to `X-Forwarded-For`. |
 | `CHECK_ORIGINS` | `OPENDESK_URL` | Browser origins the gateway accepts for agent sockets. |
 | `POSTGRES_PASSWORD` | required | Password for the bundled Postgres. |
 | `SECRET_KEY_BASE` | required | The gateway's Phoenix secret. |
@@ -88,7 +90,7 @@ From a checkout, `make selfhost-env` writes `.env` with fresh secrets (it never 
 | `WEB_POSTHOG_KEY`, `WEB_POSTHOG_HOST` | empty | Browser-side analytics for the web app. Empty sends nothing. |
 | `OPENDESK_DATA`, `OPENDESK_PG_DATA`, `OPENDESK_S3_DATA`, `OPENDESK_OLLAMA_DATA` | named volumes | Override where data is stored, for example with a host path. |
 
-Inside the bundle, opendesk always runs with `OPENDESK_ENV=production`, `OPENDESK_ROLE=all` and `TRUST_PROXY=true` (Caddy is the only way in), and `DATABASE_URL` points at the bundled Postgres. Every other [application setting](/self-hosting/configuration/) is passed through from `.env`.
+Inside the bundle, opendesk always runs with `OPENDESK_ENV=production`, `OPENDESK_ROLE=all` and `TRUST_PROXY=true` (Caddy is the only way in, or `TRUSTED_PROXY_HOPS` with `compose.external-proxy.yml`), and `DATABASE_URL` points at the bundled Postgres. Every other [application setting](/self-hosting/configuration/) is passed through from `.env`.
 
 ## Profiles
 
@@ -174,7 +176,7 @@ Custom domains work the same way, with or without `HELP_DOMAIN`. When an admin a
 
 <Callout>
 
-Behind another proxy that terminates TLS (`OPENDESK_DOMAIN=:80`), that proxy gets the certificates: give it a wildcard certificate for `*.HELP_DOMAIN`, or its own on-demand TLS asking the same endpoint, and forward the `Host` header as is.
+Behind [your own reverse proxy](/self-hosting/reverse-proxy/#help-centers), that proxy gets the certificates: give it a wildcard certificate for `*.HELP_DOMAIN`, or its own on-demand TLS asking the same endpoint, and forward the `Host` header as is.
 
 </Callout>
 

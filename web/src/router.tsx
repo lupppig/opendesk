@@ -19,6 +19,7 @@ import { stripWorkspaceParam, workspaceParam } from "./lib/workspaceParam";
 import { queryClient } from "./lib/queryClient";
 import { q } from "./lib/queries";
 import { folderById, listQuery, parseInboxSearch, teamQuery } from "./lib/folders";
+import { isMailRouteBox, mailListQuery, parseMailSearch } from "./lib/collab/boxes";
 
 export type RouterContext = { queryClient: QueryClient };
 
@@ -216,6 +217,8 @@ const appLayout = createRoute({
     void qc.prefetchQuery(q.tags());
     void qc.prefetchQuery(q.teams());
     void qc.prefetchQuery(q.notifications());
+    // Collab's mail sections join the sidebar when the workspace has it.
+    void qc.prefetchQuery(q.collabStatus());
     return Promise.all([qc.ensureQueryData(q.counts()), qc.ensureQueryData(q.views())]);
   },
   component: AppLayout,
@@ -275,6 +278,41 @@ const teamRoute = createRoute({
   },
   component: page(() => import("./pages/inbox/InboxPage")),
   staticData: { title: "Team" },
+});
+
+// Collab mail (contracts/collab.md): a box, or a folder (`folder` search), across accounts or
+// one (`account`). Without Collab on the workspace the mail pages are not there.
+async function requireCollab(qc: QueryClient) {
+  const status = await qc.ensureQueryData(q.collabStatus());
+  if (!status?.enabled) throw redirect({ to: "/inbox/$folder/{-$ticketId}", params: { folder: "unassigned", ticketId: undefined } });
+}
+
+const mailIndexRoute = createRoute({
+  getParentRoute: () => appLayout,
+  path: "/mail",
+  beforeLoad: () => {
+    throw redirect({ to: "/mail/$box/{-$threadId}", params: { box: "inbox", threadId: undefined }, search: {} });
+  },
+});
+
+const mailRoute = createRoute({
+  getParentRoute: () => appLayout,
+  path: "/mail/$box/{-$threadId}",
+  validateSearch: parseMailSearch,
+  loaderDeps: ({ search }) => search,
+  loader: async ({ context, params, deps }) => {
+    const qc = context.queryClient;
+    await requireCollab(qc);
+    if (!isMailRouteBox(params.box) || (params.box === "folder" && !deps.folder))
+      throw redirect({ to: "/mail/$box/{-$threadId}", params: { box: "inbox", threadId: undefined }, search: {} });
+    void qc.prefetchQuery(q.mailAccounts());
+    void qc.prefetchQuery(q.mailSidebar());
+    void qc.prefetchQuery(q.members());
+    if (params.threadId) void qc.prefetchQuery(q.mailThread(params.threadId));
+    return qc.ensureInfiniteQueryData(q.mailThreads(mailListQuery(params.box, deps)));
+  },
+  component: page(() => import("./pages/mail/MailPage")),
+  staticData: { title: "Mail" },
 });
 
 /** Addresses and brands name the chips on every row and the reply address. */
@@ -554,6 +592,34 @@ const sMailboxDetail = createRoute({
   component: page(() => import("./pages/settings/MailboxDetail")),
   staticData: { title: "Mailbox" },
 });
+// Collab mail accounts (contracts/collab.md), listed in settings only while Collab is on.
+const sMailAccounts = createRoute({
+  getParentRoute: () => settingsLayout,
+  path: "/mail-accounts",
+  validateSearch: (s: Record<string, unknown>): { connected?: string; error?: string } => ({ connected: str(s.connected), error: str(s.error) }),
+  loader: async ({ context }) => {
+    const qc = context.queryClient;
+    const status = await qc.ensureQueryData(q.collabStatus());
+    void qc.prefetchQuery(q.teams());
+    void qc.prefetchQuery(q.members());
+    if (status?.enabled) return qc.ensureQueryData(q.mailAccounts());
+  },
+  component: page(() => import("./pages/settings/MailAccounts")),
+  staticData: { title: "Mail accounts" },
+});
+const sMailAccountDetail = createRoute({
+  getParentRoute: () => settingsLayout,
+  path: "/mail-accounts/$accountId",
+  loader: async ({ context }) => {
+    const qc = context.queryClient;
+    await requireCollab(qc);
+    void qc.prefetchQuery(q.teams());
+    void qc.prefetchQuery(q.members());
+    return qc.ensureQueryData(q.mailAccounts());
+  },
+  component: page(() => import("./pages/settings/MailAccountDetail")),
+  staticData: { title: "Mail account" },
+});
 const sTags = settingsPage("/tags", "Labels", () => import("./pages/settings/Tags"), (qc) => qc.ensureQueryData(q.tags()));
 const sCustomFields = settingsPage("/custom-fields", "Custom fields", () => import("./pages/settings/CustomFields"));
 const sAssignment = settingsPage("/assignment", "Assignment", () => import("./pages/settings/Assignment"), (qc) =>
@@ -740,6 +806,8 @@ const routeTree = rootRoute.addChildren([
     inboxRoute,
     viewRoute,
     teamRoute,
+    mailIndexRoute,
+    mailRoute,
     contactsRoute,
     companiesRoute,
     kbRoute,
@@ -764,6 +832,8 @@ const routeTree = rootRoute.addChildren([
       sSupportChannels,
       sMailboxNew,
       sMailboxDetail,
+      sMailAccounts,
+      sMailAccountDetail,
       sTags,
       sCustomFields,
       sAssignment,

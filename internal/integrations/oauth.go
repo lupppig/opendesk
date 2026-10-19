@@ -244,6 +244,9 @@ func (s *Service) identify(ctx context.Context, providerKey string, asm *serverM
 	if id, secret := preRegistered(providerKey); id != "" {
 		c.ClientID, c.ClientSecret, c.RegisteredVia = id, secret, "preregistered"
 		c.AuthMethod = tokenAuthMethod(asm, secret != "")
+		if p, ok := provider(providerKey); ok && p.SecretInForm && secret != "" && len(asm.TokenEndpointAuthMethods) == 0 {
+			c.AuthMethod = "client_secret_post"
+		}
 		return c, nil
 	}
 	if asm.ClientIDMetadataDocSupported && strings.HasPrefix(s.clientMetadataURL(), "https://") {
@@ -361,7 +364,7 @@ func (s *Service) tokenRequest(ctx context.Context, c *oauthClient, form url.Val
 	switch {
 	case resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests:
 		return nil, errors.New("the sign-in service is not responding. Try again in a moment")
-	case tr.Error == "invalid_grant":
+	case tr.Error == "invalid_grant" || tr.Error == "bad_refresh_token":
 		return nil, errReauthorize
 	case resp.StatusCode >= 400 || tr.Error != "":
 		return nil, fmt.Errorf("the sign-in service refused the request (%s)", safeCode(tr.Error))

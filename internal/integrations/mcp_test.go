@@ -394,3 +394,37 @@ func TestLinkProvider(t *testing.T) {
 		}
 	}
 }
+
+func TestRegisteredAppSignIn(t *testing.T) {
+	gh, _ := provider("github")
+	if gh.Auth != "token" || gh.TokenURL == "" {
+		t.Fatalf("github without an app = %+v", gh)
+	}
+	t.Setenv("MCP_GITHUB_CLIENT_ID", "Iv1.app")
+	t.Setenv("MCP_GITHUB_CLIENT_SECRET", "secret")
+	gh, _ = provider("github")
+	if gh.Auth != "oauth" || gh.TokenHelp != "" || gh.TokenURL != "" {
+		t.Fatalf("github with an app = %+v", gh)
+	}
+	for _, p := range catalog() {
+		if p.Key == "github" && p.Auth != "oauth" {
+			t.Fatalf("catalog github = %+v", p)
+		}
+	}
+	if st, _ := provider("stripe"); st.Auth != "oauth" {
+		t.Fatalf("stripe = %+v", st)
+	}
+
+	s := testService(t)
+	asm := &serverMetadata{Issuer: "https://github.com/login/oauth", AuthorizationEndpoint: "https://github.com/login/oauth/authorize",
+		TokenEndpoint: "https://github.com/login/oauth/access_token", CodeChallengeMethods: []string{"S256"}}
+	c, err := s.identify(context.Background(), "github", asm)
+	if err != nil || c.ClientID != "Iv1.app" || c.RegisteredVia != "preregistered" || c.AuthMethod != "client_secret_post" {
+		t.Fatalf("identify github: %+v %v", c, err)
+	}
+	t.Setenv("MCP_SLACK_CLIENT_ID", "slack-app")
+	t.Setenv("MCP_SLACK_CLIENT_SECRET", "secret")
+	if c, err := s.identify(context.Background(), "slack", asm); err != nil || c.AuthMethod != "client_secret_basic" {
+		t.Fatalf("identify slack: %+v %v", c, err)
+	}
+}

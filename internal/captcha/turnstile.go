@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 )
@@ -21,9 +22,9 @@ type TurnstileConfig struct {
 	Secret        string
 	SiteVerifyURL string
 	HTTPClient    *http.Client
-	ExpectedHost  string // optional: verify hostname
-	BypassToken   string // optional: local/dev bypass token
-	Disabled      bool   // CAPTCHA_PROVIDER=none: accept every request
+	Hostnames     []string // the hostnames the challenge may be solved on; empty accepts any
+	BypassToken   string   // optional: local/dev bypass token
+	Disabled      bool     // CAPTCHA_PROVIDER=none: accept every request
 }
 
 type Response struct {
@@ -37,6 +38,12 @@ type Response struct {
 
 type Turnstile struct {
 	cfg TurnstileConfig
+}
+
+// IsTestSecret reports whether secret is one of Cloudflare's test secrets, which answer
+// for a placeholder hostname rather than the page's.
+func IsTestSecret(secret string) bool {
+	return len(secret) == 35 && strings.HasSuffix(secret, "x"+strings.Repeat("0", 31)+"AA")
 }
 
 const CloudflareTurnstileVerifyEndpoint = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
@@ -121,8 +128,8 @@ func (t *Turnstile) Verify(ctx context.Context, token, remoteIP string) error {
 		return ErrCaptcha
 	}
 
-	// Optional: verify hostname
-	if t.cfg.ExpectedHost != "" && r.Hostname != t.cfg.ExpectedHost {
+	// A token solved on another site is not one of ours.
+	if len(t.cfg.Hostnames) > 0 && !slices.Contains(t.cfg.Hostnames, r.Hostname) {
 		return ErrCaptcha
 	}
 

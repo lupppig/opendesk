@@ -12,7 +12,7 @@ import (
 // turns off 2FA, deletes and manages admins.
 func TestRolePermissions(t *testing.T) {
 	superOnly := []string{PermUserMFA, PermUserDelete, PermWorkspaceDelete, PermAdminsManage}
-	support := []string{PermUserSessions, PermUserSuspend, PermWorkspaceSuspend, PermWorkspaceLimits, PermJobsManage}
+	support := []string{PermUserSessions, PermUserSuspend, PermWorkspaceSuspend, PermWorkspaceLimits, PermWorkspaceTest, PermJobsManage}
 	for _, p := range append(append([]string{PermRead}, support...), superOnly...) {
 		if !RoleSuper.Can(p) {
 			t.Errorf("super cannot %s", p)

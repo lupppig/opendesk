@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"os"
 	"regexp"
@@ -46,6 +47,10 @@ type Config struct {
 	CORSOrigins    []string
 	SignupEnabled  bool
 	TrustProxy     bool
+	ProxyHops      int // TRUSTED_PROXY_HOPS: proxies in front that append to X-Forwarded-For
+	// LogLevel is the least severe level logged (LOG_LEVEL): info in production,
+	// debug in development.
+	LogLevel slog.Level
 	// UpdateCheck looks for new opendesk releases on GitHub (UPDATE_CHECK, default on) and
 	// tells the instance admins. Builds that are not a release never look.
 	UpdateCheck bool
@@ -114,7 +119,9 @@ type Config struct {
 	// MailboxIMAP lets mailboxes receive over IMAP (MAILBOX_IMAP, default on): generic
 	// IMAP, and Google and Microsoft mailboxes connected to read the inbox. Off, every
 	// mailbox receives by forwarding and Google and Microsoft connect send-only; existing
-	// IMAP mailboxes are kept but not polled. opendesk Cloud turns it off.
+	// IMAP mailboxes are kept but not polled. opendesk Cloud turns it off. Workspaces with
+	// Collab still receive over generic IMAP (with COLLAB_IMAP) and may read Google and
+	// Microsoft inboxes through their APIs with the Collab clients (contracts/api.md).
 	MailboxIMAP bool
 	// MailboxSystemSend lets mailboxes send replies through the platform mailer
 	// (MAILBOX_SYSTEM_SEND, default on): outbound_kind "system", from MAIL_FROM. Off,
@@ -122,6 +129,19 @@ type Config struct {
 	// sends through the platform mailer sends nothing until it connects one. opendesk
 	// Cloud turns it off.
 	MailboxSystemSend bool
+	// Collab (contracts/collab.md): members' own mail accounts. COLLAB (default on) makes it
+	// exist on this instance; with billing it is still only the collab plan's. The OAuth
+	// clients default to the mailbox clients; COLLAB_IMAP (default on) offers IMAP accounts.
+	Collab                      bool
+	CollabIMAP                  bool
+	CollabGoogleClientID        string
+	CollabGoogleClientSecret    string
+	CollabMicrosoftClientID     string
+	CollabMicrosoftClientSecret string
+	// StripePriceCollab and StripePriceCollabYear are the collab plan's recurring per-seat
+	// prices (contracts/billing.md "Collab"); without one the plan cannot be bought.
+	StripePriceCollab     string
+	StripePriceCollabYear string
 
 	TurnstileSiteKey string
 	TurnstileSecret  string
@@ -584,6 +604,18 @@ func Load() (*Config, error) {
 	c.MailhostISPDB = envBool("MAILHOST_ISPDB", c.BillingEnabled())
 	c.MailboxIMAP = envBool("MAILBOX_IMAP", true)
 	c.MailboxSystemSend = envBool("MAILBOX_SYSTEM_SEND", true)
+	c.Collab = envBool("COLLAB", true)
+	c.CollabIMAP = envBool("COLLAB_IMAP", true)
+	c.CollabGoogleClientID, c.CollabGoogleClientSecret = env("COLLAB_GOOGLE_CLIENT_ID", ""), env("COLLAB_GOOGLE_CLIENT_SECRET", "")
+	if c.CollabGoogleClientID == "" {
+		c.CollabGoogleClientID, c.CollabGoogleClientSecret = c.GoogleMailboxClientID, c.GoogleMailboxClientSecret
+	}
+	c.CollabMicrosoftClientID, c.CollabMicrosoftClientSecret = env("COLLAB_MICROSOFT_CLIENT_ID", ""), env("COLLAB_MICROSOFT_CLIENT_SECRET", "")
+	if c.CollabMicrosoftClientID == "" {
+		c.CollabMicrosoftClientID, c.CollabMicrosoftClientSecret = c.MicrosoftMailboxClientID, c.MicrosoftMailboxClientSecret
+	}
+	c.StripePriceCollab = env("STRIPE_PRICE_COLLAB", "")
+	c.StripePriceCollabYear = env("STRIPE_PRICE_COLLAB_YEARLY", "")
 	c.NATSStoreDir = env("NATS_STORE_DIR", c.DataDir+"/nats")
 	c.CookieSecure = envBool("COOKIE_SECURE", strings.HasPrefix(c.APIURL, "https://"))
 	// The binary serves the panel at <APP_URL>/admin; a development API pairs with the
@@ -593,6 +625,15 @@ func Load() (*Config, error) {
 		adminURL = "http://localhost:5174"
 	}
 	c.AdminURL = strings.TrimRight(env("ADMIN_URL", adminURL), "/")
+	c.LogLevel = slog.LevelInfo
+	if !c.IsProduction() {
+		c.LogLevel = slog.LevelDebug
+	}
+	if v := os.Getenv("LOG_LEVEL"); v != "" {
+		if err := c.LogLevel.UnmarshalText([]byte(v)); err != nil {
+			return nil, errors.New("LOG_LEVEL must be debug, info, warn or error")
+		}
+	}
 	if u, err := url.Parse(c.AdminURL); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.User != nil || u.RawQuery != "" {
 		return nil, errors.New("ADMIN_URL must be an http(s) URL, e.g. https://admin.example.com")
 	}
@@ -600,6 +641,14 @@ func Load() (*Config, error) {
 		if o = strings.TrimSpace(o); o != "" {
 			c.CORSOrigins = append(c.CORSOrigins, strings.TrimRight(o, "/"))
 		}
+	}
+
+	if v := strings.TrimSpace(os.Getenv("TRUSTED_PROXY_HOPS")); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 || n > 10 {
+			return nil, errors.New("TRUSTED_PROXY_HOPS must be a number from 0 to 10: the proxies in front that append to X-Forwarded-For")
+		}
+		c.ProxyHops = n
 	}
 
 	switch c.Role {

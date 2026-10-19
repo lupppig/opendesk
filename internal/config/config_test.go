@@ -1,6 +1,7 @@
 package config
 
 import (
+	"log/slog"
 	"strings"
 	"testing"
 )
@@ -213,5 +214,40 @@ func TestAdminURL(t *testing.T) {
 	t.Setenv("OPENDESK_ENV", "development")
 	if c, err = Load(); err != nil || c.AdminURL != "http://localhost:5174" {
 		t.Fatalf("development: %v %q", err, c.AdminURL)
+	}
+}
+
+// TestTrustedProxyHops: a count from 0 to 10, and anything else refuses to boot rather
+// than quietly reading the client address from the wrong place.
+func TestTrustedProxyHops(t *testing.T) {
+	productionEnv(t)
+	if c, err := Load(); err != nil || c.ProxyHops != 0 {
+		t.Fatalf("default: %v %d", err, c.ProxyHops)
+	}
+	t.Setenv("TRUSTED_PROXY_HOPS", "2")
+	if c, err := Load(); err != nil || c.ProxyHops != 2 {
+		t.Fatalf("2: %v %d", err, c.ProxyHops)
+	}
+	for _, v := range []string{"two", "-1", "11"} {
+		t.Setenv("TRUSTED_PROXY_HOPS", v)
+		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "TRUSTED_PROXY_HOPS") {
+			t.Fatalf("%q: want refusal, got %v", v, err)
+		}
+	}
+}
+
+func TestLogLevel(t *testing.T) {
+	productionEnv(t)
+	c, err := Load()
+	if err != nil || c.LogLevel != slog.LevelInfo {
+		t.Fatalf("production default: %v %v", c.LogLevel, err)
+	}
+	t.Setenv("LOG_LEVEL", "debug")
+	if c, err = Load(); err != nil || c.LogLevel != slog.LevelDebug {
+		t.Fatalf("LOG_LEVEL=debug: %v %v", c.LogLevel, err)
+	}
+	t.Setenv("LOG_LEVEL", "loud")
+	if _, err = Load(); err == nil {
+		t.Fatal("LOG_LEVEL=loud was accepted")
 	}
 }

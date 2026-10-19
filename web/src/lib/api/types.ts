@@ -647,8 +647,24 @@ export type MailboxConfig = {
   smtp_username?: string;
   smtp_tls?: TlsMode;
   oauth_email?: string;
+  /**
+   * Read-only. What the Google or Microsoft connection may do: send only (mail arrives by
+   * forwarding), sync (reads the inbox over IMAP), or api (reads the inbox directly through
+   * the Gmail API or Microsoft Graph).
+   */
+  oauth_grant?: "send" | "sync" | "api";
+  /** Read-only. collab: the connection uses the Collab sign-in (an api grant). */
+  oauth_client?: "collab";
   /** Who hosts the mailbox's mail (MailHost), for labels and connection fixes. */
   mail_host?: MailHost | "";
+  /**
+   * Tidy-up in Gmail or Outlook, only for a mailbox that reads its inbox directly
+   * (oauth_grant api); off (absent) by default. Mark emails read once they become ticket
+   * messages, archive a ticket's emails when it is solved or closed, label them "opendesk".
+   */
+  provider_mark_read?: boolean;
+  provider_archive_on_solve?: boolean;
+  provider_label?: boolean;
 };
 /** Mail hosts the API names (config.mail_host, detect). */
 export type MailHost =
@@ -688,14 +704,17 @@ export type MailDetection = {
 };
 /** GET /v1/mailboxes/connect-options. */
 export type MailboxConnectOptions = {
-  google: { configured: boolean; oauth: boolean };
-  microsoft: { configured: boolean; oauth: boolean };
+  /** api_sync: this workspace may connect the provider to read the inbox directly (it has Collab). */
+  google: { configured: boolean; oauth: boolean; api_sync?: boolean };
+  microsoft: { configured: boolean; oauth: boolean; api_sync?: boolean };
   forwarding: { enabled: boolean; domain: string };
   system_sender: string;
   /** Mailboxes may send through opendesk (MAILBOX_SYSTEM_SEND). Off, each sends through Google, Microsoft or SMTP. */
   system_send?: boolean;
-  /** Mailboxes may receive over IMAP (MAILBOX_IMAP). Off, they receive by forwarding and sign-ins only send. */
+  /** This workspace's mailboxes may receive over generic IMAP (MAILBOX_IMAP, or the workspace has Collab). */
   mailbox_imap?: boolean;
+  /** The instance receives over IMAP (MAILBOX_IMAP): Google and Microsoft may also sync over IMAP. */
+  instance_imap?: boolean;
 };
 /** Why a connection check failed and what fixes it. */
 export type MailboxCause = { code: string; title: string; fix: string; retryable: boolean };
@@ -710,8 +729,8 @@ export type Mailbox = {
   outbound_kind: "smtp" | "google" | "microsoft" | "system";
   forwarding_address: string;
   /**
-   * Read-only. imap_off: the mailbox receives over IMAP on an instance where receiving
-   * over IMAP is now off, so no mail arrives until it is switched to forwarding.
+   * Read-only. imap_off: the mailbox receives over IMAP where receiving over IMAP is now
+   * off for its workspace, so no mail arrives until it is switched to forwarding.
    */
   receiving?: "ok" | "imap_off";
   /**
@@ -893,7 +912,7 @@ export type AuditLog = {
   ip: string;
   created_at: string;
 };
-export type NotificationType = "assigned" | "mentioned" | "customer_replied" | "sla_breached" | "ai_handoff" | "ai_cap_reached" | "ai_balance_low" | "ai_balance_out" | "auto_recharge_failed" | "ai_key_failed" | "team_joined" | "import_finished";
+export type NotificationType = "assigned" | "mentioned" | "customer_replied" | "sla_breached" | "ai_handoff" | "ai_cap_reached" | "ai_balance_low" | "ai_balance_out" | "auto_recharge_failed" | "ai_key_failed" | "team_joined" | "import_finished" | "collab_assigned" | "collab_mention";
 /** `ai_cap_reached`: data `{cap_usd}`, ticket null; the widget agent reached `widget_monthly_cap_usd` (once a month, owners and admins).
  * `ai_balance_low` / `ai_balance_out`: data `{remaining_usd}` (US dollars); `auto_recharge_failed`: data `{reason: AutoRechargeFailure}` (billing, owners and admins, ticket null).
  * `ai_key_failed`: data `{provider: AIKeyKind, reason: "rejected" | "no_funds"}`; the workspace's own AI key failed (at most hourly, owners and admins, ticket null).
@@ -912,7 +931,7 @@ export type Notification = {
 /** Where a notification can reach someone besides the bell: email, their phones (`push`) and the desktop app. */
 export type NotificationChannels = { email: boolean; push: boolean; desktop: boolean };
 export type NotificationChannel = keyof NotificationChannels;
-export type NotificationGroup = "tickets" | "team" | "ai_billing" | "workspace";
+export type NotificationGroup = "tickets" | "team" | "mail" | "ai_billing" | "workspace";
 /** `urgent`: may be emailed sooner than the cooldown (contracts/api.md "Notification preferences and emails"). */
 export type NotificationTypePrefs = NotificationChannels & { type: NotificationType; group: NotificationGroup; defaults: NotificationChannels; urgent: boolean };
 /** How the server paces notification emails for this person. */
@@ -1024,7 +1043,12 @@ export type TicketCounts = {
   /** Every team the caller can see. */
   teams?: Record<string, { open: number; unassigned: number }>;
   my_teams?: { open: number; unassigned: number };
+  /** Per sidebar row id (ticket_folder:<id>, team:<id>, team:mine, view:<id>), over the row's own tickets. */
+  stats?: Record<string, TicketStats>;
 };
+
+/** A sidebar row's tickets awaiting a reply (the customer wrote last), urgent, and overdue. */
+export type TicketStats = { awaiting: number; urgent: number; overdue: number };
 
 export type SearchResults = { tickets: Ticket[]; contacts: Contact[]; articles: KbArticle[] };
 
@@ -1166,7 +1190,7 @@ export type ReportsRange = { from: string; to: string };
 export type ReportsQuery = ReportsRange & { team_id?: string; brand_id?: string };
 
 // Billing (contracts/billing.md).
-export type Plan = "free" | "pro" | "self_hosted";
+export type Plan = "free" | "pro" | "collab" | "self_hosted";
 export type BillingStatus = "none" | "trialing" | "active" | "past_due" | "unpaid" | "canceled" | "incomplete" | "incomplete_expired" | "paused";
 export type Price = { id: string; unit_amount: number; currency: string; interval: "month" | "year" | null; /** ai_top_up: the AI usage `unit_amount` buys, in US dollars. */ usd?: number };
 export type Billing = {
@@ -1182,12 +1206,26 @@ export type Billing = {
   limits: { max_mailboxes: number; max_members: number };
   usage: { mailboxes: number; members: number };
   ai: AIBalance;
-  prices: { pro_month: Price | null; pro_year: Price | null; ai_top_up: Price | null };
+  /** collab_*: only when the collab plan is offered to the workspace (contracts/billing.md "Collab"). */
+  prices: { pro_month: Price | null; pro_year: Price | null; ai_top_up: Price | null; collab_month?: Price | null; collab_year?: Price | null };
+  /** The workspace's Collab access and whether it is on; older servers omit it. */
+  collab?: BillingCollab;
   /** null when billing is disabled; older servers omit it. */
   auto_recharge?: AutoRecharge | null;
   /** What top-ups and auto-recharge charge; null when none is saved. */
   payment_method?: PaymentMethod | null;
 };
+/** Billing.collab (contracts/billing.md "Collab"). */
+export type BillingCollab = {
+  access: "none" | "offered" | "complimentary";
+  /** Complimentary access ends then; null = until changed. */
+  until: string | null;
+  /** The workspace has Collab now. */
+  enabled: boolean;
+  /** The workspace may subscribe or switch to the collab plan. */
+  available: boolean;
+};
+export type PaidPlan = "pro" | "collab";
 /** Billing.payment_method: the saved card as people recognise it. */
 export type PaymentMethod = {
   /** visa, mastercard, amex, ... or the payment method type (link, sepa_debit, ...). */
@@ -1815,3 +1853,253 @@ export type TemplatePreviewBody = {
 };
 export type TemplatePreview = { subject: string; html: string; text: string; problems: TemplateProblem[] };
 export type TicketVariables = { values: Record<string, string>; signature_html: string };
+
+// ─── Collab: shared and private mail accounts (contracts/collab.md) ─────────
+
+export type MailAudience = { everyone: boolean; team_ids: string[]; user_ids: string[] };
+export type MailAddress = { name: string; email: string };
+export type MailProvider = "google" | "microsoft" | "imap";
+export type MailTls = "tls" | "starttls";
+export type MailAccountStatus = "syncing" | "active" | "error" | "paused";
+/** A tone key: gray, red, orange, amber, green, teal, blue, indigo, violet, pink. */
+export type MailColor = "gray" | "red" | "orange" | "amber" | "green" | "teal" | "blue" | "indigo" | "violet" | "pink";
+
+export type MailImapSettings = {
+  imap_host: string;
+  imap_port: number;
+  imap_tls: MailTls;
+  imap_username: string;
+  smtp_host: string;
+  smtp_port: number;
+  smtp_tls: MailTls;
+  smtp_username: string;
+};
+
+export type MailAccount = {
+  id: string;
+  provider: MailProvider;
+  email: string;
+  /** How the sidebar names it; the address by default. */
+  name: string;
+  /** The From name of its mail. */
+  display_name: string;
+  color: string;
+  /** Who connected it; null after they left (shared accounts only). */
+  owner: UserRef | null;
+  visibility: "private" | "shared";
+  /** Empty when private. */
+  shared_with: MailAudience;
+  /** Sanitized; added to new mail and replies by the composer. */
+  signature_html: string;
+  /** paused: Collab is off for the workspace. */
+  status: MailAccountStatus;
+  /** The grant or password was refused: connect it again. */
+  reconnect: boolean;
+  last_error: string;
+  last_synced_at: string | null;
+  can_manage: boolean;
+  /** Unread conversations in its inbox. */
+  unread: number;
+  /** IMAP accounts, can_manage only. */
+  imap?: MailImapSettings;
+  created_at: string;
+  /** How its own settings sync with the provider (contracts/collab.md "Account settings"). */
+  signature_sync: MailSettingSync;
+  signature_synced_at: string | null;
+  display_name_sync: MailSettingSync;
+  /** Null for IMAP, and while it was never read. */
+  out_of_office: MailOutOfOffice | null;
+  out_of_office_sync: MailSettingSync;
+};
+
+/** two_way: read from the provider and changed there too; read_only: read only; none: opendesk only (or not available). */
+export type MailSettingSync = "two_way" | "read_only" | "none";
+
+/** An account's automatic reply as its provider keeps it. */
+export type MailOutOfOffice = {
+  enabled: boolean;
+  /** Replies only to mail received from then on. */
+  start: string | null;
+  end: string | null;
+  /** Always "" for Microsoft: Outlook's replies have no subject of their own. */
+  subject: string;
+  message_html: string;
+  /** Only people in the account's contacts. */
+  contacts_only: boolean;
+  /** Only people in the account's own organization. */
+  internal_only: boolean;
+};
+
+export type MailFolderRole = "inbox" | "sent" | "drafts" | "archive" | "trash" | "spam" | "starred" | "important" | "all";
+
+export type MailFolder = {
+  id: string;
+  account_id: string;
+  /** The last part of the path. */
+  name: string;
+  /** "Clients/Acme". */
+  path: string;
+  role: MailFolderRole | null;
+  /** Gmail's own labels are labels; everything else is a folder. */
+  kind: "folder" | "label";
+  /** Unread conversations. */
+  unread: number;
+  /** Conversations. */
+  total: number;
+  /** Gmail label colour, a hex background. */
+  color: string | null;
+  /** User folders and labels; never the special ones. */
+  can_rename: boolean;
+};
+
+export type MailThread = {
+  id: string;
+  account_id: string;
+  subject: string;
+  snippet: string;
+  /** Senders and recipients, newest first, at most 10, the account's own address last. */
+  participants: MailAddress[];
+  last_message_at: string;
+  message_count: number;
+  unread: boolean;
+  starred: boolean;
+  has_attachments: boolean;
+  folder_ids: string[];
+  /** Shared on its own beyond its account's audience. */
+  shared: boolean;
+  assignees: UserRef[];
+  comment_count: number;
+};
+
+export type MailAttachment = {
+  /** Its index in the message, "0", "1", ... */
+  id: string;
+  filename: string;
+  content_type: string;
+  size: number;
+  inline: boolean;
+  content_id: string;
+  /** Signed, valid for an hour, works in <img> and as a download link. */
+  url: string;
+};
+
+export type MailMessage = {
+  id: string;
+  thread_id: string;
+  account_id: string;
+  /** The RFC 5322 Message-ID, without angle brackets. */
+  message_id: string;
+  from: MailAddress;
+  to: MailAddress[];
+  cc: MailAddress[];
+  /** Only on mail sent from the account. */
+  bcc: MailAddress[];
+  reply_to: MailAddress[];
+  subject: string;
+  snippet: string;
+  /** Sanitized; inline images point at their attachment URL. */
+  body_html: string;
+  body_text: string;
+  sent_at: string;
+  unread: boolean;
+  starred: boolean;
+  draft: boolean;
+  folder_ids: string[];
+  attachments: MailAttachment[];
+  /** The teammate who sent it from opendesk (for a draft, who saved it). */
+  sent_by: UserRef | null;
+  /** Drafts: the id the /v1/collab/drafts routes take. */
+  draft_id?: string | null;
+  /** The message of the conversation it answers (its In-Reply-To), when stored. */
+  in_reply_to_id?: string | null;
+};
+
+export type MailComment = {
+  id: string;
+  thread_id: string;
+  author: UserRef | null;
+  /** Sanitized like a note. */
+  body_html: string;
+  /** User ids. */
+  mentions: string[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type MailThreadAccount = { id: string; email: string; name: string; display_name: string; color: string; provider: string; signature_html: string };
+
+export type MailThreadDetail = {
+  thread: MailThread;
+  account: MailThreadAccount;
+  /** Oldest first. */
+  messages: MailMessage[];
+  /** Oldest first. */
+  comments: MailComment[];
+  /** The conversation's own shares. */
+  shares: MailAudience;
+  can_act: boolean;
+};
+
+export type CollabStatus = {
+  enabled: boolean;
+  /** Why not: not on the plan, or off on this instance. */
+  reason: "plan" | "disabled" | null;
+  providers: { google: boolean; microsoft: boolean; imap: boolean };
+  /** Accounts the caller sees. */
+  accounts: number;
+};
+
+export type SidebarSectionId = "favorites" | "mail" | "inbox" | "teams" | "views" | "workspace";
+export type SidebarPinKind = "box" | "folder" | "account" | "view" | "team" | "ticket_folder";
+export type SidebarPin = { kind: SidebarPinKind; id: string };
+
+export type SidebarPrefs = {
+  /** Section ids, top to bottom. Unknown ids are kept by the server. */
+  order: string[];
+  /** "section:<id>", "box:<box>", "account:<id>", "folder:<id>", "folder:<inbox|starred|...>", "view:<id>", "team:<id>". */
+  hidden: string[];
+  /** Shown under Favorites, in order, at most 30. */
+  pinned: SidebarPin[];
+  /** Account ids whose folders are folded. */
+  expanded_accounts: string[];
+  /** Default true. */
+  mark_read_on_open: boolean;
+  /** Default true: "All inboxes" on top of the Mail section. */
+  unified_inbox: boolean;
+  /**
+   * The number beside a row ("box:inbox", "account:<id>", "folder:<id>", "ticket_folder:<id>",
+   * "view:<id>", "team:<id>") or a section's default ("section:mail"). Default {}.
+   */
+  badges: Record<string, SidebarBadge>;
+  /** The mail page's folder bar, in order: box names and "folder:<id>". */
+  mail_tabs: string[];
+};
+
+/** unread / total / none for mail rows; count / awaiting / urgent / overdue / none for ticket rows, and open for team rows. */
+export type SidebarBadge = "unread" | "total" | "count" | "awaiting" | "urgent" | "overdue" | "open" | "none";
+
+export type MailBox = "inbox" | "unread" | "starred" | "sent" | "drafts" | "archive" | "trash" | "spam" | "all" | "shared" | "assigned";
+
+export type MailThreadAction =
+  | "read"
+  | "unread"
+  | "star"
+  | "unstar"
+  | "archive"
+  | "inbox"
+  | "trash"
+  | "spam"
+  | "not_spam"
+  | "move"
+  | "label"
+  | "unlabel";
+
+export type MailCounts = {
+  /** Unread conversations; assigned and shared: open ones. */
+  boxes: { inbox: number; unread: number; shared: number; assigned: number; drafts: number };
+  accounts: Record<string, number>;
+  folders: Record<string, number>;
+};
+
+/** `collab.changed` event data. */
+export type CollabChangedEvent = { account_id: string | null; thread_ids: string[]; folders: boolean };

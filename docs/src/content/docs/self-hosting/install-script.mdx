@@ -19,7 +19,7 @@ The installer sets up opendesk with Docker, behind automatic HTTPS. Nothing is c
 2. Creates one directory (default `/opt/opendesk`) and writes only inside it.
 3. Generates every secret with `openssl` (or `/dev/urandom`) and writes `.env` with mode `0600`.
 4. Resolves the release once and **pins** it in `.env` as `OPENDESK_VERSION`. It never installs "latest" floating.
-5. Downloads `docker-compose.yml`, `Caddyfile`, `env.template` and `opendesk-ctl` from that release, and refuses any file whose entry in the release's `SHA256SUMS` differs.
+5. Downloads `docker-compose.yml`, `compose.external-proxy.yml`, `Caddyfile`, `env.template` and `opendesk-ctl` from that release, and refuses any file whose entry in the release's `SHA256SUMS` differs.
 6. Runs `docker compose pull` and `docker compose up -d`, then waits for opendesk to answer.
 
 <Callout type="warning" title="Run it as yourself">
@@ -44,6 +44,7 @@ Each flag also has an environment variable.
 | --- | --- | --- | --- |
 | `--domain HOST` | `OPENDESK_DOMAIN` | asked, or `localhost` | Public hostname |
 | `--email ADDRESS` | `OPENDESK_EMAIL` | | ACME account email for the certificate |
+| `--proxy MODE` | `OPENDESK_PROXY` | kept, or `caddy` | `caddy`: the bundled Caddy takes ports 80 and 443 and gets the certificates. `external`: [your own reverse proxy](/self-hosting/reverse-proxy/) is in front, and opendesk and realtime listen on `127.0.0.1:8080` and `127.0.0.1:4000` for it. |
 | `--dir PATH` | `OPENDESK_DIR` | `/opt/opendesk` | Install directory |
 | `--version TAG` | `OPENDESK_VERSION` | newest release | Release to install |
 | `--no-start` | `OPENDESK_NO_START=1` | | Write the files and pull nothing; start later yourself |
@@ -68,7 +69,7 @@ Each flag also has an environment variable.
 | --- | --- |
 | `desk.example.com` | A Let's Encrypt (or ZeroSSL) certificate as soon as DNS points at the server and ports 80 and 443 are open. |
 | `localhost` | A certificate from Caddy's local certificate authority, for trying it out. |
-| `:80` | Plain HTTP, for when another proxy in front terminates TLS. |
+| `:80` | Plain HTTP from the bundled Caddy. To put your own proxy in front, use `--proxy external` with the public hostname instead. |
 
 ### The wizard
 

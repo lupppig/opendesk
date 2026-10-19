@@ -21,8 +21,20 @@ import (
 const (
 	Free = "free"
 	Pro  = "pro"
+	// Collab is Pro plus Collab, members' own mail accounts (contracts/collab.md).
+	Collab = "collab"
 	// SelfHosted is reported when billing is disabled.
 	SelfHosted = "self_hosted"
+)
+
+// Collab access an instance admin gives a workspace (contracts/admin.md "Collab access").
+const (
+	// CollabNone: the collab plan is not offered (it is hidden).
+	CollabNone = "none"
+	// CollabOffered: the workspace may subscribe to the collab plan.
+	CollabOffered = "offered"
+	// CollabComplimentary: the workspace has the collab plan without paying for it.
+	CollabComplimentary = "complimentary"
 )
 
 // Plan numbers. Prices live in Stripe; these are the limits the API enforces.
@@ -33,6 +45,8 @@ const (
 	FreeMonthlyUSD = Micro(500_000) // $0.50
 	// ProUSDPerSeat is the monthly AI usage allowance per paid seat, pooled across the workspace.
 	ProUSDPerSeat = Micro(10_000_000) // $10
+	// CollabUSDPerSeat is the collab plan's monthly AI usage allowance per seat, pooled.
+	CollabUSDPerSeat = Micro(20_000_000) // $20
 	// TopUpUSD is the AI usage one top-up (STRIPE_PRICE_AI_TOPUP) adds: its price, dollar
 	// for dollar, when the Stripe price is $10.
 	TopUpUSD = Micro(10_000_000) // $10
@@ -105,9 +119,14 @@ func (e *LimitError) Unwrap() error { return ErrLimit }
 
 // Entitlements is what a workspace may use right now.
 type Entitlements struct {
-	Plan           string `json:"plan" enum:"free,pro,self_hosted"`
+	Plan           string `json:"plan" enum:"free,pro,collab,self_hosted"`
 	BillingEnabled bool   `json:"billing_enabled"`
 	Status         string `json:"status"`
+	// Collab reports whether the workspace has Collab (contracts/collab.md "Who has it").
+	Collab bool `json:"collab"`
+	// CollabAccess and CollabUntil are the instance admin's Collab access (billing on only).
+	CollabAccess string     `json:"collab_access" enum:"none,offered,complimentary"`
+	CollabUntil  *time.Time `json:"collab_until"`
 	// Zero means unlimited.
 	MaxMailboxes int `json:"max_mailboxes"`
 	MaxMembers   int `json:"max_members"`
@@ -120,6 +139,8 @@ type Entitlements struct {
 // instance: no limits, unlimited AI.
 type Service struct {
 	Billing bool
+	// CollabOff turns Collab off on this instance (COLLAB=false), whatever the plan.
+	CollabOff bool
 	// Markup multiplies a call's provider cost into what the workspace pays
 	// (AI_USAGE_MARKUP); below 1 counts as 1.
 	Markup float64
@@ -173,7 +194,7 @@ func Paid(status string) bool {
 // Entitlements returns the workspace's current limits.
 func (s *Service) Entitlements(ctx context.Context, q db.Querier, wid uuid.UUID) (Entitlements, error) {
 	if !s.enabled() {
-		return Entitlements{Plan: SelfHosted, Status: "active", UnlimitedAI: true}, nil
+		return Entitlements{Plan: SelfHosted, Status: "active", UnlimitedAI: true, Collab: s == nil || !s.CollabOff, CollabAccess: CollabNone}, nil
 	}
 	if err := Ensure(ctx, q, wid); err != nil {
 		return Entitlements{}, err
@@ -181,20 +202,95 @@ func (s *Service) Entitlements(ctx context.Context, q db.Querier, wid uuid.UUID)
 	var planName, status string
 	var seats int
 	var o Overrides
-	if err := q.QueryRow(ctx, `SELECT plan, status, seats, max_mailboxes_override, max_members_override, monthly_micro_usd_override
-		FROM subscriptions WHERE workspace_id = $1`, wid).
-		Scan(&planName, &status, &seats, &o.MaxMailboxes, &o.MaxMembers, &o.MonthlyUSD); err != nil {
+	e := Entitlements{BillingEnabled: true}
+	if err := q.QueryRow(ctx, `SELECT plan, status, seats, max_mailboxes_override, max_members_override, monthly_micro_usd_override,
+		collab_access, collab_until FROM subscriptions WHERE workspace_id = $1`, wid).
+		Scan(&planName, &status, &seats, &o.MaxMailboxes, &o.MaxMembers, &o.MonthlyUSD, &e.CollabAccess, &e.CollabUntil); err != nil {
 		return Entitlements{}, err
 	}
-	e := Entitlements{Plan: Free, BillingEnabled: true, Status: status}
-	if planName == Pro && Paid(status) {
+	e.Plan, e.Status = Free, status
+	switch {
+	case planName == Collab && Paid(status):
+		e.Plan, e.Collab = Collab, true
+		e.MonthlyUSD = CollabUSDPerSeat * Micro(max(seats, 1))
+	case planName == Pro && Paid(status):
 		e.Plan = Pro
 		e.MonthlyUSD = ProUSDPerSeat * Micro(max(seats, 1))
-	} else {
+	default:
 		e.MaxMailboxes, e.MaxMembers, e.MonthlyUSD = FreeMaxMailboxes, FreeMaxMembers, FreeMonthlyUSD
+	}
+	// Complimentary Collab is the collab plan without a subscription, until it ends.
+	if e.Plan != Collab && ComplimentaryActive(e.CollabAccess, e.CollabUntil, time.Now()) {
+		billed, err := BilledSeats(ctx, q, wid)
+		if err != nil {
+			return Entitlements{}, err
+		}
+		e.Plan, e.Collab = Collab, true
+		e.MaxMailboxes, e.MaxMembers = 0, 0
+		e.MonthlyUSD = CollabUSDPerSeat * Micro(billed)
+	}
+	if s.CollabOff {
+		e.Collab = false
 	}
 	o.apply(&e)
 	return e, nil
+}
+
+// ComplimentaryActive reports whether complimentary Collab access is in effect at now.
+func ComplimentaryActive(access string, until *time.Time, now time.Time) bool {
+	return access == CollabComplimentary && (until == nil || until.After(now))
+}
+
+// CollabAccess is an instance admin's Collab access for one workspace.
+type CollabAccess struct {
+	Access string     // CollabNone, CollabOffered or CollabComplimentary
+	Until  *time.Time // complimentary access ends then; nil = until changed
+	Note   string
+}
+
+// LoadCollabAccess reads a workspace's Collab access.
+func LoadCollabAccess(ctx context.Context, q db.Querier, wid uuid.UUID) (CollabAccess, error) {
+	if err := Ensure(ctx, q, wid); err != nil {
+		return CollabAccess{}, err
+	}
+	var a CollabAccess
+	err := q.QueryRow(ctx, `SELECT collab_access, collab_until, collab_note FROM subscriptions WHERE workspace_id = $1`, wid).
+		Scan(&a.Access, &a.Until, &a.Note)
+	return a, err
+}
+
+// SetCollabAccess replaces a workspace's Collab access. Until is kept only for
+// complimentary access.
+func SetCollabAccess(ctx context.Context, q db.Querier, wid uuid.UUID, a CollabAccess) error {
+	if err := Ensure(ctx, q, wid); err != nil {
+		return err
+	}
+	switch a.Access {
+	case CollabNone, CollabOffered, CollabComplimentary:
+	default:
+		return fmt.Errorf("plan: unknown collab access %q", a.Access)
+	}
+	if a.Access != CollabComplimentary {
+		a.Until = nil
+	}
+	_, err := q.Exec(ctx, `UPDATE subscriptions SET collab_access = $2, collab_until = $3, collab_note = $4, updated_at = now()
+		WHERE workspace_id = $1`, wid, a.Access, a.Until, a.Note)
+	return err
+}
+
+// ErrCollab means the workspace does not have Collab; the API answers 402 collab_required.
+var ErrCollab = errors.New("Collab is not on this workspace's plan")
+
+// RequireCollab returns ErrCollab unless the workspace has Collab.
+func (s *Service) RequireCollab(ctx context.Context, q db.Querier, wid uuid.UUID) error {
+	e, err := s.Entitlements(ctx, q, wid)
+	if err != nil {
+		return err
+	}
+	if !e.Collab {
+		return ErrCollab
+	}
+	return nil
 }
 
 // Overrides are an instance admin's limits for one workspace (contracts/admin.md); nil

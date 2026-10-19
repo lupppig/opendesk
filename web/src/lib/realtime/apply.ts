@@ -25,6 +25,7 @@ import { applyAgentQualityEvent } from "../agentTests";
 import { updateWorkspace, useSession } from "../session";
 import { cachedTicket, forgetTicket, patchTicketEverywhere, removeTicketEverywhere, teamsOf } from "../ticketCache";
 import { markHidden, unmarkHidden } from "./store";
+import { applyCollabEvent } from "../collab/cache";
 
 // Events that can tick off a setup checklist step (contracts/api.md "Onboarding").
 const onboardingResources = new Set(["mailbox", "member", "tag", "kb_article", "workspace"]);
@@ -165,8 +166,15 @@ export function applyEnvelope(qc: QueryClient, env: Envelope, ctx: ApplyContext)
     return;
   }
 
+  // Collab mail (contracts/collab.md "Events"): ids only, for the people who see them; lists refetch.
+  if (resource === "collab") {
+    applyCollabEvent(qc, env.type, d);
+    return;
+  }
+
   switch (env.type) {
-    // A stand-in for an event of a private team's ticket: it only keeps seq contiguous.
+    // A stand-in for an event of a private team's ticket, or of one scoped to people
+    // (Collab mail): it only keeps seq contiguous.
     case "event.hidden":
       return;
     case "ticket.hidden": {

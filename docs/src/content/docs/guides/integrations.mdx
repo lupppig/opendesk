@@ -32,8 +32,8 @@ Every integration is the product's own **MCP server** (Model Context Protocol). 
 
 The connection is shared by the workspace, so an admin signs in once and everyone's Ollie can use it.
 
-- **Account sign-in** (Linear, Jira and Confluence, Sentry, Notion, Slack and most others) opens the product's own sign-in page and brings you back to opendesk.
-- **Access token** (GitHub, Stripe) asks for a token you create in that product. Give it only the access Ollie needs, for example a fine-grained GitHub token for the repositories it may use, or a Stripe restricted key with read access.
+- **Account sign-in** (Linear, Jira and Confluence, Sentry, Notion, Slack, Stripe, GitHub and most others) opens the product's own sign-in page and brings you back to opendesk. For GitHub, install the opendesk app on the repositories Ollie may use.
+- **Access token** asks for a token you create in that product. GitHub asks for one on a self-host without a GitHub App: give it only the access Ollie needs, for example a fine-grained token for the repositories it may use.
 
 <Screenshot src="/guides/integrations/token" alt="The Connect GitHub dialog: the Access token field with its Create one link ringed as 1, and the note that Ollie only looks things up on its own ringed as 2" />
 
@@ -113,7 +113,7 @@ MCP_<KEY>_CLIENT_ID=...
 MCP_<KEY>_CLIENT_SECRET=...   # if the product issued one
 ```
 
-`<KEY>` is the integration's key in capitals, for example `MCP_SLACK_CLIENT_ID` (Slack only accepts apps registered in advance; the compose file passes its two variables). For another product, add its two variables to the `opendesk` service's `environment` in `docker-compose.yml`. The API for integrations and ticket links is in [the contract](https://github.com/useopendesk/opendesk/blob/main/contracts/integrations.md).
+`<KEY>` is the integration's key in capitals, for example `MCP_SLACK_CLIENT_ID` (Slack and Box only accept apps registered in advance; GitHub signs in with a GitHub App when one is set and asks for a token otherwise; the compose file passes their variables). For another product, add its two variables to the `opendesk` service's `environment` in `docker-compose.yml`. The API for integrations and ticket links is in [the contract](https://github.com/useopendesk/opendesk/blob/main/contracts/integrations.md).
 
 </Fold>
 

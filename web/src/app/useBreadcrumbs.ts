@@ -40,6 +40,8 @@ export function useBreadcrumbs(): Crumb[] {
     crumbs.push({ label: "Teams" });
     const name = params.teamId === "mine" ? "My teams" : (teams?.find((x) => x.id === params.teamId)?.name ?? "Team");
     crumbs.push({ label: name, to: "/teams/$teamId/{-$ticketId}", params: { teamId: params.teamId, ticketId: undefined } });
+  } else if (path.startsWith("/mail/")) {
+    crumbs.push({ label: "Mail", to: "/mail/$box/{-$threadId}", params: { box: "inbox", threadId: undefined } });
   } else if (path.startsWith("/contacts")) {
     crumbs.push({ label: "Contacts", to: "/contacts/{-$contactId}", params: { contactId: undefined } });
   } else if (path.startsWith("/companies")) {

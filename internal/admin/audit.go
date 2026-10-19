@@ -22,6 +22,11 @@ func (s *svc) audit(ctx context.Context, q db.Querier, a *Admin, action, targetT
 	return writeAudit(ctx, q, "admin", &a.UserID, a.Email, action, targetType, targetID, data, a.IP)
 }
 
+// WriteAudit writes an admin audit row as by (the command line, or the system).
+func WriteAudit(ctx context.Context, q db.Querier, by Actor, action, targetType, targetID string, data map[string]any) error {
+	return writeAudit(ctx, q, by.Type, by.UserID, by.Email, action, targetType, targetID, data, by.IP)
+}
+
 func writeAudit(ctx context.Context, q db.Querier, actorType string, actor *uuid.UUID, actorEmail, action, targetType, targetID string, data map[string]any, ip string) error {
 	if data == nil {
 		data = map[string]any{}
@@ -36,7 +41,7 @@ func writeAudit(ctx context.Context, q db.Querier, actorType string, actor *uuid
 }
 
 type AdminAuditActor struct {
-	Type  string     `json:"type" enum:"admin,cli"`
+	Type  string     `json:"type" enum:"admin,cli,system"`
 	ID    *uuid.UUID `json:"id"`
 	Email string     `json:"email"`
 }

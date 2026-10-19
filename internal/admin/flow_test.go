@@ -93,7 +93,7 @@ func newEnv(t *testing.T) *env {
 	httpx.Install(log)
 	r := chi.NewRouter()
 	r.Use(httpx.CORS(cfg.CORSOrigins, cfg.AdminOrigin()))
-	r.Use((&auth.Resolver{Pool: database.Pool, Tokens: d.Tokens, ClientIP: httpx.ClientIP(false)}).Middleware)
+	r.Use((&auth.Resolver{Pool: database.Pool, Tokens: d.Tokens, ClientIP: httpx.ClientIP(false, 0)}).Middleware)
 	api := humachi.New(r, huma.DefaultConfig("test", "0"))
 	core.Register(d, api, r)
 	Register(d, api, r)

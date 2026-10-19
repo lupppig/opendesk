@@ -52,6 +52,22 @@ describe("mock backend", () => {
     expect((await call("PATCH", `/v1/kb/articles/${art.id}`, { brand_id: "nope" })).status).toBe(422);
   });
 
+  it("breaks each sidebar row's tickets down into awaiting, urgent and overdue", async () => {
+    const c = (await call("GET", "/v1/tickets/counts")).body;
+    const keys = ["ticket_folder:unassigned", "ticket_folder:mine", "ticket_folder:open", "ticket_folder:pending", "team:mine",
+      ...Object.keys(c.teams).map((id) => `team:${id}`), ...Object.keys(c.views).map((id) => `view:${id}`)];
+    expect(Object.keys(c.stats).sort()).toEqual(keys.sort());
+    const open = c.stats["ticket_folder:open"];
+    expect(open.urgent).toBeLessThanOrEqual(c.open);
+    expect(open.awaiting).toBeGreaterThan(0);
+    expect(open.urgent).toBeGreaterThan(0);
+    // A view's stats cover its own tickets.
+    for (const id of Object.keys(c.views)) {
+      const s = c.stats[`view:${id}`];
+      expect(Math.max(s.awaiting, s.urgent, s.overdue)).toBeLessThanOrEqual(c.views[id]);
+    }
+  });
+
   it("serves every list endpoint the app reads", async () => {
     for (const path of [
       "/v1/me", "/v1/tickets", "/v1/tickets/counts", "/v1/contacts", "/v1/companies", "/v1/tags", "/v1/views",

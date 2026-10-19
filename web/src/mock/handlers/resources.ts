@@ -27,7 +27,7 @@ import { isRecord, nowIso, randomToken, slugify, uuid } from "../util";
 import { aiOff } from "./ai";
 import { defaultBrand, isAdmin, teamOut } from "../teams";
 import { checkLimit } from "./billing";
-import { authRefusedCause, connectOptions, detect, imapOff, mockImapOn, mockOAuthEnabled, mockSystemSendOn, receivingOf, refusal, sendingOf, syncReceiving, systemSendOff } from "./mailhost";
+import { authRefusedCause, connectOptions, detect, imapOff, mockApiSyncOn, mockImapOn, mockOAuthEnabled, mockSystemSendOn, receivingOf, refusal, sendingOf, syncReceiving, systemSendOff } from "./mailhost";
 import { assign, crud } from "./crud";
 import { checkBotId } from "./bots";
 
@@ -450,14 +450,17 @@ export function registerResources() {
     publish(ctx.ws, "mailbox.updated", { mailbox: m });
     return respond(200, { inbound: { ok: true, error: "" }, outbound: { ok: true, error: "" } });
   });
-  // Google or Microsoft sign-in: to send only (receive "forwarding", the default) or to sync
-  // over IMAP as well (receive "sync", where the instance receives over IMAP).
+  // Google or Microsoft sign-in: to send only (receive "forwarding", the default), to sync
+  // over IMAP as well (receive "sync", where the instance receives over IMAP), or to read the
+  // inbox directly (receive "api", where the workspace has Collab).
   post("/v1/mailboxes/oauth/:provider/start", (ctx) => {
     const provider = ctx.params.provider;
     if (provider !== "google" && provider !== "microsoft") throw notFound("Provider");
     const receive = s(ctx, "receive") ?? "forwarding";
-    if (receive !== "forwarding" && receive !== "sync") throw invalid("receive must be forwarding or sync");
+    if (receive !== "forwarding" && receive !== "sync" && receive !== "api") throw invalid("receive must be forwarding, sync or api");
     if (receive === "sync" && !mockImapOn()) throw imapOff();
+    if (receive === "api" && !mockApiSyncOn())
+      throw new HttpError(422, "api_sync_unavailable", "Reading the inbox directly needs Collab on this workspace's plan. Forward its mail to opendesk instead.");
     const existingId = s(ctx, "mailbox_id");
     let m = existingId ? ctx.ws.mailboxes.find((x) => x.id === existingId) : undefined;
     if (existingId && !m) throw notFound("Mailbox");
@@ -469,10 +472,14 @@ export function registerResources() {
     const email = s(ctx, "email")?.toLowerCase() || `support@${provider === "google" ? "margin.app" : "margin.onmicrosoft.com"}`;
     // A new mailbox receives as asked; a reconnect keeps how it receives, moving to
     // forwarding where the instance no longer receives over IMAP.
-    const inbound = (m ? m.inbound_kind !== "forwarding" && mockImapOn() : receive === "sync") ? provider : "forwarding";
+    const wasDirect = m?.config.oauth_grant === "api" && m.inbound_kind !== "forwarding";
+    const direct = receive === "api" || (wasDirect && mockApiSyncOn());
+    const inbound = direct || (m ? m.inbound_kind !== "forwarding" && !wasDirect && mockImapOn() : receive === "sync") ? provider : "forwarding";
+    const grant = direct ? "api" : inbound === provider ? "sync" : "send";
     if (!m) {
       if (ctx.ws.mailboxes.some((x) => x.email === email || x.aliases.includes(email))) throw new HttpError(409, "conflict", "A mailbox with this address already exists");
-      m = mailbox(ctx.ws, { name: s(ctx, "name") || "Support", email, display_name: "", inbound_kind: inbound, outbound_kind: provider, config: { oauth_email: email }, team_id: teamRef(ctx, ctx.body.team_id) });
+      // Reading directly names the sender as the account does.
+      m = mailbox(ctx.ws, { name: s(ctx, "name") || "Support", email, display_name: direct ? "Margin Support" : "", inbound_kind: inbound, outbound_kind: provider, config: { oauth_email: email, oauth_grant: grant, ...(direct ? { oauth_client: "collab" as const } : {}) }, team_id: teamRef(ctx, ctx.body.team_id) });
       writeAddressing(ctx, m);
       m.receiving = receivingOf(m);
     m.sending = sendingOf(m);
@@ -483,7 +490,7 @@ export function registerResources() {
       m.last_error = "";
       m.inbound_kind = inbound;
       m.outbound_kind = provider;
-      m.config = { ...m.config, oauth_email: m.config.oauth_email || m.email };
+      m.config = { ...m.config, oauth_email: m.config.oauth_email || m.email, oauth_grant: grant, oauth_client: direct ? "collab" : undefined };
       for (const k of SMTP_KEYS) delete m.config[k];
       mailboxSecrets.delete(m.id);
       m.receiving = receivingOf(m);
@@ -638,6 +645,7 @@ function secretsOf(m: Mailbox): { password: string; smtp: string } {
 
 const IMAP_KEYS = ["imap_host", "imap_port", "imap_username", "imap_tls"] as const;
 const SMTP_KEYS = ["smtp_host", "smtp_port", "smtp_username", "smtp_tls"] as const;
+const TIDY_KEYS = ["provider_mark_read", "provider_archive_on_solve", "provider_label"] as const;
 
 /**
  * How a mailbox connects, on a PATCH: its IMAP and SMTP settings, passwords and the way
@@ -655,6 +663,10 @@ function patchConnection(ctx: Ctx, m: Mailbox) {
     for (const k of keys) if (cfg[k] !== undefined) Object.assign(next, { [k]: cfg[k] });
   };
   if (m.inbound_kind === "imap") take(IMAP_KEYS);
+  // Tidy-up in Gmail or Outlook is only for a mailbox that reads its inbox directly.
+  const direct = m.config.oauth_grant === "api" && (m.inbound_kind === "google" || m.inbound_kind === "microsoft");
+  if (TIDY_KEYS.some((k) => cfg[k] === true) && !direct) throw invalid("Gmail and Outlook options are only for a mailbox that reads its inbox through Google or Microsoft.");
+  if (direct) for (const k of TIDY_KEYS) if (typeof cfg[k] === "boolean") next[k] = cfg[k] || undefined;
   if (outbound === "smtp") take(SMTP_KEYS);
   else for (const k of SMTP_KEYS) delete next[k];
   const prev = secretsOf(m);
@@ -682,9 +694,9 @@ function patchConnection(ctx: Ctx, m: Mailbox) {
   mailboxSecrets.set(m.id, sec);
 }
 
-/** A mailbox that stops receiving over IMAP: its IMAP settings and password go, and so does a sign-in error. */
+/** A mailbox that stops receiving over IMAP (or directly): its IMAP settings, password and Gmail or Outlook options go, and so does a sign-in error. */
 function stopImap(m: Mailbox) {
-  for (const k of IMAP_KEYS) delete m.config[k];
+  for (const k of [...IMAP_KEYS, ...TIDY_KEYS]) delete m.config[k];
   mailboxSecrets.set(m.id, { ...secretsOf(m), password: "" });
   if (m.status === "error") {
     m.status = "active";

@@ -23,7 +23,7 @@ describe("permissions", () => {
 
   it("cover every permission in the contract", () => {
     expect(Object.keys(MIN_ROLE).sort()).toEqual(
-      ["admins.manage", "jobs.manage", "read", "users.delete", "users.mfa", "users.sessions", "users.suspend", "workspaces.delete", "workspaces.limits", "workspaces.suspend"].sort(),
+      ["admins.manage", "jobs.manage", "read", "users.delete", "users.mfa", "users.sessions", "users.suspend", "workspaces.delete", "workspaces.limits", "workspaces.suspend", "workspaces.test"].sort(),
     );
   });
 

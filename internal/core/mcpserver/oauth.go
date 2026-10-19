@@ -845,7 +845,9 @@ func (o *oauth) revoke(w http.ResponseWriter, r *http.Request) {
 
 // --- helpers -----------------------------------------------------------------------
 
-func (o *oauth) clientIP(r *http.Request) string { return httpx.ClientIP(o.d.Cfg.TrustProxy)(r) }
+func (o *oauth) clientIP(r *http.Request) string {
+	return httpx.ClientIP(o.d.Cfg.TrustProxy, o.d.Cfg.ProxyHops)(r)
+}
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	h := w.Header()

@@ -22,6 +22,12 @@ type Provider struct {
 	// Hosts are where this provider's links live; a link Ollie creates on one of them
 	// is attached to the ticket it was made from.
 	Hosts []string `json:"-"`
+	// AppSignIn means the server signs in only with an app the operator registered in
+	// advance (MCP_<KEY>_CLIENT_ID): with one it is "oauth", without one Auth applies.
+	AppSignIn bool `json:"-"`
+	// SecretInForm sends the registered app's secret as form fields at the token
+	// endpoint, for servers that publish no client authentication methods.
+	SecretInForm bool `json:"-"`
 	// Starters are one-click asks offered on a ticket once connected.
 	Starters []Starter `json:"starters"`
 }
@@ -43,7 +49,7 @@ var Catalog = []Provider{
 			{"Find related Linear issues", "Search Linear for issues related to this ticket and tell me if one already covers it."},
 		}},
 	{Key: "github", Name: "GitHub", Category: "issues", Description: "Open issues, read pull requests and search code.",
-		URL: "https://api.githubcopilot.com/mcp/", Auth: "token", Hosts: []string{"github.com"},
+		URL: "https://api.githubcopilot.com/mcp/", Auth: "token", Hosts: []string{"github.com"}, AppSignIn: true, SecretInForm: true,
 		TokenHelp: "A fine-grained personal access token with access to the repositories Ollie may use.",
 		TokenURL:  "https://github.com/settings/personal-access-tokens/new",
 		Starters: []Starter{
@@ -78,10 +84,8 @@ var Catalog = []Provider{
 		URL: "https://mcp.close.com/mcp", Auth: "oauth",
 		Starters: []Starter{{"Check the customer in Close", "Look up this customer in Close and tell me about their account and open deals."}}},
 	{Key: "stripe", Name: "Stripe", Category: "payments", Description: "Look up customers, subscriptions, invoices and refunds.",
-		URL: "https://mcp.stripe.com", Auth: "token", Hosts: []string{"dashboard.stripe.com"},
-		TokenHelp: "A restricted key with only the permissions Ollie needs, for example read access to customers and invoices.",
-		TokenURL:  "https://dashboard.stripe.com/apikeys",
-		Starters:  []Starter{{"Check billing in Stripe", "Look up this customer in Stripe and summarize their subscription, recent invoices and any failed payments."}}},
+		URL: "https://mcp.stripe.com", Auth: "oauth", Hosts: []string{"dashboard.stripe.com"},
+		Starters: []Starter{{"Check billing in Stripe", "Look up this customer in Stripe and summarize their subscription, recent invoices and any failed payments."}}},
 	{Key: "paypal", Name: "PayPal", Category: "payments", Description: "Look up transactions and invoices.",
 		URL: "https://mcp.paypal.com/mcp", Auth: "oauth",
 		Starters: []Starter{{"Check PayPal transactions", "Look up this customer's recent PayPal transactions."}}},
@@ -102,10 +106,30 @@ const CustomKey = "custom"
 func provider(key string) (Provider, bool) {
 	for _, p := range Catalog {
 		if p.Key == key {
-			return p, true
+			return resolved(p), true
 		}
 	}
 	return Provider{}, false
+}
+
+// catalog is the Catalog as this instance offers it.
+func catalog() []Provider {
+	out := make([]Provider, len(Catalog))
+	for i, p := range Catalog {
+		out[i] = resolved(p)
+	}
+	return out
+}
+
+// resolved applies the instance's registered apps: a provider that signs in with
+// one does so once it is set, and asks for a token until then.
+func resolved(p Provider) Provider {
+	if p.AppSignIn {
+		if id, _ := preRegistered(p.Key); id != "" {
+			p.Auth, p.TokenHelp, p.TokenURL = "oauth", "", ""
+		}
+	}
+	return p
 }
 
 // preRegistered is an OAuth client an operator registered with a provider ahead of

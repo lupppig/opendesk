@@ -81,11 +81,13 @@ func (p *oauthProvider) scopeFor(resource string) string {
 }
 
 const (
-	googleIMAPScope = "https://mail.google.com/"
-	googleSendScope = "https://www.googleapis.com/auth/gmail.send"
-	msIMAPScope     = "https://outlook.office.com/IMAP.AccessAsUser.All"
-	msSendScope     = "https://graph.microsoft.com/Mail.Send"
-	msUserScope     = "https://graph.microsoft.com/User.Read"
+	googleIMAPScope   = "https://mail.google.com/"
+	googleSendScope   = "https://www.googleapis.com/auth/gmail.send"
+	googleModifyScope = "https://www.googleapis.com/auth/gmail.modify"
+	msIMAPScope       = "https://outlook.office.com/IMAP.AccessAsUser.All"
+	msSendScope       = "https://graph.microsoft.com/Mail.Send"
+	msUserScope       = "https://graph.microsoft.com/User.Read"
+	msReadWriteScope  = "https://graph.microsoft.com/Mail.ReadWrite"
 )
 
 func defaultProviders(cfg *config.Config) map[string]*oauthProvider {
@@ -117,6 +119,56 @@ func defaultProviders(cfg *config.Config) map[string]*oauthProvider {
 			imapHost:      "outlook.office365.com",
 		},
 	}
+}
+
+// apiClients are the Collab OAuth clients (contracts/collab.md "Providers and scopes"),
+// which an api grant connects with: the Gmail API with gmail.modify, Microsoft Graph with
+// Mail.ReadWrite and Mail.Send. Each holds one token resource (Google's one token, or
+// Microsoft's Graph token); neither has IMAP consent.
+func apiClients(cfg *config.Config) map[string]*oauthProvider {
+	tenant := cfg.MicrosoftTenant
+	if tenant == "" {
+		tenant = "common"
+	}
+	ms := "https://login.microsoftonline.com/" + url.PathEscape(tenant) + "/oauth2/v2.0"
+	googleScopes := []string{"openid", "email", googleModifyScope}
+	msScopes := []string{"openid", "email", "offline_access", msReadWriteScope, msSendScope, msUserScope}
+	msGraph := msReadWriteScope + " " + msSendScope + " " + msUserScope
+	return map[string]*oauthProvider{
+		KindGoogle: {
+			name: KindGoogle, clientID: cfg.CollabGoogleClientID, clientSecret: cfg.CollabGoogleClientSecret,
+			authURL: "https://accounts.google.com/o/oauth2/v2/auth", tokenURL: "https://oauth2.googleapis.com/token",
+			userinfoURL: "https://openidconnect.googleapis.com/v1/userinfo",
+			authScopes:  googleScopes, sendScopes: googleScopes,
+			authParams: []oauth2.AuthCodeOption{oauth2.AccessTypeOffline, oauth2.SetAuthURLParam("prompt", "consent"),
+				oauth2.SetAuthURLParam("include_granted_scopes", "false")},
+		},
+		KindMicrosoft: {
+			name: KindMicrosoft, clientID: cfg.CollabMicrosoftClientID, clientSecret: cfg.CollabMicrosoftClientSecret,
+			authURL: ms + "/authorize", tokenURL: ms + "/token",
+			authScopes: msScopes, sendScopes: msScopes,
+			codeScope: "openid email offline_access " + msGraph, sendCodeScope: "openid email offline_access " + msGraph,
+			graphScope: "offline_access " + msGraph,
+			authParams: []oauth2.AuthCodeOption{oauth2.SetAuthURLParam("prompt", "select_account")},
+		},
+	}
+}
+
+// client is the OAuth client a grant connects with: the Collab client for an api grant,
+// else the mailbox client.
+func (s *service) client(provider, grant string) *oauthProvider {
+	if grant == GrantAPI {
+		return s.apiClients[provider]
+	}
+	return s.providers[provider]
+}
+
+// clientOf is the OAuth client the mailbox's tokens belong to.
+func (s *service) clientOf(m *mailboxRow) *oauthProvider {
+	if m.Config.OAuthClient == ClientCollab {
+		return s.apiClients[m.oauthProvider()]
+	}
+	return s.providers[m.oauthProvider()]
 }
 
 func (s *service) redirectURI(provider string) string {
@@ -229,14 +281,17 @@ func (s *service) refresh(ctx context.Context, p *oauthProvider, refreshToken, s
 // (and storing a rotated refresh token) under a row lock so concurrent jobs refresh once.
 func (s *service) accessToken(ctx context.Context, m *mailboxRow, resource string) (string, error) {
 	provider := m.oauthProvider()
-	p := s.providers[provider]
+	p := s.clientOf(m)
 	if !p.configured() {
 		return "", fmt.Errorf("%s sign-in is not configured on this instance", providerLabel(provider))
 	}
 	if p.name == KindGoogle {
 		resource = resIMAP
-	} else if resource == resIMAP && m.sendOnly() {
-		// A send grant holds no IMAP consent to refresh.
+	} else if resource == resIMAP && m.noIMAPGrant() {
+		// A send or api grant holds no IMAP consent to refresh.
+		if m.Config.OAuthGrant == GrantAPI {
+			return "", errors.New("the provider connection reads the inbox through Microsoft Graph, not IMAP")
+		}
 		return "", errors.New("the provider connection can only send. Reconnect the mailbox to read its inbox")
 	}
 	c, err := s.openCreds(m)

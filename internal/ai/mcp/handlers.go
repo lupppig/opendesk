@@ -800,7 +800,7 @@ func (r *Registry) oauthCallback(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	p := &auth.Principal{Kind: auth.KindUser, UserID: pf.UserID, WorkspaceID: pf.WorkspaceID, Role: auth.Role(role),
-		IP: httpx.ClientIP(r.d.Cfg.TrustProxy)(req), UserAgent: truncateRunes(req.UserAgent(), 400)}
+		IP: httpx.ClientIP(r.d.Cfg.TrustProxy, r.d.Cfg.ProxyHops)(req), UserAgent: truncateRunes(req.UserAgent(), 400)}
 	if err := r.saveTokens(ctx, p, s, pf.Flow, tok); err != nil {
 		if isNotFound(err) {
 			fail("not_found")

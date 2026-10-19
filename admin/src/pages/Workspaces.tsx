@@ -4,7 +4,7 @@ import { ErrorState } from "@/components/ErrorState";
 import { FilterChips } from "@/components/FilterChips";
 import { PageBody, PageHeader } from "@/components/layout";
 import { ListSearch } from "@/components/ListSearch";
-import { PlanPill, SubscriptionPill, SuspendedPill } from "@/components/pills";
+import { PlanPill, SubscriptionPill, SuspendedPill, TestPill } from "@/components/pills";
 import { LoadMore, RowLink, Table, TableSkeleton, TD, TH, THead } from "@/components/table";
 import { Time } from "@/components/Time";
 import { Avatar } from "@/components/ui/avatar";
@@ -19,6 +19,8 @@ const FILTERS: { value: WorkspaceFilter; label: string }[] = [
   { value: "suspended", label: "Suspended" },
   { value: "paid", label: "Paid" },
   { value: "free", label: "Free" },
+  { value: "collab", label: "Collab" },
+  { value: "test", label: "Test" },
 ];
 
 export default function Workspaces() {
@@ -29,7 +31,7 @@ export default function Workspaces() {
   const list = useInfiniteQuery({ ...q.workspaces({ q: search.q, filter }), placeholderData: keepPreviousData });
   const rows = list.data?.pages.flatMap((p) => p.data) ?? [];
   const filtered = !!search.q || filter !== "all";
-  const filters = billing ? FILTERS : FILTERS.filter((f) => f.value === "all" || f.value === "suspended");
+  const filters = billing ? FILTERS : FILTERS.filter((f) => f.value === "all" || f.value === "suspended" || f.value === "test");
 
   return (
     <>
@@ -91,6 +93,7 @@ export default function Workspaces() {
                           </Link>
                           <span className="mono block truncate text-[11px] text-fg-4">{w.slug}</span>
                         </div>
+                        {w.test && <TestPill />}
                         {w.suspended_at && <SuspendedPill />}
                       </div>
                     </TD>

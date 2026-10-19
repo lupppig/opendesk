@@ -8,6 +8,7 @@
 #   * --help and --print-env work with no terminal and no Docker
 #   * a real --no-start install writes a .env docker compose accepts, and a
 #     second run keeps every secret (idempotency is the data-loss guard)
+#   * --proxy external drops Caddy and is kept between runs; --proxy caddy undoes it
 #   * a release file that does not match SHA256SUMS stops the install
 #   * install.sh.sha256 matches install.sh
 #
@@ -121,6 +122,41 @@ grep -qx 'AI_PROVIDER=openai' "$work/inst/.env" && grep -qx 'OPENAI_BASE_URL=htt
 after=$(grep -E '^(AUTH_SECRET|CREDENTIALS_KEY|SECRET_KEY_BASE|NATS_TOKEN|INBOUND_SECRET|POSTGRES_PASSWORD)=' "$work/inst/.env")
 [[ $before == "$after" ]] || fail "an AI change touched a secret"
 pass "AI answers (--ollama, an Anthropic key, --ai-url) set the provider and merge compose profiles"
+
+# Proxy mode: --proxy external adds the override next to the operator's own
+# compose files and drops Caddy, a run without the flag keeps it, and
+# --proxy caddy takes it out again.
+sed -i.orig 's/^COMPOSE_FILE=.*//' "$work/inst/.env"
+echo "COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml" >>"$work/inst/.env"
+printf 'services: {}\n' >"$work/inst/docker-compose.override.yml"
+sh "$SCRIPT" --yes --no-start --no-color --proxy external --domain desk.example.com --version v0.0.0-test2 --dir "$work/inst" >/dev/null </dev/null ||
+  fail "a --proxy external install failed"
+[[ -f $work/inst/compose.external-proxy.yml ]] || fail "the install did not write compose.external-proxy.yml"
+grep -qx 'COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:compose.external-proxy.yml' "$work/inst/.env" ||
+  fail "--proxy external did not add the override next to the existing compose files"
+grep -qx 'OPENDESK_URL=https://desk.example.com' "$work/inst/.env" && grep -qx 'OPENDESK_GATEWAY_URL=wss://desk.example.com/socket' "$work/inst/.env" ||
+  fail "--proxy external did not keep the public https and wss addresses"
+if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+  (cd "$work/inst" && docker compose config --services) | grep -qx caddy && fail "--proxy external still runs Caddy"
+  (cd "$work/inst" && docker compose config) | grep -q 'host_ip: 127.0.0.1' ||
+    fail "--proxy external does not publish opendesk on 127.0.0.1"
+fi
+sh "$SCRIPT" --yes --no-start --no-color --version v0.0.0-test2 --dir "$work/inst" >/dev/null </dev/null ||
+  fail "a second --proxy external run failed"
+grep -q '^COMPOSE_FILE=.*:compose.external-proxy.yml$' "$work/inst/.env" || fail "a run without --proxy forgot the external proxy"
+if sh "$SCRIPT" --yes --no-start --no-color --proxy external --domain :80 --version v0.0.0-test2 --dir "$work/inst" >/dev/null 2>&1 </dev/null; then
+  fail "--proxy external accepted :80 as the public hostname"
+fi
+sh "$SCRIPT" --yes --no-start --no-color --proxy caddy --version v0.0.0-test2 --dir "$work/inst" >/dev/null </dev/null ||
+  fail "a --proxy caddy install failed"
+grep -qx 'COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml' "$work/inst/.env" ||
+  fail "--proxy caddy did not take the override out and keep the rest"
+if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+  (cd "$work/inst" && docker compose config --services) | grep -qx caddy || fail "--proxy caddy does not run Caddy"
+fi
+after=$(grep -E '^(AUTH_SECRET|CREDENTIALS_KEY|SECRET_KEY_BASE|NATS_TOKEN|INBOUND_SECRET|POSTGRES_PASSWORD)=' "$work/inst/.env")
+[[ $before == "$after" ]] || fail "a proxy change touched a secret"
+pass "--proxy external and --proxy caddy switch the bundled Caddy off and on, and are kept between runs"
 
 mkdir -p "$work/other" && touch "$work/other/something"
 if sh "$SCRIPT" --yes --no-start --no-color --domain localhost --version v0.0.0-test --dir "$work/other" >/dev/null 2>&1 </dev/null; then

@@ -22,6 +22,7 @@ export function StepUpDialog({
   ready = true,
   onConfirm,
   explain,
+  size = "sm",
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
@@ -37,6 +38,8 @@ export function StepUpDialog({
   onConfirm: (code: string) => Promise<unknown>;
   /** A message for a refusal other than the code (409 sole_owner, ...), or undefined for the API's. */
   explain?: (e: unknown) => string | undefined;
+  /** Wider for a form with many fields. */
+  size?: "sm" | "md" | "lg";
 }) {
   const [mode, setMode] = useState<CodeMode>("totp");
   const [code, setCode] = useState("");
@@ -89,7 +92,7 @@ export function StepUpDialog({
       onOpenChange={close}
       title={title}
       description={description}
-      size="sm"
+      size={size}
       footer={
         <>
           <Button variant="ghost" disabled={busy} onClick={() => close(false)}>

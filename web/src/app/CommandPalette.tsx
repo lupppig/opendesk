@@ -12,6 +12,7 @@ import {
   Inbox,
   Keyboard,
   Layers,
+  Mail,
   Moon,
   Search,
   Server,
@@ -45,6 +46,9 @@ import { useDebounced } from "@/components/contacts/hooks";
 import { useAI } from "@/lib/ai";
 import { sortTeams, TeamDot, useTeamsCtx } from "@/components/tickets/teams";
 import type { SearchResults } from "@/lib/api/types";
+import { useCollab, useMailAccounts } from "@/lib/collab/hooks";
+import { compose } from "@/lib/collab/compose";
+import { AccountDot } from "@/components/collab/bits";
 
 const itemCls =
   "flex h-9 cursor-default select-none items-center gap-2.5 rounded-md px-2.5 text-[13px] text-fg transition-colors duration-100 animate-item-in motion-reduce:animate-none data-[selected=true]:bg-hover [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-fg-3";
@@ -80,6 +84,9 @@ export function CommandPalette() {
   const { t } = useTranslation("ai");
   const { t: tShell } = useTranslation("shell");
   const [aiMode, setAiMode] = useState(false);
+  const collab = useCollab();
+  const { data: mailAccounts } = useMailAccounts();
+  const { t: tCollab } = useTranslation("collab");
   const aiQuery = useDebounced(query.trim(), 300);
   const aiSearch = useQuery({ ...q.aiSearch(aiQuery), enabled: open && aiMode && ai.enabled && aiQuery.length > 1 });
 
@@ -253,6 +260,27 @@ export function CommandPalette() {
                     {f.label}
                   </Item>
                 ))}
+                {collab.enabled && (
+                  <Item
+                    value="go mail inbox email"
+                    icon={<Mail />}
+                    onSelect={() => go(() => void navigate({ to: "/mail/$box/{-$threadId}", params: { box: "inbox", threadId: undefined }, search: {} }))}
+                  >
+                    {tCollab("palette.goMail")}
+                  </Item>
+                )}
+                {collab.enabled &&
+                  mailAccounts?.map((a) => (
+                    <Item
+                      key={`mail-${a.id}`}
+                      value={`go mail account ${a.name} ${a.email}`}
+                      icon={<span className="flex size-4 shrink-0 items-center justify-center"><AccountDot color={a.color} /></span>}
+                      hint={tCollab("palette.account")}
+                      onSelect={() => go(() => void navigate({ to: "/mail/$box/{-$threadId}", params: { box: "inbox", threadId: undefined }, search: { account: a.id } }))}
+                    >
+                      {a.name || a.email}
+                    </Item>
+                  ))}
                 {teams.myTeams.size > 1 && (
                   <Item
                     value="go team my teams"
@@ -306,6 +334,7 @@ export function CommandPalette() {
                     ["/settings/members", "Members"],
                     ["/settings/teams", "Teams"],
                     ["/settings/mailboxes", "Mailboxes"],
+                    ...(collab.enabled ? ([["/settings/mail-accounts", "Mail accounts"]] as const) : []),
                     ["/settings/email-design", "Email design"],
                     ["/settings/tags", "Labels"],
                     ["/settings/saved-replies", "Saved replies"],
@@ -336,6 +365,11 @@ export function CommandPalette() {
                 <Item value="new ticket compose create" icon={<SquarePen />} hint={<Kbd>c</Kbd>} onSelect={() => go(() => shell.newTicket())}>
                   New ticket
                 </Item>
+                {collab.enabled && !!mailAccounts?.length && (
+                  <Item value="compose email new mail message write" icon={<Mail />} onSelect={() => go(() => compose.open())}>
+                    {tCollab("palette.compose")}
+                  </Item>
+                )}
                 <Item value="toggle theme dark light mode" icon={dark ? <Sun /> : <Moon />} onSelect={() => go(() => setTheme(dark ? "light" : "dark"))}>
                   Switch to {dark ? "light" : "dark"} theme
                 </Item>

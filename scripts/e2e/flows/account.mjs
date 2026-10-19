@@ -53,11 +53,12 @@ export async function run(t) {
   });
 
   await t.step("onboarding: forwarding mailbox", async () => {
-    await page.getByRole("radio", { name: /forward from any provider/i }).click();
-    await page.getByRole("button", { name: "Continue", exact: true }).click();
     const support = `support-${uid()}@acme.test`;
     await page.getByLabel("Name", { exact: true }).fill("Support");
     await page.getByLabel("Email address").fill(support);
+    await page.keyboard.press("Tab"); // commit the address so host detection runs
+    await page.getByRole("radio", { name: /forward mail to opendesk/i }).click();
+    await page.getByRole("button", { name: "Continue", exact: true }).click();
     await page.getByRole("button", { name: "Create mailbox" }).click();
     const addr = await until(async () => {
       const v = await page.locator("input[readonly], .mono").filter({ hasText: /@/ }).allInnerTexts();

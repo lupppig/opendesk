@@ -130,10 +130,24 @@ func oauthPublic(path string) bool {
 	return strings.HasPrefix(path, "/.well-known/oauth-")
 }
 
-// ClientIP returns the caller's address. Proxy headers are trusted only when trustProxy is set.
-func ClientIP(trustProxy bool) func(*http.Request) string {
+// ClientIP returns the caller's address. Proxy headers are trusted only when trustProxy
+// is set or hops is above zero.
+//
+// hops counts the proxies in front that append to X-Forwarded-For (nginx, Traefik,
+// HAProxy, a load balancer). The address that many entries from the right is the one the
+// outermost of them saw, which a client cannot forge; entries further left are the
+// client's own and ignored, and so is CF-Connecting-IP. With fewer entries than hops it
+// is the TCP peer. The realtime gateway reads TRUSTED_PROXY_HOPS the same way.
+//
+// trustProxy (hops 0) is for a proxy that sets the headers itself: CF-Connecting-IP, then
+// the first X-Forwarded-For entry.
+func ClientIP(trustProxy bool, hops int) func(*http.Request) string {
 	return func(r *http.Request) string {
-		if trustProxy {
+		if hops > 0 {
+			if ip := forwardedFor(r, hops); ip != "" {
+				return ip
+			}
+		} else if trustProxy {
 			if ip := r.Header.Get("CF-Connecting-IP"); net.ParseIP(ip) != nil {
 				return ip
 			}
@@ -150,6 +164,23 @@ func ClientIP(trustProxy bool) func(*http.Request) string {
 		}
 		return host
 	}
+}
+
+// forwardedFor is the X-Forwarded-For address hops entries from the right, counting the
+// addresses of every header line in order, or "" when there are fewer.
+func forwardedFor(r *http.Request, hops int) string {
+	var list []string
+	for _, v := range r.Header.Values("X-Forwarded-For") {
+		for _, part := range strings.Split(v, ",") {
+			if part = strings.TrimSpace(part); net.ParseIP(part) != nil {
+				list = append(list, part)
+			}
+		}
+	}
+	if len(list) < hops {
+		return ""
+	}
+	return list[len(list)-hops]
 }
 
 // Limiter is an in-memory fixed-window rate limiter keyed by string. Per process;

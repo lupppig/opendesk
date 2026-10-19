@@ -2,7 +2,7 @@ import { Check, Forward, Server, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import type { Mailbox, MailboxTest, MailboxTestLeg } from "@/lib/api/types";
-import { connectionMethod, mailboxHost, mailHostLabel, sendOnly } from "@/lib/mailHost";
+import { connectionMethod, mailboxHost, mailHostLabel, readsDirectly, sendOnly } from "@/lib/mailHost";
 import { cn } from "@/lib/cn";
 import { tone, type Tone } from "@/lib/tones";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -71,7 +71,7 @@ export function MailboxIcon({ kind, size = "md" }: { kind: Mailbox["inbound_kind
 
 const statusState = { active: "active", error: "failing", disabled: "disabled" } as const;
 
-/** An enabled mailbox that receives over IMAP on an instance where that is now off: no mail arrives. */
+/** An enabled mailbox that receives over IMAP where that is now off for its workspace: no mail arrives. */
 export function notReceiving(m: Pick<Mailbox, "status" | "receiving">): boolean {
   return m.status !== "disabled" && m.receiving === "imap_off";
 }
@@ -156,11 +156,13 @@ export function TestResults({ result, only }: { result: MailboxTest; only?: "inb
   );
 }
 
-/** "Gmail · App password": the host, when known, and how the mailbox signs in. Send-only: "Forwarding · Sends with Google". */
+/** "Gmail · App password": the host, when known, and how the mailbox signs in. Send-only: "Forwarding · Sends with Google"; read directly: "Gmail · Reads the inbox directly through Google". */
 export function connectionLabel(m: Mailbox, t: TFunction<"settingsChannels">): string {
   if (sendOnly(m)) return `${t("connect.method_label.forwarding")} · ${t("connect.method_label.sendsWith", { provider: m.outbound_kind === "google" ? "Google" : "Microsoft" })}`;
   const host = mailboxHost(m);
-  const how = t(`connect.method_label.${connectionMethod(m)}`);
+  const how = readsDirectly(m)
+    ? t("connect.method_label.direct", { provider: m.inbound_kind === "google" ? "Google" : "Microsoft" })
+    : t(`connect.method_label.${connectionMethod(m)}`);
   if (host && host !== "other") return `${mailHostLabel(host)} · ${how}`;
   return m.inbound_kind === "imap" ? `${t("kind.imap")} · ${how}` : how;
 }

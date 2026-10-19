@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCollab } from "@/lib/collab/hooks";
 import { Link } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "motion/react";
 import { BellOff, BellRing, CalendarClock, Check, ChevronDown, Clock, Gauge, Laptop, MailCheck, MailX, Moon, Play, Send, Smartphone, Zap } from "lucide-react";
@@ -453,7 +454,9 @@ const GRID = "grid grid-cols-[minmax(0,1fr)_repeat(4,64px)] items-center gap-x-1
 function TypesSection({ prefs, onChange }: { prefs: NotificationPreferences; onChange: (p: NotificationPreferencesPatch) => void }) {
   const { t } = useTranslation("settings");
   const workspace = useWorkspace();
-  const groups = groupTypes(prefs.types);
+  const collabOn = useCollab().enabled;
+  // Collab's mail notifications are listed only while the workspace has Collab.
+  const groups = groupTypes(prefs.types).filter((g) => g.group !== "mail" || collabOn);
   const emailOff = prefs.email_cadence === "off";
   const column = (c: NotificationChannel) => t(`notifications.channels.${c}`);
   const gap = useGapWords();
