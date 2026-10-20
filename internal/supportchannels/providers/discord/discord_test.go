@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -129,5 +130,34 @@ func TestParseAskCommandAsConversation(t *testing.T) {
 	result, err := (Adapter{}).Parse(http.Header{}, body)
 	if err != nil || len(result.Events) != 1 || result.Events[0].Command != "chat" || result.Events[0].Text != "Summarize this" {
 		t.Fatalf("event: %+v, %v", result.Events, err)
+	}
+}
+
+func TestConfigureLeavesAnotherConnectionsEndpoint(t *testing.T) {
+	patched := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/applications/@me" && r.Method == http.MethodGet:
+			_, _ = w.Write([]byte(`{"id":"A1","interactions_endpoint_url":"https://example.test/hooks/discord/other"}`))
+		case r.Method == http.MethodPatch:
+			patched = true
+			_, _ = w.Write([]byte(`{}`))
+		default:
+			_, _ = w.Write([]byte(`[]`))
+		}
+	}))
+	defer server.Close()
+	a := Adapter{BaseURL: server.URL}
+	setup := channel.Setup{WebhookURL: "https://example.test/hooks/discord/mine", Foreign: func(url string) bool { return strings.HasSuffix(url, "/other") }}
+	credentials := map[string]string{"bot_token": "token", "guild_id": "G1"}
+	if err := a.Configure(context.Background(), server.Client(), credentials, setup); !errors.Is(err, channel.ErrInUse) || patched {
+		t.Fatalf("configure: err=%v patched=%v", err, patched)
+	}
+	if _, err := a.Health(context.Background(), server.Client(), credentials, setup); !errors.Is(err, channel.ErrInUse) {
+		t.Fatalf("health: %v", err)
+	}
+	setup.Foreign = func(string) bool { return false }
+	if err := a.Configure(context.Background(), server.Client(), credentials, setup); err != nil || !patched {
+		t.Fatalf("a stale endpoint was not replaced: err=%v patched=%v", err, patched)
 	}
 }

@@ -100,16 +100,29 @@ func (a Adapter) Validate(ctx context.Context, c *http.Client, cr map[string]str
 		return channel.Account{}, errors.New("bot_token and webhook_secret are required")
 	}
 	var me struct {
-		ID       int64  `json:"id"`
-		Username string `json:"username"`
+		ID        int64  `json:"id"`
+		FirstName string `json:"first_name"`
+		Username  string `json:"username"`
 	}
 	if err := a.call(ctx, c, cr, "getMe", map[string]any{}, &me); err != nil {
 		return channel.Account{}, err
 	}
-	return channel.Account{ID: strconv.FormatInt(me.ID, 10), Name: "@" + me.Username}, nil
+	return channel.Account{ID: strconv.FormatInt(me.ID, 10), Name: me.FirstName, Handle: "@" + me.Username}, nil
 }
 
 func (a Adapter) Configure(ctx context.Context, c *http.Client, cr map[string]string, setup channel.Setup) error {
+	// A bot has one webhook, whichever workspace connected it.
+	if setup.Foreign != nil {
+		var info struct {
+			URL string `json:"url"`
+		}
+		if err := a.call(ctx, c, cr, "getWebhookInfo", map[string]any{}, &info); err != nil {
+			return err
+		}
+		if info.URL != setup.WebhookURL && setup.Foreign(info.URL) {
+			return channel.ErrInUse
+		}
+	}
 	return a.call(ctx, c, cr, "setWebhook", map[string]any{
 		"url": setup.WebhookURL, "secret_token": cr["webhook_secret"],
 		"allowed_updates": []string{"message", "my_chat_member"},
@@ -125,6 +138,9 @@ func (a Adapter) Health(ctx context.Context, c *http.Client, cr map[string]strin
 		return channel.Health{}, err
 	}
 	if info.URL != setup.WebhookURL {
+		if setup.Foreign != nil && setup.Foreign(info.URL) {
+			return channel.Health{}, channel.ErrInUse
+		}
 		return channel.Health{Status: "action_required", Detail: "Telegram's webhook points somewhere else. Test the connection to repair it."}, nil
 	}
 	if info.LastErrorMessage != "" {
@@ -153,6 +169,13 @@ func (Adapter) Parse(_ http.Header, body []byte) (channel.WebhookResult, error) 
 			ViaBot *struct {
 				ID int64 `json:"id"`
 			} `json:"via_bot"`
+			ReplyTo *struct {
+				From struct {
+					IsBot    bool   `json:"is_bot"`
+					Username string `json:"username"`
+				} `json:"from"`
+				TopicCreated json.RawMessage `json:"forum_topic_created"`
+			} `json:"reply_to_message"`
 			Chat struct {
 				ID      int64  `json:"id"`
 				Title   string `json:"title"`
@@ -192,13 +215,14 @@ func (Adapter) Parse(_ http.Header, body []byte) (channel.WebhookResult, error) 
 		return channel.WebhookResult{Destinations: []channel.Destination{discovery}}, nil
 	}
 	cmd, text := "chat", strings.TrimSpace(x.Message.Text)
-	directed := false
-	if strings.HasPrefix(p[0], "@") {
-		directed = true
-		text = strings.TrimSpace(strings.TrimPrefix(x.Message.Text, p[0]))
-		if text == "" {
-			text = "What can you help me create?"
-		}
+	mention := ""
+	switch r := x.Message.ReplyTo; {
+	case len(p[0]) > 1 && strings.HasPrefix(p[0], "@"):
+		mention = p[0]
+	case r != nil && r.From.IsBot && r.From.Username != "" && r.TopicCreated == nil:
+		// A reply to a bot's message names that bot. Every message in a topic also
+		// replies to the topic's first message, which is not a reply to anyone.
+		mention = "@" + r.From.Username
 	}
 	if strings.HasPrefix(p[0], "/") {
 		candidate := strings.TrimPrefix(strings.SplitN(p[0], "@", 2)[0], "/")
@@ -214,7 +238,7 @@ func (Adapter) Parse(_ http.Header, body []byte) (channel.WebhookResult, error) 
 			}
 		}
 	}
-	return channel.WebhookResult{Events: []channel.Inbound{{EventID: strconv.FormatInt(x.UpdateID, 10), ExternalChannelID: strconv.FormatInt(x.Message.Chat.ID, 10), ExternalThreadID: strconv.FormatInt(x.Message.MessageThreadID, 10), ExternalUserID: strconv.FormatInt(x.Message.From.ID, 10), Command: cmd, Text: text, Value: text, Directed: directed}}, Destinations: []channel.Destination{discovery}}, nil
+	return channel.WebhookResult{Events: []channel.Inbound{{EventID: strconv.FormatInt(x.UpdateID, 10), ExternalChannelID: strconv.FormatInt(x.Message.Chat.ID, 10), ExternalThreadID: strconv.FormatInt(x.Message.MessageThreadID, 10), ExternalUserID: strconv.FormatInt(x.Message.From.ID, 10), Command: cmd, Text: text, Value: text, Mention: mention}}, Destinations: []channel.Destination{discovery}}, nil
 }
 
 func explicitCommand(s string) bool {

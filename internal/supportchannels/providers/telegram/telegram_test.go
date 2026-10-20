@@ -106,15 +106,29 @@ func TestParseNaturalConversation(t *testing.T) {
 	}
 }
 
-func TestParseDirectedNaturalConversation(t *testing.T) {
+func TestParseMentionedNaturalConversation(t *testing.T) {
 	body := []byte(`{"update_id":11,"message":{"message_id":7,"message_thread_id":1,"text":"@opendeskkbot create a ticket for the broken printer","from":{"id":9},"chat":{"id":-10}}}`)
 	result, err := (Adapter{}).Parse(http.Header{}, body)
 	if err != nil || len(result.Events) != 1 {
 		t.Fatalf("event: %+v, %v", result.Events, err)
 	}
+	// Telegram can't say whom a handle names; the engine compares it with the bot's.
 	e := result.Events[0]
-	if e.Command != "chat" || e.Text != "create a ticket for the broken printer" || !e.Directed {
+	if e.Command != "chat" || e.Mention != "@opendeskkbot" || e.Text != "@opendeskkbot create a ticket for the broken printer" || e.Directed {
 		t.Fatalf("event: %+v", e)
+	}
+}
+
+func TestParseReplyToBotNamesIt(t *testing.T) {
+	reply := []byte(`{"update_id":12,"message":{"message_id":8,"message_thread_id":1,"text":"confirm","from":{"id":9},"chat":{"id":-10},"reply_to_message":{"message_id":7,"from":{"id":99,"is_bot":true,"username":"opendeskkbot"}}}}`)
+	result, err := (Adapter{}).Parse(http.Header{}, reply)
+	if err != nil || len(result.Events) != 1 || result.Events[0].Mention != "@opendeskkbot" || result.Events[0].Text != "confirm" {
+		t.Fatalf("reply: %+v, %v", result.Events, err)
+	}
+	topic := []byte(`{"update_id":13,"message":{"message_id":9,"message_thread_id":7,"text":"hello","from":{"id":9},"chat":{"id":-10},"reply_to_message":{"message_id":7,"from":{"id":99,"is_bot":true,"username":"opendeskkbot"},"forum_topic_created":{"name":"#1001"}}}}`)
+	result, err = (Adapter{}).Parse(http.Header{}, topic)
+	if err != nil || len(result.Events) != 1 || result.Events[0].Mention != "" {
+		t.Fatalf("topic message: %+v, %v", result.Events, err)
 	}
 }
 
@@ -145,5 +159,24 @@ func TestParseDiscoversForumFromMembershipUpdate(t *testing.T) {
 	item := result.Destinations[0]
 	if item.ID != "-1001" || item.Name != "Support" || !item.Available {
 		t.Fatalf("destination: %+v", item)
+	}
+}
+
+func TestConfigureLeavesAnotherConnectionsWebhook(t *testing.T) {
+	set := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/getWebhookInfo"):
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"url":"https://example.test/hooks/telegram/other"}}`))
+		case strings.HasSuffix(r.URL.Path, "/setWebhook"):
+			set = true
+			_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
+		}
+	}))
+	defer server.Close()
+	setup := channel.Setup{WebhookURL: "https://example.test/hooks/telegram/mine", Foreign: func(url string) bool { return strings.HasSuffix(url, "/other") }}
+	err := (Adapter{BaseURL: server.URL}).Configure(context.Background(), server.Client(), map[string]string{"bot_token": "token", "webhook_secret": "secret"}, setup)
+	if !errors.Is(err, channel.ErrInUse) || set {
+		t.Fatalf("err=%v set=%v", err, set)
 	}
 }

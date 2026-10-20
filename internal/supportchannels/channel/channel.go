@@ -5,6 +5,7 @@ package channel
 
 import (
 	"context"
+	"errors"
 	"net/http"
 )
 
@@ -22,11 +23,16 @@ type Descriptor struct {
 	Name        string  `json:"name"`
 	Description string  `json:"description"`
 	Fields      []Field `json:"fields"`
+	// Configures is set by the registry for adapters that set themselves up
+	// (Configurer); the others need an admin to enter webhook_url at the provider.
+	Configures bool `json:"configures"`
 }
 
 type Account struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+	// Handle is the bot's @username where people address it by one (Telegram).
+	Handle string `json:"-"`
 }
 
 // Destination is a provider location which can receive mirrored tickets.
@@ -42,7 +48,14 @@ type Destination struct {
 // connection. Credentials remain provider-owned and never cross this boundary.
 type Setup struct {
 	WebhookURL string
+	// Foreign reports whether an address is another connection's webhook on this
+	// instance, so one bot's provider-wide setting is never taken from it.
+	Foreign func(url string) bool
 }
+
+// ErrInUse is returned by Configure when the provider-wide setting it would
+// change belongs to another connection.
+var ErrInUse = errors.New("the provider setting belongs to another connection")
 
 type Health struct {
 	Status string `json:"status"` // healthy | action_required | error
@@ -83,6 +96,11 @@ type Inbound struct {
 	// Directed is true when the provider says the message explicitly addressed
 	// the bot. It gates new conversations outside mapped ticket threads.
 	Directed bool `json:",omitempty"`
+	// Mention is the @handle a message opens with, for providers that cannot tell
+	// whether a handle names the bot (Telegram). The engine treats the message as
+	// directed, and drops the handle from Text, only when it is the connection's
+	// own account.
+	Mention string `json:",omitempty"`
 	// TicketNumber names the ticket when the provider can't deliver the command
 	// inside its thread (a Slack slash command). The engine resolves it to the
 	// ticket's mirrored thread on the same connection.

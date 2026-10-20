@@ -31,7 +31,9 @@ func (r *Registry) Get(key string) (channel.Adapter, bool) { a, ok := r.adapters
 func (r *Registry) List() []channel.Descriptor {
 	out := make([]channel.Descriptor, 0, len(r.adapters))
 	for _, a := range r.adapters {
-		out = append(out, a.Describe())
+		d := a.Describe()
+		_, d.Configures = a.(channel.Configurer)
+		out = append(out, d)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out

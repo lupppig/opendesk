@@ -1,6 +1,10 @@
 package supportchannels
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/useopendesk/opendesk/internal/supportchannels/channel"
+)
 
 func TestMessageCreatedTextDecodesEventPayload(t *testing.T) {
 	tests := []struct {
@@ -33,5 +37,24 @@ func TestMessageCreatedTextRejectsMalformedPayload(t *testing.T) {
 		if _, err := messageCreatedText([]byte(data), true); err == nil {
 			t.Fatalf("accepted malformed payload %q", data)
 		}
+	}
+}
+
+func TestAddressedOnlyByTheConnectionsOwnHandle(t *testing.T) {
+	c := connection{ExternalAccountHandle: "@opendeskkbot"}
+	in := channel.Inbound{Command: "chat", Mention: "@OpendeskKBot", Text: "@OpendeskKBot create a ticket", Value: "@OpendeskKBot create a ticket"}
+	addressed(c, &in)
+	if !in.Directed || in.Text != "create a ticket" || in.Value != "create a ticket" {
+		t.Fatalf("bot mention: %+v", in)
+	}
+	other := channel.Inbound{Command: "chat", Mention: "@alice", Text: "@alice can you look?"}
+	addressed(c, &other)
+	if other.Directed || other.Text != "@alice can you look?" {
+		t.Fatalf("someone else's mention: %+v", other)
+	}
+	reply := channel.Inbound{Command: "chat", Mention: "@opendeskkbot", Text: "confirm"}
+	addressed(c, &reply)
+	if !reply.Directed || reply.Text != "confirm" {
+		t.Fatalf("reply to the bot: %+v", reply)
 	}
 }

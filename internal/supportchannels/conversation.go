@@ -326,7 +326,8 @@ func actionConfirmation(a conversationAction) string {
 		if a.Description != "" {
 			answer += " with this description:\n\n> " + strings.ReplaceAll(clip(a.Description, 1200), "\n", "\n> ")
 		}
-		return answer + "\n\nReply `confirm` to create it or `cancel` to discard it."
+		// Outside a ticket thread the bot hears only messages addressed to it.
+		return answer + "\n\nMention me with `confirm` to create it, or `cancel` to discard it."
 	default:
 		return "Reply `confirm` to apply this change or `cancel` to discard it."
 	}

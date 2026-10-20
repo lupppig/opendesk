@@ -3,7 +3,8 @@ ALTER TABLE support_channel_connections
         CHECK (health_status IN ('unknown', 'healthy', 'action_required', 'error')),
     ADD COLUMN health_detail text NOT NULL DEFAULT '',
     ADD COLUMN health_checked_at timestamptz,
-    ADD COLUMN credentials_updated_at timestamptz NOT NULL DEFAULT now();
+    ADD COLUMN credentials_updated_at timestamptz NOT NULL DEFAULT now(),
+    ADD COLUMN external_account_handle text NOT NULL DEFAULT '';
 
 CREATE TABLE support_channel_discovered_destinations (
     workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,

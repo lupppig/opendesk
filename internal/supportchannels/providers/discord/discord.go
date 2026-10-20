@@ -139,6 +139,10 @@ func (a Adapter) Configure(ctx context.Context, c *http.Client, cr map[string]st
 		return errors.New("discord application has no id")
 	}
 	if app.InteractionsEndpointURL != setup.WebhookURL {
+		// The interactions endpoint is one per application, not per server.
+		if setup.Foreign != nil && setup.Foreign(app.InteractionsEndpointURL) {
+			return channel.ErrInUse
+		}
 		if err := a.call(ctx, c, cr["bot_token"], http.MethodPatch, "/applications/@me", map[string]string{"interactions_endpoint_url": setup.WebhookURL}, nil); err != nil {
 			return err
 		}
@@ -157,6 +161,9 @@ func (a Adapter) Health(ctx context.Context, c *http.Client, cr map[string]strin
 		return channel.Health{}, err
 	}
 	if app.InteractionsEndpointURL != setup.WebhookURL {
+		if setup.Foreign != nil && setup.Foreign(app.InteractionsEndpointURL) {
+			return channel.Health{}, channel.ErrInUse
+		}
 		return channel.Health{Status: "action_required", Detail: "Discord's interactions endpoint points somewhere else. Test the connection to repair it."}, nil
 	}
 	var registered []struct {

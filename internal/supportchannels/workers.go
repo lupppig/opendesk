@@ -260,6 +260,7 @@ func (s *Service) processInbound(ctx context.Context, a jobs.SupportChannelInbou
 	if in.AccountID != "" && in.AccountID != c.ExternalAccountID {
 		return s.finishInbound(ctx, a)
 	}
+	addressed(c, &in)
 	if in.Command == "link" {
 		err = s.linkIdentity(ctx, c, in)
 		if err == nil {
@@ -299,15 +300,23 @@ func (s *Service) processInbound(ctx context.Context, a jobs.SupportChannelInbou
 	err = s.d.DB.Pool.QueryRow(ctx, `SELECT t.ticket_id,d.include_notes,d.team_id FROM support_channel_threads t JOIN support_channel_destinations d ON d.id=t.destination_id
 		WHERE t.connection_id=$1 AND t.external_channel_id=$2 AND t.external_thread_id=$3`, c.ID, in.ExternalChannelID, in.ExternalThreadID).Scan(&tid, &includeNotes, &teamID)
 	if db.IsNotFound(err) {
-		if in.Command == "chat" && in.Directed {
-			if p == nil {
+		creating := in.Command == "chat" && in.Directed
+		if in.Command == "chat" && !in.Directed {
+			// A reply to Ollie's question or preview needs no mention where the
+			// provider delivers it (Telegram topics).
+			if creating, err = s.pendingCreation(ctx, c.ID, in); err != nil {
+				return err
+			}
+		}
+		if creating {
+			err = s.d.DB.Pool.QueryRow(ctx, `SELECT team_id FROM support_channel_destinations
+				WHERE connection_id=$1 AND workspace_id=$2 AND external_channel_id=$3 AND enabled`, c.ID, c.WorkspaceID, in.ExternalChannelID).Scan(&teamID)
+			if err == nil && p == nil {
 				if p, err = s.externalPrincipal(ctx, c, in.ExternalUserID); err != nil {
 					s.replyToProvider(ctx, adapter, creds, in, "Link your opendesk account before asking Ollie to create a ticket.")
 					return s.finishInbound(ctx, a)
 				}
 			}
-			err = s.d.DB.Pool.QueryRow(ctx, `SELECT team_id FROM support_channel_destinations
-				WHERE connection_id=$1 AND workspace_id=$2 AND external_channel_id=$3 AND enabled`, c.ID, c.WorkspaceID, in.ExternalChannelID).Scan(&teamID)
 			if err == nil {
 				answer, converseErr := s.converseCreate(ctx, p, c.ID, teamID, in)
 				if converseErr != nil {
@@ -371,6 +380,28 @@ func (s *Service) processInbound(ctx context.Context, a jobs.SupportChannelInbou
 	}
 	s.replyToProvider(ctx, adapter, creds, in, "Done in opendesk.")
 	return s.finishInbound(ctx, a)
+}
+
+// addressed marks a message that opens with the connection's own handle as
+// directed at the bot, and drops the handle from its text.
+func addressed(c connection, in *channel.Inbound) {
+	if in.Command != "chat" || in.Mention == "" || !strings.EqualFold(in.Mention, c.ExternalAccountHandle) {
+		return
+	}
+	in.Directed = true
+	in.Text = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(in.Text), in.Mention))
+	in.Value = in.Text
+}
+
+// pendingCreation reports whether the sender has a ticket waiting for their
+// confirm or cancel in this thread.
+func (s *Service) pendingCreation(ctx context.Context, connectionID uuid.UUID, in channel.Inbound) (bool, error) {
+	var ok bool
+	err := s.d.DB.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM support_channel_conversations
+		WHERE connection_id=$1 AND external_channel_id=$2 AND external_thread_id=$3 AND external_user_id=$4
+		AND pending_action->>'command'='create_ticket' AND pending_expires_at>now())`,
+		connectionID, in.ExternalChannelID, in.ExternalThreadID, in.ExternalUserID).Scan(&ok)
+	return ok, err
 }
 
 func (s *Service) linkIdentity(ctx context.Context, c connection, in channel.Inbound) error {

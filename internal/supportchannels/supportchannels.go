@@ -60,21 +60,22 @@ func Background(ctx context.Context, d *deps.Deps) {
 }
 
 type connection struct {
-	ID                   uuid.UUID  `json:"id"`
-	WorkspaceID          uuid.UUID  `json:"-"`
-	Provider             string     `json:"provider"`
-	Name                 string     `json:"name"`
-	ExternalAccountID    string     `json:"external_account_id"`
-	ExternalAccountName  string     `json:"external_account_name"`
-	CredentialsEnc       []byte     `json:"-"`
-	Status               string     `json:"status"`
-	LastError            string     `json:"last_error"`
-	HealthStatus         string     `json:"health_status"`
-	HealthDetail         string     `json:"health_detail"`
-	HealthCheckedAt      *time.Time `json:"health_checked_at,omitempty"`
-	CredentialsUpdatedAt time.Time  `json:"-"`
-	CreatedAt            time.Time  `json:"created_at"`
-	WebhookURL           string     `json:"webhook_url"`
+	ID                    uuid.UUID  `json:"id"`
+	WorkspaceID           uuid.UUID  `json:"-"`
+	Provider              string     `json:"provider"`
+	Name                  string     `json:"name"`
+	ExternalAccountID     string     `json:"external_account_id"`
+	ExternalAccountName   string     `json:"external_account_name"`
+	ExternalAccountHandle string     `json:"external_account_handle"`
+	CredentialsEnc        []byte     `json:"-"`
+	Status                string     `json:"status"`
+	LastError             string     `json:"last_error"`
+	HealthStatus          string     `json:"health_status"`
+	HealthDetail          string     `json:"health_detail"`
+	HealthCheckedAt       *time.Time `json:"health_checked_at,omitempty"`
+	CredentialsUpdatedAt  time.Time  `json:"-"`
+	CreatedAt             time.Time  `json:"created_at"`
+	WebhookURL            string     `json:"webhook_url"`
 }
 
 type destination struct {

@@ -2,7 +2,9 @@ package supportchannels
 
 import (
 	"context"
+	"errors"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -22,15 +24,28 @@ func (s *Service) reconcileConnection(ctx context.Context, c connection, credent
 	if !ok {
 		return s.storeHealth(ctx, c, channel.Health{Status: "error", Detail: healthFailure})
 	}
-	setup := channel.Setup{WebhookURL: s.webhookURL(c)}
+	account, err := a.Validate(ctx, s.http, credentials)
+	if err != nil {
+		return s.storeHealth(ctx, c, channel.Health{Status: "error", Detail: "The provider refused the credentials. Replace them with working ones."})
+	}
+	if account.ID != c.ExternalAccountID {
+		return s.storeHealth(ctx, c, channel.Health{Status: "error", Detail: "These credentials belong to another provider account."})
+	}
+	c = s.refreshAccount(ctx, c, cleanAccount(a, account))
+	setup := channel.Setup{WebhookURL: s.webhookURL(c), Foreign: func(url string) bool { return s.foreignWebhook(ctx, c, url) }}
 	if configurer, ok := a.(channel.Configurer); ok {
-		if err := configurer.Configure(ctx, s.http, credentials, setup); err != nil {
+		if err := configurer.Configure(ctx, s.http, credentials, setup); errors.Is(err, channel.ErrInUse) {
+			return s.storeHealth(ctx, c, channel.Health{Status: "action_required", Detail: inUse})
+		} else if err != nil {
 			s.d.Log.Warn("support channel setup failed", "provider", c.Provider, "connection_id", c.ID)
 			return s.storeHealth(ctx, c, channel.Health{Status: "error", Detail: healthFailure})
 		}
 	}
 	if checker, ok := a.(channel.HealthChecker); ok {
 		health, err := checker.Health(ctx, s.http, credentials, setup)
+		if errors.Is(err, channel.ErrInUse) {
+			return s.storeHealth(ctx, c, channel.Health{Status: "action_required", Detail: inUse})
+		}
 		if err != nil {
 			s.d.Log.Warn("support channel health check failed", "provider", c.Provider, "connection_id", c.ID)
 			return s.storeHealth(ctx, c, channel.Health{Status: "error", Detail: healthFailure})
@@ -43,14 +58,46 @@ func (s *Service) reconcileConnection(ctx context.Context, c connection, credent
 		}
 		return s.storeHealth(ctx, c, health)
 	}
-	if _, err := a.Validate(ctx, s.http, credentials); err != nil {
-		return s.storeHealth(ctx, c, channel.Health{Status: "error", Detail: healthFailure})
-	}
 	return s.storeHealth(ctx, c, channel.Health{Status: "healthy", Detail: "The provider accepted the connection."})
 }
 
+const inUse = "This bot already serves another opendesk connection. Disconnect that one, or use a separate bot for each account, then test again."
+
+// refreshAccount keeps the stored account name and handle current: a bot can be
+// renamed, and connections made before handles were kept get theirs.
+func (s *Service) refreshAccount(ctx context.Context, c connection, account channel.Account) connection {
+	if account.Name == c.ExternalAccountName && account.Handle == c.ExternalAccountHandle {
+		return c
+	}
+	if _, err := s.d.DB.Pool.Exec(ctx, `UPDATE support_channel_connections SET external_account_name=$2,external_account_handle=$3 WHERE id=$1`, c.ID, account.Name, account.Handle); err != nil {
+		s.d.Log.Warn("support channel account", "connection_id", c.ID, "err", err)
+		return c
+	}
+	c.ExternalAccountName, c.ExternalAccountHandle = account.Name, account.Handle
+	return c
+}
+
+// foreignWebhook reports whether url is the webhook of another connection that
+// still exists on this instance.
+func (s *Service) foreignWebhook(ctx context.Context, c connection, url string) bool {
+	prefix := strings.TrimRight(s.d.Cfg.APIURL, "/") + "/v1/support-channels/hooks/" + c.Provider + "/"
+	id, err := uuid.Parse(strings.TrimPrefix(url, prefix))
+	if !strings.HasPrefix(url, prefix) || err != nil || id == c.ID {
+		return false
+	}
+	var ok bool
+	if err := s.d.DB.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM support_channel_connections WHERE id=$1)`, id).Scan(&ok); err != nil {
+		s.d.Log.Warn("support channel webhook owner", "connection_id", c.ID, "err", err)
+		return true
+	}
+	return ok
+}
+
 func (s *Service) markWebhookHealthy(ctx context.Context, c connection) {
-	_, err := s.d.DB.Pool.Exec(ctx, `UPDATE support_channel_connections SET health_status='healthy',health_detail='A signed webhook was received.',health_checked_at=now() WHERE id=$1`, c.ID)
+	if c.HealthStatus == "healthy" {
+		return
+	}
+	_, err := s.d.DB.Pool.Exec(ctx, `UPDATE support_channel_connections SET health_status='healthy',health_detail='A signed webhook was received.',health_checked_at=now() WHERE id=$1 AND health_status<>'healthy'`, c.ID)
 	if err != nil {
 		s.d.Log.Warn("support channel webhook health", "connection_id", c.ID, "err", err)
 	}
