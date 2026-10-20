@@ -24,13 +24,10 @@ test("let visitors send voice messages from a chat widget", async ({ page, proof
   await proof.shot("voice-length", { caption: "The longest voice message set to 90 seconds" });
 });
 
-// Ollie's nudge about unowned tickets would sit over the page header.
+// Ollie's tips (paused here, as "Pause for a week" would) sit over the page header.
 async function openSupportChannels(page: Page, proof: { open: (path: string) => Promise<unknown> }) {
+  await page.addInitScript(() => localStorage.setItem("od-ollie-tips", JSON.stringify({ paused: Number.MAX_SAFE_INTEGER })));
   await proof.open("/settings/support-channels");
-  await page
-    .getByRole("button", { name: "Not now" })
-    .click({ timeout: 3_000 })
-    .catch(() => {});
 }
 
 test("connect Discord, pick its server and route a channel in one go", async ({ page, proof }) => {
