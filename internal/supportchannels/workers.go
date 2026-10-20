@@ -128,7 +128,7 @@ func (s *Service) dispatchTo(ctx context.Context, a jobs.SupportChannelDispatchA
 	var last int64
 	err = s.d.DB.Pool.QueryRow(ctx, `SELECT COALESCE(external_thread_id,''),COALESCE(external_root_message_id,''),last_event_seq FROM support_channel_threads WHERE destination_id=$1 AND ticket_id=$2`, d.ID, t.ID).Scan(&thread.ID, &thread.RootID, &last)
 	if db.IsNotFound(err) {
-		claim, claimErr := s.d.DB.Pool.Exec(ctx, `INSERT INTO support_channel_threads(id,workspace_id,destination_id,ticket_id,last_event_seq) VALUES($1,$2,$3,$4,0) ON CONFLICT(destination_id,ticket_id) DO NOTHING`, ids.New(), a.WorkspaceID, d.ID, t.ID)
+		claim, claimErr := s.d.DB.Pool.Exec(ctx, `INSERT INTO support_channel_threads(id,workspace_id,connection_id,destination_id,ticket_id,last_event_seq) VALUES($1,$2,$3,$4,$5,0) ON CONFLICT(destination_id,ticket_id) DO NOTHING`, ids.New(), a.WorkspaceID, d.ConnectionID, d.ID, t.ID)
 		if claimErr != nil {
 			return claimErr
 		}
@@ -140,7 +140,11 @@ func (s *Service) dispatchTo(ctx context.Context, a jobs.SupportChannelDispatchA
 			_, _ = s.d.DB.Pool.Exec(ctx, `DELETE FROM support_channel_threads WHERE destination_id=$1 AND ticket_id=$2 AND external_thread_id IS NULL`, d.ID, t.ID)
 			return s.connectionError(ctx, d.ConnectionID, err)
 		}
-		_, err = s.d.DB.Pool.Exec(ctx, `UPDATE support_channel_threads SET external_thread_id=$3,external_root_message_id=$4,updated_at=now() WHERE destination_id=$1 AND ticket_id=$2`, d.ID, t.ID, thread.ID, thread.RootID)
+		inbound := thread.ChannelID
+		if inbound == "" {
+			inbound = d.ExternalChannelID
+		}
+		_, err = s.d.DB.Pool.Exec(ctx, `UPDATE support_channel_threads SET external_channel_id=$3,external_thread_id=$4,external_root_message_id=$5,updated_at=now() WHERE destination_id=$1 AND ticket_id=$2`, d.ID, t.ID, inbound, thread.ID, thread.RootID)
 		if err != nil {
 			return err
 		}
@@ -261,7 +265,7 @@ func (s *Service) processInbound(ctx context.Context, a jobs.SupportChannelInbou
 		return s.finishInbound(ctx, a)
 	}
 	var tid uuid.UUID
-	err = s.d.DB.Pool.QueryRow(ctx, `SELECT t.ticket_id FROM support_channel_threads t JOIN support_channel_destinations d ON d.id=t.destination_id WHERE d.connection_id=$1 AND t.external_thread_id=$2`, c.ID, in.ExternalThreadID).Scan(&tid)
+	err = s.d.DB.Pool.QueryRow(ctx, `SELECT ticket_id FROM support_channel_threads WHERE connection_id=$1 AND external_channel_id=$2 AND external_thread_id=$3`, c.ID, in.ExternalChannelID, in.ExternalThreadID).Scan(&tid)
 	if db.IsNotFound(err) {
 		if in.Command != "chat" {
 			s.replyToProvider(ctx, adapter, creds, in, "Run ticket commands inside an opendesk ticket thread.")

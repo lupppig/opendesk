@@ -31,15 +31,20 @@ CREATE TABLE support_channel_destinations (
 CREATE TABLE support_channel_threads (
     id uuid PRIMARY KEY,
     workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    connection_id uuid NOT NULL REFERENCES support_channel_connections(id) ON DELETE CASCADE,
     destination_id uuid NOT NULL REFERENCES support_channel_destinations(id) ON DELETE CASCADE,
     ticket_id uuid NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    -- Where the provider delivers messages written in the thread: the destination's
+    -- channel, or the thread's own channel id on providers whose threads are channels.
+    external_channel_id text,
     external_thread_id text,
     external_root_message_id text,
     last_event_seq bigint NOT NULL DEFAULT 0,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
     UNIQUE (destination_id, ticket_id),
-    UNIQUE (destination_id, external_thread_id)
+    -- Thread ids are only unique within a channel on some providers (Telegram topics).
+    UNIQUE (connection_id, external_channel_id, external_thread_id)
 );
 
 CREATE TABLE support_channel_deliveries (

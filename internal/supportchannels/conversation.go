@@ -296,13 +296,13 @@ func (s *Service) claimConversation(ctx context.Context, wid, connectionID, proc
 	var state conversationState
 	var turns, pending []byte
 	err := s.d.DB.Pool.QueryRow(ctx, `INSERT INTO support_channel_conversations
-		(workspace_id,connection_id,external_thread_id,external_user_id,processing_id,processing_expires_at)
-		VALUES($1,$2,$3,$4,$5,$6)
-		ON CONFLICT(connection_id,external_thread_id,external_user_id) DO UPDATE SET
+		(workspace_id,connection_id,external_channel_id,external_thread_id,external_user_id,processing_id,processing_expires_at)
+		VALUES($1,$2,$3,$4,$5,$6,$7)
+		ON CONFLICT(connection_id,external_channel_id,external_thread_id,external_user_id) DO UPDATE SET
 		processing_id=EXCLUDED.processing_id,processing_expires_at=EXCLUDED.processing_expires_at
 		WHERE support_channel_conversations.processing_id IS NULL OR support_channel_conversations.processing_expires_at<now()
 		RETURNING turns,COALESCE(pending_action,'null'::jsonb),pending_expires_at`,
-		wid, connectionID, in.ExternalThreadID, in.ExternalUserID, processingID, time.Now().Add(6*time.Minute)).Scan(&turns, &pending, &state.PendingExpires)
+		wid, connectionID, in.ExternalChannelID, in.ExternalThreadID, in.ExternalUserID, processingID, time.Now().Add(6*time.Minute)).Scan(&turns, &pending, &state.PendingExpires)
 	if db.IsNotFound(err) {
 		return state, errConversationBusy
 	}
@@ -331,9 +331,9 @@ func (s *Service) saveConversationWith(ctx context.Context, q db.Querier, wid, c
 		pending, _ = json.Marshal(state.Pending)
 	}
 	tag, err := q.Exec(ctx, `UPDATE support_channel_conversations SET
-		turns=$5::jsonb,pending_action=$6::jsonb,pending_expires_at=$7,processing_id=NULL,processing_expires_at=NULL,updated_at=now()
-		WHERE workspace_id=$1 AND connection_id=$2 AND external_thread_id=$3 AND external_user_id=$4 AND processing_id=$8`,
-		wid, connectionID, in.ExternalThreadID, in.ExternalUserID, turns, pending, state.PendingExpires, processingID)
+		turns=$6::jsonb,pending_action=$7::jsonb,pending_expires_at=$8,processing_id=NULL,processing_expires_at=NULL,updated_at=now()
+		WHERE workspace_id=$1 AND connection_id=$2 AND external_channel_id=$3 AND external_thread_id=$4 AND external_user_id=$5 AND processing_id=$9`,
+		wid, connectionID, in.ExternalChannelID, in.ExternalThreadID, in.ExternalUserID, turns, pending, state.PendingExpires, processingID)
 	if err == nil && tag.RowsAffected() == 0 {
 		return errConversationBusy
 	}
@@ -345,8 +345,8 @@ func (s *Service) applyAndSaveConversation(ctx context.Context, p *auth.Principa
 		if requirePending {
 			var pending []byte
 			err := tx.QueryRow(ctx, `SELECT COALESCE(pending_action,'null'::jsonb) FROM support_channel_conversations
-				WHERE connection_id=$1 AND external_thread_id=$2 AND external_user_id=$3 FOR UPDATE`,
-				connectionID, in.ExternalThreadID, in.ExternalUserID).Scan(&pending)
+				WHERE connection_id=$1 AND external_channel_id=$2 AND external_thread_id=$3 AND external_user_id=$4 FOR UPDATE`,
+				connectionID, in.ExternalChannelID, in.ExternalThreadID, in.ExternalUserID).Scan(&pending)
 			if db.IsNotFound(err) || (err == nil && string(pending) == "null") {
 				return errPendingActionGone
 			}
@@ -369,8 +369,8 @@ func (s *Service) releaseConversation(connectionID, processingID uuid.UUID, in c
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	_, _ = s.d.DB.Pool.Exec(ctx, `UPDATE support_channel_conversations SET processing_id=NULL,processing_expires_at=NULL
-		WHERE connection_id=$1 AND external_thread_id=$2 AND external_user_id=$3 AND processing_id=$4`,
-		connectionID, in.ExternalThreadID, in.ExternalUserID, processingID)
+		WHERE connection_id=$1 AND external_channel_id=$2 AND external_thread_id=$3 AND external_user_id=$4 AND processing_id=$5`,
+		connectionID, in.ExternalChannelID, in.ExternalThreadID, in.ExternalUserID, processingID)
 }
 
 func oneOf(s string, values ...string) bool {

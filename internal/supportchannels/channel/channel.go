@@ -41,6 +41,9 @@ type Ticket struct {
 type Thread struct {
 	ID     string
 	RootID string
+	// ChannelID is where the provider delivers messages written in the thread, when
+	// that is not the destination channel (a Discord thread is its own channel).
+	ChannelID string
 }
 
 // Inbound is a provider-neutral interaction. Command is either a deliberately

@@ -1,6 +1,7 @@
 CREATE TABLE support_channel_conversations (
     workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
     connection_id uuid NOT NULL REFERENCES support_channel_connections(id) ON DELETE CASCADE,
+    external_channel_id text NOT NULL,
     external_thread_id text NOT NULL,
     external_user_id text NOT NULL,
     turns jsonb NOT NULL DEFAULT '[]',
@@ -9,7 +10,7 @@ CREATE TABLE support_channel_conversations (
     processing_id uuid,
     processing_expires_at timestamptz,
     updated_at timestamptz NOT NULL DEFAULT now(),
-    PRIMARY KEY (connection_id, external_thread_id, external_user_id)
+    PRIMARY KEY (connection_id, external_channel_id, external_thread_id, external_user_id)
 );
 
 CREATE INDEX support_channel_conversations_workspace_idx

@@ -149,7 +149,7 @@ func (a Adapter) CreateThread(ctx context.Context, c *http.Client, cr map[string
 	if err := a.Post(ctx, c, cr, th.ID, render(t)); err != nil {
 		return channel.Thread{}, err
 	}
-	return channel.Thread{ID: th.ID}, nil
+	return channel.Thread{ID: th.ID, ChannelID: th.ID}, nil
 }
 func (a Adapter) Post(ctx context.Context, c *http.Client, cr map[string]string, thread, text string) error {
 	return a.call(ctx, c, cr["bot_token"], http.MethodPost, "/channels/"+thread+"/messages", map[string]any{
