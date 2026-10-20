@@ -44,7 +44,8 @@ Self-hosted = `opendesk` + `realtime` + `postgres` behind Caddy on one domain: `
   (mailboxes, inbound, outbound), `internal/helpdesk` (tickets, contacts, KB, widget,
   SLA, automations, reports), `internal/billing` (Stripe, plans; Cloud only),
   `internal/ai` (AI features, providers, embeddings) and `internal/integrations`
-  (connected products over MCP, ticket links; `contracts/integrations.md`), `internal/admin`
+  (connected products over MCP, ticket links; `contracts/integrations.md`), `internal/supportchannels`
+  (Slack, Discord and Telegram threads where agents work tickets; `contracts/support-channels.md`), `internal/admin`
   (the instance admin API `/v1/admin/*`, its own sessions and audit log; `contracts/admin.md`),
   and `internal/collab` (Collab: members' own mail accounts, private or shared, synced both ways
   with Gmail, Microsoft Graph or IMAP; never tickets; `contracts/collab.md`). Plan limits and AI usage go
