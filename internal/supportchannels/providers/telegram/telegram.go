@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -30,17 +31,24 @@ func (a Adapter) endpoint(token, method string) string {
 	return "https://api.telegram.org/bot" + token + "/" + method
 }
 func (a Adapter) call(ctx context.Context, c *http.Client, cr map[string]string, method string, input any, out any) error {
-	b, _ := json.Marshal(input)
-	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, a.endpoint(cr["bot_token"], method), bytes.NewReader(b))
+	token := cr["bot_token"]
+	b, err := json.Marshal(input)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.endpoint(token, method), bytes.NewReader(b))
+	if err != nil {
+		return transportError(method, token, err)
+	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.Do(req)
 	if err != nil {
-		return err
+		return transportError(method, token, err)
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return err
+		return transportError(method, token, err)
 	}
 	var env struct {
 		OK          bool            `json:"ok"`
@@ -48,13 +56,45 @@ func (a Adapter) call(ctx context.Context, c *http.Client, cr map[string]string,
 		Result      json.RawMessage `json:"result"`
 	}
 	if json.Unmarshal(raw, &env) != nil || !env.OK {
-		return fmt.Errorf("telegram %s: %s", method, env.Description)
+		return fmt.Errorf("telegram %s: %s", method, redact(env.Description, token))
 	}
 	if out != nil {
 		return json.Unmarshal(env.Result, out)
 	}
 	return nil
 }
+
+// botError is a Telegram transport failure. The Bot API carries the bot token in
+// the request path, so the message names the method and the underlying cause
+// only, never the URL, and any remaining copy of the token is masked.
+type botError struct {
+	msg   string
+	cause error
+}
+
+func (e *botError) Error() string { return e.msg }
+func (e *botError) Unwrap() error { return e.cause }
+
+func transportError(method, token string, err error) error {
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		err = ue.Err
+	}
+	msg := redact(err.Error(), token)
+	var cause error
+	if msg == err.Error() {
+		cause = err
+	}
+	return &botError{msg: "telegram " + method + ": " + msg, cause: cause}
+}
+
+func redact(s, token string) string {
+	if token == "" {
+		return s
+	}
+	return strings.ReplaceAll(s, token, "[redacted]")
+}
+
 func (a Adapter) Validate(ctx context.Context, c *http.Client, cr map[string]string) (channel.Account, error) {
 	if cr["bot_token"] == "" || cr["webhook_secret"] == "" {
 		return channel.Account{}, errors.New("bot_token and webhook_secret are required")
