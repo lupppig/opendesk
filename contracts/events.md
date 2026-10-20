@@ -91,6 +91,8 @@ gateway pushes it in full to those user channels and the `event.hidden` stand-in
 | `email_template.updated` | agents | — | `{ "brand_id", "kind": "layout" \| "csat" }` (contracts/templates.md): a brand's email layout or CSAT email was saved or reset; refetch it |
 | `bot.created` / `bot.updated` / `bot.deleted` | agents | — | `{ "bot": Bot }` / `{ "bot_id" }` (contracts/bots.md); a new default, a reorder or a new picture is `bot.updated` of each bot it changed |
 | `integration.created` / `integration.updated` / `integration.deleted` | agents | — | `{ "integration": Integration }` / `{ "integration_id" }` (`contracts/integrations.md`; never credentials) |
+| `support_channel_connection.created` / `support_channel_connection.deleted` | agents | — | `{ "support_channel_connection": Connection }` / `{ "support_channel_connection_id" }` (`contracts/support-channels.md`; never credentials). Deleting one removes its destinations |
+| `support_channel_destination.created` / `support_channel_destination.deleted` | agents | — | `{ "support_channel_destination": Destination }` / `{ "support_channel_destination_id" }` |
 | `ticket_link.created` / `ticket_link.deleted` | agents | — | `{ "ticket_id", "link": Link }` / `{ "ticket_id", "link_id" }` |
 | `import.created` / `import.updated` | agents | — | `{ "import": Import }` (`contracts/imports.md`; never credentials). `updated` on every state change and as it writes, at most once a second and after every page. Imported tickets, messages, contacts and articles publish no events of their own: refetch lists |
 | `collab.changed` / `collab.accounts` | agents | scoped to people | ids only (contracts/collab.md "Events") |
