@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"net/http"
+	"net/url"
 	"strconv"
 	"testing"
 	"time"
@@ -32,6 +33,31 @@ func TestVerifyAndParseThreadCommand(t *testing.T) {
 	h.Set("X-Slack-Signature", "v0=bad")
 	if err := (Adapter{}).Verify(h, body, map[string]string{"signing_secret": secret}); err == nil {
 		t.Fatal("accepted invalid signature")
+	}
+}
+
+func TestParseSlashCommandNamesTheTicket(t *testing.T) {
+	h := http.Header{"Content-Type": []string{"application/x-www-form-urlencoded"}}
+	tests := []struct {
+		text, cmd, value string
+		number           int64
+	}{
+		{"123 status solved", "status", "solved", 123},
+		{"#42 reply Thanks for waiting", "reply", "Thanks for waiting", 42},
+		{"7 what is this about?", "chat", "what is this about?", 7},
+		{"link ABCDEF1234", "link", "ABCDEF1234", 0},
+		{"note no number", "note", "no number", 0},
+	}
+	for _, tt := range tests {
+		body := url.Values{"command": {"/opendesk"}, "text": {tt.text}, "trigger_id": {"tr1"}, "team_id": {"T1"}, "channel_id": {"C1"}, "user_id": {"U1"}}.Encode()
+		result, err := (Adapter{}).Parse(h, []byte(body))
+		if err != nil || len(result.Events) != 1 {
+			t.Fatalf("%q: %+v, %v", tt.text, result.Events, err)
+		}
+		e := result.Events[0]
+		if e.Command != tt.cmd || e.Value != tt.value || e.TicketNumber != tt.number || e.ExternalThreadID != "" || e.ExternalChannelID != "C1" {
+			t.Fatalf("%q: event %+v", tt.text, e)
+		}
 	}
 }
 

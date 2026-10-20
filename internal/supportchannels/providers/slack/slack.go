@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -102,8 +103,10 @@ func (Adapter) Parse(h http.Header, body []byte) (channel.WebhookResult, error) 
 		if err != nil {
 			return channel.WebhookResult{}, err
 		}
-		cmd, text := parseCommand(v.Get("command") + " " + v.Get("text"))
-		return channel.WebhookResult{Events: []channel.Inbound{{EventID: v.Get("trigger_id"), AccountID: v.Get("team_id"), ExternalChannelID: v.Get("channel_id"), ExternalThreadID: v.Get("thread_ts"), ExternalUserID: v.Get("user_id"), Command: cmd, Text: text, Value: text}}}, nil
+		// Slash commands never carry a thread, so they name the ticket by number,
+		// like `/opendesk 123 status solved`.
+		number, cmd, text := parseSlash(v.Get("text"))
+		return channel.WebhookResult{Events: []channel.Inbound{{EventID: v.Get("trigger_id"), AccountID: v.Get("team_id"), ExternalChannelID: v.Get("channel_id"), ExternalUserID: v.Get("user_id"), Command: cmd, Text: text, Value: text, TicketNumber: number}}}, nil
 	}
 	var x struct {
 		Type      string `json:"type"`
@@ -163,6 +166,25 @@ func parseCommand(s string) (string, string) {
 	return "chat", strings.TrimSpace(strings.Join(p, " "))
 }
 
+// parseSlash reads a slash command's text: an optional ticket number (123 or
+// #123), then an explicit command or a question for Ollie.
+func parseSlash(s string) (int64, string, string) {
+	p := strings.Fields(s)
+	var number int64
+	if len(p) > 0 {
+		if n, err := strconv.ParseInt(strings.TrimPrefix(p[0], "#"), 10, 64); err == nil && n > 0 {
+			number, p = n, p[1:]
+		}
+	}
+	if len(p) == 0 {
+		return number, "chat", ""
+	}
+	if first := strings.ToLower(p[0]); explicitCommand(first) {
+		return number, first, strings.TrimSpace(strings.Join(p[1:], " "))
+	}
+	return number, "chat", strings.TrimSpace(strings.Join(p, " "))
+}
+
 func explicitCommand(s string) bool {
 	switch s {
 	case "link", "reply", "note", "assign", "assign_self", "status", "priority":
@@ -182,7 +204,11 @@ func (a Adapter) CreateThread(ctx context.Context, c *http.Client, cr map[string
 	return channel.Thread{ID: out.TS, RootID: out.TS}, nil
 }
 func (a Adapter) Post(ctx context.Context, c *http.Client, cr map[string]string, thread, text string) error {
-	return a.call(ctx, c, cr["bot_token"], "chat.postMessage", map[string]any{"channel": cr["channel_id"], "thread_ts": thread, "text": slackText(text), "unfurl_links": false, "unfurl_media": false}, nil)
+	msg := map[string]any{"channel": cr["channel_id"], "text": slackText(text), "unfurl_links": false, "unfurl_media": false}
+	if thread != "" {
+		msg["thread_ts"] = thread
+	}
+	return a.call(ctx, c, cr["bot_token"], "chat.postMessage", msg, nil)
 }
 func (a Adapter) Update(ctx context.Context, c *http.Client, cr map[string]string, root string, t channel.Ticket) error {
 	return a.call(ctx, c, cr["bot_token"], "chat.update", map[string]any{"channel": cr["channel_id"], "ts": root, "text": render(t)}, nil)

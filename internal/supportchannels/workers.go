@@ -264,21 +264,45 @@ func (s *Service) processInbound(ctx context.Context, a jobs.SupportChannelInbou
 		}
 		return s.finishInbound(ctx, a)
 	}
+	var p *auth.Principal
+	if in.TicketNumber > 0 {
+		// A command outside any thread names its ticket. Only a linked agent may
+		// resolve a number, and it resolves to the ticket's mirrored thread on this
+		// connection, so the command then runs exactly as it would in the thread.
+		if p, err = s.externalPrincipal(ctx, c, in.ExternalUserID); err != nil {
+			s.replyToProvider(ctx, adapter, creds, in, "Link your opendesk account before using this command.")
+			return s.finishInbound(ctx, a)
+		}
+		err = s.d.DB.Pool.QueryRow(ctx, `SELECT t.external_channel_id,t.external_thread_id FROM support_channel_threads t
+			JOIN tickets k ON k.workspace_id=t.workspace_id AND k.id=t.ticket_id
+			WHERE t.connection_id=$1 AND t.workspace_id=$2 AND k.number=$3 AND t.external_thread_id IS NOT NULL AND t.external_channel_id IS NOT NULL
+			ORDER BY (t.external_channel_id=$4) DESC, t.updated_at DESC LIMIT 1`,
+			c.ID, c.WorkspaceID, in.TicketNumber, in.ExternalChannelID).Scan(&in.ExternalChannelID, &in.ExternalThreadID)
+		if db.IsNotFound(err) {
+			s.replyToProvider(ctx, adapter, creds, in, "That ticket is not available.")
+			return s.finishInbound(ctx, a)
+		}
+		if err != nil {
+			return err
+		}
+		creds["channel_id"] = in.ExternalChannelID
+	}
 	var tid uuid.UUID
 	err = s.d.DB.Pool.QueryRow(ctx, `SELECT ticket_id FROM support_channel_threads WHERE connection_id=$1 AND external_channel_id=$2 AND external_thread_id=$3`, c.ID, in.ExternalChannelID, in.ExternalThreadID).Scan(&tid)
 	if db.IsNotFound(err) {
-		if in.Command != "chat" {
-			s.replyToProvider(ctx, adapter, creds, in, "Run ticket commands inside an opendesk ticket thread.")
+		if in.Command != "chat" || in.ExternalThreadID == "" {
+			s.replyToProvider(ctx, adapter, creds, in, "Run ticket commands inside an opendesk ticket thread, or start with the ticket number, like 123 status solved.")
 		}
 		return s.finishInbound(ctx, a)
 	}
 	if err != nil {
 		return err
 	}
-	p, err := s.externalPrincipal(ctx, c, in.ExternalUserID)
-	if err != nil {
-		s.replyToProvider(ctx, adapter, creds, in, "Link your opendesk account before using this command.")
-		return s.finishInbound(ctx, a)
+	if p == nil {
+		if p, err = s.externalPrincipal(ctx, c, in.ExternalUserID); err != nil {
+			s.replyToProvider(ctx, adapter, creds, in, "Link your opendesk account before using this command.")
+			return s.finishInbound(ctx, a)
+		}
 	}
 	if in.Command == "chat" {
 		answer, err := s.converse(ctx, p, c.ID, tid, in)
@@ -373,11 +397,8 @@ func (s *Service) finishInbound(ctx context.Context, a jobs.SupportChannelInboun
 	return err
 }
 func (s *Service) replyToProvider(ctx context.Context, a channel.Adapter, cr map[string]string, in channel.Inbound, text string) {
-	thread := in.ExternalThreadID
-	if thread == "" {
-		thread = in.ExternalChannelID
-	}
-	_ = a.Post(ctx, s.http, cr, thread, text)
+	// An empty thread posts to the channel itself (cr["channel_id"]).
+	_ = a.Post(ctx, s.http, cr, in.ExternalThreadID, text)
 }
 func (s *Service) connectionError(ctx context.Context, id uuid.UUID, cause error) error {
 	_, _ = s.d.DB.Pool.Exec(ctx, `UPDATE support_channel_connections SET status='error',last_error=$2,updated_at=now() WHERE id=$1`, id, "Couldn't deliver to the provider.")

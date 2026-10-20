@@ -58,6 +58,10 @@ type Inbound struct {
 	Command           string // chat | link | reply | note | assign_self | status | priority
 	Text              string
 	Value             string
+	// TicketNumber names the ticket when the provider can't deliver the command
+	// inside its thread (a Slack slash command). The engine resolves it to the
+	// ticket's mirrored thread on the same connection.
+	TicketNumber int64 `json:",omitempty"`
 }
 
 // WebhookResult separates provider protocol acknowledgements from normalized
