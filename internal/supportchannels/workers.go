@@ -179,7 +179,7 @@ func (s *Service) dispatchTo(ctx context.Context, a jobs.SupportChannelDispatchA
 		_, err = s.d.DB.Pool.Exec(ctx, `UPDATE support_channel_deliveries SET delivered_at=now() WHERE destination_id=$1 AND event_seq=$2`, d.ID, a.EventSeq)
 	}
 	if err == nil {
-		_, err = s.d.DB.Pool.Exec(ctx, `UPDATE support_channel_connections SET status='connected',last_error='',updated_at=now() WHERE id=$1 AND (status<>'connected' OR last_error<>'')`, d.ConnectionID)
+		_, err = s.d.DB.Pool.Exec(ctx, `UPDATE support_channel_connections SET status='connected',last_error='',updated_at=now() WHERE id=$1 AND last_error=$2`, d.ConnectionID, deliveryError)
 	}
 	return err
 }
@@ -442,8 +442,13 @@ func (s *Service) replyToProvider(ctx context.Context, a channel.Adapter, cr map
 	// An empty thread posts to the channel itself (cr["channel_id"]).
 	_ = a.Post(ctx, s.http, cr, in.ExternalThreadID, text)
 }
+
+// deliveryError is a connection's error after a failed delivery. Each path clears
+// only its own error: a delivery doesn't hide that the provider refused the bot.
+const deliveryError = "Couldn't deliver to the provider."
+
 func (s *Service) connectionError(ctx context.Context, id uuid.UUID, cause error) error {
-	_, _ = s.d.DB.Pool.Exec(ctx, `UPDATE support_channel_connections SET status='error',last_error=$2,updated_at=now() WHERE id=$1`, id, "Couldn't deliver to the provider.")
+	_, _ = s.d.DB.Pool.Exec(ctx, `UPDATE support_channel_connections SET status='error',last_error=$2,updated_at=now() WHERE id=$1 AND (status<>'error' OR last_error=$2)`, id, deliveryError)
 	return fmt.Errorf("support channel delivery: %w", cause)
 }
 func publicError(err error) string {

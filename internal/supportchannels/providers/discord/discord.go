@@ -11,10 +11,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"sync/atomic"
-	"time"
-
-	"golang.org/x/net/websocket"
 
 	"github.com/useopendesk/opendesk/internal/supportchannels/channel"
 )
@@ -52,7 +48,7 @@ func (a Adapter) call(ctx context.Context, c *http.Client, token, method, path s
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
 		io.Copy(io.Discard, resp.Body)
-		return fmt.Errorf("discord: status %d", resp.StatusCode)
+		return &statusError{code: resp.StatusCode}
 	}
 	if out != nil {
 		return json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(out)
@@ -60,6 +56,12 @@ func (a Adapter) call(ctx context.Context, c *http.Client, token, method, path s
 	io.Copy(io.Discard, resp.Body)
 	return nil
 }
+
+// statusError is a Discord API answer outside 2xx.
+type statusError struct{ code int }
+
+func (e *statusError) Error() string { return fmt.Sprintf("discord: status %d", e.code) }
+
 func (a Adapter) Validate(ctx context.Context, c *http.Client, cr map[string]string) (channel.Account, error) {
 	if cr["bot_token"] == "" || cr["public_key"] == "" || cr["guild_id"] == "" {
 		return channel.Account{}, errors.New("bot_token, public_key and guild_id are required")
@@ -161,163 +163,6 @@ func (a Adapter) Post(ctx context.Context, c *http.Client, cr map[string]string,
 }
 func (a Adapter) Update(context.Context, *http.Client, map[string]string, string, channel.Ticket) error {
 	return nil
-}
-
-// Subscribe receives bot mentions through Discord's Gateway. Discord's HTTP
-// interactions endpoint only delivers application commands, so ordinary chat
-// needs this optional long-lived adapter capability.
-func (a Adapter) Subscribe(ctx context.Context, c *http.Client, cr map[string]string, emit func(context.Context, []channel.Inbound) error) error {
-	var gateway struct {
-		URL string `json:"url"`
-	}
-	if err := a.call(ctx, c, cr["bot_token"], http.MethodGet, "/gateway/bot", nil, &gateway); err != nil {
-		return err
-	}
-	if gateway.URL == "" {
-		return errors.New("discord gateway URL is empty")
-	}
-	cfg, err := websocket.NewConfig(strings.TrimRight(gateway.URL, "/")+"/?v=10&encoding=json", "https://opendesk.sh")
-	if err != nil {
-		return err
-	}
-	ws, err := cfg.DialContext(ctx)
-	if err != nil {
-		return err
-	}
-	defer ws.Close()
-	streamCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	ws.MaxPayloadBytes = 1 << 20
-	go func() {
-		<-streamCtx.Done()
-		_ = ws.Close()
-	}()
-
-	type payload struct {
-		Op int             `json:"op"`
-		D  json.RawMessage `json:"d"`
-		S  *int64          `json:"s"`
-		T  string          `json:"t"`
-	}
-	var hello payload
-	if err = websocket.JSON.Receive(ws, &hello); err != nil || hello.Op != 10 {
-		if err == nil {
-			err = errors.New("discord gateway did not send hello")
-		}
-		return err
-	}
-	var h struct {
-		Interval float64 `json:"heartbeat_interval"`
-	}
-	if err = json.Unmarshal(hello.D, &h); err != nil || h.Interval < 1000 {
-		return errors.New("discord gateway sent invalid heartbeat interval")
-	}
-	identify := map[string]any{"op": 2, "d": map[string]any{
-		"token": cr["bot_token"], "intents": gatewayIntents,
-		"properties": map[string]string{"os": "linux", "browser": "opendesk", "device": "opendesk"},
-	}}
-	if err = websocket.JSON.Send(ws, identify); err != nil {
-		return err
-	}
-	var sequence atomic.Int64
-	sequence.Store(-1)
-	sendHeartbeat := func() error {
-		var data any
-		if seq := sequence.Load(); seq >= 0 {
-			data = seq
-		}
-		return websocket.JSON.Send(ws, map[string]any{"op": 1, "d": data})
-	}
-	heartbeats := time.NewTicker(time.Duration(h.Interval) * time.Millisecond)
-	defer heartbeats.Stop()
-	heartbeatErr := make(chan error, 1)
-	go func() {
-		for {
-			select {
-			case <-streamCtx.Done():
-				return
-			case <-heartbeats.C:
-				if sendErr := sendHeartbeat(); sendErr != nil {
-					select {
-					case heartbeatErr <- sendErr:
-					default:
-					}
-					return
-				}
-			}
-		}
-	}()
-
-	var botID string
-	for {
-		var event payload
-		if err = websocket.JSON.Receive(ws, &event); err != nil {
-			select {
-			case err = <-heartbeatErr:
-			default:
-			}
-			return err
-		}
-		if event.S != nil {
-			sequence.Store(*event.S)
-		}
-		if event.Op == 7 || event.Op == 9 {
-			return errors.New("discord gateway requested reconnect")
-		}
-		if event.Op == 1 {
-			if err = sendHeartbeat(); err != nil {
-				return err
-			}
-			continue
-		}
-		if event.Op != 0 {
-			continue
-		}
-		switch event.T {
-		case "READY":
-			var ready struct {
-				User struct {
-					ID string `json:"id"`
-				} `json:"user"`
-			}
-			if json.Unmarshal(event.D, &ready) == nil {
-				botID = ready.User.ID
-			}
-		case "MESSAGE_CREATE":
-			var message struct {
-				ID        string `json:"id"`
-				GuildID   string `json:"guild_id"`
-				ChannelID string `json:"channel_id"`
-				Content   string `json:"content"`
-				Author    struct {
-					ID  string `json:"id"`
-					Bot bool   `json:"bot"`
-				} `json:"author"`
-				Mentions []struct {
-					ID string `json:"id"`
-				} `json:"mentions"`
-			}
-			if json.Unmarshal(event.D, &message) != nil || message.Author.Bot || message.GuildID != cr["guild_id"] || botID == "" {
-				continue
-			}
-			mentioned := false
-			for _, mention := range message.Mentions {
-				mentioned = mentioned || mention.ID == botID
-			}
-			if !mentioned {
-				continue
-			}
-			text := strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(message.Content, "<@"+botID+">", ""), "<@!"+botID+">", ""))
-			if text == "" {
-				text = "What can you tell me about this ticket?"
-			}
-			in := channel.Inbound{EventID: message.ID, AccountID: message.GuildID, ExternalChannelID: message.ChannelID,
-				ExternalThreadID: message.ChannelID, ExternalUserID: message.Author.ID, Command: "chat", Text: text, Value: text}
-			if err = emit(streamCtx, []channel.Inbound{in}); err != nil {
-				return err
-			}
-		}
-	}
 }
 
 func render(t channel.Ticket) string {

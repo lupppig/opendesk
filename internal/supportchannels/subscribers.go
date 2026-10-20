@@ -2,6 +2,9 @@ package supportchannels
 
 import (
 	"context"
+	"errors"
+	"math/rand/v2"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -104,15 +107,36 @@ func (s *Service) runSubscriber(ctx context.Context, c connection) {
 	if err != nil {
 		return
 	}
+	failures := 0
 	for ctx.Err() == nil {
-		err = subscriber.Subscribe(ctx, s.http, credentials, func(eventCtx context.Context, events []channel.Inbound) error {
-			return s.persistInbound(eventCtx, c, events)
+		var connected atomic.Bool
+		err = subscriber.Subscribe(ctx, s.http, credentials, channel.Stream{
+			Emit: func(eventCtx context.Context, events []channel.Inbound) error {
+				return s.persistInbound(eventCtx, c, events)
+			},
+			Connected: func() {
+				connected.Store(true)
+				s.subscriberConnected(ctx, c.ID)
+			},
 		})
 		if ctx.Err() != nil {
 			return
 		}
-		s.d.Log.Warn("support channel subscriber disconnected", "provider", c.Provider, "connection_id", c.ID)
-		timer := time.NewTimer(5 * time.Second)
+		var fatal *channel.FatalError
+		if errors.As(err, &fatal) {
+			// The provider refused the credentials or settings: stop until an admin
+			// connects it again, instead of retrying forever.
+			s.d.Log.Warn("support channel subscriber stopped", "provider", c.Provider, "connection_id", c.ID, "reason", fatal.Reason)
+			_, _ = s.d.DB.Pool.Exec(ctx, `UPDATE support_channel_connections SET status='error',last_error=$2,updated_at=now() WHERE id=$1`, c.ID, fatal.Reason)
+			return
+		}
+		if connected.Load() {
+			failures = 0
+		}
+		delay := subscriberBackoff(failures)
+		failures++
+		s.d.Log.Warn("support channel subscriber disconnected", "provider", c.Provider, "connection_id", c.ID, "err", err, "retry_in", delay)
+		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
@@ -120,6 +144,28 @@ func (s *Service) runSubscriber(ctx context.Context, c connection) {
 		case <-timer.C:
 		}
 	}
+}
+
+const (
+	subscriberRetryBase = 5 * time.Second
+	subscriberRetryMax  = 5 * time.Minute
+)
+
+// subscriberBackoff is the wait before reconnect attempt n (0-based): doubling
+// from five seconds up to five minutes, with jitter over its upper half so
+// workers that lost the provider together don't reconnect together.
+func subscriberBackoff(n int) time.Duration {
+	d := subscriberRetryMax
+	if n < 7 {
+		d = min(subscriberRetryBase<<n, subscriberRetryMax)
+	}
+	return d/2 + rand.N(d/2+1)
+}
+
+// subscriberConnected marks a connection connected once its provider accepts the
+// session. A delivery error stays until a delivery succeeds.
+func (s *Service) subscriberConnected(ctx context.Context, id uuid.UUID) {
+	_, _ = s.d.DB.Pool.Exec(ctx, `UPDATE support_channel_connections SET status='connected',last_error='',updated_at=now() WHERE id=$1 AND (status<>'connected' OR last_error<>'') AND last_error<>$2`, id, deliveryError)
 }
 
 func (s *Service) claimSubscriber(ctx context.Context, id uuid.UUID) (bool, error) {

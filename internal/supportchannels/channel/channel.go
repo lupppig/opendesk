@@ -89,5 +89,22 @@ type Adapter interface {
 // engine owns persistence, deduplication and jobs through emit, just as it does
 // for webhook events.
 type Subscriber interface {
-	Subscribe(context.Context, *http.Client, map[string]string, func(context.Context, []Inbound) error) error
+	// Subscribe runs one subscription until ctx ends or it fails. The engine
+	// reconnects after an error, with backoff, unless the error is a FatalError.
+	Subscribe(context.Context, *http.Client, map[string]string, Stream) error
 }
+
+// Stream is what the engine hands a Subscriber.
+type Stream struct {
+	// Emit persists events and enqueues their jobs; an error ends the subscription.
+	Emit func(context.Context, []Inbound) error
+	// Connected reports that the provider accepted the session.
+	Connected func()
+}
+
+// FatalError ends a subscription until an admin changes the connection: the
+// provider refused the credentials or settings, so reconnecting can't help.
+// Reason is shown to admins as the connection's error.
+type FatalError struct{ Reason string }
+
+func (e *FatalError) Error() string { return e.Reason }
