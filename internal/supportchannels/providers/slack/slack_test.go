@@ -107,3 +107,18 @@ func TestParseMentionAndIgnoreConversation(t *testing.T) {
 		t.Fatalf("casual message became command: %+v, %v", result.Events, err)
 	}
 }
+
+func TestParseRootMentionStartsConversationThread(t *testing.T) {
+	body := []byte(`{"type":"event_callback","event_id":"Ev5","team_id":"T1","event":{"type":"app_mention","user":"U1","channel":"C1","ts":"20.2","text":"<@UBOT> create a ticket for the broken printer"}}`)
+	got, err := (Adapter{}).Parse(http.Header{}, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Events) != 1 {
+		t.Fatalf("events = %+v", got.Events)
+	}
+	e := got.Events[0]
+	if e.Command != "chat" || e.ExternalThreadID != "20.2" || e.Text != "create a ticket for the broken printer" || !e.Directed {
+		t.Fatalf("event = %+v", e)
+	}
+}

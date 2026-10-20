@@ -295,9 +295,40 @@ func (s *Service) processInbound(ctx context.Context, a jobs.SupportChannelInbou
 	}
 	var tid uuid.UUID
 	var includeNotes bool
-	err = s.d.DB.Pool.QueryRow(ctx, `SELECT t.ticket_id,d.include_notes FROM support_channel_threads t JOIN support_channel_destinations d ON d.id=t.destination_id
-		WHERE t.connection_id=$1 AND t.external_channel_id=$2 AND t.external_thread_id=$3`, c.ID, in.ExternalChannelID, in.ExternalThreadID).Scan(&tid, &includeNotes)
+	var teamID *uuid.UUID
+	err = s.d.DB.Pool.QueryRow(ctx, `SELECT t.ticket_id,d.include_notes,d.team_id FROM support_channel_threads t JOIN support_channel_destinations d ON d.id=t.destination_id
+		WHERE t.connection_id=$1 AND t.external_channel_id=$2 AND t.external_thread_id=$3`, c.ID, in.ExternalChannelID, in.ExternalThreadID).Scan(&tid, &includeNotes, &teamID)
 	if db.IsNotFound(err) {
+		if in.Command == "chat" && in.Directed {
+			if p == nil {
+				if p, err = s.externalPrincipal(ctx, c, in.ExternalUserID); err != nil {
+					s.replyToProvider(ctx, adapter, creds, in, "Link your opendesk account before asking Ollie to create a ticket.")
+					return s.finishInbound(ctx, a)
+				}
+			}
+			err = s.d.DB.Pool.QueryRow(ctx, `SELECT team_id FROM support_channel_destinations
+				WHERE connection_id=$1 AND workspace_id=$2 AND external_channel_id=$3 AND enabled`, c.ID, c.WorkspaceID, in.ExternalChannelID).Scan(&teamID)
+			if err == nil {
+				answer, converseErr := s.converseCreate(ctx, p, c.ID, teamID, in)
+				if converseErr != nil {
+					if errors.Is(converseErr, errConversationBusy) {
+						return converseErr
+					}
+					if errors.Is(converseErr, errConversationUnavailable) {
+						s.d.Log.Warn("support channel assistant failed", "connection_id", c.ID)
+						s.replyToProvider(ctx, adapter, creds, in, "Ollie couldn't answer just now. Try again later.")
+						return s.finishInbound(ctx, a)
+					}
+					s.replyToProvider(ctx, adapter, creds, in, publicError(converseErr))
+					return s.finishInbound(ctx, a)
+				}
+				s.replyToProvider(ctx, adapter, creds, in, answer)
+				return s.finishInbound(ctx, a)
+			}
+			if !db.IsNotFound(err) {
+				return err
+			}
+		}
 		switch {
 		case in.ExternalThreadID == "":
 			// Outside any thread (a slash command): the ticket number is the way in.

@@ -192,6 +192,14 @@ func (Adapter) Parse(_ http.Header, body []byte) (channel.WebhookResult, error) 
 		return channel.WebhookResult{Destinations: []channel.Destination{discovery}}, nil
 	}
 	cmd, text := "chat", strings.TrimSpace(x.Message.Text)
+	directed := false
+	if strings.HasPrefix(p[0], "@") {
+		directed = true
+		text = strings.TrimSpace(strings.TrimPrefix(x.Message.Text, p[0]))
+		if text == "" {
+			text = "What can you help me create?"
+		}
+	}
 	if strings.HasPrefix(p[0], "/") {
 		candidate := strings.TrimPrefix(strings.SplitN(p[0], "@", 2)[0], "/")
 		if explicitCommand(candidate) {
@@ -206,7 +214,7 @@ func (Adapter) Parse(_ http.Header, body []byte) (channel.WebhookResult, error) 
 			}
 		}
 	}
-	return channel.WebhookResult{Events: []channel.Inbound{{EventID: strconv.FormatInt(x.UpdateID, 10), ExternalChannelID: strconv.FormatInt(x.Message.Chat.ID, 10), ExternalThreadID: strconv.FormatInt(x.Message.MessageThreadID, 10), ExternalUserID: strconv.FormatInt(x.Message.From.ID, 10), Command: cmd, Text: text, Value: text}}, Destinations: []channel.Destination{discovery}}, nil
+	return channel.WebhookResult{Events: []channel.Inbound{{EventID: strconv.FormatInt(x.UpdateID, 10), ExternalChannelID: strconv.FormatInt(x.Message.Chat.ID, 10), ExternalThreadID: strconv.FormatInt(x.Message.MessageThreadID, 10), ExternalUserID: strconv.FormatInt(x.Message.From.ID, 10), Command: cmd, Text: text, Value: text, Directed: directed}}, Destinations: []channel.Destination{discovery}}, nil
 }
 
 func explicitCommand(s string) bool {

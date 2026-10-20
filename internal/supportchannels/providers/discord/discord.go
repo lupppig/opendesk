@@ -235,7 +235,7 @@ func (Adapter) Parse(_ http.Header, body []byte) (channel.WebhookResult, error) 
 		cmd = "chat"
 	}
 	return channel.WebhookResult{
-		Events:      []channel.Inbound{{EventID: x.ID, AccountID: x.GuildID, ExternalChannelID: x.ChannelID, ExternalThreadID: x.ChannelID, ExternalUserID: x.Member.User.ID, Command: cmd, Text: text, Value: text}},
+		Events:      []channel.Inbound{{EventID: x.ID, AccountID: x.GuildID, ExternalChannelID: x.ChannelID, ExternalThreadID: x.ChannelID, ExternalUserID: x.Member.User.ID, Command: cmd, Text: text, Value: text, Directed: true}},
 		Status:      http.StatusOK,
 		ContentType: "application/json",
 		Body:        []byte(`{"type":4,"data":{"content":"Command received.","flags":64}}`),

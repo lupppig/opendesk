@@ -21,13 +21,22 @@ func TestDecodeConversationAction(t *testing.T) {
 	if _, err = decodeConversationAction(ai.ToolCall{Name: "reply", Input: unknown}); err == nil {
 		t.Fatal("accepted an unknown action field")
 	}
+	create, _ := json.Marshal(map[string]string{"subject": "Printer is offline", "description": "Third floor"})
+	action, err = decodeConversationAction(ai.ToolCall{Name: "create_ticket", Input: create})
+	if err != nil || action.Subject != "Printer is offline" || action.Description != "Third floor" {
+		t.Fatalf("create action: %+v, %v", action, err)
+	}
+	empty, _ := json.Marshal(map[string]string{"subject": " "})
+	if _, err = decodeConversationAction(ai.ToolCall{Name: "create_ticket", Input: empty}); err == nil {
+		t.Fatal("accepted a ticket without a subject")
+	}
 }
 
 func TestConversationConfirmation(t *testing.T) {
 	if confirmation("Go ahead!") != "confirm" || confirmation("never mind") != "cancel" || confirmation("maybe") != "" {
 		t.Fatal("confirmation phrases were not classified safely")
 	}
-	if !needsConfirmation(conversationAction{Command: "reply"}) || !needsConfirmation(conversationAction{Command: "status", Value: "closed"}) {
+	if !needsConfirmation(conversationAction{Command: "reply"}) || !needsConfirmation(conversationAction{Command: "status", Value: "closed"}) || !needsConfirmation(conversationAction{Command: "create_ticket"}) {
 		t.Fatal("consequential actions did not require confirmation")
 	}
 	if needsConfirmation(conversationAction{Command: "note"}) {
@@ -42,5 +51,25 @@ func TestConversationHistoryIsBounded(t *testing.T) {
 	}
 	if len(turns) != conversationTurnLimit {
 		t.Fatalf("turn count = %d", len(turns))
+	}
+}
+
+func TestConversationToolRequiredIsArray(t *testing.T) {
+	for _, tool := range conversationTools() {
+		required, ok := tool.Schema["required"].([]string)
+		if !ok || required == nil {
+			t.Fatalf("%s required must serialize as an array", tool.Name)
+		}
+	}
+}
+
+func TestCreateConversationOnlyOffersTicketCreation(t *testing.T) {
+	tools := createTicketTools()
+	if len(tools) != 1 || tools[0].Name != "create_ticket" {
+		t.Fatalf("tools = %+v", tools)
+	}
+	required, ok := tools[0].Schema["required"].([]string)
+	if !ok || len(required) != 1 || required[0] != "subject" {
+		t.Fatalf("required = %#v", tools[0].Schema["required"])
 	}
 }

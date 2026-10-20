@@ -299,5 +299,5 @@ func mentionEvent(raw json.RawMessage, guildID, botID string) (channel.Inbound, 
 		text = "What can you tell me about this ticket?"
 	}
 	return channel.Inbound{EventID: message.ID, AccountID: message.GuildID, ExternalChannelID: message.ChannelID,
-		ExternalThreadID: message.ChannelID, ExternalUserID: message.Author.ID, Command: "chat", Text: text, Value: text}, true
+		ExternalThreadID: message.ChannelID, ExternalUserID: message.Author.ID, Command: "chat", Text: text, Value: text, Directed: true}, true
 }

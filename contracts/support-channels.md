@@ -131,8 +131,9 @@ plain text.
 
 ## Conversations, commands and identity
 
-Linked agents can talk to Ollie inside a mapped ticket thread. The engine gives Ollie
-the visible ticket and its messages, plus a bounded per-agent conversation history.
+Linked agents can talk to Ollie inside a mapped ticket thread. They can also ask Ollie
+to create a ticket from an enabled destination's general channel or an unrelated thread.
+The engine gives Ollie the visible ticket and its messages when there is one, plus a bounded per-agent conversation history.
 Ticket content is delimited as untrusted data. Ollie may answer a question or emit one
 of the typed actions below; generated text is never executed as a command.
 
@@ -144,8 +145,9 @@ of the typed actions below; generated text is never executed as a command.
 | `assign` / `assign_self` | assigns the linked agent |
 | `status <open|pending|on_hold|solved|closed>` | changes status |
 | `priority <low|normal|high|urgent>` | changes priority |
+| Ollie `create_ticket {subject,description?}` | creates a new ticket through the normal ticket service |
 
-Natural-language customer replies and closing a ticket wait for an explicit `confirm`
+Natural-language ticket creation, customer replies and closing a ticket wait for an explicit `confirm`
 or `cancel` response and expire after ten minutes. Drafting a reply does not send it.
 Notes, self-assignment, status and priority changes can run immediately after the model
 emits their validated schema. A pending action and the ticket mutation are consumed in
@@ -154,10 +156,13 @@ runs with the linked agent's role and checks and is attributed to Ollie on their
 (`auth.Principal.Assistant`: activity actor `ai` with the agent as `user_id`, as for the
 in-app assistant); an explicit command is the agent's own.
 
-Every conversation and command runs only inside a mapped ticket thread. Before every
-action, the engine reloads the linked user, workspace membership, suspension state and
-role, then loads the ticket through `domain.LoadVisibleTicket`. Replies use
-`tickets.PostMessage`; changes use `tickets.ApplyPatch`. The normal sanitizing, mailbox,
+Ticket changes and explicit commands run only inside a mapped ticket thread. Ticket
+creation may start from a message explicitly directed at Ollie in any enabled destination
+and uses that destination's team as its routing hint. Ordinary general-channel chatter is
+ignored. Before every action, the engine reloads the linked user, workspace
+membership, suspension state and role. Existing-ticket actions load the ticket through
+`domain.LoadVisibleTicket`. Replies use `tickets.PostMessage`; changes use
+`tickets.ApplyPatch`; creation uses `tickets.CreateTicket`. The normal sanitizing, mailbox,
 signature, event, automation, notification and audit behavior therefore remains the
 single implementation. If Ollie or the workspace assistant is off, explicit commands
 continue to work.

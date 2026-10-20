@@ -101,8 +101,20 @@ func TestVerifyAndParseCommand(t *testing.T) {
 func TestParseNaturalConversation(t *testing.T) {
 	body := []byte(`{"update_id":8,"message":{"message_id":4,"message_thread_id":22,"text":"Please summarize what happened","from":{"id":9},"chat":{"id":-10}}}`)
 	result, err := (Adapter{}).Parse(http.Header{}, body)
-	if err != nil || len(result.Events) != 1 || result.Events[0].Command != "chat" || result.Events[0].Text != "Please summarize what happened" {
+	if err != nil || len(result.Events) != 1 || result.Events[0].Command != "chat" || result.Events[0].Text != "Please summarize what happened" || result.Events[0].Directed {
 		t.Fatalf("event: %+v, %v", result.Events, err)
+	}
+}
+
+func TestParseDirectedNaturalConversation(t *testing.T) {
+	body := []byte(`{"update_id":11,"message":{"message_id":7,"message_thread_id":1,"text":"@opendeskkbot create a ticket for the broken printer","from":{"id":9},"chat":{"id":-10}}}`)
+	result, err := (Adapter{}).Parse(http.Header{}, body)
+	if err != nil || len(result.Events) != 1 {
+		t.Fatalf("event: %+v, %v", result.Events, err)
+	}
+	e := result.Events[0]
+	if e.Command != "chat" || e.Text != "create a ticket for the broken printer" || !e.Directed {
+		t.Fatalf("event: %+v", e)
 	}
 }
 

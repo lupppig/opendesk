@@ -172,14 +172,22 @@ func (Adapter) Parse(h http.Header, body []byte) (channel.WebhookResult, error) 
 		response, _ := json.Marshal(map[string]string{"challenge": x.Challenge})
 		return channel.WebhookResult{Status: http.StatusOK, ContentType: "application/json", Body: response}, nil
 	}
-	if (x.Event.Type != "message" && x.Event.Type != "app_mention") || x.Event.BotID != "" || x.Event.ThreadTS == "" {
+	if (x.Event.Type != "message" && x.Event.Type != "app_mention") || x.Event.BotID != "" {
 		return channel.WebhookResult{}, nil
+	}
+	// A root app mention starts a new Ollie conversation in its own Slack
+	// thread. Ordinary root messages remain ignored.
+	if x.Event.ThreadTS == "" {
+		if x.Event.Type != "app_mention" {
+			return channel.WebhookResult{}, nil
+		}
+		x.Event.ThreadTS = x.Event.TS
 	}
 	cmd, text := parseCommand(x.Event.Text)
 	if cmd == "" {
 		return channel.WebhookResult{}, nil
 	}
-	return channel.WebhookResult{Events: []channel.Inbound{{EventID: x.EventID + ":" + x.Event.TS, AccountID: x.TeamID, ExternalChannelID: x.Event.Channel, ExternalThreadID: x.Event.ThreadTS, ExternalUserID: x.Event.User, Command: cmd, Text: text, Value: text}}}, nil
+	return channel.WebhookResult{Events: []channel.Inbound{{EventID: x.EventID + ":" + x.Event.TS, AccountID: x.TeamID, ExternalChannelID: x.Event.Channel, ExternalThreadID: x.Event.ThreadTS, ExternalUserID: x.Event.User, Command: cmd, Text: text, Value: text, Directed: x.Event.Type == "app_mention"}}}, nil
 }
 
 func parseCommand(s string) (string, string) {

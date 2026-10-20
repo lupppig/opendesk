@@ -80,6 +80,9 @@ type Inbound struct {
 	Command           string // chat | link | reply | note | assign_self | status | priority
 	Text              string
 	Value             string
+	// Directed is true when the provider says the message explicitly addressed
+	// the bot. It gates new conversations outside mapped ticket threads.
+	Directed bool `json:",omitempty"`
 	// TicketNumber names the ticket when the provider can't deliver the command
 	// inside its thread (a Slack slash command). The engine resolves it to the
 	// ticket's mirrored thread on the same connection.

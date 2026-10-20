@@ -8,10 +8,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/useopendesk/opendesk/internal/auth"
 	"github.com/useopendesk/opendesk/internal/domain"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hdtest"
+	"github.com/useopendesk/opendesk/internal/helpdesk/tickets"
 	"github.com/useopendesk/opendesk/internal/ids"
 	"github.com/useopendesk/opendesk/internal/jobs"
 )
@@ -82,6 +84,38 @@ func TestCreateAndGet(t *testing.T) {
 	e.Do("GET", "/v1/tickets/"+tk.ID.String(), hdtest.Auth{Bearer: key}, nil).Want(t, 404)
 	// A workspace header the user is not a member of resolves no workspace.
 	e.Do("GET", "/v1/tickets/"+tk.ID.String(), hdtest.Auth{Bearer: other.Owner.Token, Workspace: ws.ID}, nil).Want(t, 400)
+}
+
+func TestTrustedAssistantCreateUsesNormalTicketPath(t *testing.T) {
+	e, ws := newEnv(t)
+	teamID := addTeam(t, e, ws, ws.Agent.ID)
+	p := &auth.Principal{Kind: auth.KindUser, UserID: ws.Agent.ID, WorkspaceID: ws.ID, Role: auth.RoleAgent, Assistant: true}
+	var tk domain.Ticket
+	err := e.D.DB.Tx(e.Ctx, func(tx pgx.Tx) error {
+		var err error
+		tk, err = tickets.CreateTicket(e.Ctx, tx, e.D, p, tickets.CreateInput{
+			Subject: "Printer is offline", BodyHTML: "<p>Third floor</p>", Kind: "note", Channel: domain.ChannelAPI, TeamID: &teamID,
+		})
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tk.Channel != domain.ChannelAPI || tk.TeamID == nil || *tk.TeamID != teamID || tk.Subject != "Printer is offline" {
+		t.Fatalf("ticket = %+v", tk)
+	}
+	var authorType, kind, body string
+	var authorID uuid.UUID
+	if err := e.D.DB.Pool.QueryRow(e.Ctx, `SELECT author_type,author_user_id,kind,body_text FROM messages WHERE ticket_id=$1`, tk.ID).
+		Scan(&authorType, &authorID, &kind, &body); err != nil {
+		t.Fatal(err)
+	}
+	if authorType != "user" || authorID != ws.Agent.ID || kind != "note" || body != "Third floor" {
+		t.Fatalf("message = %s %s %s %q", authorType, authorID, kind, body)
+	}
+	if n := len(e.Jobs(jobs.TicketTriggerArgs{}.Kind(), ws.ID)); n != 1 {
+		t.Fatalf("want one ticket-created trigger, got %d", n)
+	}
 }
 
 func TestCreateValidation(t *testing.T) {

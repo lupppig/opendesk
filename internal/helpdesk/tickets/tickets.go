@@ -93,6 +93,46 @@ type ticketCreateBody struct {
 	Fields        map[string]any      `json:"fields,omitempty" doc:"Custom field values by key"`
 }
 
+// CreateInput is the trusted internal surface for creating a ticket through the
+// same validation, routing, event and automation path as POST /v1/tickets.
+type CreateInput struct {
+	Subject    string
+	BodyHTML   string
+	Kind       string
+	Channel    string
+	Priority   string
+	TeamID     *uuid.UUID
+	AssigneeID *uuid.UUID
+}
+
+// CreateTicket creates a ticket for another trusted agent surface. Keep this
+// narrow: richer API-only inputs still go through POST /v1/tickets.
+func CreateTicket(ctx context.Context, tx pgx.Tx, d *deps.Deps, p *auth.Principal, in CreateInput) (domain.Ticket, error) {
+	if len([]rune(strings.TrimSpace(in.Subject))) > 500 {
+		return domain.Ticket{}, httpx.Validation("subject must be at most 500 characters")
+	}
+	if len([]rune(in.BodyHTML)) > 500000 {
+		return domain.Ticket{}, httpx.Validation("message must be at most 500000 characters")
+	}
+	if in.Kind != "" && in.Kind != "reply" && in.Kind != "note" {
+		return domain.Ticket{}, httpx.Validation("kind must be reply or note")
+	}
+	if in.Channel != "" && in.Channel != domain.ChannelEmail && in.Channel != domain.ChannelAPI {
+		return domain.Ticket{}, httpx.Validation("channel must be email or api")
+	}
+	if in.Priority != "" && !slices.Contains(domain.Priorities, in.Priority) {
+		return domain.Ticket{}, httpx.Validation("priority must be one of " + strings.Join(domain.Priorities, ", "))
+	}
+	b := ticketCreateBody{Subject: in.Subject, BodyHTML: in.BodyHTML, Kind: in.Kind, Channel: in.Channel, Priority: in.Priority}
+	if in.TeamID != nil {
+		b.TeamID = in.TeamID.String()
+	}
+	if in.AssigneeID != nil {
+		b.AssigneeID = in.AssigneeID.String()
+	}
+	return createTicket(ctx, tx, d, p, b)
+}
+
 type ticketPatchBody struct {
 	Subject      *string        `json:"subject,omitempty" maxLength:"500"`
 	Status       *string        `json:"status,omitempty" enum:"open,pending,on_hold,solved,closed"`
@@ -700,7 +740,11 @@ func createTicket(ctx context.Context, tx pgx.Tx, d *deps.Deps, p *auth.Principa
 			}
 			bodyText = hd.HTMLToText(bodyHTML)
 		}
-		nm := domain.NewMessage{WorkspaceID: wid, TicketID: t.ID, Kind: kind, Direction: "outbound", AuthorType: actor.Type,
+		authorType := actor.Type
+		if authorType == "ai" {
+			authorType = "user" // the assistant writes on the user's behalf, after their approval
+		}
+		nm := domain.NewMessage{WorkspaceID: wid, TicketID: t.ID, Kind: kind, Direction: "outbound", AuthorType: authorType,
 			AuthorUserID: actor.UserID, BodyHTML: bodyHTML, BodyText: bodyText, Subject: t.Subject, AttachmentIDs: attIDs,
 			Trigger: jobs.TriggerTicketCreated}
 		if actor.Type == "api" {
