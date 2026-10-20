@@ -2,12 +2,48 @@ package telegram
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/useopendesk/opendesk/internal/supportchannels/channel"
 )
+
+func TestConfigureAndHealth(t *testing.T) {
+	webhook := "https://example.test/hooks/telegram/1"
+	var configured map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/setWebhook"):
+			if err := json.NewDecoder(r.Body).Decode(&configured); err != nil {
+				t.Fatal(err)
+			}
+			_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
+		case strings.HasSuffix(r.URL.Path, "/getWebhookInfo"):
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"url":"` + webhook + `"}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	a := Adapter{BaseURL: server.URL}
+	credentials := map[string]string{"bot_token": "token", "webhook_secret": "secret"}
+	setup := channel.Setup{WebhookURL: webhook}
+	if err := a.Configure(context.Background(), server.Client(), credentials, setup); err != nil {
+		t.Fatal(err)
+	}
+	if configured["url"] != webhook || configured["secret_token"] != "secret" {
+		t.Fatalf("setWebhook: %+v", configured)
+	}
+	health, err := a.Health(context.Background(), server.Client(), credentials, setup)
+	if err != nil || health.Status != "healthy" {
+		t.Fatalf("health: %+v, %v", health, err)
+	}
+}
 
 func TestTransportErrorsNeverCarryTheBotToken(t *testing.T) {
 	const token = "123456:AAH-secret-bot-token"
@@ -85,5 +121,17 @@ func TestParseIgnoresBotAuthoredMessages(t *testing.T) {
 				t.Fatalf("accepted bot-authored event: %+v", result.Events)
 			}
 		})
+	}
+}
+
+func TestParseDiscoversForumFromMembershipUpdate(t *testing.T) {
+	body := []byte(`{"update_id":11,"my_chat_member":{"chat":{"id":-1001,"title":"Support","type":"supergroup","is_forum":true},"new_chat_member":{"status":"administrator"}}}`)
+	result, err := (Adapter{}).Parse(http.Header{}, body)
+	if err != nil || len(result.Destinations) != 1 {
+		t.Fatalf("destinations: %+v, %v", result.Destinations, err)
+	}
+	item := result.Destinations[0]
+	if item.ID != "-1001" || item.Name != "Support" || !item.Available {
+		t.Fatalf("destination: %+v", item)
 	}
 }

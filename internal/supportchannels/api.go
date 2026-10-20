@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/auth"
 	"github.com/useopendesk/opendesk/internal/crypto"
 	"github.com/useopendesk/opendesk/internal/db"
+	"github.com/useopendesk/opendesk/internal/displayname"
 	"github.com/useopendesk/opendesk/internal/events"
 	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/ids"
@@ -45,6 +47,53 @@ func (s *Service) register(api huma.API, r chi.Router) {
 				}
 			}{}
 			out.Body.Data = s.registry.List()
+			return out, nil
+		})
+
+	huma.Register(api, huma.Operation{OperationID: "discover-support-channel-accounts", Method: http.MethodPost, Path: "/v1/support-channels/providers/{provider}/accounts", Tags: tags, Summary: "Discover provider accounts"},
+		func(ctx context.Context, in *struct {
+			Provider string `path:"provider"`
+			Body     struct {
+				Credentials map[string]string `json:"credentials"`
+			}
+		}) (*struct {
+			Body struct {
+				Data []channel.Account `json:"data"`
+			}
+		}, error) {
+			if _, err := requireAdminUser(ctx); err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			a, ok := s.registry.Get(strings.TrimSpace(in.Provider))
+			if !ok {
+				return nil, httpx.Validation("Unknown support channel provider.")
+			}
+			discoverer, ok := a.(channel.AccountDiscoverer)
+			if !ok {
+				return nil, httpx.Validation("This provider does not have selectable accounts.")
+			}
+			items, err := discoverer.DiscoverAccounts(ctx, s.http, discoveryCredentials(a.Describe(), in.Body.Credentials))
+			if err != nil {
+				return nil, httpx.E(422, "support_channel_discovery_failed", "Couldn't load accounts from the provider.")
+			}
+			for i := range items {
+				items[i].Name = displayname.CleanOr(items[i].Name, displayname.Workspace, items[i].ID)
+			}
+			sort.Slice(items, func(i, j int) bool {
+				if items[i].Name == items[j].Name {
+					return items[i].ID < items[j].ID
+				}
+				return items[i].Name < items[j].Name
+			})
+			out := &struct {
+				Body struct {
+					Data []channel.Account `json:"data"`
+				}
+			}{}
+			out.Body.Data = items
+			if out.Body.Data == nil {
+				out.Body.Data = []channel.Account{}
+			}
 			return out, nil
 		})
 
@@ -95,6 +144,7 @@ func (s *Service) register(api huma.API, r chi.Router) {
 			if err != nil {
 				return nil, httpx.E(422, "support_channel_failed", "Couldn't connect to the provider.")
 			}
+			account.Name = displayname.CleanOr(account.Name, displayname.Workspace, a.Describe().Name)
 			sealed, err := s.d.Box.SealJSON(credentials)
 			if err != nil {
 				return nil, httpx.Wrap(err)
@@ -102,9 +152,8 @@ func (s *Service) register(api huma.API, r chi.Router) {
 			name := strings.TrimSpace(in.Body.Name)
 			if name == "" {
 				name = account.Name
-			}
-			if len([]rune(name)) > 80 {
-				return nil, httpx.Validation("Name is at most 80 characters.")
+			} else if name, err = displayname.Validate("Name", name, displayname.Workspace, false); err != nil {
+				return nil, httpx.Wrap(err)
 			}
 			x := connection{ID: ids.New(), WorkspaceID: p.WorkspaceID, Provider: a.Describe().Key, Name: name, ExternalAccountID: account.ID, ExternalAccountName: account.Name, CredentialsEnc: sealed, Status: "connected", CreatedAt: time.Now().UTC()}
 			x.WebhookURL = s.webhookURL(x)
@@ -123,8 +172,152 @@ func (s *Service) register(api huma.API, r chi.Router) {
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
+			x = s.reconcileConnection(ctx, x, credentials)
 			x.CredentialsEnc = nil
 			return &struct{ Body connection }{x}, nil
+		})
+
+	huma.Register(api, huma.Operation{OperationID: "rotate-support-channel-credentials", Method: http.MethodPatch, Path: "/v1/support-channels/connections/{id}", Tags: tags, Summary: "Rotate support channel credentials"},
+		func(ctx context.Context, in *struct {
+			ID   string `path:"id"`
+			Body struct {
+				Name        string            `json:"name,omitempty" maxLength:"80"`
+				Credentials map[string]string `json:"credentials"`
+			}
+		}) (*struct{ Body connection }, error) {
+			p, err := requireAdminUser(ctx)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			id, err := parseID(in.ID)
+			if err != nil {
+				return nil, err
+			}
+			c, err := s.loadWorkspaceConnection(ctx, p.WorkspaceID, id)
+			if db.IsNotFound(err) {
+				return nil, httpx.NotFound("Support channel")
+			}
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			a, ok := s.registry.Get(c.Provider)
+			if !ok {
+				return nil, httpx.Validation("Unknown support channel provider.")
+			}
+			credentials := cleanCredentials(a.Describe(), in.Body.Credentials)
+			if credentials == nil {
+				return nil, httpx.Validation("Provide every required credential.")
+			}
+			account, err := a.Validate(ctx, s.http, credentials)
+			if err != nil {
+				return nil, httpx.E(422, "support_channel_failed", "Couldn't connect to the provider.")
+			}
+			if account.ID != c.ExternalAccountID {
+				return nil, httpx.Validation("The credentials must belong to the same provider account.")
+			}
+			account.Name = displayname.CleanOr(account.Name, displayname.Workspace, a.Describe().Name)
+			sealed, err := s.d.Box.SealJSON(credentials)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			name := strings.TrimSpace(in.Body.Name)
+			if name == "" {
+				name = c.Name
+			} else if name, err = displayname.Validate("Name", name, displayname.Workspace, false); err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			now := time.Now().UTC()
+			err = s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
+				tag, err := tx.Exec(ctx, `UPDATE support_channel_connections SET name=$3,external_account_name=$4,credentials_enc=$5,credentials_updated_at=$6,updated_at=$6 WHERE workspace_id=$1 AND id=$2`, p.WorkspaceID, c.ID, name, account.Name, sealed, now)
+				if err != nil {
+					return err
+				}
+				if tag.RowsAffected() == 0 {
+					return pgx.ErrNoRows
+				}
+				c.Name, c.ExternalAccountName, c.CredentialsEnc, c.CredentialsUpdatedAt = name, account.Name, sealed, now
+				if _, err = events.Publish(ctx, tx, events.Event{WorkspaceID: p.WorkspaceID, Type: "support_channel_connection.updated", Data: map[string]any{"support_channel_connection": c}}); err != nil {
+					return err
+				}
+				return audit.Log(ctx, tx, p, p.WorkspaceID, "support_channel.credentials_rotated", "support_channel", &c.ID, map[string]any{"provider": c.Provider, "account": c.ExternalAccountID})
+			})
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			c = s.reconcileConnection(ctx, c, credentials)
+			c.CredentialsEnc = nil
+			return &struct{ Body connection }{c}, nil
+		})
+
+	huma.Register(api, huma.Operation{OperationID: "test-support-channel-connection", Method: http.MethodPost, Path: "/v1/support-channels/connections/{id}/test", Tags: tags, Summary: "Test and repair a support channel connection"},
+		func(ctx context.Context, in *struct {
+			ID string `path:"id"`
+		}) (*struct{ Body connection }, error) {
+			p, err := requireAdminUser(ctx)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			id, err := parseID(in.ID)
+			if err != nil {
+				return nil, err
+			}
+			c, err := s.loadWorkspaceConnection(ctx, p.WorkspaceID, id)
+			if db.IsNotFound(err) {
+				return nil, httpx.NotFound("Support channel")
+			}
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			credentials, err := s.credentials(c)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			c = s.reconcileConnection(ctx, c, credentials)
+			c.CredentialsEnc = nil
+			return &struct{ Body connection }{c}, nil
+		})
+
+	huma.Register(api, huma.Operation{OperationID: "discover-support-channel-destinations", Method: http.MethodGet, Path: "/v1/support-channels/connections/{id}/destinations", Tags: tags, Summary: "Discover provider destinations"},
+		func(ctx context.Context, in *struct {
+			ID string `path:"id"`
+		}) (*struct {
+			Body struct {
+				Data []channel.Destination `json:"data"`
+			}
+		}, error) {
+			p, err := auth.RequireWorkspace(ctx, auth.RoleViewer, auth.ScopeSettingsRead)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			id, err := parseID(in.ID)
+			if err != nil {
+				return nil, err
+			}
+			c, err := s.loadWorkspaceConnection(ctx, p.WorkspaceID, id)
+			if db.IsNotFound(err) {
+				return nil, httpx.NotFound("Support channel")
+			}
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			credentials, err := s.credentials(c)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			items, err := s.discoverDestinations(ctx, c, credentials)
+			if err != nil {
+				return nil, httpx.E(502, "support_channel_discovery_failed", "Couldn't load channels from the provider.")
+			}
+			out := &struct {
+				Body struct {
+					Data []channel.Destination `json:"data"`
+				}
+			}{}
+			out.Body.Data = items
+			if out.Body.Data == nil {
+				out.Body.Data = []channel.Destination{}
+			}
+			return out, nil
 		})
 
 	huma.Register(api, huma.Operation{OperationID: "delete-support-channel-connection", Method: http.MethodDelete, Path: "/v1/support-channels/connections/{id}", Tags: tags, Summary: "Disconnect a support channel", DefaultStatus: http.StatusNoContent},
@@ -235,7 +428,7 @@ func (s *Service) register(api huma.API, r chi.Router) {
 			if strings.TrimSpace(in.Body.ExternalChannelID) == "" {
 				return nil, httpx.Validation("Enter the provider channel ID.")
 			}
-			d := destination{ID: ids.New(), ConnectionID: cid, TeamID: team, ExternalChannelID: strings.TrimSpace(in.Body.ExternalChannelID), ExternalChannelName: strings.TrimSpace(in.Body.ExternalChannelName), Enabled: true, IncludeNotes: in.Body.IncludeNotes, CreatedAt: time.Now().UTC()}
+			d := destination{ID: ids.New(), ConnectionID: cid, TeamID: team, ExternalChannelID: strings.TrimSpace(in.Body.ExternalChannelID), ExternalChannelName: cleanExternalName(in.Body.ExternalChannelName), Enabled: true, IncludeNotes: in.Body.IncludeNotes, CreatedAt: time.Now().UTC()}
 			inserted := false
 			e = s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
 				tag, err := tx.Exec(ctx, `INSERT INTO support_channel_destinations(id,workspace_id,connection_id,team_id,external_channel_id,external_channel_name,include_notes,created_at) SELECT $1,$2,$3,$4,$5,$6,$7,$8 WHERE EXISTS(SELECT 1 FROM support_channel_connections WHERE workspace_id=$2 AND id=$3)`, d.ID, p.WorkspaceID, d.ConnectionID, d.TeamID, d.ExternalChannelID, d.ExternalChannelName, d.IncludeNotes, d.CreatedAt)
@@ -357,10 +550,23 @@ func cleanCredentials(d channel.Descriptor, input map[string]string) map[string]
 	out := map[string]string{}
 	for _, f := range d.Fields {
 		v := strings.TrimSpace(input[f.Name])
+		if v == "" && f.Generated {
+			v = crypto.RandomString(48)
+		}
 		if v == "" {
 			return nil
 		}
 		out[f.Name] = v
+	}
+	return out
+}
+
+func discoveryCredentials(d channel.Descriptor, input map[string]string) map[string]string {
+	out := map[string]string{}
+	for _, f := range d.Fields {
+		if v := strings.TrimSpace(input[f.Name]); v != "" && !f.Generated && !f.Discovered {
+			out[f.Name] = v
+		}
 	}
 	return out
 }
@@ -375,13 +581,13 @@ func (s *Service) webhookURL(c connection) string {
 	return strings.TrimRight(s.d.Cfg.APIURL, "/") + "/v1/support-channels/hooks/" + c.Provider + "/" + c.ID.String()
 }
 func (s *Service) listConnections(ctx context.Context, wid uuid.UUID) ([]connection, error) {
-	rows, e := s.d.DB.Pool.Query(ctx, `SELECT id,workspace_id,provider,name,external_account_id,external_account_name,status,last_error,created_at FROM support_channel_connections WHERE workspace_id=$1 ORDER BY created_at`, wid)
+	rows, e := s.d.DB.Pool.Query(ctx, connectionSelect+` WHERE workspace_id=$1 ORDER BY created_at`, wid)
 	if e != nil {
 		return nil, e
 	}
 	list, e := pgx.CollectRows(rows, func(r pgx.CollectableRow) (connection, error) {
 		var c connection
-		e := r.Scan(&c.ID, &c.WorkspaceID, &c.Provider, &c.Name, &c.ExternalAccountID, &c.ExternalAccountName, &c.Status, &c.LastError, &c.CreatedAt)
+		e := r.Scan(connectionScan(&c)...)
 		c.WebhookURL = s.webhookURL(c)
 		return c, e
 	})
@@ -428,11 +634,12 @@ func (s *Service) webhook(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	e = s.persistInbound(r.Context(), c, result.Events)
+	e = s.persistWebhook(r.Context(), c, result)
 	if e != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+	s.markWebhookHealthy(r.Context(), c)
 	if result.ContentType != "" {
 		w.Header().Set("Content-Type", result.ContentType)
 	}
@@ -444,6 +651,13 @@ func (s *Service) webhook(w http.ResponseWriter, r *http.Request) {
 	if len(result.Body) > 0 {
 		_, _ = w.Write(result.Body)
 	}
+}
+
+func (s *Service) persistWebhook(ctx context.Context, c connection, result channel.WebhookResult) error {
+	if err := s.storeDiscovered(ctx, c, result.Destinations); err != nil {
+		return err
+	}
+	return s.persistInbound(ctx, c, result.Events)
 }
 
 func (s *Service) persistInbound(ctx context.Context, c connection, items []channel.Inbound) error {
@@ -476,8 +690,14 @@ func (s *Service) persistInbound(ctx context.Context, c connection, items []chan
 
 func (s *Service) loadConnection(ctx context.Context, id uuid.UUID) (connection, error) {
 	var c connection
-	e := s.d.DB.Pool.QueryRow(ctx, `SELECT id,workspace_id,provider,name,external_account_id,external_account_name,credentials_enc,status,last_error,created_at FROM support_channel_connections WHERE id=$1`, id).Scan(&c.ID, &c.WorkspaceID, &c.Provider, &c.Name, &c.ExternalAccountID, &c.ExternalAccountName, &c.CredentialsEnc, &c.Status, &c.LastError, &c.CreatedAt)
+	e := s.d.DB.Pool.QueryRow(ctx, connectionSelect+` WHERE id=$1`, id).Scan(connectionScan(&c)...)
 	return c, e
+}
+
+const connectionSelect = `SELECT id,workspace_id,provider,name,external_account_id,external_account_name,credentials_enc,status,last_error,health_status,health_detail,health_checked_at,credentials_updated_at,created_at FROM support_channel_connections`
+
+func connectionScan(c *connection) []any {
+	return []any{&c.ID, &c.WorkspaceID, &c.Provider, &c.Name, &c.ExternalAccountID, &c.ExternalAccountName, &c.CredentialsEnc, &c.Status, &c.LastError, &c.HealthStatus, &c.HealthDetail, &c.HealthCheckedAt, &c.CredentialsUpdatedAt, &c.CreatedAt}
 }
 func (s *Service) credentials(c connection) (map[string]string, error) {
 	out := map[string]string{}

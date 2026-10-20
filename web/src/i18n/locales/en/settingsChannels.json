@@ -542,7 +542,7 @@
     },
     "connections": {
       "title": "Connections",
-      "description": "Bot credentials are stored encrypted. Point each bot's events at the address shown on its connection.",
+      "description": "Bot credentials are stored encrypted. opendesk configures provider webhooks and commands where the provider allows it.",
       "webhook": "Events address"
     },
     "empty": {
@@ -554,6 +554,24 @@
     "status": {
       "connected": "Connected",
       "error": "Needs attention"
+    },
+    "health": {
+      "unknown": "Not tested",
+      "healthy": "Healthy",
+      "action_required": "Finish setup",
+      "error": "Check failed",
+      "test": "Test connection",
+      "tested": "Connection checked.",
+      "testError": "Couldn't test the connection."
+    },
+    "rotate": {
+      "label": "Rotate credentials for {{name}}",
+      "title": "Rotate credentials for {{name}}",
+      "description": "Enter the replacement credentials for the same provider account. Destinations and ticket threads stay connected.",
+      "submit": "Rotate credentials",
+      "cancel": "Cancel",
+      "rotated": "Credentials rotated.",
+      "error": "Couldn't rotate the credentials."
     },
     "allTeams": "All teams",
     "withNotes": "with notes",
@@ -578,28 +596,33 @@
     "provider": {
       "slack": {
         "description": "Mirror email tickets into Slack threads and work them by talking to Ollie.",
-        "setup": "Create a Slack app with a bot token that has chat:write and app_mentions:read, and subscribe it to app mentions."
+        "setup": "Create a Slack app with chat:write, app_mentions:read, channels:read and groups:read. Slack requires you to verify the Events API and /opendesk URLs after connecting."
       },
       "discord": {
         "description": "Mirror email tickets into Discord threads and work them by talking to Ollie.",
-        "setup": "Create a Discord bot, turn on its Message Content intent and copy its token, public key and your server ID."
+        "setup": "Create a Discord bot, turn on its Message Content intent and copy its token and public key. opendesk finds its servers and registers the interactions endpoint and commands."
       },
       "telegram": {
         "description": "Mirror email tickets into Telegram forum topics and work them by talking to Ollie.",
-        "setup": "Create a bot with BotFather, make it an admin of a forum group and turn off its privacy mode."
+        "setup": "Create a bot with BotFather and paste its token. opendesk creates the webhook secret. Then make the bot an admin of a forum group and turn off its privacy mode."
       }
     },
     "field": {
       "bot_token": "Bot token",
       "signing_secret": "Signing secret",
       "public_key": "Interactions public key",
-      "guild_id": "Server ID",
+      "guild_id": "Server",
       "webhook_secret": "Webhook secret"
     },
     "connect": {
       "title": "Connect {{name}}",
       "name": "Connection name",
       "submit": "Connect",
+      "findAccounts": "Find servers",
+      "accountPlaceholder": "Choose a server",
+      "refreshAccounts": "Refresh servers",
+      "noAccounts": "This bot is not installed in any servers yet.",
+      "discoveryError": "Couldn't load servers for {{name}}.",
       "cancel": "Cancel",
       "connected": "{{name}} connected.",
       "error": "Couldn't connect {{name}}."
@@ -610,8 +633,13 @@
       "team": "Team",
       "teamPlaceholder": "Choose a team",
       "allTeams": "All public teams",
-      "channel": "Provider channel ID",
-      "channelHint": "The channel, conversation or forum group ID shown by the provider.",
+      "channel": "Provider channel",
+      "channelHint": "Channels the connected bot can access.",
+      "channelPlaceholder": "Choose a channel",
+      "loading": "Loading channels",
+      "refresh": "Refresh channels",
+      "none": "No channels found. For Telegram, add the bot as an administrator to a forum group or send it a topic message, then refresh.",
+      "loadError": "Couldn't load channels from the provider.",
       "displayName": "Display name",
       "displayNamePlaceholder": "support",
       "notes": "Include internal notes",

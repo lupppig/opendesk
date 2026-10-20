@@ -23,7 +23,7 @@ func (Adapter) Describe() channel.Descriptor {
 	return channel.Descriptor{Key: "discord", Name: "Discord", Description: "Mirror email tickets into Discord threads and work them by talking to Ollie.", Fields: []channel.Field{
 		{Name: "bot_token", Label: "Bot token", Secret: true, Help: "Enable the Message Content intent so Ollie can receive mentions in ticket threads."},
 		{Name: "public_key", Label: "Interactions public key", Secret: true},
-		{Name: "guild_id", Label: "Server ID"},
+		{Name: "guild_id", Label: "Server", Discovered: true},
 	}}
 }
 func (a Adapter) endpoint(path string) string {
@@ -74,6 +74,108 @@ func (a Adapter) Validate(ctx context.Context, c *http.Client, cr map[string]str
 		return channel.Account{}, err
 	}
 	return channel.Account{ID: g.ID, Name: g.Name}, nil
+}
+
+func (a Adapter) DiscoverAccounts(ctx context.Context, c *http.Client, cr map[string]string) ([]channel.Account, error) {
+	if cr["bot_token"] == "" {
+		return nil, errors.New("bot_token is required")
+	}
+	var guilds []struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	if err := a.call(ctx, c, cr["bot_token"], http.MethodGet, "/users/@me/guilds", nil, &guilds); err != nil {
+		return nil, err
+	}
+	out := make([]channel.Account, 0, len(guilds))
+	for _, guild := range guilds {
+		if guild.ID != "" {
+			out = append(out, channel.Account{ID: guild.ID, Name: guild.Name})
+		}
+	}
+	return out, nil
+}
+
+func (a Adapter) Discover(ctx context.Context, c *http.Client, cr map[string]string) ([]channel.Destination, error) {
+	var items []struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+		Type int    `json:"type"`
+	}
+	if err := a.call(ctx, c, cr["bot_token"], http.MethodGet, "/guilds/"+cr["guild_id"]+"/channels", nil, &items); err != nil {
+		return nil, err
+	}
+	out := make([]channel.Destination, 0, len(items))
+	for _, item := range items {
+		// Ticket threads are created beneath ordinary guild text channels.
+		if item.Type == 0 {
+			out = append(out, channel.Destination{ID: item.ID, Name: item.Name, Kind: "text", Available: true})
+		}
+	}
+	return out, nil
+}
+
+type application struct {
+	ID                      string `json:"id"`
+	InteractionsEndpointURL string `json:"interactions_endpoint_url"`
+}
+
+var commands = []map[string]any{
+	{"name": "ask", "description": "Ask Ollie about the ticket", "options": []map[string]any{{"name": "text", "description": "What would you like to know?", "type": 3, "required": true}}},
+	{"name": "link", "description": "Link your Discord account to opendesk", "options": []map[string]any{{"name": "text", "description": "The one-time link code", "type": 3, "required": true}}},
+	{"name": "reply", "description": "Reply to the customer", "options": []map[string]any{{"name": "text", "description": "Reply text", "type": 3, "required": true}}},
+	{"name": "note", "description": "Add an internal note", "options": []map[string]any{{"name": "text", "description": "Note text", "type": 3, "required": true}}},
+	{"name": "assign", "description": "Assign the ticket to yourself"},
+	{"name": "status", "description": "Change the ticket status", "options": []map[string]any{{"name": "value", "description": "The new status", "type": 3, "required": true}}},
+	{"name": "priority", "description": "Change the ticket priority", "options": []map[string]any{{"name": "value", "description": "The new priority", "type": 3, "required": true}}},
+}
+
+func (a Adapter) Configure(ctx context.Context, c *http.Client, cr map[string]string, setup channel.Setup) error {
+	var app application
+	if err := a.call(ctx, c, cr["bot_token"], http.MethodGet, "/applications/@me", nil, &app); err != nil {
+		return err
+	}
+	if app.ID == "" {
+		return errors.New("discord application has no id")
+	}
+	if app.InteractionsEndpointURL != setup.WebhookURL {
+		if err := a.call(ctx, c, cr["bot_token"], http.MethodPatch, "/applications/@me", map[string]string{"interactions_endpoint_url": setup.WebhookURL}, nil); err != nil {
+			return err
+		}
+	}
+	for _, command := range commands {
+		if err := a.call(ctx, c, cr["bot_token"], http.MethodPost, "/applications/"+app.ID+"/guilds/"+cr["guild_id"]+"/commands", command, nil); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (a Adapter) Health(ctx context.Context, c *http.Client, cr map[string]string, setup channel.Setup) (channel.Health, error) {
+	var app application
+	if err := a.call(ctx, c, cr["bot_token"], http.MethodGet, "/applications/@me", nil, &app); err != nil {
+		return channel.Health{}, err
+	}
+	if app.InteractionsEndpointURL != setup.WebhookURL {
+		return channel.Health{Status: "action_required", Detail: "Discord's interactions endpoint points somewhere else. Test the connection to repair it."}, nil
+	}
+	var registered []struct {
+		Name string `json:"name"`
+	}
+	if err := a.call(ctx, c, cr["bot_token"], http.MethodGet, "/applications/"+app.ID+"/guilds/"+cr["guild_id"]+"/commands", nil, &registered); err != nil {
+		return channel.Health{}, err
+	}
+	want := map[string]bool{}
+	for _, command := range commands {
+		want[command["name"].(string)] = true
+	}
+	for _, command := range registered {
+		delete(want, command.Name)
+	}
+	if len(want) > 0 {
+		return channel.Health{Status: "action_required", Detail: "Some opendesk commands are missing. Test the connection to register them."}, nil
+	}
+	return channel.Health{Status: "healthy", Detail: "Discord's interactions endpoint and commands are configured."}, nil
 }
 func (Adapter) Verify(h http.Header, body []byte, cr map[string]string) error {
 	pk, err := hex.DecodeString(cr["public_key"])

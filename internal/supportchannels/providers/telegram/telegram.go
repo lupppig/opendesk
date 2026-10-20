@@ -21,7 +21,7 @@ type Adapter struct{ BaseURL string }
 func (Adapter) Describe() channel.Descriptor {
 	return channel.Descriptor{Key: "telegram", Name: "Telegram", Description: "Mirror email tickets into Telegram forum topics and work them by talking to Ollie.", Fields: []channel.Field{
 		{Name: "bot_token", Label: "Bot token", Secret: true, Help: "Create a bot with BotFather and add it as an administrator to a forum group."},
-		{Name: "webhook_secret", Label: "Webhook secret", Secret: true},
+		{Name: "webhook_secret", Label: "Webhook secret", Secret: true, Generated: true},
 	}}
 }
 func (a Adapter) endpoint(token, method string) string {
@@ -108,6 +108,30 @@ func (a Adapter) Validate(ctx context.Context, c *http.Client, cr map[string]str
 	}
 	return channel.Account{ID: strconv.FormatInt(me.ID, 10), Name: "@" + me.Username}, nil
 }
+
+func (a Adapter) Configure(ctx context.Context, c *http.Client, cr map[string]string, setup channel.Setup) error {
+	return a.call(ctx, c, cr, "setWebhook", map[string]any{
+		"url": setup.WebhookURL, "secret_token": cr["webhook_secret"],
+		"allowed_updates": []string{"message", "my_chat_member"},
+	}, nil)
+}
+
+func (a Adapter) Health(ctx context.Context, c *http.Client, cr map[string]string, setup channel.Setup) (channel.Health, error) {
+	var info struct {
+		URL              string `json:"url"`
+		LastErrorMessage string `json:"last_error_message"`
+	}
+	if err := a.call(ctx, c, cr, "getWebhookInfo", map[string]any{}, &info); err != nil {
+		return channel.Health{}, err
+	}
+	if info.URL != setup.WebhookURL {
+		return channel.Health{Status: "action_required", Detail: "Telegram's webhook points somewhere else. Test the connection to repair it."}, nil
+	}
+	if info.LastErrorMessage != "" {
+		return channel.Health{Status: "error", Detail: "Telegram reported a recent webhook delivery error."}, nil
+	}
+	return channel.Health{Status: "healthy", Detail: "Telegram's webhook is configured and accepting updates."}, nil
+}
 func (Adapter) Verify(h http.Header, _ []byte, cr map[string]string) error {
 	a, b := []byte(h.Get("X-Telegram-Bot-Api-Secret-Token")), []byte(cr["webhook_secret"])
 	if len(a) != len(b) || subtle.ConstantTimeCompare(a, b) != 1 {
@@ -130,19 +154,42 @@ func (Adapter) Parse(_ http.Header, body []byte) (channel.WebhookResult, error) 
 				ID int64 `json:"id"`
 			} `json:"via_bot"`
 			Chat struct {
-				ID int64 `json:"id"`
+				ID      int64  `json:"id"`
+				Title   string `json:"title"`
+				Type    string `json:"type"`
+				IsForum bool   `json:"is_forum"`
 			} `json:"chat"`
 		} `json:"message"`
+		MyChatMember *struct {
+			Chat struct {
+				ID      int64  `json:"id"`
+				Title   string `json:"title"`
+				Type    string `json:"type"`
+				IsForum bool   `json:"is_forum"`
+			} `json:"chat"`
+			NewChatMember struct {
+				Status string `json:"status"`
+			} `json:"new_chat_member"`
+		} `json:"my_chat_member"`
 	}
 	if err := json.Unmarshal(body, &x); err != nil {
 		return channel.WebhookResult{}, err
 	}
-	if x.Message == nil || x.Message.From.IsBot || x.Message.ViaBot != nil {
+	if x.MyChatMember != nil {
+		m := x.MyChatMember
+		available := (m.NewChatMember.Status == "member" || m.NewChatMember.Status == "administrator") && m.Chat.IsForum
+		return channel.WebhookResult{Destinations: []channel.Destination{{ID: strconv.FormatInt(m.Chat.ID, 10), Name: m.Chat.Title, Kind: m.Chat.Type, Available: available}}}, nil
+	}
+	if x.Message == nil {
 		return channel.WebhookResult{}, nil
+	}
+	discovery := channel.Destination{ID: strconv.FormatInt(x.Message.Chat.ID, 10), Name: x.Message.Chat.Title, Kind: x.Message.Chat.Type, Available: x.Message.Chat.IsForum}
+	if x.Message.From.IsBot || x.Message.ViaBot != nil {
+		return channel.WebhookResult{Destinations: []channel.Destination{discovery}}, nil
 	}
 	p := strings.Fields(x.Message.Text)
 	if len(p) == 0 || x.Message.MessageThreadID == 0 {
-		return channel.WebhookResult{}, nil
+		return channel.WebhookResult{Destinations: []channel.Destination{discovery}}, nil
 	}
 	cmd, text := "chat", strings.TrimSpace(x.Message.Text)
 	if strings.HasPrefix(p[0], "/") {
@@ -159,7 +206,7 @@ func (Adapter) Parse(_ http.Header, body []byte) (channel.WebhookResult, error) 
 			}
 		}
 	}
-	return channel.WebhookResult{Events: []channel.Inbound{{EventID: strconv.FormatInt(x.UpdateID, 10), ExternalChannelID: strconv.FormatInt(x.Message.Chat.ID, 10), ExternalThreadID: strconv.FormatInt(x.Message.MessageThreadID, 10), ExternalUserID: strconv.FormatInt(x.Message.From.ID, 10), Command: cmd, Text: text, Value: text}}}, nil
+	return channel.WebhookResult{Events: []channel.Inbound{{EventID: strconv.FormatInt(x.UpdateID, 10), ExternalChannelID: strconv.FormatInt(x.Message.Chat.ID, 10), ExternalThreadID: strconv.FormatInt(x.Message.MessageThreadID, 10), ExternalUserID: strconv.FormatInt(x.Message.From.ID, 10), Command: cmd, Text: text, Value: text}}, Destinations: []channel.Destination{discovery}}, nil
 }
 
 func explicitCommand(s string) bool {

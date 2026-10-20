@@ -350,10 +350,17 @@ export const api = {
   },
   supportChannels: {
     providers: () => http.get<{ data: T.SupportChannelProvider[] }>("/v1/support-channels/providers"),
+    accounts: (provider: string, credentials: Record<string, string>) =>
+      http.post<{ data: T.SupportChannelAccount[] }>(`/v1/support-channels/providers/${provider}/accounts`, { credentials }),
     connections: () => http.get<{ data: T.SupportChannelConnection[] }>("/v1/support-channels/connections"),
     connect: (b: { provider: string; name?: string; credentials: Record<string, string> }) =>
       http.create<T.SupportChannelConnection>("/v1/support-channels/connections", b),
+    rotate: (id: string, b: { name?: string; credentials: Record<string, string> }) =>
+      http.patch<T.SupportChannelConnection>(`/v1/support-channels/connections/${id}`, b),
+    test: (id: string) => http.post<T.SupportChannelConnection>(`/v1/support-channels/connections/${id}/test`),
     disconnect: (id: string) => http.del(`/v1/support-channels/connections/${id}`),
+    availableDestinations: (id: string) =>
+      http.get<{ data: T.SupportChannelAvailableDestination[] }>(`/v1/support-channels/connections/${id}/destinations`),
     destinations: () => http.get<{ data: T.SupportChannelDestination[] }>("/v1/support-channels/destinations"),
     addDestination: (b: { connection_id: string; team_id?: string; external_channel_id: string; external_channel_name?: string; include_notes?: boolean }) =>
       http.create<T.SupportChannelDestination>("/v1/support-channels/destinations", b),

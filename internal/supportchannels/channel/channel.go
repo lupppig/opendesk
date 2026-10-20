@@ -9,10 +9,12 @@ import (
 )
 
 type Field struct {
-	Name   string `json:"name"`
-	Label  string `json:"label"`
-	Secret bool   `json:"secret"`
-	Help   string `json:"help,omitempty"`
+	Name       string `json:"name"`
+	Label      string `json:"label"`
+	Secret     bool   `json:"secret"`
+	Generated  bool   `json:"generated,omitempty"`
+	Discovered bool   `json:"discovered,omitempty"`
+	Help       string `json:"help,omitempty"`
 }
 
 type Descriptor struct {
@@ -23,8 +25,28 @@ type Descriptor struct {
 }
 
 type Account struct {
-	ID   string
-	Name string
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// Destination is a provider location which can receive mirrored tickets.
+// Providers may discover these live, or report them through webhook events.
+type Destination struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Kind      string `json:"kind,omitempty"`
+	Available bool   `json:"available"`
+}
+
+// Setup contains the public endpoints a provider may configure for a
+// connection. Credentials remain provider-owned and never cross this boundary.
+type Setup struct {
+	WebhookURL string
+}
+
+type Health struct {
+	Status string `json:"status"` // healthy | action_required | error
+	Detail string `json:"detail"`
 }
 
 type Ticket struct {
@@ -68,10 +90,11 @@ type Inbound struct {
 // actions. Body is returned immediately after the events and their jobs have
 // been committed.
 type WebhookResult struct {
-	Events      []Inbound
-	Status      int
-	ContentType string
-	Body        []byte
+	Events       []Inbound
+	Destinations []Destination
+	Status       int
+	ContentType  string
+	Body         []byte
 }
 
 type Adapter interface {
@@ -82,6 +105,30 @@ type Adapter interface {
 	CreateThread(context.Context, *http.Client, map[string]string, string, Ticket) (Thread, error)
 	Post(context.Context, *http.Client, map[string]string, string, string) error
 	Update(context.Context, *http.Client, map[string]string, string, Ticket) error
+}
+
+// Discoverer is an optional capability for providers which expose destinations
+// through an API. Providers without it may discover destinations from signed
+// webhook events instead (Telegram, for example).
+type Discoverer interface {
+	Discover(context.Context, *http.Client, map[string]string) ([]Destination, error)
+}
+
+// AccountDiscoverer lists provider accounts selectable during onboarding. It
+// is used when a connection is scoped to an account such as a Discord server.
+type AccountDiscoverer interface {
+	DiscoverAccounts(context.Context, *http.Client, map[string]string) ([]Account, error)
+}
+
+// Configurer is an optional capability for providers that allow opendesk to
+// register its webhook endpoint or commands with the existing credentials.
+type Configurer interface {
+	Configure(context.Context, *http.Client, map[string]string, Setup) error
+}
+
+// HealthChecker verifies the provider-side setup without changing it.
+type HealthChecker interface {
+	Health(context.Context, *http.Client, map[string]string, Setup) (Health, error)
 }
 
 // Subscriber is an optional provider capability for products which deliver chat

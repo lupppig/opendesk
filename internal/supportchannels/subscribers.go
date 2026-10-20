@@ -19,12 +19,16 @@ const subscriberRefresh = 15 * time.Second
 // database lease gives each connection one owner when more than one worker is
 // running; webhook-only adapters never enter this path.
 func (s *Service) runSubscribers(ctx context.Context) {
-	running := map[uuid.UUID]context.CancelFunc{}
+	type activeSubscriber struct {
+		cancel             context.CancelFunc
+		credentialsUpdated time.Time
+	}
+	running := map[uuid.UUID]activeSubscriber{}
 	ticker := time.NewTicker(subscriberRefresh)
 	defer ticker.Stop()
 	defer func() {
-		for id, cancel := range running {
-			cancel()
+		for id, active := range running {
+			active.cancel()
 			s.releaseSubscriber(id)
 		}
 	}()
@@ -33,9 +37,10 @@ func (s *Service) runSubscribers(ctx context.Context) {
 		if err != nil {
 			s.d.Log.Warn("support channel subscribers", "err", err)
 		} else {
-			for id, cancel := range running {
-				if _, ok := active[id]; !ok {
-					cancel()
+			for id, current := range running {
+				connection, ok := active[id]
+				if !ok || !connection.CredentialsUpdatedAt.Equal(current.credentialsUpdated) {
+					current.cancel()
 					s.releaseSubscriber(id)
 					delete(running, id)
 				}
@@ -47,8 +52,8 @@ func (s *Service) runSubscribers(ctx context.Context) {
 					continue
 				}
 				if !claimed {
-					if cancel, ok := running[id]; ok {
-						cancel()
+					if current, ok := running[id]; ok {
+						current.cancel()
 						delete(running, id)
 					}
 					continue
@@ -57,7 +62,7 @@ func (s *Service) runSubscribers(ctx context.Context) {
 					continue
 				}
 				runCtx, cancel := context.WithCancel(ctx)
-				running[id] = cancel
+				running[id] = activeSubscriber{cancel: cancel, credentialsUpdated: c.CredentialsUpdatedAt}
 				go s.runSubscriber(runCtx, c)
 			}
 		}
@@ -70,14 +75,13 @@ func (s *Service) runSubscribers(ctx context.Context) {
 }
 
 func (s *Service) subscriberConnections(ctx context.Context) (map[uuid.UUID]connection, error) {
-	rows, err := s.d.DB.Pool.Query(ctx, `SELECT id,workspace_id,provider,name,external_account_id,external_account_name,credentials_enc,status,last_error,created_at
-		FROM support_channel_connections`)
+	rows, err := s.d.DB.Pool.Query(ctx, connectionSelect)
 	if err != nil {
 		return nil, err
 	}
 	list, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (connection, error) {
 		var c connection
-		err := r.Scan(&c.ID, &c.WorkspaceID, &c.Provider, &c.Name, &c.ExternalAccountID, &c.ExternalAccountName, &c.CredentialsEnc, &c.Status, &c.LastError, &c.CreatedAt)
+		err := r.Scan(connectionScan(&c)...)
 		return c, err
 	})
 	if err != nil {

@@ -54,6 +54,7 @@ export const qk = {
   supportChannelProviders: ["support-channels", "providers"] as const,
   supportChannelConnections: ["support-channels", "connections"] as const,
   supportChannelDestinations: ["support-channels", "destinations"] as const,
+  supportChannelAvailableDestinations: (id: string) => ["support-channels", "connections", id, "destinations"] as const,
   imports: ["imports"] as const,
   ticketLinks: (id: string) => ["tickets", "links", id] as const,
   auditLogs: ["audit-logs"] as const,
@@ -172,6 +173,8 @@ export const q = {
   supportChannelProviders: () => list(qk.supportChannelProviders, api.supportChannels.providers, { staleTime: 60 * 60_000 }),
   supportChannelConnections: () => list(qk.supportChannelConnections, api.supportChannels.connections),
   supportChannelDestinations: () => list(qk.supportChannelDestinations, api.supportChannels.destinations),
+  supportChannelAvailableDestinations: (id: string) =>
+    list(qk.supportChannelAvailableDestinations(id), () => api.supportChannels.availableDestinations(id), { staleTime: 30_000 }),
   imports: () => list(qk.imports, () => api.imports.list()),
   ticketLinks: (id: string) => list(qk.ticketLinks(id), () => api.tickets.links(id)),
   auditLogs: () =>

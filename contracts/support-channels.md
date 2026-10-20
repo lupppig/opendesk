@@ -12,10 +12,14 @@ The cloud and self-host use the same code. There is no plan gate.
 
 ```ts
 type Provider = { key: string; name: string; description: string;
-  fields: { name: string; label: string; secret: boolean; help?: string }[] };
+  fields: { name: string; label: string; secret: boolean; generated?: boolean;
+    discovered?: boolean; help?: string }[] };
 type Connection = { id: string; provider: string; name: string;
   external_account_id: string; external_account_name: string;
-  status: "connected"|"error"; last_error: string; webhook_url: string; created_at: string };
+  status: "connected"|"error"; last_error: string;
+  health_status: "unknown"|"healthy"|"action_required"|"error";
+  health_detail: string; health_checked_at?: string; webhook_url: string; created_at: string };
+type AvailableDestination = { id: string; name: string; kind?: string; available: boolean };
 type Destination = { id: string; connection_id: string; team_id: string|null;
   external_channel_id: string; external_channel_name: string; enabled: boolean;
   include_notes: boolean; created_at: string };
@@ -24,8 +28,12 @@ type Destination = { id: string; connection_id: string; team_id: string|null;
 | method | path | role | body → response |
 | --- | --- | --- | --- |
 | GET | `/v1/support-channels/providers` | viewer, `settings:read` | → `{data: Provider[]}` |
+| POST | `/v1/support-channels/providers/{provider}/accounts` | admin user | `{credentials}` → `{data: {id,name}[]}` for providers with selectable accounts |
 | GET | `/v1/support-channels/connections` | viewer, `settings:read` | → `{data: Connection[]}` |
 | POST | `/v1/support-channels/connections` | admin user | `{provider,name?,credentials}` → 201 `Connection` |
+| PATCH | `/v1/support-channels/connections/{id}` | admin user | `{name?,credentials}` → `Connection`, credentials must identify the same provider account |
+| POST | `/v1/support-channels/connections/{id}/test` | admin user | reconciles setup and health → `Connection` |
+| GET | `/v1/support-channels/connections/{id}/destinations` | viewer, `settings:read` | discovers → `{data: AvailableDestination[]}` |
 | DELETE | `/v1/support-channels/connections/{id}` | admin user | → 204, including its destinations and thread mappings |
 | GET | `/v1/support-channels/destinations` | viewer, `settings:read` | → `{data: Destination[]}` |
 | POST | `/v1/support-channels/destinations` | admin user | `{connection_id,team_id?,external_channel_id,external_channel_name?,include_notes?}` → 201 `Destination` |
@@ -77,6 +85,14 @@ hands events to `Stream.Emit` and calls `Stream.Connected` once the provider acc
 session. The engine reconnects after an error with backoff, except a `FatalError`, whose
 `Reason` becomes the connection's `last_error`. `Thread.ChannelID` names the channel a
 thread's messages arrive from when it isn't the destination channel.
+
+Onboarding is split into optional capabilities so providers implement only what their
+API supports: `Discoverer` lists destinations, `Configurer` registers provider-side
+webhooks or commands, and `HealthChecker` verifies that setup. Signed webhook results may
+also carry discovered destinations for providers that cannot list them. Credential
+rotation validates that the replacement credentials belong to the same external account,
+then updates the sealed value in place; destinations and ticket threads keep their ids.
+Long-lived subscribers restart when `credentials_updated_at` changes.
 
 An adapter is registered in `NewRegistry` at boot. It never imports a helpdesk package or
 reads a helpdesk table. `Inbound` is the normalized command envelope and
@@ -162,23 +178,27 @@ available." `/opendesk link <code>` needs no number.
 
 ## Provider setup
 
-- **Slack:** bot token and signing secret. Point Event Subscriptions and the slash
-  command request URL to `webhook_url`; subscribe the bot to `app_mention`, grant
-  `chat:write` and `app_mentions:read`, and invite it to each selected channel.
-- **Discord:** bot token, interactions public key and server ID. Set the application's
-  Interactions Endpoint URL to `webhook_url`, install the bot with thread/message access,
-  enable the privileged Message Content intent, and register the commands above plus
-  `/ask`. Worker processes maintain one leased Gateway connection per Discord connection,
+- **Slack:** bot token and signing secret. Grant `chat:write`, `app_mentions:read`,
+  `channels:read` and `groups:read`, then invite the bot to each selectable channel.
+  Slack does not let a bot token change its own app configuration, so the health state is
+  `action_required` and tells an admin to point Event Subscriptions and the `/opendesk`
+  slash command at `webhook_url`, then test them in Slack.
+- **Discord:** bot token and interactions public key. opendesk lists the servers where the
+  bot is installed, then lists text channels in the selected server. Install the bot with
+  thread/message access and enable the privileged Message Content intent. opendesk sets
+  the Interactions Endpoint URL and upserts the commands above plus
+  `/ask` through Discord's API. Worker processes maintain one leased Gateway connection per Discord connection,
   so multiple workers do not handle the same message. A dropped connection resumes its
   session where Discord allows it; otherwise the worker reconnects with exponential
   backoff and jitter, from five seconds up to five minutes. Close codes that mean the
   provider refused the bot (4004 authentication failed, 4010 to 4014 shard, version and
   intents errors) stop the subscription and set the connection to `error` with a reason
   for the admin, instead of retrying. A successful session sets it back to `connected`.
-- **Telegram:** bot token and a webhook secret. Add the bot as an administrator to a
-  forum-enabled group, then call `setWebhook` with `webhook_url` and the same
-  `secret_token`. Disable privacy mode with BotFather so the bot receives ordinary topic
-  messages. The destination is the forum group ID.
+- **Telegram:** bot token. opendesk generates and seals the webhook secret, calls
+  `setWebhook` with `webhook_url`, and subscribes to `message` and `my_chat_member`.
+  Add the bot as an administrator to a forum-enabled group; that signed membership update
+  makes the group selectable without entering its id. Disable privacy mode with BotFather
+  so the bot receives ordinary topic messages.
 
 ## Security and operations
 

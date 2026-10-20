@@ -1,15 +1,31 @@
 package slack
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strconv"
 	"testing"
 	"time"
 )
+
+func TestDiscoverReturnsOnlyJoinedActiveChannels(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/conversations.list" || r.Header.Get("Authorization") != "Bearer token" {
+			t.Fatalf("request: %s %s", r.Method, r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"ok":true,"channels":[{"id":"C1","name":"support","is_member":true},{"id":"C2","name":"private","is_member":false},{"id":"C3","name":"old","is_member":true,"is_archived":true}],"response_metadata":{"next_cursor":""}}`))
+	}))
+	defer server.Close()
+	items, err := (Adapter{BaseURL: server.URL}).Discover(context.Background(), server.Client(), map[string]string{"bot_token": "token"})
+	if err != nil || len(items) != 1 || items[0].ID != "C1" || items[0].Name != "support" {
+		t.Fatalf("destinations: %+v, %v", items, err)
+	}
+}
 
 func TestVerifyAndParseThreadCommand(t *testing.T) {
 	body := []byte(`{"event_id":"Ev1","team_id":"T1","event":{"type":"message","user":"U1","channel":"C1","thread_ts":"10.1","ts":"10.2","text":"/reply Thanks for writing"}}`)
