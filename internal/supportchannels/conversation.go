@@ -358,7 +358,12 @@ func (s *Service) applyAndSaveConversation(ctx context.Context, p *auth.Principa
 				return errPendingActionGone
 			}
 		}
-		if err := s.applyCommandTx(ctx, tx, p, tid, in); err != nil {
+		// Ollie chose this change and the agent asked for it, so it runs with the
+		// agent's role and checks and is attributed to Ollie on their behalf, like
+		// every other assistant action (auth.Principal.Assistant).
+		ollie := *p
+		ollie.Assistant = true
+		if err := s.applyCommandTx(ctx, tx, &ollie, tid, in); err != nil {
 			return err
 		}
 		return s.saveConversationWith(ctx, tx, p.WorkspaceID, connectionID, processingID, in, state)
