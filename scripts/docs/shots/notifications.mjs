@@ -60,7 +60,7 @@ export const shots = [
     pad: 24,
     highlight: [
       { target: (p) => columns(p, 'In the app'), label: 1, inset: 0, badge: 'tl' },
-      { target: (p) => columns(p, 'Email', 'Desktop app'), label: 2, inset: 0, badge: 'tr' },
+      { target: (p) => columns(p, 'Email', 'Desktop'), label: 2, inset: 0, badge: 'tr' },
     ],
   },
   {

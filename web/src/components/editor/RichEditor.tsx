@@ -3,7 +3,7 @@ import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import Image from "@tiptap/extension-image";
 import { Bold, Code, Heading2, Heading3, ImageIcon, Italic, Link2, List, ListOrdered, Quote, Strikethrough } from "lucide-react";
-import { forwardRef, useEffect, useImperativeHandle, useState, type ReactNode } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from "react";
 import { Popover } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { TextInput } from "@/components/ui/input";
@@ -58,13 +58,16 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
   },
   ref,
 ) {
+  // Read when the editor draws it, so it follows the composer's mode.
+  const placeholderRef = useRef(placeholder);
+  placeholderRef.current = placeholder;
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
         heading: { levels: [2, 3] },
         link: { openOnClick: false, autolink: true, HTMLAttributes: { rel: "noopener noreferrer nofollow", target: "_blank" } },
       }),
-      Placeholder.configure({ placeholder: placeholder ?? "" }),
+      Placeholder.configure({ placeholder: () => placeholderRef.current ?? "" }),
       Image.configure({ inline: false }),
       ...extensions,
     ],
@@ -102,6 +105,11 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
   useEffect(() => {
     editor?.setEditable(editable);
   }, [editable, editor]);
+
+  // A new placeholder shows at once on an empty editor.
+  useEffect(() => {
+    if (editor && !editor.isDestroyed && editor.isEmpty) editor.view.dispatch(editor.state.tr);
+  }, [placeholder, editor]);
 
   useImperativeHandle(
     ref,

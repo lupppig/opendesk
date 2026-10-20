@@ -124,7 +124,7 @@ func LoadTicket(ctx context.Context, q db.Querier, wid, id uuid.UUID) (Ticket, e
 const MessageSelect = `SELECT m.id, m.ticket_id, m.kind, m.direction, m.author_type, m.body_html, m.body_text,
 	m.full_html <> '', m.subject, m.from_email, m.from_name, m.to_emails, m.cc_emails, m.bcc_emails,
 	m.delivery_status, m.delivery_error, m.ai, m.ai_action, m.ai_rating, m.mailbox_id, m.reply_to, m.auth_failed,
-	m.form_sender, m.received_at, m.created_at,
+	m.form_sender, m.received_at, m.thread_id, m.created_at,
 	u.id, u.name, u.email, u.avatar_url,
 	c.id, c.email, c.name, c.avatar_url,
 	bt.id, bt.name, bt.avatar, bt.look,
@@ -147,7 +147,7 @@ func ScanMessage(row pgx.Row) (Message, error) {
 	err := row.Scan(&m.ID, &m.TicketID, &m.Kind, &m.Direction, &m.Author.Type, &m.BodyHTML, &m.BodyText,
 		&m.HasQuoted, &m.Subject, &m.FromEmail, &m.FromName, &m.To, &m.Cc, &m.Bcc,
 		&m.DeliveryStatus, &m.DeliveryError, &m.AI, &m.AIAction, &m.AIRating, &m.MailboxID, &m.ReplyTo, &m.AuthFailed,
-		&m.FormSender, &m.ReceivedAt, &m.CreatedAt,
+		&m.FormSender, &m.ReceivedAt, &m.ThreadID, &m.CreatedAt,
 		&uID, &uName, &uEmail, &uAvatar, &cID, &cEmail, &cName, &cAvatar, &bID, &bName, &bAvatar, &bLook, &atts)
 	if err != nil {
 		return m, err
@@ -257,6 +257,7 @@ func PublicMessage(m Message) Message {
 	m.DeliveryError = ""
 	m.MailboxID = nil
 	m.ReplyTo, m.AuthFailed, m.FormSender, m.ReceivedAt = "", false, "", ""
+	m.ThreadID = nil
 	if m.Direction == "outbound" {
 		m.FromEmail = ""
 	}

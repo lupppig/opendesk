@@ -1,6 +1,6 @@
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
-import type { Member, SupportChannelConnection, SupportChannelDestination, User, Workspace } from "../api/types";
+import type { Member, Message, SupportChannelConnection, SupportChannelDestination, Thread, User, Workspace } from "../api/types";
 import { qk } from "../queries";
 import { useSession } from "../session";
 import { env } from "../test/fixtures";
@@ -92,5 +92,63 @@ describe("Collab events", () => {
     const spy = vi.spyOn(qc, "invalidateQueries");
     applyEnvelope(qc, env(13, { type: "collab.accounts", data: { account_id: "a1" } }), { me: "u1", viaUser: true });
     expect(spy.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey))).toContain(JSON.stringify(qk.mailAccounts));
+  });
+});
+
+describe("third-party threads", () => {
+  const thread = (over: Partial<Thread> = {}): Thread => ({
+    id: "th1",
+    ticket_id: "t1",
+    subject: "Payout for order 1182",
+    include_history: false,
+    to: ["ops@acquirer.test"],
+    cc: [],
+    mailbox_id: "mb1",
+    status: "open",
+    created_by: null,
+    message_count: 1,
+    last_message_at: "2026-10-19T10:00:00Z",
+    created_at: "2026-10-19T10:00:00Z",
+    updated_at: "2026-10-19T10:00:00Z",
+    ...over,
+  });
+
+  it("keeps the ticket's threads current", () => {
+    const qc = new QueryClient();
+    qc.setQueryData(qk.threads("t1"), []);
+    applyEnvelope(qc, env(1, { type: "thread.created", data: { ticket_id: "t1", thread: thread() } }), { me: "u1" });
+    applyEnvelope(qc, env(2, { type: "thread.updated", data: { ticket_id: "t1", thread: thread({ status: "closed", message_count: 2 }) } }), { me: "u1" });
+    const list = qc.getQueryData<Thread[]>(qk.threads("t1"));
+    expect(list).toHaveLength(1);
+    expect(list?.[0]).toMatchObject({ status: "closed", message_count: 2 });
+  });
+
+  it("does not take a plain note's optimistic place with a thread message", () => {
+    const qc = new QueryClient();
+    const me = { id: "u1", name: "Me", email: "me@example.com", avatar_url: null };
+    const base = {
+      ticket_id: "t1",
+      kind: "note" as const,
+      direction: "outbound" as const,
+      author: { type: "user" as const, user: me, contact: null },
+      body_text: "",
+      has_quoted: false,
+      subject: "",
+      from_email: "",
+      from_name: "Me",
+      to: [],
+      cc: [],
+      bcc: [],
+      attachments: [],
+      delivery_error: "",
+      ai: false,
+      created_at: "2026-10-19T10:00:00Z",
+    };
+    const temp: Message = { ...base, id: "tmp-1", body_html: "<p>note</p>", delivery_status: "none" };
+    qc.setQueryData(qk.messages("t1"), [temp]);
+    const threadMsg: Message = { ...base, id: "m2", body_html: "<p>to the partner</p>", to: ["ops@acquirer.test"], delivery_status: "pending", thread_id: "th1" };
+    applyEnvelope(qc, env(3, { type: "message.created", data: { ticket_id: "t1", message: threadMsg } }), { me: "u1" });
+    const ids = qc.getQueryData<Message[]>(qk.messages("t1"))?.map((m) => m.id);
+    expect(ids).toEqual(["tmp-1", "m2"]);
   });
 });

@@ -1,10 +1,11 @@
-import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronUp, CircleCheck, CircleDot, Signal, Copy, GitMerge, MoreHorizontal, PanelRight, RotateCcw, ShieldAlert, ShieldCheck, Trash2, UserRound, Users, X, MessageSquare, StickyNote } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ChevronDown, ChevronUp, CircleCheck, CircleDot, Signal, Copy, GitMerge, MoreHorizontal, PanelRight, RotateCcw, ShieldAlert, ShieldCheck, Trash2, UserRound, Users, X, MessageSquare, MessagesSquare, StickyNote } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { tone } from "@/lib/tones";
 import { Badge } from "@/components/ui/badge";
-import { q } from "@/lib/queries";
+import { q, qk, upsertInList } from "@/lib/queries";
+import { api } from "@/lib/api/endpoints";
 import { isApiError } from "@/lib/api/client";
 import { realtime } from "@/lib/realtime/manager";
 import { useRealtime } from "@/lib/realtime/store";
@@ -28,7 +29,7 @@ import { copyText } from "@/components/ui/copy-button";
 import { ChannelIcon, channelLabel, PriorityPill, SeverityChip, severityLabel, severityOrder, SlaPill, slaState, StatusPill, TicketNumber } from "../bits";
 import { useOllieNote } from "../ollie";
 import { aiDecisions } from "@/lib/decisions";
-import type { Ticket } from "@/lib/api/types";
+import type { Thread, Ticket } from "@/lib/api/types";
 import { Morph } from "@/components/motion";
 import { CheckBurst } from "../CheckBurst";
 import { intent } from "../motion";
@@ -114,8 +115,29 @@ export default function TicketDetail({
   const realId = ticket.data?.id ?? (isUuid(ticketId) ? ticketId : "");
   const messages = useQuery({ ...q.messages(realId), enabled: !!realId });
   const activities = useQuery({ ...q.activities(realId), enabled: !!realId });
+  const threads = useQuery({ ...q.threads(realId), enabled: !!realId });
   const role = useRole();
   const canEdit = atLeast(role, "agent");
+  const qc = useQueryClient();
+  const threadActions = useMemo(
+    () =>
+      canEdit
+        ? {
+            reply: (th: Thread) => composer.current?.inThread(th),
+            setStatus: (th: Thread, status: Thread["status"]) => {
+              upsertInList(qc, qk.threads(th.ticket_id), { ...th, status });
+              api.tickets.updateThread(th.ticket_id, th.id, { status }).then(
+                (next) => upsertInList(qc, qk.threads(th.ticket_id), next),
+                (e) => {
+                  upsertInList(qc, qk.threads(th.ticket_id), th);
+                  toast.error(e);
+                },
+              );
+            },
+          }
+        : undefined,
+    [canEdit, qc],
+  );
   const me = useSession((s) => s.user!.id);
   const viewers = useTicketViewers(realId || undefined);
   const update = useUpdateTicket();
@@ -243,6 +265,7 @@ export default function TicketDetail({
       commands: [
         { id: "reply", label: tr("commands.reply"), shortcut: "r", icon: <MessageSquare />, run: () => composer.current?.focus("reply") },
         { id: "note", label: tr("commands.note"), shortcut: "n", icon: <StickyNote />, run: () => composer.current?.focus("note") },
+        { id: "side", label: tr("commands.side"), keywords: ["thread", "third party", "partner"], icon: <MessagesSquare />, run: () => composer.current?.focus("thread") },
         ...(aiOn ? [{ id: "ai-draft", label: tAi("composer.command"), icon: <AiIcon />, run: () => composer.current?.aiDraft() }] : []),
         { id: "assign-me", label: tr("commands.assignMe"), shortcut: "i", icon: <UserRound />, run: assignMe },
         { id: "assign", label: tr("commands.assign"), shortcut: "a", icon: <UserRound />, run: () => openPicker("assignee") },
@@ -419,6 +442,8 @@ export default function TicketDetail({
             onRetry={(m) => composer.current?.retry(m)}
             contactName={t?.contact?.name}
             receivedAt={t && t.channel !== "email" ? null : t?.received_at}
+            threads={threads.data}
+            threadActions={threadActions}
           />
           {t && canEdit && <Composer ref={composer} ticket={t} />}
         </div>
@@ -435,7 +460,7 @@ export default function TicketDetail({
             >
               <div className="h-full w-[300px] overflow-y-auto">
                 {t ? (
-                  <TicketProperties t={t} picker={picker} onPicker={setPicker} />
+                  <TicketProperties t={t} picker={picker} onPicker={setPicker} onSideConversation={() => composer.current?.focus("thread")} />
                 ) : (
                   <div className="flex flex-col gap-3.5 p-4">
                     {[0, 1, 2, 3, 4].map((i) => (

@@ -104,6 +104,11 @@ type Message struct {
 	To, Cc      []string
 	CreatedAt   time.Time
 	Attachments []Attachment
+	// MessageID, InReplyTo and References are the email's own headers, as "<id>", when the
+	// source has them: a reply to the message then threads into its ticket.
+	MessageID  string
+	InReplyTo  string
+	References []string
 }
 
 // Attachment is a file on a message, fetched with Source.Download.

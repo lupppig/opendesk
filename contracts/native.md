@@ -278,6 +278,9 @@ type UpdateState =
   runs OAuth sign-in through `oauth`, opens mailbox and integration connect flows with
   `openExternal`, and lays itself out for the window chrome (translucent sidebar, inset
   content panel, drag regions, room for the macOS traffic lights).
+- Without the shell, the web app shows the same notifications through the browser's
+  `Notification` once the person has allowed it (Allow notifications in the notification
+  settings), under the same rules; a click focuses the tab and opens the notification's path.
 - Window: macOS `titleBarStyle: "hiddenInset"`, `vibrancy: "sidebar"`, transparent page
   background behind the sidebar; Windows 11 `backgroundMaterial: "mica"`; Linux opaque.
 - Deep links: `opendesk://auth/callback?…` (OAuth), `opendesk://open?path=/inbox/mine/<ticket_id>`.

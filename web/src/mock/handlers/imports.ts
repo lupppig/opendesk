@@ -195,6 +195,9 @@ const aliases: [keyof CsvMapping, string[]][] = [
   ["assignee_email", ["assignee email", "assignee", "agent email", "assigned to"]],
   ["team", ["team", "group", "department"]],
   ["company", ["company", "organization", "organisation"]],
+  ["message_id", ["message id", "rfc message id", "email message id"]],
+  ["in_reply_to", ["in reply to", "parent message id"]],
+  ["references", ["references"]],
 ];
 const norm = (h: string) => h.toLowerCase().replace(/[\s_\-.]+/g, " ").trim();
 

@@ -443,7 +443,27 @@ export type Message = {
   form_sender?: string;
   /** Inbound email: the address of ours it was written to (its mailbox's address or an alias), else "". Agents only. */
   received_at?: string;
+  /** The third-party thread a note belongs to (contracts/api.md "Threads"), else null. */
+  thread_id?: string | null;
   created_at: string;
+};
+/** A third-party thread: an email conversation on a ticket with someone outside the team (contracts/api.md "Threads"). */
+export type Thread = {
+  id: string;
+  ticket_id: string;
+  subject: string;
+  to: string[];
+  cc: string[];
+  /** The address it is sent from; null once that mailbox is removed. */
+  mailbox_id: string | null;
+  status: "open" | "closed";
+  /** The first message quoted the ticket's conversation with the customer. */
+  include_history: boolean;
+  created_by: UserRef | null;
+  message_count: number;
+  last_message_at: string;
+  created_at: string;
+  updated_at: string;
 };
 /** contracts/agent.md "Visitor actions". */
 export type AIActionStatus = "pending" | "confirmed" | "declined" | "expired" | "failed";
@@ -657,6 +677,8 @@ export type MailboxConfig = {
   oauth_client?: "collab";
   /** Who hosts the mailbox's mail (MailHost), for labels and connection fixes. */
   mail_host?: MailHost | "";
+  /** Where the first sync of an inbox that reads its inbox starts: the last 7 days (default) or only new mail. */
+  sync_start?: SyncStart;
   /**
    * Tidy-up in Gmail or Outlook, only for a mailbox that reads its inbox directly
    * (oauth_grant api); off (absent) by default. Mark emails read once they become ticket
@@ -666,6 +688,7 @@ export type MailboxConfig = {
   provider_archive_on_solve?: boolean;
   provider_label?: boolean;
 };
+export type SyncStart = "recent" | "new";
 /** Mail hosts the API names (config.mail_host, detect). */
 export type MailHost =
   | "google_workspace"
@@ -914,10 +937,11 @@ export type AuditLog = {
   ip: string;
   created_at: string;
 };
-export type NotificationType = "assigned" | "mentioned" | "customer_replied" | "sla_breached" | "ai_handoff" | "ai_cap_reached" | "ai_balance_low" | "ai_balance_out" | "auto_recharge_failed" | "ai_key_failed" | "team_joined" | "import_finished" | "collab_assigned" | "collab_mention";
+export type NotificationType = "assigned" | "mentioned" | "customer_replied" | "thread_replied" | "sla_breached" | "ai_handoff" | "ai_cap_reached" | "ai_balance_low" | "ai_balance_out" | "auto_recharge_failed" | "ai_key_failed" | "team_joined" | "import_finished" | "collab_assigned" | "collab_mention";
 /** `ai_cap_reached`: data `{cap_usd}`, ticket null; the widget agent reached `widget_monthly_cap_usd` (once a month, owners and admins).
  * `ai_balance_low` / `ai_balance_out`: data `{remaining_usd}` (US dollars); `auto_recharge_failed`: data `{reason: AutoRechargeFailure}` (billing, owners and admins, ticket null).
  * `ai_key_failed`: data `{provider: AIKeyKind, reason: "rejected" | "no_funds"}`; the workspace's own AI key failed (at most hourly, owners and admins, ticket null).
+ * `thread_replied`: data `{message_id, thread_id, subject, preview, from: {name, email}}`; someone outside the team answered a third-party thread on a ticket assigned to you.
  * `team_joined`: data `{team_id, team: {id, name, private}, user: {id, name}, by}`; an admin joined a team you lead (ticket null).
  * `import_finished`: data `{import_id, source, source_name, account, status: "completed" | "failed" | "needs_credentials", tickets, updated, articles, failed, error}`;
  * a history import you started ended or paused for new credentials (contracts/imports.md, ticket null). */
@@ -930,7 +954,7 @@ export type Notification = {
   created_at: string;
 };
 
-/** Where a notification can reach someone besides the bell: email, their phones (`push`) and the desktop app. */
+/** Where a notification can reach someone besides the bell: email, their phones (`push`) and the desktop app or browser (`desktop`). */
 export type NotificationChannels = { email: boolean; push: boolean; desktop: boolean };
 export type NotificationChannel = keyof NotificationChannels;
 export type NotificationGroup = "tickets" | "team" | "mail" | "ai_billing" | "workspace";
@@ -1744,7 +1768,10 @@ export type CsvField =
   | "created_at"
   | "assignee_email"
   | "team"
-  | "company";
+  | "company"
+  | "message_id"
+  | "in_reply_to"
+  | "references";
 /** Each field's column name; a missing field is not imported. */
 export type CsvMapping = Partial<Record<CsvField, string>>;
 export type ImportMapping = { agents: Record<string, string | null>; groups: Record<string, string | null>; csv?: CsvMapping };

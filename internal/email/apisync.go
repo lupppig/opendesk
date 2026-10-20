@@ -290,6 +290,17 @@ func (s *service) testAPIInbound(ctx context.Context, m *mailboxRow) error {
 	return s.apiGetJSON(ctx, m, "Gmail", resIMAP, s.gmailBase+"/gmail/v1/users/me/labels/INBOX", 1<<20, nil, &out)
 }
 
+// firstWindow is how far back a round that reads the inbox from scratch starts: nothing
+// on the mailbox's first read with sync_start new, else the import window. A round that
+// starts over because the provider dropped the cursor reads the window, so nothing that
+// arrived since the last pass is missed.
+func firstWindow(m *mailboxRow, first bool) time.Duration {
+	if first && m.Config.SyncStart == SyncStartNew {
+		return 0
+	}
+	return initialWindow
+}
+
 // Gmail.
 
 func (s *service) gmailURL(path string) string { return s.gmailBase + "/gmail/v1/users/me" + path }
@@ -304,6 +315,7 @@ func skipGmail(labels []string) bool {
 // syncGmailInbox reads the history since the stored id, or, without one (or when Gmail
 // no longer keeps it), the inbox of the import window.
 func (s *service) syncGmailInbox(ctx context.Context, m *mailboxRow, st *apiSyncState) error {
+	window := firstWindow(m, st.HistoryID == "")
 	if st.HistoryID != "" {
 		err := s.gmailHistory(ctx, m, st)
 		if !errors.Is(err, errHistoryGone) {
@@ -319,10 +331,10 @@ func (s *service) syncGmailInbox(ctx context.Context, m *mailboxRow, st *apiSync
 	if err := s.apiGetJSON(ctx, m, "Gmail", resIMAP, s.gmailURL("/profile"), 1<<20, nil, &prof); err != nil {
 		return err
 	}
-	q := fmt.Sprintf("after:%d", time.Now().Add(-initialWindow).Unix())
+	q := fmt.Sprintf("after:%d", time.Now().Add(-window).Unix())
 	ids := []string{}
 	token := ""
-	for len(ids) < initialMax {
+	for window > 0 && len(ids) < initialMax {
 		v := url.Values{"labelIds": {"INBOX"}, "q": {q}, "maxResults": {strconv.Itoa(min(initialMax-len(ids), 500))}}
 		if token != "" {
 			v.Set("pageToken", token)
@@ -455,16 +467,17 @@ const graphInboxSelect = "id,receivedDateTime,isDraft,conversationId"
 // round with the import window. Every page moves the cursor, so an interrupted round
 // goes on where it stopped; an expired link starts over.
 func (s *service) syncGraphInbox(ctx context.Context, m *mailboxRow, st *apiSyncState) error {
-	err := s.graphInboxDelta(ctx, m, st)
+	err := s.graphInboxDelta(ctx, m, st, firstWindow(m, true))
 	if !isAPIGone(err) {
 		return err
 	}
 	s.log.Info("graph delta expired, reading the inbox again", "mailbox_id", m.ID)
 	*st = apiSyncState{Account: st.Account, LabelID: st.LabelID, LabelAccount: st.LabelAccount}
-	return s.graphInboxDelta(ctx, m, st)
+	return s.graphInboxDelta(ctx, m, st, initialWindow)
 }
 
-func (s *service) graphInboxDelta(ctx context.Context, m *mailboxRow, st *apiSyncState) error {
+// graphInboxDelta reads one pass of the delta; a new round reads back window.
+func (s *service) graphInboxDelta(ctx context.Context, m *mailboxRow, st *apiSyncState, window time.Duration) error {
 	// The token only ever goes to Graph itself.
 	ownLink := func(link string) bool { return strings.HasPrefix(link, s.graphBase+"/") }
 	target := ""
@@ -474,7 +487,7 @@ func (s *service) graphInboxDelta(ctx context.Context, m *mailboxRow, st *apiSyn
 	case st.Delta != "" && ownLink(st.Delta):
 		target, st.Initial, st.Imported = st.Delta, false, 0
 	default:
-		since := time.Now().Add(-initialWindow).UTC().Format(time.RFC3339)
+		since := time.Now().Add(-window).UTC().Format(time.RFC3339)
 		target = s.graphBase + "/me/mailFolders/inbox/messages/delta?$select=" + graphInboxSelect +
 			"&$filter=" + url.QueryEscape("receivedDateTime ge "+since)
 		*st = apiSyncState{Account: st.Account, Initial: true, LabelID: st.LabelID, LabelAccount: st.LabelAccount}

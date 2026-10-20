@@ -84,6 +84,11 @@ func RunTrigger(ctx context.Context, d *deps.Deps, a jobs.TicketTriggerArgs) err
 				return err
 			}
 		}
+		if a.Trigger == jobs.TriggerThreadReplied {
+			if err := notifyThreadReplied(ctx, tx, a.WorkspaceID, a.TicketID, a.MessageID); err != nil {
+				return err
+			}
+		}
 		return nil
 	})
 }
@@ -739,6 +744,32 @@ func notifyCustomerReplied(ctx context.Context, tx pgx.Tx, wid, tid uuid.UUID, m
 		data["contact"] = map[string]any{"id": cid.String(), "name": cname}
 	}
 	return hd.Notify(ctx, tx, wid, *assignee, hd.NotifyCustomerReplied, &tid, data)
+}
+
+// notifyThreadReplied tells the assignee that someone outside the team answered one of the
+// ticket's third-party threads (contracts/api.md "Threads").
+func notifyThreadReplied(ctx context.Context, tx pgx.Tx, wid, tid uuid.UUID, messageID *uuid.UUID) error {
+	var assignee *uuid.UUID
+	if err := tx.QueryRow(ctx, `SELECT assignee_id FROM tickets WHERE workspace_id = $1 AND id = $2`, wid, tid).Scan(&assignee); err != nil {
+		return err
+	}
+	if assignee == nil || messageID == nil {
+		return nil
+	}
+	var threadID *uuid.UUID
+	var preview, fromName, fromEmail, subject string
+	err := tx.QueryRow(ctx, `SELECT m.thread_id, m.body_text, m.from_name, m.from_email, COALESCE(th.subject, '') FROM messages m
+		LEFT JOIN ticket_threads th ON th.id = m.thread_id
+		WHERE m.workspace_id = $1 AND m.id = $2`, wid, *messageID).Scan(&threadID, &preview, &fromName, &fromEmail, &subject)
+	if db.IsNotFound(err) || err == nil && threadID == nil {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	data := map[string]any{"message_id": messageID.String(), "thread_id": threadID.String(), "subject": subject,
+		"preview": hd.Excerpt(preview, 140), "from": map[string]any{"name": fromName, "email": fromEmail}}
+	return hd.Notify(ctx, tx, wid, *assignee, hd.NotifyThreadReplied, &tid, data)
 }
 
 // decide asks the decision engine every ai_decide question of list not answered yet in

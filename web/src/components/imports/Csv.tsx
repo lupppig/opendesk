@@ -26,6 +26,9 @@ export const CSV_FIELDS: CsvField[] = [
   "assignee_email",
   "team",
   "company",
+  "message_id",
+  "in_reply_to",
+  "references",
 ];
 
 const MAX_BYTES = 50 * 1024 * 1024;

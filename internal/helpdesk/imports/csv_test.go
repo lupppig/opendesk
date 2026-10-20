@@ -135,6 +135,8 @@ func TestSuggestMapping(t *testing.T) {
 			"Reporter Email", "Created", "Labels", "Description"},
 			ImportCSVMapping{Subject: "Summary", TicketID: "Issue key", Status: "Status", Priority: "Priority", AssigneeEmail: "Assignee",
 				FromName: "Reporter", FromEmail: "Reporter Email", CreatedAt: "Created", Tags: "Labels", Body: "Description"}},
+		{"headers", []string{"Ticket ID", "Body", "Message-ID", "In-Reply-To", "References"},
+			ImportCSVMapping{TicketID: "Ticket ID", Body: "Body", MessageID: "Message-ID", InReplyTo: "In-Reply-To", References: "References"}},
 		{"plain", []string{"ticket_id", "from-email", "FROM NAME", "author_type", "message", "date"},
 			ImportCSVMapping{TicketID: "ticket_id", FromEmail: "from-email", FromName: "FROM NAME", Author: "author_type", Body: "message",
 				CreatedAt: "date"}},
@@ -148,6 +150,62 @@ func TestSuggestMapping(t *testing.T) {
 	m := suggestMapping([]string{"Email", "Message"})
 	if m.FromEmail != "Email" || m.FromName != "" || m.Body != "Message" {
 		t.Errorf("single use %+v", m)
+	}
+}
+
+func TestMessageIDs(t *testing.T) {
+	cases := []struct {
+		in   string
+		want []string
+	}{
+		{"", nil},
+		{"<a1@mail.test>", []string{"<a1@mail.test>"}},
+		{"  a1@mail.test ", []string{"<a1@mail.test>"}},
+		{"<a1@mail.test> <b2@mail.test>\n\t<a1@mail.test>", []string{"<a1@mail.test>", "<b2@mail.test>"}},
+		{"a1@mail.test, b2@mail.test; c3@mail.test", []string{"<a1@mail.test>", "<b2@mail.test>", "<c3@mail.test>"}},
+		{"12345", nil},   // an export's own message number
+		{"<12345>", nil}, // nor bracketed
+	}
+	for _, c := range cases {
+		if got := messageIDs(c.in); !slices.Equal(got, c.want) {
+			t.Errorf("messageIDs(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+	var many []string
+	for i := range 60 {
+		many = append(many, fmt.Sprintf("<r%d@mail.test>", i))
+	}
+	if got := messageIDs(strings.Join(many, " ")); len(got) != maxReferences || got[0] != "<r10@mail.test>" {
+		t.Errorf("keeps the latest %d: %q", maxReferences, got[:2])
+	}
+}
+
+func TestCSVSourceMessageIDs(t *testing.T) {
+	raw := "Ticket ID,Body,From email,Author type,Created at,Message ID,In Reply To,References\n" +
+		"T1,Hello,dan@customer.test,customer,2024-01-10 08:00,<q1@customer.test>,,\n" +
+		"T1,Hi Dan,anna@team.test,agent,2024-01-10 09:00,r1@team.test,<q1@customer.test>,<q1@customer.test>\n" +
+		"T1,Thanks,dan@customer.test,customer,2024-01-10 10:00,7,<r1@team.test>,\"<q1@customer.test> <r1@team.test>\"\n"
+	f, err := parseCSV([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := suggestMapping(f.Header)
+	if m.MessageID != "Message ID" || m.InReplyTo != "In Reply To" || m.References != "References" {
+		t.Fatalf("mapping %+v", m)
+	}
+	s := newCSVSource(f, m, "export.csv", "k")
+	msgs := s.tickets[0].Messages
+	if len(msgs) != 3 {
+		t.Fatalf("messages %d", len(msgs))
+	}
+	if msgs[0].MessageID != "<q1@customer.test>" || msgs[0].InReplyTo != "" || msgs[0].References != nil {
+		t.Errorf("first %+v", msgs[0])
+	}
+	if msgs[1].MessageID != "<r1@team.test>" || msgs[1].InReplyTo != "<q1@customer.test>" || !slices.Equal(msgs[1].References, []string{"<q1@customer.test>"}) {
+		t.Errorf("reply %+v", msgs[1])
+	}
+	if msgs[2].MessageID != "" || msgs[2].InReplyTo != "<r1@team.test>" || len(msgs[2].References) != 2 {
+		t.Errorf("third %+v", msgs[2])
 	}
 }
 

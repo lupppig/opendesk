@@ -73,6 +73,12 @@ func messageText(m domain.Message) string {
 // role is who wrote a message, as the prompts name it.
 func role(m domain.Message) string {
 	switch {
+	// A side conversation (contracts/api.md "Threads") is the team's with someone outside
+	// it: private like a note, but what the other side writes is not the team's word.
+	case m.ThreadID != nil && m.Direction == "inbound":
+		return "third_party"
+	case m.ThreadID != nil:
+		return "side_conversation"
 	case m.Kind == "note":
 		return "internal_note"
 	case m.Direction == "inbound":

@@ -189,6 +189,9 @@ Headers are matched without regard to case, spaces, underscores, hyphens or dots
 | Assignee | assignee email, assignee, agent email, agent, assigned to, owner, responder | The assignee's email |
 | Team | team, group, department, queue, inbox, mailbox | The team's name |
 | Company | company, organization, organisation, org, account | The requester's company |
+| Message-ID | message id, rfc message id, email message id, internet message id, msg id | The email's own `Message-ID` header |
+| In-Reply-To | in reply to, in reply to message id, parent message id | The `Message-ID` it answers |
+| References | references, email references | The earlier `Message-ID`s in the thread |
 
 - **Author**: `agent`, `staff`, `admin`, `support`, `outbound`, `reply`, `yes` or `1` mean an agent's reply; `note`, `internal` or `private` an internal note; anything else, or no author column, the customer. An agent row whose email is a member's is that member's reply.
 - **Status**: `open` (also new, active, in progress, reopened), `pending` (also waiting on customer, awaiting reply), `on hold` (also waiting, snoozed, blocked), `solved` (also resolved, done, fixed). Anything else, or no status at all, imports as closed.
@@ -209,6 +212,14 @@ Dates with slashes are read month first, the US way, so `03/01/2024` is March 1.
 - Blank rows are skipped. A row with no message and no subject is left out and listed under problems with its line number.
 
 A CSV import runs once: to add more history later, import another file.
+
+### Keep replies in the same ticket
+
+If your old system kept each email's `Message-ID`, add it as a column, with `In-Reply-To` and `References` if you have them. Values can be written as headers write them (`<abc123@mail.example.com>`) or without the brackets, several separated by spaces. A value without an `@` is not a Message-ID and is left out.
+
+With them, a customer who replies to a conversation from your old system lands in the imported ticket instead of a new one, and connecting the mailbox afterwards does not bring in a second copy of email you already imported.
+
+Import first, then connect the mailbox. A forwarded mailbox only brings in new email. On your own instance, a mailbox that reads its inbox over IMAP, or syncs through Google or Microsoft sign-in, starts with the last 7 days: choose **Only new email** under **Start with** to skip them, since your import already holds them. See [Other providers](/guides/mailboxes/imap-smtp/#where-the-inbox-starts).
 
 ## Watch it
 

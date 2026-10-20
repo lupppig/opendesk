@@ -190,6 +190,7 @@ export function useMergeTicket() {
         patchTicketEverywhere(qc, target, me);
         void qc.invalidateQueries({ queryKey: qk.messages(target.id) });
         void qc.invalidateQueries({ queryKey: qk.activities(target.id) });
+        void qc.invalidateQueries({ queryKey: qk.threads(target.id) });
       }
       void qc.invalidateQueries({ queryKey: qk.counts });
     },

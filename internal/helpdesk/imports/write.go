@@ -524,7 +524,20 @@ func (w *writer) message(ctx context.Context, tx pgx.Tx, ticketID uuid.UUID, req
 	}
 	nm := domain.NewMessage{WorkspaceID: w.x.WorkspaceID, TicketID: ticketID, Kind: "reply", BodyHTML: body, BodyText: text,
 		FromEmail: email, FromName: displayname.CleanOr(m.Author.Name, displayname.Person, ""), To: recipients(m.To), Cc: recipients(m.Cc),
-		CreatedAt: created, Imported: true}
+		CreatedAt: created, Imported: true, InReplyTo: m.InReplyTo, References: m.References}
+	if m.MessageID != "" {
+		// A Message-ID another message already holds (the live email, or a row repeating
+		// it) stays with that one.
+		var taken bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM messages WHERE workspace_id = $1 AND email_message_id = $2)`,
+			w.x.WorkspaceID, m.MessageID).Scan(&taken); err != nil {
+			return nm, false, err
+		}
+		if !taken {
+			id := m.MessageID
+			nm.EmailMessageID = &id
+		}
+	}
 	for _, f := range files {
 		nm.AttachmentIDs = append(nm.AttachmentIDs, f.id)
 	}

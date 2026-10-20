@@ -327,6 +327,7 @@ function prefetchTicket(qc: QueryClient, id: string) {
   if (/^[0-9a-f-]{36}$/i.test(id)) {
     void qc.prefetchQuery(q.messages(id));
     void qc.prefetchQuery(q.activities(id));
+    void qc.prefetchQuery(q.threads(id));
   }
   void qc.prefetchQuery(q.savedReplies());
   void qc.prefetchQuery(q.slaPolicies());

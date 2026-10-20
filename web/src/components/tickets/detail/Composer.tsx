@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRightLeft, Check, ChevronDown, Loader2, Lock, MessageSquareText, Paperclip, TriangleAlert, X } from "lucide-react";
+import { ArrowRightLeft, Check, ChevronDown, Loader2, Lock, MessageSquareText, MessagesSquare, Paperclip, TriangleAlert, X } from "lucide-react";
 import { Morph } from "@/components/motion";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
@@ -7,13 +7,14 @@ import { useTranslation } from "react-i18next";
 import { tone } from "@/lib/tones";
 import { create } from "zustand";
 import { DropdownMenu as M } from "radix-ui";
-import type { Activity, Attachment, Mailbox, Member, Message, SavedReply, Ticket, TicketStatus } from "@/lib/api/types";
+import type { Activity, Attachment, Mailbox, Member, Message, SavedReply, Thread, Ticket, TicketStatus } from "@/lib/api/types";
 import { api, type SendMessageBody } from "@/lib/api/endpoints";
 import { errorMessage } from "@/lib/api/client";
-import { q, qk } from "@/lib/queries";
+import { q, qk, upsertInList } from "@/lib/queries";
 import { useSession } from "@/lib/session";
 import { realtime } from "@/lib/realtime/manager";
 import { bytes } from "@/lib/format";
+import { SideIncludeItems, SideIncludedChips, useIncludeSummary, useSideInclude, type SideInclude } from "./SideIncludes";
 import { cn } from "@/lib/cn";
 import { keyName } from "@/lib/hotkeys";
 import { Button } from "@/components/ui/button";
@@ -32,26 +33,61 @@ import { variableText } from "./composerTemplates";
 import { SignaturePreview } from "./SignaturePreview";
 import { StatusIcon, statusLabel } from "../bits";
 import { useTicketViewers } from "../presence";
-import { applyPatch } from "../useTicketActions";
+import { applyPatch, useUpdateTicket } from "../useTicketActions";
 import { patchTicketEverywhere } from "@/lib/ticketCache";
 import { ComposerAiMenu, ComposerAiStatus, ComposerSources, useComposerAi } from "@/components/ai/ticket/ComposerAi";
 import { SuggestedReplyCard } from "./SuggestedReply";
 import { addressLabel, fromLine, replyAddresses, TeamDot, useTeamsCtx, type TeamsCtx } from "../teams";
 
-type Mode = "reply" | "note";
+type Mode = "reply" | "note" | "thread";
 type Upload = { key: string; file: File; status: "uploading" | "done" | "error"; attachment?: Attachment; preview?: string };
-/** mailboxId: this reply goes out from another address (it becomes the ticket's reply address). */
-type Draft = { mode: Mode; html: string; cc: string[]; bcc: string[]; showCc: boolean; mailboxId?: string };
+/**
+ * mailboxId: this reply goes out from another address (it becomes the ticket's reply address).
+ * thread*: a third-party thread (contracts/api.md "Threads"): threadId writes in an existing one,
+ * else threadTo, threadCc and threadSubject start a new one, with the customer's conversation
+ * (threadHistory) and the files picked from it (threadFiles) if asked for.
+ */
+type Draft = {
+  mode: Mode;
+  html: string;
+  cc: string[];
+  bcc: string[];
+  showCc: boolean;
+  mailboxId?: string;
+  threadId?: string;
+  threadTo: string[];
+  threadCc: string[];
+  threadSubject: string;
+  threadHistory: boolean;
+  threadFiles: string[];
+};
 
 // Drafts survive switching tickets (memory only).
 const useDrafts = create<Record<string, Draft>>(() => ({}));
-const emptyDraft: Draft = { mode: "reply", html: "", cc: [], bcc: [], showCc: false };
+const emptyDraft: Draft = {
+  mode: "reply",
+  html: "",
+  cc: [],
+  bcc: [],
+  showCc: false,
+  threadTo: [],
+  threadCc: [],
+  threadSubject: "",
+  threadHistory: false,
+  threadFiles: [],
+};
 
-export type ComposerHandle = { focus: (mode?: Mode) => void; retry: (m: Message) => void; aiDraft: () => void };
+export type ComposerHandle = {
+  focus: (mode?: Mode) => void;
+  retry: (m: Message) => void;
+  aiDraft: () => void;
+  /** Writes in an existing third-party thread. */
+  inThread: (thread: Thread) => void;
+};
 
 const emailRe = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
 
-function EmailChips({ label, values, onChange }: { label: string; values: string[]; onChange: (v: string[]) => void }) {
+function EmailChips({ label, values, onChange, wide }: { label: string; values: string[]; onChange: (v: string[]) => void; wide?: boolean }) {
   const [text, setText] = useState("");
   const commit = () => {
     const parts = text.split(/[\s,;]+/).filter(Boolean);
@@ -61,7 +97,7 @@ function EmailChips({ label, values, onChange }: { label: string; values: string
   };
   return (
     <div className="flex min-h-8 items-center gap-2 border-b border-line-soft px-3">
-      <span className="w-7 shrink-0 text-xs text-fg-3">{label}</span>
+      <span className={cn("shrink-0 text-xs text-fg-3", wide ? "w-12" : "w-7")}>{label}</span>
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1 py-1">
         {values.map((v) => (
           <span key={v} className="mono inline-flex h-5 items-center gap-1 rounded-sm bg-hover pl-1.5 pr-0.5 text-[11.5px] animate-pop-in motion-reduce:animate-none" data-ph-mask>
@@ -149,6 +185,60 @@ function useSend(ticket: Ticket, ctx: TeamsCtx) {
   });
 }
 
+/** Starts a third-party thread or writes in one; the draft is cleared only once it is sent. */
+/** Writes in a side conversation. What follows a send (the draft back to replying, the status,
+ * the toast) is the mutation's own, so it happens even if the ticket was left meanwhile. */
+function useSendThread(ticket: Ticket) {
+  const qc = useQueryClient();
+  const { t } = useTranslation("inbox");
+  const updateTicket = useUpdateTicket();
+  const keep = (m: Message, th?: Thread) => {
+    qc.setQueryData<Message[]>(qk.messages(ticket.id), (old) => {
+      const rest = (old ?? []).filter((x) => x.id !== m.id);
+      const live = (old ?? []).find((x) => x.id === m.id);
+      return [...rest, live ?? m].sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
+    });
+    if (th) upsertInList(qc, qk.threads(ticket.id), th);
+  };
+  return useMutation({
+    mutationFn: async (v: {
+      threadId?: string;
+      to: string[];
+      cc: string[];
+      subject: string;
+      body_html: string;
+      attachment_ids: string[];
+      include_history: boolean;
+      forward_attachment_ids: string[];
+      /** Set on the ticket once sent ("on hold" while waiting on the third party). */
+      status?: TicketStatus;
+    }): Promise<{ message: Message; thread?: Thread }> => {
+      if (v.threadId) return { message: await api.tickets.sendInThread(ticket.id, v.threadId, { body_html: v.body_html, attachment_ids: v.attachment_ids }) };
+      return api.tickets.startThread(ticket.id, {
+        to: v.to,
+        cc: v.cc.length ? v.cc : undefined,
+        subject: v.subject,
+        body_html: v.body_html,
+        attachment_ids: v.attachment_ids,
+        include_history: v.include_history || undefined,
+        forward_attachment_ids: v.forward_attachment_ids.length ? v.forward_attachment_ids : undefined,
+      });
+    },
+    onSuccess: (r, v) => {
+      keep(r.message, r.thread);
+      // Back to replying: the next thing typed here must not go to the third party by
+      // mistake. Writing in the side conversation again starts from its message.
+      useDrafts.setState((s) => ({
+        [ticket.id]: { ...(s[ticket.id] ?? emptyDraft), mode: "reply", html: "", threadId: undefined, threadTo: [], threadCc: [], threadSubject: "", threadHistory: false, threadFiles: [] },
+      }));
+      if (v.status) updateTicket.mutate({ id: ticket.id, patch: { status: v.status } });
+      const to = r.message.to.join(", ");
+      toast.success(v.status ? t("composer.sideSentAndMarked", { to, status: statusLabel[v.status].toLowerCase() }) : t("composer.sideSent", { to }));
+    },
+    onError: (e) => toast.error(e, t("composer.threadFailed")),
+  });
+}
+
 export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: boolean }>(function Composer({ ticket, disabled }, ref) {
   const { t } = useTranslation("inbox");
   const reduced = useReducedMotion();
@@ -164,6 +254,11 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
   const { mode } = draft;
 
   const { data: members } = useQuery(q.members());
+  const { data: threads } = useQuery(q.threads(ticket.id));
+  const thread = draft.threadId ? threads?.find((x) => x.id === draft.threadId) : undefined;
+  // Starting a side conversation: what of the customer's conversation goes along.
+  const starting = draft.mode === "thread" && !thread;
+  const include = useSideInclude(ticket.id, draft.threadHistory, draft.threadFiles, setDraft);
   const { data: allReplies } = useQuery(q.savedReplies());
   // Replies for everyone, plus the ticket team's own.
   const replies = useMemo(() => (allReplies ?? []).filter((r) => !r.team_id || r.team_id === ticket.team_id), [allReplies, ticket.team_id]);
@@ -205,6 +300,7 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
   tRef.current = t;
 
   // Saved replies go in filled for this ticket, so the agent reads real words; notes are never filled.
+  // In a side conversation the server fills them without the customer's or the ticket's details.
   // A reply that can't be filled goes in as written (the server fills it on send).
   const [filling, setFilling] = useState(0);
   const insertSavedReply = useCallback((html: string, clear?: () => void) => {
@@ -213,7 +309,7 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
     const id = ticketRef.current;
     setFilling((n) => n + 1);
     api.tickets
-      .render(id, html)
+      .render(id, html, modeRef.current === "thread")
       .then((r) => r.body_html, () => html)
       .then((out) => {
         // Another ticket opened meanwhile: this one's draft is not the place.
@@ -249,11 +345,21 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const send = useSend(ticket, teams);
+  const sendThread = useSendThread(ticket);
+  // Switching to a side conversation fills in a subject to edit, so what goes out is visible.
+  const toMode = useCallback(
+    (m: Mode) => {
+      const cur = useDrafts.getState()[ticket.id] ?? emptyDraft;
+      setDraft(m === "thread" && !cur.threadSubject ? { mode: m, threadSubject: ticket.subject } : { mode: m });
+    },
+    [setDraft, ticket.id, ticket.subject],
+  );
   const retries = useRef(new Map<string, SendMessageBody>());
-  const ai = useComposerAi(editor, ticket, mode);
-  /** Ollie drafts a reply; false when it can't here (AI off, or the composer is disabled). */
+  const ai = useComposerAi(editor, ticket, mode === "reply" ? "reply" : "note");
+  /** Ollie drafts a reply; false when it can't here (AI off, the composer is disabled, or a side
+   * conversation is being written, where a draft could carry the customer's details). */
   const draftReply = () => {
-    if (!ai.available || disabled) return false;
+    if (!ai.available || disabled || mode === "thread") return false;
     if (mode !== "reply") setDraft({ mode: "reply" });
     ai.draft();
     return true;
@@ -261,11 +367,16 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
 
   useImperativeHandle(ref, () => ({
     focus: (m) => {
-      if (m) setDraft({ mode: m });
+      if (m) toMode(m);
       setTimeout(() => editor.current?.focus(), 0);
     },
     // A failed send: a local one is replaced, a bounced one is sent again as a new message.
     retry: (m) => {
+      // A side conversation's message goes to its recipients again, in that conversation.
+      if (m.thread_id) {
+        sendThread.mutate({ threadId: m.thread_id, to: [], cc: [], subject: "", body_html: m.body_html, attachment_ids: [], include_history: false, forward_attachment_ids: [] });
+        return;
+      }
       const body = retries.current.get(m.id) ?? { kind: m.kind, body_html: m.body_html, cc: m.cc.length ? m.cc : undefined, bcc: m.bcc.length ? m.bcc : undefined };
       if (m.id.startsWith("tmp-")) qc.setQueryData<Message[]>(qk.messages(ticket.id), (old) => old?.filter((x) => x.id !== m.id));
       const tempId = `tmp-${Date.now().toString(36)}`;
@@ -273,6 +384,10 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
       send.mutate({ body, tempId });
     },
     aiDraft: () => void draftReply(),
+    inThread: (th) => {
+      setDraft({ mode: "thread", threadId: th.id });
+      setTimeout(() => editor.current?.focus(), 0);
+    },
   }));
 
   // Presence: "replying" while a draft exists, "viewing" otherwise.
@@ -302,8 +417,11 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
 
   const busyUploads = uploads.some((u) => u.status === "uploading");
   // A reply from an address that has no way to send is refused (mailbox_cannot_send): say so up front.
-  const noSender = mode === "reply" && ticket.channel === "email" && teams.mailbox(draft.mailboxId ?? ticket.mailbox_id)?.sending === "system_off";
-  const canSend = !!draft.html && !busyUploads && !disabled && !ai.busy && !noSender && !filling;
+  const noSender =
+    (mode === "reply" && ticket.channel === "email" && teams.mailbox(draft.mailboxId ?? ticket.mailbox_id)?.sending === "system_off") ||
+    (mode === "thread" && teams.mailbox(thread?.mailbox_id ?? ticket.mailbox_id)?.sending === "system_off");
+  const threadReady = mode !== "thread" || !!thread || (draft.threadTo.length > 0 && !!draft.threadSubject.trim());
+  const canSend = !!draft.html && !busyUploads && !disabled && !ai.busy && !noSender && !filling && threadReady && !sendThread.isPending;
 
   // The send button's moment: sending while the request is out, then a check.
   const [sent, setSent] = useState(false);
@@ -317,10 +435,37 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
     }
     wasPending.current = send.isPending;
   }, [send.isPending, send.isSuccess]);
-  const phase = send.isPending ? "sending" : sent ? "sent" : "idle";
+  const phase = send.isPending || sendThread.isPending ? "sending" : sent ? "sent" : "idle";
+
+  const submitThread = (status?: TicketStatus) => {
+    const attachments = uploads.filter((u) => u.attachment).map((u) => u.attachment!.id);
+    sendThread.mutate(
+      {
+        threadId: thread?.id,
+        to: draft.threadTo,
+        cc: draft.threadCc,
+        subject: draft.threadSubject.trim(),
+        body_html: draft.html,
+        attachment_ids: attachments,
+        include_history: !thread && include.history,
+        forward_attachment_ids: thread ? [] : include.picked,
+        status,
+      },
+      {
+        onSuccess: () => {
+          setSent(true);
+          setTimeout(() => setSent(false), 1200);
+          uploads.forEach((u) => u.preview && URL.revokeObjectURL(u.preview));
+          setUploads([]);
+          editor.current?.clear();
+        },
+      },
+    );
+  };
 
   const submit = (status?: TicketStatus) => {
     if (!canSend) return;
+    if (mode === "thread") return submitThread(status);
     const body: SendMessageBody = {
       kind: mode,
       body_html: draft.html,
@@ -346,13 +491,15 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
     else realtime()?.typing();
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && e.shiftKey) {
       e.preventDefault();
-      submit("solved");
+      // Solving is not on offer while asking a third party.
+      if (mode !== "thread") submit("solved");
       return true;
     }
     return false;
   };
 
   const note = mode === "note";
+  const threadMode = mode === "thread";
   const recipient = ticket.contact?.email ?? ticket.contact?.name ?? t("composer.theCustomer");
   // The editor opens up while in use or holding a draft, and rests small otherwise.
   const open = focused || !!draft.html || uploads.length > 0;
@@ -434,27 +581,49 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
           }}
           className={cn(
             "relative rounded-lg border shadow-xs transition-[border-color,box-shadow,background-color] duration-200 focus-within:border-fg-4 focus-within:shadow-[0_0_0_3px_var(--focus)]",
-            note ? "border-dashed border-note-line bg-note" : "border-line bg-surface",
+            note ? "border-dashed border-note-line bg-note" : threadMode ? cn(tone.cyan.line, "bg-surface") : "border-line bg-surface",
           )}
         >
           <div className="flex h-10 items-center gap-2 border-b border-line-soft px-2">
             <Segmented
               size="xs"
               value={mode}
-              onChange={(m) => setDraft({ mode: m })}
+              onChange={toMode}
               options={[
                 { value: "reply", label: t("composer.reply") },
                 { value: "note", label: t("composer.note") },
+                { value: "thread", label: t("composer.thread") },
               ]}
             />
             {note ? (
               <span className="truncate text-xs text-fg-3">{t("composer.noteHint")}</span>
+            ) : threadMode ? (
+              thread ? (
+                <span className="flex min-w-0 flex-1 items-center gap-1.5 text-xs text-fg-3">
+                  <MessagesSquare className={cn("size-3.5 shrink-0", tone.cyan.text)} />
+                  <span className="min-w-0 truncate">
+                    {t("composer.inThread", { subject: thread.subject })} <span className="mono text-fg-2" data-ph-mask>{[...thread.to, ...thread.cc].join(", ")}</span>
+                  </span>
+                  <Tooltip content={t("composer.newThread")}>
+                    <button
+                      type="button"
+                      aria-label={t("composer.newThread")}
+                      onClick={() => setDraft({ threadId: undefined })}
+                      className="flex size-5 shrink-0 items-center justify-center rounded-sm text-fg-4 hover:bg-hover hover:text-fg"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </Tooltip>
+                </span>
+              ) : (
+                <span className="min-w-0 flex-1 truncate text-xs text-fg-3">{t("composer.threadHint")}</span>
+              )
             ) : (
               <span className="min-w-0 flex-1 truncate text-xs text-fg-3">
                 {t("composer.to")} <span className="mono text-fg-2" data-ph-mask>{recipient}</span>
               </span>
             )}
-            {!note && (
+            {!note && !threadMode && (
               <button
                 type="button"
                 onClick={() => setDraft({ showCc: !draft.showCc })}
@@ -466,7 +635,7 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
             )}
           </div>
           <AnimatePresence initial={false}>
-            {!note && draft.showCc && (
+            {mode === "reply" && draft.showCc && (
               <motion.div
                 key="cc"
                 initial={reduced ? { opacity: 0 } : { height: 0, opacity: 0 }}
@@ -475,12 +644,29 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
                 transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
                 className="overflow-hidden"
               >
-                <EmailChips label="Cc" values={draft.cc} onChange={(cc) => setDraft({ cc })} />
-                <EmailChips label="Bcc" values={draft.bcc} onChange={(bcc) => setDraft({ bcc })} />
+                <EmailChips label={t("composer.cc")} values={draft.cc} onChange={(cc) => setDraft({ cc })} />
+                <EmailChips label={t("composer.bcc")} values={draft.bcc} onChange={(bcc) => setDraft({ bcc })} />
               </motion.div>
             )}
           </AnimatePresence>
-          {!note && (
+          {threadMode && !thread && (
+            <div>
+              <EmailChips wide label={t("composer.to")} values={draft.threadTo} onChange={(threadTo) => setDraft({ threadTo })} />
+              <EmailChips wide label={t("composer.cc")} values={draft.threadCc} onChange={(threadCc) => setDraft({ threadCc })} />
+              <div className="flex h-8 items-center gap-2 border-b border-line-soft px-3">
+                <span className="w-12 shrink-0 text-xs text-fg-3">{t("composer.subject")}</span>
+                <input
+                  value={draft.threadSubject}
+                  onChange={(e) => setDraft({ threadSubject: e.target.value })}
+                  aria-label={t("composer.subject")}
+                  placeholder={t("composer.subject")}
+                  maxLength={500}
+                  className="h-6 min-w-0 flex-1 bg-transparent text-[12.5px] outline-none placeholder:text-fg-4"
+                />
+              </div>
+            </div>
+          )}
+          {mode === "reply" && (
             <ReplyingAs
               ticket={ticket}
               ctx={teams}
@@ -494,16 +680,23 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
               ref={editor}
               value={draft.html}
               onChange={(html) => setDraft({ html })}
-              placeholder={note ? t("composer.notePlaceholder") : t("composer.replyPlaceholder", { braces: "{{", interpolation: { escapeValue: false } })}
+              placeholder={
+                note
+                  ? t("composer.notePlaceholder")
+                  : threadMode
+                    ? t("composer.threadPlaceholder")
+                    : t("composer.replyPlaceholder", { braces: "{{", interpolation: { escapeValue: false } })
+              }
               extensions={extensions}
               onSubmit={() => submit()}
               onKeyDown={onKeyDown}
               editable={!disabled && !ai.busy}
               contentClassName={cn("max-h-[40vh] transition-[min-height] duration-200 ease-out motion-reduce:transition-none", open ? "min-h-[96px]" : "min-h-[44px]")}
-              ariaLabel={note ? "Note" : "Reply"}
+              ariaLabel={note ? t("composer.note") : threadMode ? t("composer.thread") : t("composer.reply")}
               toolbarEnd={
                 <>
-                  <ComposerAiMenu ai={ai} hasDraft={!!draft.html} disabled={disabled} />
+                  {/* Ollie writes from the ticket, so it stays out of what goes to a third party. */}
+                  {!threadMode && <ComposerAiMenu ai={ai} hasDraft={!!draft.html} disabled={disabled} />}
                   <input ref={fileInput} type="file" multiple hidden onChange={(e) => e.target.files && upload(e.target.files)} />
                   <Tooltip content={t("composer.attach")}>
                     <button
@@ -536,15 +729,25 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
                     }
                   />
                   <span className="mx-1 h-4 w-px bg-line" />
-                  <SendButton note={note} disabled={!canSend} busy={busyUploads} onSend={submit} current={ticket.status} phase={phase} />
+                  <SendButton
+                    note={note}
+                    sideTo={threadMode ? (thread ? [...thread.to, ...thread.cc] : [...draft.threadTo, ...draft.threadCc]) : undefined}
+                    include={starting ? include : undefined}
+                    disabled={!canSend}
+                    busy={busyUploads}
+                    onSend={submit}
+                    current={ticket.status}
+                    phase={phase}
+                  />
                 </>
               }
             />
           </div>
-          <ComposerSources ai={ai} />
-          <ComposerAiStatus ai={ai} />
-          {uploads.length > 0 && (
+          {!threadMode && <ComposerSources ai={ai} />}
+          {!threadMode && <ComposerAiStatus ai={ai} />}
+          {(uploads.length > 0 || (starting && (include.history || include.picked.length > 0))) && (
             <div className="flex flex-wrap gap-1.5 px-3 pb-2.5">
+              {starting && <SideIncludedChips inc={include} />}
               {uploads.map((u) => (
                 <span key={u.key} className={cn("flex h-8 max-w-[220px] items-center gap-2 rounded-md border bg-surface pl-1 pr-1 animate-pop-in motion-reduce:animate-none", u.status === "error" ? tone.red.line : "border-line")}>
                   {u.preview ? <img src={u.preview} alt="" className="size-6 rounded-sm object-cover" /> : <span className="flex size-6 items-center justify-center rounded-sm bg-hover"><Paperclip className="size-3 text-fg-3" /></span>}
@@ -677,6 +880,8 @@ function movedTo(activities: Activity[] | undefined, messages: Message[] | undef
 
 function SendButton({
   note,
+  sideTo,
+  include,
   disabled,
   busy,
   onSend,
@@ -684,6 +889,10 @@ function SendButton({
   phase,
 }: {
   note: boolean;
+  /** A side conversation's recipients: it goes to them only, and only "on hold" (waiting on a third party) rides along. */
+  sideTo?: string[];
+  /** Starting a side conversation: what of the customer's conversation can go along. */
+  include?: SideInclude;
   disabled: boolean;
   busy: boolean;
   onSend: (s?: TicketStatus) => void;
@@ -691,12 +900,25 @@ function SendButton({
   phase: "idle" | "sending" | "sent";
 }) {
   const { t } = useTranslation("inbox");
+  const side = !!sideTo;
   const label = note ? t("composer.addNote") : t("composer.send");
-  const options: TicketStatus[] = (["pending", "on_hold", "solved"] as TicketStatus[]).filter((s) => s !== current);
+  const options: TicketStatus[] = (side ? (["on_hold"] as TicketStatus[]) : (["pending", "on_hold", "solved"] as TicketStatus[])).filter((s) => s !== current);
+  const includes = !!include && (include.quoted > 0 || include.files.length > 0);
+  const menu = options.length > 0 || includes;
+  const along = useIncludeSummary(include);
+  const hint = busy
+    ? t("composer.waitUploads")
+    : note
+      ? t("composer.addNote")
+      : side
+        ? sideTo.length
+          ? t("composer.sendTo", { to: sideTo.join(", ") }) + (along ? ` ${along}` : "")
+          : t("composer.addRecipient")
+        : t("composer.sendReply");
   return (
     <div className="flex items-center">
-      <Tooltip content={busy ? t("composer.waitUploads") : note ? t("composer.addNote") : t("composer.sendReply")} shortcut="mod enter">
-        <Button variant="primary" size="sm" disabled={disabled && phase === "idle"} onClick={() => onSend()} className="rounded-r-none active:scale-[0.97]">
+      <Tooltip content={hint} shortcut="mod enter">
+        <Button variant="primary" size="sm" disabled={disabled && phase === "idle"} onClick={() => onSend()} className={cn(menu && "rounded-r-none", "active:scale-[0.97]")}>
           {/* The label keeps the width while the spinner and check swap in. */}
           <span className="relative inline-grid place-items-center">
             <span className={cn("col-start-1 row-start-1 transition-opacity", phase !== "idle" && "opacity-0")}>{label}</span>
@@ -712,23 +934,37 @@ function SendButton({
           </span>
         </Button>
       </Tooltip>
-      <M.Root>
-        <M.Trigger asChild disabled={disabled}>
-          <Button variant="primary" size="sm" square aria-label={t("composer.andStatus", { label })} className="rounded-l-none border-l border-white/15 dark:border-black/15" icon={<ChevronDown className="size-3.5" />} />
-        </M.Trigger>
-        <M.Portal>
-          <M.Content side="top" align="end" sideOffset={6} className={cn(floatingPanel, "min-w-[230px] p-1")}>
-            <div className="label-caps px-2 pb-1 pt-1.5">{t("composer.andStatus", { label })}</div>
-            {options.map((s) => (
-              <M.Item key={s} onSelect={() => onSend(s)} className="flex h-8 cursor-default items-center gap-2 rounded-md px-2 text-[12.5px] outline-none data-[highlighted]:bg-hover">
-                <StatusIcon status={s} />
-                <span className="flex-1 whitespace-nowrap">{t("composer.andMark", { label, status: statusLabel[s].toLowerCase() })}</span>
-                {s === "solved" && <Kbd className="ml-3 shrink-0">mod shift enter</Kbd>}
-              </M.Item>
-            ))}
-          </M.Content>
-        </M.Portal>
-      </M.Root>
+      {menu && (
+        <M.Root>
+          {/* Choosing what goes along works before the draft can be sent. */}
+          <Tooltip content={includes ? t("side.optionsHint") : undefined}>
+            <M.Trigger asChild disabled={disabled && !includes}>
+              <Button
+                variant="primary"
+                size="sm"
+                square
+                aria-label={includes ? t("side.options") : t("composer.andStatus", { label })}
+                className="rounded-l-none border-l border-white/15 dark:border-black/15"
+                icon={<ChevronDown className="size-3.5" />}
+              />
+            </M.Trigger>
+          </Tooltip>
+          <M.Portal>
+            <M.Content side="top" align="end" sideOffset={6} className={cn(floatingPanel, includes ? "w-[300px]" : "min-w-[230px]", "p-1")}>
+              {includes && <SideIncludeItems inc={include} />}
+              {includes && options.length > 0 && <M.Separator className="-mx-1 my-1 h-px bg-line" />}
+              {options.length > 0 && <div className="label-caps px-2 pb-1 pt-1.5">{t("composer.andStatus", { label })}</div>}
+              {options.map((s) => (
+                <M.Item key={s} disabled={disabled} onSelect={() => onSend(s)} className="flex h-8 cursor-default items-center gap-2 rounded-md px-2 text-[12.5px] outline-none data-[disabled]:opacity-50 data-[highlighted]:bg-hover">
+                  <StatusIcon status={s} />
+                  <span className="flex-1 whitespace-nowrap">{t("composer.andMark", { label, status: statusLabel[s].toLowerCase() })}</span>
+                  {s === "solved" && <Kbd className="ml-3 shrink-0">mod shift enter</Kbd>}
+                </M.Item>
+              ))}
+            </M.Content>
+          </M.Portal>
+        </M.Root>
+      )}
     </div>
   );
 }

@@ -21,6 +21,7 @@ import { LabelPicker } from "./LabelPicker";
 import { SetByOllie, useAISet, useOllieNote } from "../ollie";
 import { FieldsSection } from "./FieldsSection";
 import { TicketLinks } from "./TicketLinks";
+import { SideConversations } from "./SideConversations";
 import { importedFrom } from "@/components/imports/sources";
 import { useDisplay, type FieldPatch, type TicketWithFields } from "../fields";
 import { useUpdateTicket } from "../useTicketActions";
@@ -134,7 +135,17 @@ export type PropPicker = "status" | "priority" | "severity" | "assignee" | "team
 
 const unassignedIcon = <span className="size-4 rounded-xs border border-dashed border-line-strong" />;
 
-export function TicketProperties({ t, picker, onPicker }: { t: Ticket; picker: PropPicker; onPicker: (p: PropPicker) => void }) {
+export function TicketProperties({
+  t,
+  picker,
+  onPicker,
+  onSideConversation,
+}: {
+  t: Ticket;
+  picker: PropPicker;
+  onPicker: (p: PropPicker) => void;
+  onSideConversation?: () => void;
+}) {
   const { t: tr } = useTranslation("inbox");
   const update = useUpdateTicket();
   const role = useRole();
@@ -341,6 +352,8 @@ export function TicketProperties({ t, picker, onPicker }: { t: Ticket; picker: P
       <OlliePanel t={t} />
 
       <TicketLinks ticketId={t.id} canEdit={canEdit} />
+
+      <SideConversations ticketId={t.id} canEdit={canEdit} onStart={onSideConversation} />
 
       <SlaTimers t={t} />
 

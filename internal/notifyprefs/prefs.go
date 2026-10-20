@@ -66,6 +66,8 @@ var Types = []Type{
 	{Type: "assigned", Group: GroupTickets, Defaults: everywhere},
 	{Type: "mentioned", Group: GroupTickets, Defaults: everywhere},
 	{Type: "customer_replied", Group: GroupTickets, Defaults: everywhere},
+	// Someone outside the team answered a third-party thread on a ticket assigned to you.
+	{Type: "thread_replied", Group: GroupTickets, Defaults: everywhere},
 	{Type: "sla_breached", Group: GroupTickets, Defaults: everywhere},
 	{Type: "ai_handoff", Group: GroupTickets, Defaults: everywhere},
 	{Type: "team_joined", Group: GroupTeam, Defaults: quiet},

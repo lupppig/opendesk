@@ -80,6 +80,20 @@ export type SendMessageBody = {
   mailbox_id?: string;
 };
 
+/** Starts a third-party thread (contracts/api.md "Threads"). */
+export type StartThreadBody = {
+  to: string[];
+  cc?: string[];
+  subject: string;
+  body_html: string;
+  attachment_ids?: string[];
+  mailbox_id?: string;
+  /** Quote the customer's conversation (its last 10 public replies) under the first message. */
+  include_history?: boolean;
+  /** Attachments of the customer's conversation to send along. */
+  forward_attachment_ids?: string[];
+};
+
 /** How a Google or Microsoft connection receives mail. */
 export type MailboxReceive = "forwarding" | "sync" | "api";
 
@@ -392,11 +406,17 @@ export const api = {
     messages: (id: string) => http.get<T.Page<T.Message>>(`/v1/tickets/${id}/messages`),
     send: (id: string, b: SendMessageBody) => http.create<T.Message>(`/v1/tickets/${id}/messages`, b),
     activities: (id: string) => http.get<T.Page<T.Activity>>(`/v1/tickets/${id}/activities`),
+    threads: (id: string) => http.get<{ data: T.Thread[] }>(`/v1/tickets/${id}/threads`),
+    startThread: (id: string, b: StartThreadBody) => http.create<{ thread: T.Thread; message: T.Message }>(`/v1/tickets/${id}/threads`, b),
+    sendInThread: (id: string, threadId: string, b: { body_html: string; attachment_ids?: string[] }) =>
+      http.create<T.Message>(`/v1/tickets/${id}/threads/${threadId}/messages`, b),
+    updateThread: (id: string, threadId: string, b: { status: T.Thread["status"] }) => http.patch<T.Thread>(`/v1/tickets/${id}/threads/${threadId}`, b),
     /** The ticket's template values with me as the agent, and the signature my reply from `mailbox_id` carries. */
     variables: (id: string, mailboxId?: string | null) =>
       http.get<T.TicketVariables>(`/v1/tickets/${id}/variables`, { query: mailboxId ? { mailbox_id: mailboxId } : undefined }),
-    /** Fills a saved reply for this ticket. */
-    render: (id: string, body_html: string) => http.post<{ body_html: string }>(`/v1/tickets/${id}/render`, { body_html }),
+    /** Fills a saved reply for this ticket; `thread` fills it for a side conversation, without the customer's or the ticket's details. */
+    render: (id: string, body_html: string, thread?: boolean) =>
+      http.post<{ body_html: string }>(`/v1/tickets/${id}/render`, { body_html, thread: thread || undefined }),
     links: (id: string) => http.get<{ data: T.TicketLink[] }>(`/v1/tickets/${id}/links`),
     addLink: (id: string, b: { url: string; title?: string; integration_id?: string }) => http.create<T.TicketLink>(`/v1/tickets/${id}/links`, b),
     removeLink: (id: string, linkId: string) => http.del(`/v1/tickets/${id}/links/${linkId}`),
@@ -472,7 +492,7 @@ export const api = {
      * IMAP, which is 422 imap_off on an instance with IMAP receiving off; api reads the
      * inbox directly, which is 422 api_sync_unavailable without Collab.
      */
-    oauthStart: (provider: "google" | "microsoft", b: { mailbox_id?: string; name: string; email?: string; receive?: MailboxReceive }) =>
+    oauthStart: (provider: "google" | "microsoft", b: { mailbox_id?: string; name: string; email?: string; receive?: MailboxReceive; sync_start?: T.SyncStart }) =>
       http.post<{ url: string }>(`/v1/mailboxes/oauth/${provider}/start`, b),
     connectOptions: () => http.get<T.MailboxConnectOptions>("/v1/mailboxes/connect-options"),
     detect: (email: string) => http.get<T.MailDetection>("/v1/mailboxes/detect", { query: { email } }),

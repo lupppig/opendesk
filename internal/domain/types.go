@@ -220,8 +220,10 @@ type Message struct {
 	FormSender string `json:"form_sender"`
 	// ReceivedAt is the address of ours an inbound email was written to: its mailbox's
 	// address or one of its aliases. "" otherwise.
-	ReceivedAt string    `json:"received_at"`
-	CreatedAt  time.Time `json:"created_at"`
+	ReceivedAt string `json:"received_at"`
+	// ThreadID is the third-party thread a note belongs to (contracts/api.md "Threads"), else null.
+	ThreadID  *uuid.UUID `json:"thread_id"`
+	CreatedAt time.Time  `json:"created_at"`
 }
 
 // AIAction is the card on an agent message that asks the visitor to confirm a tool call.

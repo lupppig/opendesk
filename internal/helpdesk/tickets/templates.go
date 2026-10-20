@@ -75,6 +75,7 @@ func registerTemplates(d *deps.Deps, api huma.API) {
 			ID   string `path:"id"`
 			Body struct {
 				BodyHTML string `json:"body_html" maxLength:"131072"`
+				Thread   bool   `json:"thread,omitempty" doc:"Fill for a third-party thread: the ticket's brand, team and address and the caller, never the customer's or the ticket's details"`
 			}
 		}) (*struct {
 			Body struct {
@@ -89,7 +90,13 @@ func registerTemplates(d *deps.Deps, api huma.API) {
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			html, err := hd.FillReply(ctx, d.DB.Pool, d.Cfg, templates.Ref{WorkspaceID: p.WorkspaceID, TicketID: &id, AuthorUserID: p.ActorUserID()}, in.Body.BodyHTML)
+			ref := templates.Ref{WorkspaceID: p.WorkspaceID, TicketID: &id, AuthorUserID: p.ActorUserID()}
+			if in.Body.Thread {
+				if ref, err = threadTemplateRef(ctx, d.DB.Pool, p.WorkspaceID, id, p.ActorUserID(), nil); err != nil {
+					return nil, httpx.Wrap(err)
+				}
+			}
+			html, err := hd.FillReply(ctx, d.DB.Pool, d.Cfg, ref, in.Body.BodyHTML)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}

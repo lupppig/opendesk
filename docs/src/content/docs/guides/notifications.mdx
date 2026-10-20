@@ -10,7 +10,7 @@ import Callout from '../../../components/Callout.astro';
 import Legend from '../../../components/Legend.astro';
 import Fold from '../../../components/Fold.astro';
 
-opendesk tells you about the things that need you: a ticket assigned to you, a mention in a note, a customer's reply, a missed SLA target. Notifications arrive live, so the bell updates without refreshing. They can also reach you by email, on your phone through the [iPhone app](/guides/iphone-app/) and on your computer through the [desktop app](/guides/desktop-app/). You choose which, per type, in your [notification settings](#choose-what-reaches-you).
+opendesk tells you about the things that need you: a ticket assigned to you, a mention in a note, a customer's reply, a missed SLA target. Notifications arrive live, so the bell updates without refreshing. They can also reach you by email, on your phone through the [iPhone app](/guides/iphone-app/) and on your computer through the [desktop app](/guides/desktop-app/) or your browser. You choose which, per type, in your [notification settings](#choose-what-reaches-you).
 
 <Screenshot src="/guides/notifications/bell" alt="The notifications panel open from the bell: the bell with its unread dot ringed as 1, the All and Unread tabs ringed as 2, Mark all read ringed as 3, an unread marker ringed as 4, and an SLA breached notification ringed as 5" />
 
@@ -53,6 +53,7 @@ Opening a ticket also marks its notifications read, wherever you opened it from.
 | Assigned | A teammate, Ollie or the API assigns a ticket to you. |
 | Mentioned | A teammate mentions you with <kbd>@</kbd> in a note. |
 | Customer replied | A customer replies on a ticket assigned to you. |
+| Side conversation answers | Someone outside your team answers a [side conversation](/guides/inbox-and-tickets/#ask-someone-outside-your-team) on a ticket assigned to you. |
 | SLA breached | A ticket assigned to you misses a first response or resolution target. See [SLA policies](/guides/sla-policies/). |
 | Asked for a person | A customer in a chat asked for a person instead of Ollie. It goes to the ticket's assignee, else the leads and members of its team, else everyone in the workspace except viewers. |
 | Joined your team | An admin joined a team you lead, to see its private tickets. See [Teams and roles](/guides/teams-and-roles/#private-teams). |
@@ -126,26 +127,26 @@ Notification emails go only to a confirmed address. If yours is not confirmed ye
 
 ### Per type and channel
 
-<Screenshot src="/guides/notifications/types" alt="The table of notification types with a column per channel: In the app ringed as 1, and the Email, Phone and Desktop app columns ringed as 2" />
+<Screenshot src="/guides/notifications/types" alt="The table of notification types with a column per channel: In the app ringed as 1, and the Email, Phone and Desktop columns ringed as 2" />
 
 <Legend>
 
 1. **In the app**: always on. Every notification lands under the bell.
-2. **Email**, **Phone** and **Desktop app**: a switch per type. Turn a type off on one channel and it still shows everywhere else you left on.
+2. **Email**, **Phone** and **Desktop**: a switch per type. Turn a type off on one channel and it still shows everywhere else you left on.
 
 </Legend>
 
 These choices are per workspace: a busy workspace can email you everything while a quiet one only reaches your phone. Types you never changed follow the defaults.
 
-| Notification | Email | Phone | Desktop app |
+| Notification | Email | Phone | Desktop |
 | --- | --- | --- | --- |
-| Assigned to you, mentions, customer replies, SLA breaches, handoffs to a person | On | On | On |
+| Assigned to you, mentions, customer replies, side conversation answers, SLA breaches, handoffs to a person | On | On | On |
 | Team changes | Off | Off | On |
 | AI and billing notices (owners and admins) | On | Off | On |
 | Imports (the admin who started one) | On | On | On |
 
 - **Phone** is the opendesk iPhone app. Each phone can also mute types of its own, in the app's settings, so a work phone and a personal phone can differ.
-- **Desktop app** applies only in the opendesk desktop app, while its window is in the background. When the window is in front, notifications show in the app as usual.
+- **Desktop** applies in the opendesk desktop app, and in your browser once you allow notifications, while opendesk is in the background. When it is in front, notifications show in the app as usual. In the browser, opendesk must be open in a tab.
 - With the email schedule **Off**, the email switches are greyed out but keep their place, so choosing a schedule again brings back the same choices.
 
 ### Pause notifications
@@ -204,7 +205,7 @@ When something stops your notifications, the top of **Settings**, **Notification
 
 The same reason shows as a line at the top of the bell's list, linking to the settings page.
 
-In the desktop app, the page also tells you when your computer blocks opendesk's notifications, or offers **Allow notifications** if it has not asked yet.
+The page also tells you when your computer or browser blocks opendesk's notifications, or offers **Allow notifications** if it has not asked yet.
 
 ## On your computer and phone
 

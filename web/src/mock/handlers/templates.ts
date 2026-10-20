@@ -342,7 +342,10 @@ export function registerTemplates() {
   post("/v1/tickets/:id/render", (ctx) => {
     const t = ctx.ws.tickets.find((x) => x.id === ctx.params.id || String(x.number) === ctx.params.id);
     if (!t) throw notFound("Ticket");
-    return { body_html: fill(typeof ctx.body.body_html === "string" ? ctx.body.body_html : "", valuesFor(ctx.ws, { ticket: t })) };
+    const vals = valuesFor(ctx.ws, { ticket: t });
+    // For a side conversation: the brand, team and sender, never the customer's or the ticket's details.
+    if (ctx.body.thread === true) for (const k of Object.keys(vals.text)) if (/^(contact|company|ticket)\./.test(k)) delete vals.text[k];
+    return { body_html: fill(typeof ctx.body.body_html === "string" ? ctx.body.body_html : "", vals) };
   });
 
   patch("/v1/members/:user_id/profile", (ctx) => {

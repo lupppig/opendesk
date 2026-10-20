@@ -66,6 +66,7 @@ type mailboxConfigPatch struct {
 	SMTPPort     *int    `json:"smtp_port,omitempty" minimum:"1" maximum:"65535"`
 	SMTPUsername *string `json:"smtp_username,omitempty"`
 	SMTPTLS      *string `json:"smtp_tls,omitempty" enum:"tls,starttls,none"`
+	SyncStart    *string `json:"sync_start,omitempty" enum:"recent,new" doc:"Where the first sync reads from when the mailbox starts reading its inbox: the last 7 days (recent) or only new mail"`
 	// Tidy-up at the provider, for a mailbox that reads its inbox through Google or Microsoft.
 	ProviderMarkRead       *bool `json:"provider_mark_read,omitempty" doc:"Mark emails read in Gmail or Outlook once they become ticket messages"`
 	ProviderArchiveOnSolve *bool `json:"provider_archive_on_solve,omitempty" doc:"Archive a ticket's emails in Gmail or Outlook when it is solved or closed"`
@@ -838,6 +839,7 @@ func applyPatch(m *mailboxRow, creds *credentials, in *updateMailboxInput) (chan
 		setI(&cfg.SMTPPort, c.SMTPPort)
 		setS(&cfg.SMTPUsername, c.SMTPUsername)
 		setS(&cfg.SMTPTLS, c.SMTPTLS)
+		setS(&cfg.SyncStart, c.SyncStart)
 		if *cfg != before {
 			changes = append(changes, "config")
 			if !strings.EqualFold(cfg.IMAPHost, before.IMAPHost) || !strings.EqualFold(cfg.IMAPUsername, before.IMAPUsername) {

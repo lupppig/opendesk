@@ -72,9 +72,23 @@ export function MenuItem({
   );
 }
 
-export function MenuCheckItem({ children, checked, onSelect, icon }: { children: ReactNode; checked: boolean; onSelect: () => void; icon?: ReactNode }) {
+/** One of several that can be on together; picking keeps the menu open. `hint` sits at the right (a count, a size), with room kept for the check. */
+export function MenuCheckItem({
+  children,
+  checked,
+  onSelect,
+  icon,
+  hint,
+}: {
+  children: ReactNode;
+  checked: boolean;
+  onSelect: () => void;
+  icon?: ReactNode;
+  hint?: ReactNode;
+}) {
   return (
-    <M.Item
+    <M.CheckboxItem
+      checked={checked}
       onSelect={(e) => {
         e.preventDefault();
         onSelect();
@@ -83,8 +97,9 @@ export function MenuCheckItem({ children, checked, onSelect, icon }: { children:
     >
       {icon}
       <span className="flex-1 truncate">{children}</span>
-      {checked && <Check className="!text-fg" />}
-    </M.Item>
+      {hint !== undefined && hint !== null && <span className="mono shrink-0 pl-2 text-[11px] tabular-nums text-fg-4">{hint}</span>}
+      {hint !== undefined && hint !== null ? <Check className={cn("!text-fg", !checked && "invisible")} /> : checked && <Check className="!text-fg" />}
+    </M.CheckboxItem>
   );
 }
 

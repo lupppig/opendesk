@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useWaitingAlerts } from "@/components/tickets/useWaitingAlerts";
-import { Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
+import { Outlet, useNavigate, useRouter, useRouterState } from "@tanstack/react-router";
 import { lazy, Suspense, useEffect } from "react";
 import { Dialog as D } from "radix-ui";
 import { identify } from "@/lib/analytics";
@@ -46,6 +46,8 @@ function notificationText(n: Notification) {
       return `You were mentioned ${subject}`;
     case "customer_replied":
       return `New reply ${subject}`;
+    case "thread_replied":
+      return `New answer in a side conversation ${subject}`;
     case "sla_breached":
       return `SLA breached ${subject}`;
     case "ai_handoff":
@@ -80,6 +82,7 @@ const billingNoticeBody: Partial<Record<Notification["type"], string>> = {
 // Everyday sounds (lib/alertSound.ts); live chat has its own alarm in useWaitingAlerts.
 const notificationSound: Partial<Record<Notification["type"], AlertSound>> = {
   customer_replied: "reply",
+  thread_replied: "reply",
   assigned: "assigned",
   mentioned: "assigned",
   sla_breached: "assigned",
@@ -114,6 +117,7 @@ function soundForTicket(t: Ticket, me: string) {
 function useRealtimeConnection() {
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const router = useRouter();
   const wid = useSession((s) => s.workspaceId);
   const uid = useSession((s) => s.user?.id);
   const suspended = useSession((s) => !!currentMembership(s)?.suspended);
@@ -125,7 +129,7 @@ function useRealtimeConnection() {
       workspaceId: wid,
       userId: uid,
       onNotification: (n) => {
-        notifyDesktop(n);
+        notifyDesktop(n, (path) => router.history.push(path));
         soundForNotification(n);
         if (n.type === "customer_replied") return;
         if (n.type === "ai_key_failed") void qc.invalidateQueries({ queryKey: qk.aiProvider });
@@ -172,7 +176,7 @@ function useRealtimeConnection() {
       },
     });
     return () => stopRealtime();
-  }, [wid, uid, suspended, qc, navigate]);
+  }, [wid, uid, suspended, qc, navigate, router]);
 }
 
 export function AppLayout() {

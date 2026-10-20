@@ -91,7 +91,8 @@ interface ImportMapping {
 interface CsvMapping { ticket_id?: string; subject?: string; body?: string; from_email?: string; from_name?: string;
   author?: string /* agent, customer or note per row (below); else customer */; status?: string; priority?: string;
   tags?: string /* separated by , ; or | */; created_at?: string; assignee_email?: string; team?: string;
-  company?: string /* the requester's company, from a customer row */ }
+  company?: string /* the requester's company, from a customer row */;
+  message_id?: string; in_reply_to?: string; references?: string /* each message's email headers (below) */ }
 
 interface ImportCheck {
   account: { name: string; url: string };
@@ -223,6 +224,9 @@ the encoding, a line that cannot be read, more than 500,000 rows, no rows under 
   | `assignee_email` | assignee email, assignee, agent email, agent, assigned to, owner, owner email, responder |
   | `team` | team, group, department, queue, inbox, mailbox |
   | `company` | company, organization, organisation, org, account, company name |
+  | `message_id` | message id, rfc message id, email message id, internet message id, rfc 822 message id, msg id |
+  | `in_reply_to` | in reply to, in reply to id, in reply to message id, parent message id |
+  | `references` | references, email references, references header |
 
 - `author`: agent, staff, admin, support, operator, teammate, team, outbound, out, outgoing, reply, public reply,
   sent, employee, true, yes, 1 → an agent's reply; note, internal, private, internal note, private note → a note;
@@ -236,6 +240,13 @@ the encoding, a line that cannot be read, more than 500,000 rows, no rows under 
   `03/01/2024` (month first, 24-hour or AM/PM), `01.03.2024` (day first), `Mar 1, 2024 2:05 PM`, `1 Mar 2024`,
   `March 1, 2024`, email dates (RFC 1123), or unix seconds or milliseconds. Without a zone a time is UTC. A
   value that cannot be read, before 1990 or in the future is no date; the message is then dated when imported.
+- `message_id`, `in_reply_to`, `references`: the email headers of each message, as a header writes them
+  (`<id@host>`, several separated by spaces) or bare (`id@host`, several separated by spaces, commas or
+  semicolons). A value without an `@` is not a Message-ID and is left out; `references` keeps the latest 50.
+  They are stored on the message (`email_message_id`, `in_reply_to`, `references`), so a reply to imported
+  history threads into its ticket like a reply to any other (contracts/api.md "Inbound email"), and a
+  mailbox's first sync skips an email an imported message already holds. A Message-ID another message of
+  the workspace already holds (the live email, or an earlier row) stays with that one.
 - A body with HTML tags is HTML, else text. A ticket's subject is its first subject, else the start of its first
   message; its requester is the first customer row with an email or a name. Rows with neither body nor subject
   are left out and listed as problems (`Row <line>`). Blank rows are skipped.

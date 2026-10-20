@@ -83,6 +83,8 @@
       "mentionedAnon": "You were mentioned in a note",
       "replied": "{{who}} replied",
       "repliedAnon": "The customer replied",
+      "threadReplied": "{{who}} answered your side conversation",
+      "threadRepliedAnon": "Someone answered your side conversation",
       "sla": "SLA breached",
       "handoff": "{{who}} asked for a person",
       "handoffAnon": "A customer asked for a person",

@@ -16,6 +16,8 @@ export const qk = {
   ticket: (id: string) => ["tickets", "detail", id] as const,
   messages: (id: string) => ["tickets", "messages", id] as const,
   activities: (id: string) => ["tickets", "activities", id] as const,
+  /** Third-party threads (contracts/api.md "Threads"). */
+  threads: (id: string) => ["tickets", "threads", id] as const,
   /** Ollie's pending suggested reply on an email ticket. */
   suggestedReply: (id: string) => ["tickets", "suggested-reply", id] as const,
   contactLists: ["contacts", "list"] as const,
@@ -123,6 +125,7 @@ export const q = {
   ticket: (id: string) => queryOptions({ queryKey: qk.ticket(id), queryFn: () => api.tickets.get(id) }),
   messages: (id: string) => list(qk.messages(id), () => api.tickets.messages(id)),
   activities: (id: string) => list(qk.activities(id), () => api.tickets.activities(id)),
+  threads: (id: string) => list(qk.threads(id), () => api.tickets.threads(id)),
   suggestedReply: (id: string) =>
     queryOptions({ queryKey: qk.suggestedReply(id), queryFn: async () => (await api.ai.suggestedReply.get(id)).suggested_reply }),
   contacts: (query: { q?: string; company_id?: string }) =>

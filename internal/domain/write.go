@@ -221,6 +221,10 @@ type NewMessage struct {
 	// Imported writes history (contracts/imports.md): dated CreatedAt, nothing sent, no
 	// status change, no events, automations or follow-ups. The importer sets the status.
 	Imported bool
+	// ThreadID puts a note in a third-party thread (contracts/api.md "Threads"). An
+	// outbound one with DeliveryStatus "pending" is emailed to the thread's recipients;
+	// an inbound one is a reply from them.
+	ThreadID *uuid.UUID
 }
 
 // ErrCannotSend answers an email reply from a mailbox that sends through the platform
@@ -264,6 +268,15 @@ func AddMessage(ctx context.Context, tx pgx.Tx, jc Jobs, nm NewMessage) (Message
 	if nm.Imported {
 		nm.DeliveryStatus, nm.Trigger = "none", "none"
 	}
+	if nm.ThreadID != nil && nm.Kind != "note" {
+		return Message{}, fmt.Errorf("a thread message is a note")
+	}
+	sendThread := nm.ThreadID != nil && nm.Direction == "outbound" && nm.DeliveryStatus == "pending"
+	if sendThread {
+		if err := checkCanSend(ctx, tx, nm.WorkspaceID, nm.MailboxID); err != nil {
+			return Message{}, err
+		}
+	}
 	if nm.Kind == "reply" && nm.Direction == "outbound" && channel == ChannelEmail && nm.DeliveryStatus == "pending" {
 		from := nm.MailboxID
 		if from == nil {
@@ -288,13 +301,13 @@ func AddMessage(ctx context.Context, tx pgx.Tx, jc Jobs, nm NewMessage) (Message
 	_, err := tx.Exec(ctx, `INSERT INTO messages (id, workspace_id, ticket_id, kind, direction, author_type, author_user_id,
 		author_contact_id, body_html, body_text, full_html, subject, from_email, from_name, to_emails, cc_emails, bcc_emails,
 		email_message_id, in_reply_to, "references", inbound_email_id, delivery_status, created_at, ai, ai_action, mailbox_id,
-		reply_to, auth_failed, no_auto_reply, form_sender, bot_id, received_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32)`,
+		reply_to, auth_failed, no_auto_reply, form_sender, bot_id, received_at, thread_id)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33)`,
 		id, nm.WorkspaceID, nm.TicketID, nm.Kind, nm.Direction, nm.AuthorType, nm.AuthorUserID, nm.AuthorContactID,
 		nm.BodyHTML, nm.BodyText, nm.FullHTML, truncateRunes(nm.Subject, 500), nm.FromEmail, nm.FromName, nm.To, nm.Cc, nm.Bcc,
 		nm.EmailMessageID, nm.InReplyTo, nm.References, nm.InboundEmailID, nm.DeliveryStatus, nm.CreatedAt, nm.AI, nm.AIAction, nm.MailboxID,
 		truncateRunes(nm.ReplyTo, 320), nm.AuthFailed, nm.NoAutoReply, truncateRunes(nm.FormSender, 320), nm.BotID,
-		truncateRunes(strings.ToLower(strings.TrimSpace(nm.ReceivedAt)), 320))
+		truncateRunes(strings.ToLower(strings.TrimSpace(nm.ReceivedAt)), 320), nm.ThreadID)
 	if err != nil {
 		return Message{}, fmt.Errorf("insert message: %w", err)
 	}
@@ -356,6 +369,27 @@ func AddMessage(ctx context.Context, tx pgx.Tx, jc Jobs, nm NewMessage) (Message
 		if _, err := tx.Exec(ctx, `UPDATE tickets SET updated_at = now() WHERE workspace_id = $1 AND id = $2`, nm.WorkspaceID, nm.TicketID); err != nil {
 			return Message{}, err
 		}
+		if nm.ThreadID != nil {
+			// A new message opens the thread again. A reply from the other side means the
+			// team has something to act on: a ticket waiting on the customer or on hold is
+			// open again. It is not a customer reply, so SLA and response times stay. Mail
+			// that failed sender checks is kept but changes nothing, as for a customer's.
+			if _, err := tx.Exec(ctx, `UPDATE ticket_threads SET status = 'open', last_message_at = GREATEST(last_message_at, $3), updated_at = now()
+				WHERE workspace_id = $1 AND id = $2`, nm.WorkspaceID, *nm.ThreadID, nm.CreatedAt); err != nil {
+				return Message{}, fmt.Errorf("update thread: %w", err)
+			}
+			if nm.Direction == "inbound" && !nm.AuthFailed && (status == StatusPending || status == StatusOnHold) {
+				if _, err := tx.Exec(ctx, `UPDATE tickets SET status = 'open', snoozed_until = NULL WHERE workspace_id = $1 AND id = $2`,
+					nm.WorkspaceID, nm.TicketID); err != nil {
+					return Message{}, err
+				}
+				changes = append(changes, "status")
+				if _, err := LogActivity(ctx, tx, nm.WorkspaceID, nm.TicketID, "system", nil, "status_changed",
+					map[string]any{"from": status, "to": StatusOpen, "reason": "thread_replied", "message_id": id.String()}); err != nil {
+					return Message{}, err
+				}
+			}
+		}
 	}
 
 	msg, err := LoadMessage(ctx, tx, nm.WorkspaceID, id)
@@ -375,13 +409,18 @@ func AddMessage(ctx context.Context, tx pgx.Tx, jc Jobs, nm NewMessage) (Message
 	if _, err := events.Publish(ctx, tx, ev); err != nil {
 		return Message{}, err
 	}
+	if nm.ThreadID != nil {
+		if _, err := PublishThread(ctx, tx, nm.WorkspaceID, nm.TicketID, *nm.ThreadID, "thread.updated"); err != nil {
+			return Message{}, err
+		}
+	}
 	if len(changes) > 0 || nm.Kind == "reply" {
 		if err := PublishTicketUpdated(ctx, tx, nm.WorkspaceID, nm.TicketID, append(changes, "last_message_at")); err != nil {
 			return Message{}, err
 		}
 	}
 
-	if nm.Kind == "reply" && nm.Direction == "outbound" && channel == ChannelEmail && nm.DeliveryStatus == "pending" {
+	if sendThread || nm.Kind == "reply" && nm.Direction == "outbound" && channel == ChannelEmail && nm.DeliveryStatus == "pending" {
 		if _, err := jc.InsertTx(ctx, tx, jobs.SendMessageArgs{WorkspaceID: nm.WorkspaceID, MessageID: id},
 			&river.InsertOpts{Queue: jobs.QueueEmail, MaxAttempts: 8}); err != nil {
 			return Message{}, fmt.Errorf("queue send: %w", err)
@@ -399,6 +438,8 @@ func AddMessage(ctx context.Context, tx pgx.Tx, jc Jobs, nm NewMessage) (Message
 			trigger = jobs.TriggerCustomerReplied
 		case nm.Kind == "reply" && nm.AuthorType == "user":
 			trigger = jobs.TriggerAgentReplied
+		case nm.ThreadID != nil && nm.Direction == "inbound":
+			trigger = jobs.TriggerThreadReplied
 		default:
 			trigger = "none"
 		}

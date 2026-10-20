@@ -1,9 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
-import { AlertCircle, Check, Download, FileText, Globe, ImageOff, Lock, MoreHorizontal, Reply, RotateCw, ShieldAlert } from "lucide-react";
+import { AlertCircle, Check, CheckCheck, Download, FileText, Globe, ImageOff, Lock, MessagesSquare, MoreHorizontal, Quote, Reply, RotateCcw, RotateCw, ShieldAlert } from "lucide-react";
 import { memo, useMemo, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { tone } from "@/lib/tones";
-import type { Attachment, Message } from "@/lib/api/types";
+import type { Attachment, Message, Thread } from "@/lib/api/types";
 import { api } from "@/lib/api/endpoints";
 import { q } from "@/lib/queries";
 import { isDesignedEmail, type Sanitized, sanitizeEmailHtml, sanitizeProse } from "@/lib/sanitize";
@@ -149,7 +149,8 @@ export function Attachments({ items }: { items: Attachment[] }) {
 
 function Delivery({ m, onRetry }: { m: Message; onRetry?: () => void }) {
   const { t } = useTranslation("inbox");
-  if (m.kind === "note" || m.direction === "inbound" || m.delivery_status === "none") return null;
+  // A thread message is a note that is emailed to the third party, so it reports delivery.
+  if ((m.kind === "note" && !m.thread_id) || m.direction === "inbound" || m.delivery_status === "none") return null;
   if (m.delivery_status === "pending")
     return (
       <span className="flex items-center gap-1 text-[11px] text-fg-4">
@@ -211,24 +212,79 @@ function useMessageAddress(m: Message, receivedAt?: string | null) {
   return m.from_email || mb?.email || null;
 }
 
+/** What can be done to a thread from its latest message. */
+export type ThreadActions = { reply: (th: Thread) => void; setStatus: (th: Thread, status: Thread["status"]) => void };
+
+/** The side conversation a message belongs to, above its body, and on its latest message its actions. */
+function ThreadBar({ thread, actions, first }: { thread: Thread; actions?: ThreadActions; first?: boolean }) {
+  const { t } = useTranslation("inbox");
+  const closed = thread.status === "closed";
+  return (
+    <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-fg-3">
+      <Tooltip content={<span className="block max-w-[260px] font-normal leading-snug">{t("message.hiddenFromCustomer")}</span>}>
+        <span tabIndex={0} className="flex min-w-0 items-center gap-1.5 rounded-sm outline-none focus-visible:shadow-[0_0_0_2px_var(--focus)]">
+          <MessagesSquare className={cn("size-3 shrink-0", tone.cyan.text)} />
+          <span className="min-w-0 truncate">
+            <Trans t={t} i18nKey="message.inThread" values={{ subject: thread.subject }} components={{ b: <span className="font-medium text-fg-2" /> }} />
+          </span>
+        </span>
+      </Tooltip>
+      {first && thread.include_history && (
+        <span className="flex shrink-0 items-center gap-1 rounded-sm bg-hover px-1.5 text-[10.5px] text-fg-3">
+          <Quote className="size-2.5" />
+          {t("side.withHistory")}
+        </span>
+      )}
+      {closed && <span className="shrink-0 rounded-sm bg-hover px-1.5 text-[10.5px] text-fg-3">{t("message.threadClosed")}</span>}
+      {actions && (
+        <span className="ml-auto flex items-center gap-1">
+          <Button size="xs" variant="ghost" icon={<Reply className="size-3" />} onClick={() => actions.reply(thread)}>
+            {t("message.replyInThread")}
+          </Button>
+          <Button
+            size="xs"
+            variant="ghost"
+            icon={closed ? <RotateCcw className="size-3" /> : <CheckCheck className="size-3" />}
+            onClick={() => actions.setStatus(thread, closed ? "open" : "closed")}
+          >
+            {closed ? t("message.reopenThread") : t("message.closeThread")}
+          </Button>
+        </span>
+      )}
+    </div>
+  );
+}
+
 export const MessageItem = memo(function MessageItem({
   m,
   onRetry,
   highlight,
   receivedAt,
+  thread,
+  threadActions,
+  threadFirst,
 }: {
   m: Message;
   onRetry?: (m: Message) => void;
   highlight?: boolean;
   /** The ticket's first address, for inbound messages that don't record one; null when the ticket isn't email. */
   receivedAt?: string | null;
+  /** The third-party thread the message belongs to. */
+  thread?: Thread;
+  /** Set on a thread's latest message. */
+  threadActions?: ThreadActions;
+  /** The thread's first message. */
+  threadFirst?: boolean;
 }) {
   const [showOriginal, setShowOriginal] = useState(false);
   const ollie = useAssistantName();
   // An AI reply shows the bot it was sent as (contracts/bots.md), else Ollie.
   const bot = m.ai ? (m.author.bot ?? null) : null;
   const name = m.ai ? (bot?.name ?? ollie) : authorName(m);
-  const note = m.kind === "note";
+  // A thread message is stored as a note, but it is email to or from someone outside the
+  // team: it reads like one, and an answer from them is untrusted inbound mail.
+  const inThread = !!m.thread_id;
+  const note = m.kind === "note" && !inThread;
   const outbound = m.direction === "outbound" && !note;
   const failed = m.delivery_status === "failed" || m.delivery_status === "bounced";
   const avatar = m.author.user?.avatar_url ?? m.author.contact?.avatar_url;
@@ -244,14 +300,16 @@ export const MessageItem = memo(function MessageItem({
   return (
     <article
       id={`m-${m.id}`}
-      aria-label={t(note ? "message.noteFrom" : "message.from", { name })}
+      aria-label={t(note ? "message.noteFrom" : inThread ? "message.threadFrom" : "message.from", { name })}
       className={cn(
         "group/msg relative rounded-lg border transition-shadow duration-300",
         note
           ? "border-dashed border-note-line bg-note"
           : failed
             ? cn(tone.red.line, "bg-surface")
-            : "border-line bg-surface",
+            : inThread
+              ? cn(tone.cyan.line, "bg-surface")
+              : "border-line bg-surface",
         highlight && "shadow-[0_0_0_3px_var(--focus)]",
       )}
     >
@@ -296,6 +354,7 @@ export const MessageItem = memo(function MessageItem({
         </Tooltip>
       </header>
       <div className="px-4 pb-3.5 pl-[50px] pt-1">
+        {inThread && thread && <ThreadBar thread={thread} actions={threadActions} first={threadFirst} />}
         {(replyTo || (inbound && m.form_sender)) && (
           <div className="mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11.5px] text-fg-3" data-ph-mask>
             {inbound && m.form_sender && (

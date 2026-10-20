@@ -316,22 +316,29 @@ func (s *service) sendMessage(ctx context.Context, wid, mid uuid.UUID, lastAttem
 	var ticketID uuid.UUID
 	var kind, direction, bodyHTML, bodyText, subject, status, authorType string
 	var to, cc, bcc []string
-	var authorID, mailboxID *uuid.UUID
+	var authorID, mailboxID, threadID *uuid.UUID
 	var bot ollieSender
 	err := s.d.DB.Pool.QueryRow(ctx, `SELECT ticket_id, kind, direction, body_html, body_text, subject, to_emails, cc_emails, bcc_emails,
-		delivery_status, author_user_id, ai, from_name, mailbox_id, author_type FROM messages WHERE workspace_id = $1 AND id = $2`, wid, mid).
-		Scan(&ticketID, &kind, &direction, &bodyHTML, &bodyText, &subject, &to, &cc, &bcc, &status, &authorID, &bot.ai, &bot.name, &mailboxID, &authorType)
+		delivery_status, author_user_id, ai, from_name, mailbox_id, author_type, thread_id FROM messages WHERE workspace_id = $1 AND id = $2`, wid, mid).
+		Scan(&ticketID, &kind, &direction, &bodyHTML, &bodyText, &subject, &to, &cc, &bcc, &status, &authorID, &bot.ai, &bot.name, &mailboxID, &authorType, &threadID)
 	if db.IsNotFound(err) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	if status != "pending" || kind != "reply" || direction != "outbound" {
+	thread := threadID != nil && kind == "note"
+	if status != "pending" || direction != "outbound" || kind != "reply" && !thread {
 		return nil
 	}
 	bot.system = authorType == "system"
-	stamped, sent, err := s.composeAndSend(ctx, wid, mid, ticketID, bodyHTML, bodyText, subject, to, cc, bcc, authorID, bot, mailboxID)
+	var stamped string
+	var sent *sentAs
+	if thread {
+		stamped, sent, err = s.composeAndSendThread(ctx, wid, mid, ticketID, *threadID, bodyHTML, bodyText, to, cc, authorID)
+	} else {
+		stamped, sent, err = s.composeAndSend(ctx, wid, mid, ticketID, bodyHTML, bodyText, subject, to, cc, bcc, authorID, bot, mailboxID)
+	}
 	if err == nil {
 		return s.recordDelivery(ctx, wid, mid, ticketID, "sent", "", stamped, sent)
 	}
@@ -443,6 +450,119 @@ func (s *service) composeAndSend(ctx context.Context, wid, mid, ticketID uuid.UU
 	}
 	return stamped, &sentAs{mailboxID: m.ID, fromEmail: strings.ToLower(from.Address), fromName: from.Name, ticketMailbox: t.mailboxID == nil,
 		to: dedupe(to), provider: out.sent}, nil
+}
+
+// composeAndSendThread emails a message of a third-party thread (contracts/api.md
+// "Threads") to the thread's recipients, from the thread's address. It threads with the
+// thread's own messages only. Only a first message started with include_history quotes the
+// conversation with the customer.
+func (s *service) composeAndSendThread(ctx context.Context, wid, mid, ticketID, threadID uuid.UUID, bodyHTML, bodyText string,
+	to, cc []string, authorID *uuid.UUID) (string, *sentAs, error) {
+	t, err := loadTicketInfo(ctx, s.d.DB.Pool, wid, ticketID)
+	if db.IsNotFound(err) {
+		return "", nil, permanent("The ticket no longer exists.")
+	}
+	if err != nil {
+		return "", nil, err
+	}
+	var subject string
+	var mailboxID *uuid.UUID
+	var withHistory bool
+	err = s.d.DB.Pool.QueryRow(ctx, `SELECT th.subject, th.mailbox_id, COALESCE(th.include_history AND
+			(SELECT e.id FROM messages e WHERE e.workspace_id = th.workspace_id AND e.thread_id = th.id ORDER BY e.created_at, e.id LIMIT 1) = $3, false)
+		FROM ticket_threads th WHERE th.workspace_id = $1 AND th.id = $2`, wid, threadID, mid).
+		Scan(&subject, &mailboxID, &withHistory)
+	if db.IsNotFound(err) {
+		return "", nil, permanent("The thread no longer exists.")
+	}
+	if err != nil {
+		return "", nil, err
+	}
+	m, err := s.sendingMailbox(ctx, wid, t, mailboxID)
+	if err != nil {
+		return "", nil, err
+	}
+	if m.Status == "disabled" {
+		return "", nil, permanent("The mailbox is disabled.")
+	}
+	if len(dedupe(to)) == 0 {
+		return "", nil, permanent("The thread has no recipient.")
+	}
+	names := t.names
+	names.mailbox = m.displayName()
+	if authorID != nil {
+		if u, err := domain.LoadUserRef(ctx, s.d.DB.Pool, *authorID); err == nil {
+			names.agent = agentName(u.Name)
+		}
+	}
+	from, replyTo, envFrom := s.addressing(m, fromName(m.FromNameFormat, names), t.number, "")
+	inReplyTo, refs, err := threadMessageHeaders(ctx, s.d.DB.Pool, wid, threadID, mid)
+	if err != nil {
+		return "", nil, err
+	}
+	msgID := messageIDFor("m", mid, t.number, m)
+	// Record our id first so a fast reply threads even before the send returns.
+	if _, err := s.d.DB.Pool.Exec(ctx, `UPDATE messages SET email_message_id = $3 WHERE workspace_id = $1 AND id = $2 AND email_message_id IS NULL`,
+		wid, mid, msgID); err != nil && !db.IsUniqueViolation(err, "") {
+		return "", nil, err
+	}
+	atts, html, err := s.outboundAttachments(ctx, wid, mid, bodyHTML)
+	if err != nil {
+		return "", nil, err
+	}
+	if strings.TrimSpace(bodyText) == "" {
+		bodyText = htmlToText(bodyHTML)
+	}
+	if inReplyTo != "" && !strings.HasPrefix(strings.ToLower(subject), "re:") {
+		subject = "Re: " + subject
+	}
+	// Filled without the ticket: its brand, team, address and the sender, never the customer's
+	// or the ticket's details, which a signature, footer or layout could otherwise carry.
+	ref := templates.Ref{WorkspaceID: wid, AuthorUserID: authorID, MailboxID: &m.ID, MailboxEmail: m.Email, BrandID: &t.brandID, TeamID: t.teamID}
+	tc, err := templates.Load(ctx, s.d.DB.Pool, s.d.Cfg, ref)
+	if err != nil {
+		return "", nil, err
+	}
+	design, err := templates.LoadDesign(ctx, s.d.DB.Pool, wid, tc.BrandID)
+	if err != nil {
+		return "", nil, err
+	}
+	// The conversation with the customer goes to the third party only when asked for.
+	parts := templates.Parts{Content: html, ContentText: bodyText, Signature: tc.Signature(), Forward: withHistory}
+	if withHistory {
+		if parts.History, err = loadHistory(ctx, s.d.DB.Pool, wid, ticketID, &mid, 10); err != nil {
+			return "", nil, err
+		}
+	}
+	mail := tc.RenderEmail(design, parts)
+	out := &outMessage{From: from, ReplyTo: replyTo, To: to, Cc: cc, Subject: subject, MessageID: msgID,
+		InReplyTo: inReplyTo, References: refs, HTML: mail.HTML, Text: mail.Text, Attachments: atts, Loop: s.loopToken(m.ID)}
+	stamped, err := s.deliver(ctx, m, out, envFrom)
+	if err != nil {
+		return stamped, nil, err
+	}
+	return stamped, &sentAs{mailboxID: m.ID, fromEmail: strings.ToLower(from.Address), fromName: from.Name, to: dedupe(to)}, nil
+}
+
+// threadMessageHeaders returns In-Reply-To and References for a message of a third-party
+// thread: the thread's latest reply from the other side, or else its latest message we sent.
+func threadMessageHeaders(ctx context.Context, q db.Querier, wid, threadID uuid.UUID, exclude uuid.UUID) (string, []string, error) {
+	var id string
+	var refs []string
+	err := q.QueryRow(ctx, `SELECT email_message_id, "references" FROM messages
+		WHERE workspace_id = $1 AND thread_id = $2 AND id <> $3 AND email_message_id IS NOT NULL
+		ORDER BY (direction = 'inbound') DESC, created_at DESC LIMIT 1`, wid, threadID, exclude).Scan(&id, &refs)
+	if db.IsNotFound(err) {
+		return "", nil, nil
+	}
+	if err != nil {
+		return "", nil, err
+	}
+	refs = append(refs, id)
+	if len(refs) > 20 {
+		refs = append(refs[:1], refs[len(refs)-19:]...)
+	}
+	return id, refs, nil
 }
 
 // replyDestination sends a reply addressed to the customer to the Reply-To of their latest

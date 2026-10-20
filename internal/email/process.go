@@ -65,6 +65,8 @@ type threadMatch struct {
 	ticketID uuid.UUID
 	number   int64
 	status   string
+	// thread is set when the message answers one of a third-party thread's messages.
+	thread *uuid.UUID
 }
 
 // processInbound turns a stored raw email into a ticket message.
@@ -208,6 +210,36 @@ func (s *service) processInbound(ctx context.Context, wid, inboundID uuid.UUID) 
 		if err != nil {
 			return err
 		}
+		if match != nil && match.thread != nil {
+			// An answer to a third-party thread stays in the thread: an internal note on the
+			// ticket, never a message from the customer, and nothing automatic answers it.
+			attIDs, err := insertAttachments(ctx, tx, wid, atts)
+			if err != nil {
+				return err
+			}
+			msg, err := domain.AddMessage(ctx, tx, s.d.Jobs, domain.NewMessage{
+				WorkspaceID: wid, TicketID: match.ticketID, ThreadID: match.thread, Kind: "note", Direction: "inbound", AuthorType: "contact",
+				BodyHTML: body.html, BodyText: body.text, FullHTML: body.full, Subject: pm.Subject, FromEmail: sender,
+				FromName: displayname.Clean(senderName, displayname.Person), To: pm.To, Cc: pm.Cc, EmailMessageID: msgIDOf(pm, taken),
+				InReplyTo: pm.InReplyTo, References: pm.References, InboundEmailID: &inboundID, AttachmentIDs: attIDs, MailboxID: &m.ID,
+				ReplyTo: pm.replyTo(), AuthFailed: authFailed, NoAutoReply: true, ReceivedAt: receivedAt,
+			})
+			if err != nil {
+				return err
+			}
+			if ref != nil {
+				// Tidied at the provider like any mail the ticket takes in, and archived with it.
+				if _, err := tx.Exec(ctx, `UPDATE messages SET provider_ref = $3 WHERE workspace_id = $1 AND id = $2`, wid, msg.ID, ref); err != nil {
+					return err
+				}
+				if err := s.queueImportedTidy(ctx, tx, m, ref, match.ticketID, msg.ID); err != nil {
+					return err
+				}
+			}
+			_, err = tx.Exec(ctx, `UPDATE inbound_emails SET status = 'processed', reason = '', processed_at = now()
+				WHERE workspace_id = $1 AND id = $2`, wid, inboundID)
+			return err
+		}
 		if match != nil && internal {
 			// A teammate's mail threads only into a conversation they are the customer of.
 			if match, err = s.contactMatch(ctx, tx, wid, match, sender); err != nil {
@@ -218,13 +250,9 @@ func (s *service) processInbound(ctx context.Context, wid, inboundID uuid.UUID) 
 		if err != nil {
 			return err
 		}
-		attIDs := make([]uuid.UUID, 0, len(atts))
-		for _, a := range atts {
-			if _, err := tx.Exec(ctx, `INSERT INTO attachments (id, workspace_id, filename, content_type, size_bytes, storage_key, content_id, inline)
-				VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, a.id, wid, a.filename, a.contentType, a.size, a.key, a.cid, a.inline); err != nil {
-				return err
-			}
-			attIDs = append(attIDs, a.id)
+		attIDs, err := insertAttachments(ctx, tx, wid, atts)
+		if err != nil {
+			return err
 		}
 		var ticket domain.Ticket
 		created := false
@@ -267,11 +295,7 @@ func (s *service) processInbound(ctx context.Context, wid, inboundID uuid.UUID) 
 				}
 			}
 		}
-		var msgID *string
-		if !taken {
-			// A Message-ID already held by a different message stays with that one.
-			msgID = &pm.MessageID
-		}
+		msgID := msgIDOf(pm, taken)
 		trigger := ""
 		switch {
 		case created:
@@ -331,8 +355,10 @@ func (s *service) processInbound(ctx context.Context, wid, inboundID uuid.UUID) 
 }
 
 // seenBefore reports whether an inbound message was already taken in: the same message
-// (Message-ID and content) at any of the workspace's addresses, or mail we sent. taken
-// is set when a different message already holds its Message-ID.
+// (Message-ID and content) at any of the workspace's addresses, mail we sent, or a
+// message with its Message-ID that no inbound email recorded (imported history: the first
+// sync after an import reads it again). taken is set when a different message already
+// holds its Message-ID.
 func (s *service) seenBefore(ctx context.Context, wid, inboundID uuid.UUID, msgID, msgIDHdr, hash string) (dup, taken bool, err error) {
 	var direction string
 	var existingHash *string
@@ -341,7 +367,8 @@ func (s *service) seenBefore(ctx context.Context, wid, inboundID uuid.UUID, msgI
 		WHERE ms.workspace_id = $1 AND ms.email_message_id = $2`, wid, msgID).Scan(&direction, &existingHash)
 	switch {
 	case err == nil:
-		// Mail we sent, or the same message recorded before its content was fingerprinted.
+		// Mail we sent, an imported message, or the same message recorded before its content
+		// was fingerprinted.
 		if direction == "outbound" || existingHash == nil || *existingHash == "" || *existingHash == hash {
 			return true, true, nil
 		}
@@ -448,6 +475,28 @@ func receivedAddress(m *mailboxRow, pm *parsedMail, rcpt string) string {
 		}
 	}
 	return strings.ToLower(m.Email)
+}
+
+// insertAttachments stores the rows of an inbound message's prepared attachments.
+func insertAttachments(ctx context.Context, tx pgx.Tx, wid uuid.UUID, atts []preparedAttachment) ([]uuid.UUID, error) {
+	ids := make([]uuid.UUID, 0, len(atts))
+	for _, a := range atts {
+		if _, err := tx.Exec(ctx, `INSERT INTO attachments (id, workspace_id, filename, content_type, size_bytes, storage_key, content_id, inline)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, a.id, wid, a.filename, a.contentType, a.size, a.key, a.cid, a.inline); err != nil {
+			return nil, err
+		}
+		ids = append(ids, a.id)
+	}
+	return ids, nil
+}
+
+// msgIDOf is the Message-ID an inbound message is stored with: a Message-ID already held
+// by a different message stays with that one.
+func msgIDOf(pm *parsedMail, taken bool) *string {
+	if taken {
+		return nil
+	}
+	return &pm.MessageID
 }
 
 // contactMatch keeps a thread match only when sender is the ticket's contact.
@@ -576,10 +625,10 @@ func (s *service) findThread(ctx context.Context, tx pgx.Tx, wid uuid.UUID, m *m
 	var candidates []int64
 	if len(refs) > 0 {
 		var t threadMatch
-		err := tx.QueryRow(ctx, `SELECT t.id, t.number, t.status FROM messages msg
+		err := tx.QueryRow(ctx, `SELECT t.id, t.number, t.status, msg.thread_id FROM messages msg
 			JOIN tickets t ON t.id = msg.ticket_id AND t.workspace_id = msg.workspace_id AND t.deleted_at IS NULL
 			WHERE msg.workspace_id = $1 AND msg.email_message_id = ANY($2)
-			ORDER BY msg.created_at DESC LIMIT 1`, wid, refs).Scan(&t.ticketID, &t.number, &t.status)
+			ORDER BY msg.created_at DESC LIMIT 1`, wid, refs).Scan(&t.ticketID, &t.number, &t.status, &t.thread)
 		if err == nil {
 			return &t, nil
 		}
@@ -636,9 +685,9 @@ func (s *service) provenThread(ctx context.Context, tx pgx.Tx, wid uuid.UUID, ki
 			return nil, nil
 		}
 		var t threadMatch
-		err = tx.QueryRow(ctx, `SELECT t.id, t.number, t.status FROM messages msg
+		err = tx.QueryRow(ctx, `SELECT t.id, t.number, t.status, msg.thread_id FROM messages msg
 			JOIN tickets t ON t.id = msg.ticket_id AND t.workspace_id = msg.workspace_id AND t.deleted_at IS NULL
-			WHERE msg.workspace_id = $1 AND msg.id = $2 AND t.number = $3`, wid, mid, n).Scan(&t.ticketID, &t.number, &t.status)
+			WHERE msg.workspace_id = $1 AND msg.id = $2 AND t.number = $3`, wid, mid, n).Scan(&t.ticketID, &t.number, &t.status, &t.thread)
 		if db.IsNotFound(err) {
 			return nil, nil
 		}

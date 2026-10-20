@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/emersion/go-imap/v2"
+	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/google/uuid"
 	"github.com/riverqueue/river"
 
@@ -113,6 +114,14 @@ func (s *service) syncMailbox(ctx context.Context, id uuid.UUID) error {
 	if upToDate {
 		return s.finishSync(ctx, m, sel, finalCursor(initial, lastUID, sel, true), 0, start)
 	}
+	if initial && m.UIDValidity == 0 && m.Config.SyncStart == SyncStartNew {
+		// Only mail that arrives from now on: the cursor starts at the end of the folder.
+		last, err := lastFolderUID(c, sel)
+		if err != nil {
+			return s.recordSyncError(ctx, m, opError("listing messages", err))
+		}
+		return s.finishSync(ctx, m, sel, last, 0, start)
+	}
 
 	var cands []candidate
 	if initial {
@@ -185,6 +194,25 @@ func (s *service) syncMailbox(ctx context.Context, id uuid.UUID) error {
 		cursor = cand.uid
 	}
 	return s.finishSync(ctx, m, sel, finalCursor(initial, cursor, sel, complete), ingested, start)
+}
+
+// lastFolderUID is the UID of the newest message in the folder: UIDNEXT-1, or read from
+// the last message when the server does not say.
+func lastFolderUID(c *imapclient.Client, sel selectInfo) (uint32, error) {
+	if sel.UIDNext > 0 {
+		return sel.UIDNext - 1, nil
+	}
+	var set imap.SeqSet
+	set.AddNum(sel.Exists)
+	msgs, err := c.Fetch(set, &imap.FetchOptions{UID: true}).Collect()
+	if err != nil {
+		return 0, err
+	}
+	var last uint32
+	for _, msg := range msgs {
+		last = max(last, uint32(msg.UID))
+	}
+	return last, nil
 }
 
 // finishSync records a successful pass and logs it at debug level.

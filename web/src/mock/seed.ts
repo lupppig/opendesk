@@ -97,6 +97,7 @@ export function baseWorkspace(id: string, name: string, slug: string): WsData {
     tickets: [],
     deletedTickets: new Set(),
     messages: [],
+    threads: [],
     originals: {},
     activities: [],
     tags: [],

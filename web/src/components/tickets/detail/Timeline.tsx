@@ -1,9 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
-import { AlarmClock, Hand, ShieldAlert, Sparkles, ArrowRightLeft, CircleDot, GitMerge, Link2, PencilLine, Star, Tag as TagIcon, TimerOff, Users, UserRound } from "lucide-react";
+import { AlarmClock, Hand, ShieldAlert, Sparkles, ArrowRightLeft, CircleDot, GitMerge, Link2, MessagesSquare, PencilLine, Star, Tag as TagIcon, TimerOff, Users, UserRound } from "lucide-react";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import type { Activity, Mailbox, Member, Message, Priority, Tag, Team, TicketStatus, UserRef } from "@/lib/api/types";
+import { useReducedMotion } from "motion/react";
+import { create } from "zustand";
+import type { Activity, Mailbox, Member, Message, Priority, Tag, Team, Thread, TicketStatus, UserRef } from "@/lib/api/types";
 import { dayLabel, fullDate, relShort, shortDate } from "@/lib/format";
 import { q } from "@/lib/queries";
 import { useRealtime, isCustomerTyping } from "@/lib/realtime/store";
@@ -14,13 +16,21 @@ import { AI_TONE, tone } from "@/lib/tones";
 import { Tooltip } from "@/components/ui/tooltip";
 import { PriorityIcon, priorityLabel, SeverityChip, severityLabel, StatusIcon, statusLabel } from "../bits";
 import { isSeverity, pct } from "@/lib/decisions";
-import { MessageItem } from "./MessageItem";
+import { MessageItem, type ThreadActions } from "./MessageItem";
 import { LiveAgentReply } from "./AgentReply";
 import { BotFace } from "@/components/bots/BotFace";
 import { isAIActor, OllieAvatar, useAssistantName } from "../ollie";
 import { fieldText, useDisplay, useTicketFields, type CustomField } from "../fields";
 
 type Item = { kind: "message"; at: string; m: Message } | { kind: "activity"; at: string; a: Activity };
+
+/** The message the timeline brings into view and rings for a moment; `at` tells two asks for the same one apart. */
+const usePointedAt = create<{ id: string | null; at: number }>(() => ({ id: null, at: 0 }));
+
+/** Shows a message in the timeline (a side conversation in the sidebar points at its latest). */
+export function showInTimeline(messageId: string) {
+  usePointedAt.setState({ id: messageId, at: Date.now() });
+}
 
 /** A user in activity data: a UserRef, or a user id (resolved through the members list). */
 function ref(v: unknown, members: Member[] | undefined): UserRef | null {
@@ -82,6 +92,10 @@ function describe(a: Activity, t: TFunction<"inbox">, { teams, members, tags, fi
   switch (a.type) {
     case "status_changed": {
       const to = d.to as TicketStatus;
+      if (d.reason === "thread_replied") {
+        // An answer in a third-party thread brought a waiting ticket back.
+        return { icon: <MessagesSquare />, text: line("activity.statusThread") };
+      }
       if (d.reason === "sender_unverified") {
         // A reply that failed sender checks did not reopen the ticket.
         return {
@@ -225,6 +239,15 @@ function describe(a: Activity, t: TFunction<"inbox">, { teams, members, tags, fi
       return { icon: <Sparkles />, hue: "ai", text: line("activity.aiSuggested") };
     case "ai_suggested_reply_sent":
       return { icon: <Sparkles />, text: line("activity.aiSuggestedSent", { ollie }) };
+    case "thread_started":
+      return {
+        icon: <MessagesSquare />,
+        text: line("activity.threadStarted", { subject: String(d.subject ?? ""), to: Array.isArray(d.to) ? d.to.join(", ") : "" }),
+      };
+    case "thread_closed":
+      return { icon: <MessagesSquare />, text: line("activity.threadClosed", { subject: String(d.subject ?? "") }) };
+    case "thread_reopened":
+      return { icon: <MessagesSquare />, text: line("activity.threadReopened", { subject: String(d.subject ?? "") }) };
     case "ai_handoff":
       if (a.actor.type === "contact") return { icon: <Hand />, text: line("activity.handoffCustomer") };
       // The bot that handed over, by the name it had then.
@@ -323,6 +346,8 @@ export function Timeline({
   onRetry,
   contactName,
   receivedAt,
+  threads,
+  threadActions,
 }: {
   ticketId: string;
   messages: Message[] | undefined;
@@ -332,7 +357,23 @@ export function Timeline({
   contactName?: string;
   /** The address the customer first wrote to, for inbound messages that don't say. */
   receivedAt?: string | null;
+  /** The ticket's third-party threads (contracts/api.md "Threads"). */
+  threads?: Thread[];
+  /** Offered on each thread's latest message; absent for viewers. */
+  threadActions?: ThreadActions;
 }) {
+  const threadById = useMemo(() => new Map((threads ?? []).map((th) => [th.id, th])), [threads]);
+  // Each thread's latest message carries its actions; its first says what went along.
+  const [firstInThread, lastInThread] = useMemo(() => {
+    const first = new Map<string, string>();
+    const last = new Map<string, string>();
+    for (const m of messages ?? []) {
+      if (!m.thread_id || m.id.startsWith("tmp-")) continue;
+      if (!first.has(m.thread_id)) first.set(m.thread_id, m.id);
+      last.set(m.thread_id, m.id);
+    }
+    return [new Set(first.values()), new Set(last.values())];
+  }, [messages]);
   const items = useMemo<Item[]>(() => {
     const out: Item[] = [
       ...(messages ?? []).map((m) => ({ kind: "message" as const, at: m.created_at, m })),
@@ -343,6 +384,14 @@ export function Timeline({
 
   const scroller = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
+  const reduced = useReducedMotion();
+  const pointed = usePointedAt();
+  useEffect(() => {
+    if (!pointed.id) return;
+    scroller.current?.querySelector(`[id="m-${pointed.id}"]`)?.scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" });
+    const id = setTimeout(() => usePointedAt.setState({ id: null }), 1400);
+    return () => clearTimeout(id);
+  }, [pointed, reduced]);
   const count = items.length;
   // Items present when the conversation first showed stay still; later ones rise in.
   const seen = useRef<Set<string> | null>(null);
@@ -421,7 +470,19 @@ export function Timeline({
                   className={cn((fresh || intro < 6) && "animate-rise-in motion-reduce:animate-none [animation-fill-mode:both]")}
                   style={intro < 6 && !fresh ? { animationDelay: `${Math.max(0, Math.min(5, items.length - 1) - intro) * 35}ms` } : undefined}
                 >
-                  {it.kind === "message" ? <MessageItem m={it.m} onRetry={onRetry} receivedAt={receivedAt} /> : <ActivityLine a={it.a} />}
+                  {it.kind === "message" ? (
+                    <MessageItem
+                      m={it.m}
+                      onRetry={onRetry}
+                      highlight={pointed.id === it.m.id}
+                      receivedAt={receivedAt}
+                      thread={it.m.thread_id ? threadById.get(it.m.thread_id) : undefined}
+                      threadActions={lastInThread.has(it.m.id) ? threadActions : undefined}
+                      threadFirst={firstInThread.has(it.m.id)}
+                    />
+                  ) : (
+                    <ActivityLine a={it.a} />
+                  )}
                 </div>
               </Fragment>
             );

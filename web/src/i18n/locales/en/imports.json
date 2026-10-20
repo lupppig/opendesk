@@ -183,6 +183,18 @@
       "company": {
         "label": "Company",
         "hint": "The customer's company"
+      },
+      "message_id": {
+        "label": "Message-ID",
+        "hint": "The email's own id, so replies thread"
+      },
+      "in_reply_to": {
+        "label": "In-Reply-To",
+        "hint": "The Message-ID it answers"
+      },
+      "references": {
+        "label": "References",
+        "hint": "Earlier Message-IDs in the thread"
       }
     }
   },

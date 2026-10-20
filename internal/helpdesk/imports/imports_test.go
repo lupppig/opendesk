@@ -708,6 +708,54 @@ func TestCSVImport(t *testing.T) {
 	e.Do("POST", "/v1/imports/"+x.ID.String()+"/sync", e.admin, nil).Want(t, 409)
 }
 
+func TestCSVImportKeepsMessageIDs(t *testing.T) {
+	e := newEnv(t)
+	csvData := "Ticket ID,Body,From email,Author type,Created at,Message-ID,In-Reply-To,References\n" +
+		"M-1,Where is my order?,dan@customer.test,customer,2024-02-01 08:00,<o1@customer.test>,,\n" +
+		"M-1,It ships today.,anna@team.test,agent,2024-02-01 09:00,<o2@team.test>,<o1@customer.test>,<o1@customer.test>\n" +
+		"M-2,The same email again,dan@customer.test,customer,2024-02-02 08:00,<o1@customer.test>,,\n"
+	var up ImportCSVUpload
+	e.Upload("/v1/imports/csv", e.admin, "export.csv", []byte(csvData)).Want(t, 201).JSON(t, &up)
+	if up.Suggested.MessageID != "Message-ID" || up.Suggested.InReplyTo != "In-Reply-To" || up.Suggested.References != "References" {
+		t.Fatalf("suggested %+v", up.Suggested)
+	}
+	var x Import
+	e.Do("POST", "/v1/imports", e.admin, map[string]any{"source": "csv", "upload_id": up.UploadID}).Want(t, 201).JSON(t, &x)
+	if done := e.drive(t, x.ID); done.Status != StatusCompleted || done.Counts.Messages != 3 {
+		t.Fatalf("done %s %+v %+v", done.Status, done.Counts, done.Problems)
+	}
+	type row struct {
+		msgID     *string
+		inReplyTo string
+		refs      []string
+	}
+	read := func(ticket uuid.UUID) []row {
+		rows, err := e.D.DB.Pool.Query(e.Ctx, `SELECT email_message_id, in_reply_to, "references" FROM messages WHERE ticket_id = $1 ORDER BY created_at`, ticket)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer rows.Close()
+		var out []row
+		for rows.Next() {
+			var r row
+			if err := rows.Scan(&r.msgID, &r.inReplyTo, &r.refs); err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, r)
+		}
+		return out
+	}
+	m1 := read(e.ticketByRef(t, "M-1"))
+	if len(m1) != 2 || m1[0].msgID == nil || *m1[0].msgID != "<o1@customer.test>" || m1[1].msgID == nil || *m1[1].msgID != "<o2@team.test>" ||
+		m1[1].inReplyTo != "<o1@customer.test>" || !slices.Equal(m1[1].refs, []string{"<o1@customer.test>"}) {
+		t.Errorf("M-1 %+v", m1)
+	}
+	// A Message-ID another message holds stays with that one; the row still comes over.
+	if m2 := read(e.ticketByRef(t, "M-2")); len(m2) != 1 || m2[0].msgID != nil {
+		t.Errorf("M-2 %+v", m2)
+	}
+}
+
 func TestLifecycle(t *testing.T) {
 	e := newEnv(t)
 	x := e.start(t, e.zendeskBody())

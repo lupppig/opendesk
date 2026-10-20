@@ -1,12 +1,12 @@
 // Tickets, messages, activities, attachments, search and reports.
 
-import type { Attachment, Channel, Priority, ReportsOverview, Severity, SuggestionField, Ticket, TicketPatch, TicketStatus } from "@/lib/api/types";
+import type { Attachment, Channel, Message, Priority, ReportsOverview, Severity, SuggestionField, Thread, Ticket, TicketPatch, TicketStatus } from "@/lib/api/types";
 import { contactRef, db, me, userRef, type WsData } from "../db";
 import { publish } from "../gateway";
 import { HttpError, del, get, invalid, notFound, paginate, patch, post, required, respond, s, strArr, type Ctx } from "../router";
 import { canCreateLabels, checkRequiredOnSolve, mergeFields } from "../labels";
 import { canSeeTicket, defaultBrand, teamRole } from "../teams";
-import { addActivity, addMessage, applyPatch, canSendFrom, counts, fieldFiltersFromQuery, findTicket, matches, newTicket, notify, publishTicketUpdated, sortTickets, type ListFilters } from "../tickets";
+import { addActivity, addMessage, applyPatch, buildMessage, canSendFrom, counts, fieldFiltersFromQuery, findTicket, matches, newTicket, notify, publishTicketUpdated, sortTickets, type ListFilters } from "../tickets";
 import { DAY, isRecord, nowIso, uuid } from "../util";
 import { cannotSend, sendingOf } from "./mailhost";
 
@@ -133,7 +133,101 @@ function simulateDelivery(ws: WsData, t: Ticket, msgId: string) {
   }, 1500);
 }
 
+/** A message of a third-party thread: a note emailed to the thread's recipients (contracts/api.md "Threads"). */
+function threadMessage(ws: WsData, t: Ticket, th: Thread, html: string, attachmentIds: string[]): Message {
+  const me = userRef(db.meId);
+  const mb = ws.mailboxes.find((m) => m.id === th.mailbox_id);
+  const msg: Message = {
+    ...buildMessage(ws, t, { kind: "note", direction: "outbound", html, user: me, attachments: attachmentsFor(attachmentIds), delivery: "pending" }),
+    thread_id: th.id,
+    delivery_status: "pending",
+    subject: th.subject,
+    to: th.to,
+    cc: th.cc,
+    mailbox_id: mb?.id ?? null,
+    from_email: mb?.email ?? "",
+  };
+  ws.messages.push(msg);
+  th.status = "open";
+  th.message_count += 1;
+  th.last_message_at = th.updated_at = msg.created_at;
+  publish(ws, "message.created", { ticket_id: t.id, message: msg });
+  publish(ws, "thread.updated", { ticket_id: t.id, thread: th });
+  simulateDelivery(ws, t, msg.id);
+  return msg;
+}
+
+function threadOf(ctx: Ctx, t: Ticket): Thread {
+  const th = ctx.ws.threads.find((x) => x.id === ctx.params.threadId && x.ticket_id === t.id);
+  if (!th) throw notFound("Thread");
+  return th;
+}
+
 export function registerTickets() {
+  get("/v1/tickets/:id/threads", (ctx) => {
+    const t = ticket(ctx);
+    return { data: ctx.ws.threads.filter((x) => x.ticket_id === t.id) };
+  });
+  post("/v1/tickets/:id/threads", (ctx) => {
+    const t = ticket(ctx);
+    const to = strArr(ctx.body.to) ?? [];
+    if (!to.length) throw invalid("a thread needs at least one recipient");
+    const subject = required(ctx, "subject").trim();
+    const html = required(ctx, "body_html");
+    const mailbox = ctx.ws.mailboxes.find((m) => m.id === (s(ctx, "mailbox_id") ?? t.mailbox_id)) ?? ctx.ws.mailboxes.find((m) => m.brand_id === t.brand_id);
+    const now = nowIso();
+    const th: Thread = {
+      id: uuid(),
+      ticket_id: t.id,
+      subject,
+      to,
+      cc: strArr(ctx.body.cc) ?? [],
+      mailbox_id: mailbox?.id ?? null,
+      status: "open",
+      include_history: ctx.body.include_history === true,
+      created_by: userRef(db.meId),
+      message_count: 0,
+      last_message_at: now,
+      created_at: now,
+      updated_at: now,
+    };
+    ctx.ws.threads.push(th);
+    publish(ctx.ws, "thread.created", { ticket_id: t.id, thread: th });
+    addActivity(ctx.ws, t, "thread_started", { thread_id: th.id, subject, to }, userRef(db.meId));
+    // Files of the customer's conversation go along as copies (contracts/api.md "Threads").
+    const forward = strArr(ctx.body.forward_attachment_ids) ?? [];
+    const copies = forward.map((id) => {
+      // Not the files of mail that failed its sender checks.
+      const src = ctx.ws.messages
+        .find((m) => m.ticket_id === t.id && m.kind === "reply" && !(m.direction === "inbound" && m.auth_failed) && m.attachments.some((a) => a.id === id))
+        ?.attachments.find((a) => a.id === id);
+      if (!src) throw invalid("forward_attachment_ids must be attachments of this ticket's conversation with the customer");
+      const copy = { ...src, id: uuid(), inline: false };
+      db.attachments.push(copy);
+      return copy.id;
+    });
+    const message = threadMessage(ctx.ws, t, th, html, [...(strArr(ctx.body.attachment_ids) ?? []), ...copies]);
+    return respond(201, { thread: th, message });
+  });
+  post("/v1/tickets/:id/threads/:threadId/messages", (ctx) => {
+    const t = ticket(ctx);
+    const th = threadOf(ctx, t);
+    return respond(201, threadMessage(ctx.ws, t, th, required(ctx, "body_html"), strArr(ctx.body.attachment_ids) ?? []));
+  });
+  patch("/v1/tickets/:id/threads/:threadId", (ctx) => {
+    const t = ticket(ctx);
+    const th = threadOf(ctx, t);
+    const status = s(ctx, "status");
+    if (status !== "open" && status !== "closed") throw invalid("status is open or closed");
+    if (th.status !== status) {
+      th.status = status;
+      th.updated_at = nowIso();
+      addActivity(ctx.ws, t, status === "closed" ? "thread_closed" : "thread_reopened", { thread_id: th.id, subject: th.subject }, userRef(db.meId));
+      publish(ctx.ws, "thread.updated", { ticket_id: t.id, thread: th });
+    }
+    return th;
+  });
+
   get("/v1/tickets", (ctx) => {
     const f = filtersFrom(ctx);
     const list = ctx.ws.tickets.filter((t) => matches(ctx.ws, t, f, db.meId));

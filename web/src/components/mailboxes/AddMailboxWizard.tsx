@@ -13,7 +13,7 @@ import { Field, TextInput } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/tabs";
 import { api, type CreateMailboxBody, type MailboxReceive } from "@/lib/api/endpoints";
 import { errorMessage } from "@/lib/api/client";
-import type { MailDetection, MailHost, Mailbox, MailboxConnectOptions, MailboxTest, TlsMode } from "@/lib/api/types";
+import type { MailDetection, MailHost, Mailbox, MailboxConnectOptions, MailboxTest, SyncStart, TlsMode } from "@/lib/api/types";
 import { cn } from "@/lib/cn";
 import { isGoogleHost, isMicrosoftHost, looksLikeGoogleAppPassword, mailHostLabel, offersNoTls, stripAppPassword } from "@/lib/mailHost";
 import { qk, upsertInList } from "@/lib/queries";
@@ -80,6 +80,8 @@ type Form = {
   /** An alias to its own team; cleared when the mailbox's team is private. */
   alias_teams: Record<string, string>;
   from_name_format: string;
+  /** Ways that read the inbox: where the first sync starts. */
+  sync_start: SyncStart;
 };
 
 const empty: Form = {
@@ -104,6 +106,7 @@ const empty: Form = {
   aliases: [],
   alias_teams: {},
   from_name_format: DEFAULT_FROM,
+  sync_start: "recent",
 };
 
 type SendVia = "system" | "smtp" | "google" | "microsoft";
@@ -371,7 +374,12 @@ export function AddMailboxWizard({
         openInBrowser(location.pathname);
         return null;
       }
-      return api.mailboxes.oauthStart(provider, { name: form.name.trim(), email: form.email.trim() || undefined, receive });
+      return api.mailboxes.oauthStart(provider, {
+        name: form.name.trim(),
+        email: form.email.trim() || undefined,
+        receive,
+        sync_start: receive === "forwarding" ? undefined : form.sync_start,
+      });
     },
     onSuccess: (r) => (r ? window.location.assign(r.url) : setOpenedInBrowser(true)),
     onError: (e) => setBlocked(errorMessage(e)),
@@ -400,7 +408,7 @@ export function AddMailboxWizard({
           ...base,
           inbound_kind: "imap",
           outbound_kind: "smtp",
-          config: { ...imapCfg, ...smtpCfg, smtp_username: (f.smtp_same ? f.imap_username : f.smtp_username).trim(), mail_host: f.mail_host },
+          config: { ...imapCfg, ...smtpCfg, smtp_username: (f.smtp_same ? f.imap_username : f.smtp_username).trim(), mail_host: f.mail_host, sync_start: f.sync_start },
           password: f.imap_password,
           smtp_password: f.smtp_same ? f.imap_password : f.smtp_password,
           verify: true,
@@ -411,7 +419,7 @@ export function AddMailboxWizard({
           ...base,
           inbound_kind: "imap",
           outbound_kind: "smtp",
-          config: { ...imapCfg, ...smtpCfg, imap_username: f.email.trim(), smtp_username: f.email.trim(), mail_host: f.mail_host },
+          config: { ...imapCfg, ...smtpCfg, imap_username: f.email.trim(), smtp_username: f.email.trim(), mail_host: f.mail_host, sync_start: f.sync_start },
           password: pw,
           smtp_password: pw,
           verify: true,
@@ -900,6 +908,7 @@ function ConnectStep({
       <div className="flex flex-col gap-4">
         <Summary form={form} det={det} />
         {!isDesktop && <Note>{t("wizard.oauthNote", { provider: method === "google" ? "Google" : "Microsoft" })}</Note>}
+        <SyncStartField value={form.sync_start} onChange={(v) => set("sync_start", v)} />
       </div>
     );
 
@@ -910,11 +919,26 @@ function ConnectStep({
         <Summary form={form} det={det} />
         <Note>{t("connect.directNote", { provider })}</Note>
         {!isDesktop && <Note>{t("wizard.oauthNote", { provider })}</Note>}
+        <SyncStartField value={form.sync_start} onChange={(v) => set("sync_start", v)} />
       </div>
     );
   }
 
-  if (method === "app_password" && isGoogleHost(form.mail_host)) return <GmailAppPassword sub={sub} form={form} set={set} errors={errors} servers={servers} />;
+  if (method === "app_password" && isGoogleHost(form.mail_host))
+    return (
+      <GmailAppPassword
+        sub={sub}
+        form={form}
+        set={set}
+        errors={errors}
+        servers={
+          <>
+            {servers}
+            <SyncStartField value={form.sync_start} onChange={(v) => set("sync_start", v)} />
+          </>
+        }
+      />
+    );
 
   if (method === "app_password" || method === "password") {
     const guideHost = form.mail_host;
@@ -940,6 +964,7 @@ function ConnectStep({
           )}
         </Field>
         {servers}
+        <SyncStartField value={form.sync_start} onChange={(v) => set("sync_start", v)} />
         <AddressingFields form={form} set={set} errors={errors} compact={compact} />
       </div>
     );
@@ -1052,7 +1077,28 @@ function ConnectStep({
           </label>
         }
       />
+      <SyncStartField value={form.sync_start} onChange={(v) => set("sync_start", v)} />
       <AddressingFields form={form} set={set} errors={errors} compact={compact} />
+    </div>
+  );
+}
+
+/** Where reading the inbox starts: the last 7 days, or only new mail when the history came over by import. */
+function SyncStartField({ value, onChange }: { value: SyncStart; onChange: (v: SyncStart) => void }) {
+  const { t } = useTranslation("settingsChannels");
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-[12.5px] font-medium">{t("wizard.syncStart")}</span>
+      <Segmented
+        value={value}
+        onChange={onChange}
+        options={[
+          { value: "recent", label: t("wizard.syncStartRecent") },
+          { value: "new", label: t("wizard.syncStartNew") },
+        ]}
+        className="self-start"
+      />
+      <p className="text-xs leading-[18px] text-fg-3">{value === "new" ? t("wizard.syncStartNewHint") : t("wizard.syncStartRecentHint")}</p>
     </div>
   );
 }

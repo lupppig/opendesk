@@ -167,6 +167,46 @@ func TestIMAPSync(t *testing.T) {
 	}
 }
 
+// A mailbox whose history came over by import starts with only new mail.
+func TestIMAPSyncStartNew(t *testing.T) {
+	w := newWorld(t)
+	u, port := imapServer(t, w)
+	appendMail(t, u, testMail(customer(), "recent one"), time.Now().Add(-time.Hour))
+	appendMail(t, u, testMail(customer(), "recent two"), time.Now())
+	m := w.mailbox(InboundIMAP, OutboundSystem, func(m *mailboxRow, c *credentials) {
+		m.Email = "agent@acme.test"
+		m.Config = MailboxConfig{IMAPHost: "127.0.0.1", IMAPPort: port, IMAPTLS: TLSImplicit, IMAPUsername: "agent@acme.test",
+			SyncStart: SyncStartNew}
+		c.Password = "imap-pass-1"
+	})
+	inboundCount := func() int {
+		return w.count(`SELECT count(*) FROM inbound_emails WHERE mailbox_id = $1`, m.ID)
+	}
+	if err := w.s.syncMailbox(w.ctx, m.ID); err != nil {
+		t.Fatal(err)
+	}
+	m2, _ := loadMailbox(w.ctx, w.d.DB.Pool, w.wid, m.ID)
+	if n := inboundCount(); n != 0 || m2.LastUID != 2 || m2.UIDValidity == 0 || m2.Status != "active" {
+		t.Fatalf("first sync: %d messages, cursor %d, validity %d, %s", n, m2.LastUID, m2.UIDValidity, m2.Status)
+	}
+	appendMail(t, u, testMail(customer(), "new one"), time.Now())
+	if err := w.s.syncMailbox(w.ctx, m.ID); err != nil {
+		t.Fatal(err)
+	}
+	if n := inboundCount(); n != 1 {
+		t.Fatalf("after new mail: %d messages, want 1", n)
+	}
+	// A changed UIDVALIDITY on a mailbox that already syncs reads the window again: mail
+	// may have arrived since the last pass.
+	mustExec(t, w.d, `UPDATE mailboxes SET imap_uid_validity = 12345 WHERE id = $1`, m.ID)
+	if err := w.s.syncMailbox(w.ctx, m.ID); err != nil {
+		t.Fatal(err)
+	}
+	if n := inboundCount(); n != 3 {
+		t.Fatalf("validity reset: %d messages, want 3", n)
+	}
+}
+
 func TestEnqueueDueRequeuesAfterCompletedSync(t *testing.T) {
 	w := newWorld(t)
 	m := w.mailbox(InboundIMAP, OutboundSystem, nil)

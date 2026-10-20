@@ -52,6 +52,15 @@ const (
 	SendingSystemOff = "system_off"
 )
 
+// Where the first sync of a mailbox that reads its inbox (over IMAP, or through the Gmail
+// API or Microsoft Graph) starts (MailboxConfig.SyncStart): the last 7 days of the inbox
+// (the default), or only mail that arrives from then on, for a team whose history came
+// over by import.
+const (
+	SyncStartRecent = "recent"
+	SyncStartNew    = "new"
+)
+
 // TLS modes for IMAP and SMTP.
 const (
 	TLSImplicit = "tls"
@@ -90,6 +99,10 @@ type MailboxConfig struct {
 	ProviderMarkRead       bool `json:"provider_mark_read,omitempty"`
 	ProviderArchiveOnSolve bool `json:"provider_archive_on_solve,omitempty"`
 	ProviderLabel          bool `json:"provider_label,omitempty"`
+	// SyncStart is where the first sync reads from: recent (the last 7 days, the default)
+	// or new (only mail that arrives from then on). It applies when the mailbox starts
+	// reading its inbox: on connecting, and again when it moves to another account or server.
+	SyncStart string `json:"sync_start,omitempty" enum:"recent,new"`
 }
 
 // providerLabelName is the Gmail label or Outlook category ProviderLabel applies.

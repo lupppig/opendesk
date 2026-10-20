@@ -2,7 +2,8 @@
 // deep links and notification clicks navigate, the dock or taskbar badge follows
 // the unread count, and notifications reach the OS while the window is in the
 // background, when the person's preferences let them (the type's desktop channel
-// is on and notifications are not paused). All of it is a no-op in a browser.
+// is on and notifications are not paused). In a browser, only the notifications
+// remain: the browser shows them once the person has allowed it.
 
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
@@ -38,20 +39,39 @@ export function useDesktopBadge() {
   useEffect(() => () => desktop?.setBadge(0), []);
 }
 
-/** Keeps the notification preferences loaded in the desktop app, so notifyDesktop can follow them. */
+/** True when this browser has allowed the page to show notifications. */
+export function browserNotificationsAllowed(): boolean {
+  return typeof window !== "undefined" && "Notification" in window && window.Notification.permission === "granted";
+}
+
+/** Keeps the notification preferences loaded wherever notifyDesktop can show something, so it can follow them. */
 export function useDesktopPreferences() {
-  useQuery({ ...q.notificationPreferences(), enabled: isDesktop, staleTime: 5 * 60_000 });
+  useQuery({ ...q.notificationPreferences(), enabled: isDesktop || browserNotificationsAllowed(), staleTime: 5 * 60_000 });
 }
 
 /**
  * Mirrors a new notification to the OS when the window isn't focused (the toasts
  * cover the focused window), its type's desktop channel is on and nothing is
- * paused. Preferences not loaded yet follow the defaults: on for every type.
+ * paused: through the desktop app, or through the browser once it is allowed.
+ * Preferences not loaded yet follow the defaults: on for every type. `open`
+ * navigates to a browser notification's path when it is clicked.
  */
-export function notifyDesktop(n: Notification) {
-  if (!desktop || document.hasFocus()) return;
+export function notifyDesktop(n: Notification, open: (path: string) => void) {
+  if (document.hasFocus()) return;
+  if (!desktop && !browserNotificationsAllowed()) return;
   if (!wantsDesktop(queryClient.getQueryData<NotificationPreferences>(qk.notificationPreferences), n.type)) return;
   const t = i18n.getFixedT(null, "shell");
+  const title = describe(n, t);
   const body = n.ticket ? `#${n.ticket.number} ${n.ticket.subject ?? ""}`.trim() : undefined;
-  desktop.notify({ id: n.id, title: describe(n, t), body, path: notificationPath(n) ?? undefined });
+  const path = notificationPath(n) ?? undefined;
+  if (desktop) {
+    desktop.notify({ id: n.id, title, body, path });
+    return;
+  }
+  const note = new window.Notification(title, { body, tag: n.id, icon: "/icon-192.png" });
+  note.onclick = () => {
+    window.focus();
+    if (path) open(path);
+    note.close();
+  };
 }

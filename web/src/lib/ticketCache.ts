@@ -184,6 +184,7 @@ export function forgetTicket(qc: QueryClient, id: string) {
   qc.removeQueries({ queryKey: qk.activities(id), exact: true });
   qc.removeQueries({ queryKey: qk.suggestedReply(id), exact: true });
   qc.removeQueries({ queryKey: qk.ticketLinks(id), exact: true });
+  qc.removeQueries({ queryKey: qk.threads(id), exact: true });
 }
 
 /** Every loaded ticket across lists, for optimistic bulk edits. */

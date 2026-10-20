@@ -16,6 +16,7 @@ import type {
   Page,
   SuggestedReply,
   Team,
+  Thread,
   Ticket,
   TicketLink,
   Workspace,
@@ -126,7 +127,14 @@ function mergeMessage(qc: QueryClient, ticketId: string, m: Message) {
   const partial = !Array.isArray(m.to) || !Array.isArray(m.attachments) || !m.author;
   const full = { ...m, to: m.to ?? [], cc: m.cc ?? [], bcc: m.bcc ?? [], attachments: m.attachments ?? [] };
   // Our own send can arrive here before its POST answers: take the optimistic copy's place.
-  const temp = old.findIndex((x) => x.id.startsWith("tmp-") && x.kind === m.kind && x.author?.user?.id === m.author?.user?.id && x.delivery_status !== "failed");
+  const temp = old.findIndex(
+    (x) =>
+      x.id.startsWith("tmp-") &&
+      x.kind === m.kind &&
+      (x.thread_id ?? null) === (m.thread_id ?? null) &&
+      x.author?.user?.id === m.author?.user?.id &&
+      x.delivery_status !== "failed",
+  );
   if (temp >= 0 && m.author?.type === "user") {
     qc.setQueryData<Message[]>(key, old.map((x, j) => (j === temp ? full : x)));
     if (partial) void qc.invalidateQueries({ queryKey: key, exact: true });
@@ -228,6 +236,13 @@ export function applyEnvelope(qc: QueryClient, env: Envelope, ctx: ApplyContext)
         if (s.status === "pending") return s;
         return old && old.id !== s.id ? old : null;
       });
+      return;
+    }
+    case "thread.created":
+    case "thread.updated": {
+      const th = d.thread as Thread | undefined;
+      const tid = (d.ticket_id as string) ?? th?.ticket_id;
+      if (th && tid) upsertInList(qc, qk.threads(tid), th);
       return;
     }
     case "activity.created": {

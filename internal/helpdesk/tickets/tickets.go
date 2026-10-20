@@ -793,6 +793,20 @@ func mergeTickets(ctx context.Context, tx pgx.Tx, d *deps.Deps, wid, src, dst uu
 	if _, err := tx.Exec(ctx, `UPDATE messages SET ticket_id = $3 WHERE workspace_id = $1 AND ticket_id = $2`, wid, src, dst); err != nil {
 		return err
 	}
+	// Third-party threads go with their messages, and show on the target for everyone.
+	rows, err := tx.Query(ctx, `UPDATE ticket_threads SET ticket_id = $3, updated_at = now() WHERE workspace_id = $1 AND ticket_id = $2 RETURNING id`, wid, src, dst)
+	if err != nil {
+		return err
+	}
+	moved, err := pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
+	if err != nil {
+		return err
+	}
+	for _, id := range moved {
+		if _, err := domain.PublishThread(ctx, tx, wid, dst, id, "thread.updated"); err != nil {
+			return err
+		}
+	}
 	if _, err := tx.Exec(ctx, `INSERT INTO ticket_tags (ticket_id, tag_id) SELECT $2, tag_id FROM ticket_tags WHERE ticket_id = $1
 		ON CONFLICT DO NOTHING`, src, dst); err != nil {
 		return err

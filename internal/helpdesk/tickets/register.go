@@ -15,6 +15,7 @@ import (
 func Register(d *deps.Deps, api huma.API, r chi.Router) {
 	registerTickets(d, api)
 	registerMessages(d, api)
+	registerThreads(d, api)
 	registerTemplates(d, api)
 	registerCSAT(d, api)
 	registerInsights(d, api)

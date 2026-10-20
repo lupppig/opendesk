@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { AtSign, Bell, BellOff, Mail, ChevronRight, CornerDownLeft, CreditCard, Gauge, Hand, Import, KeyRound, MailX, Moon, Settings2, Sparkles, TimerOff, UserPlus, UsersRound } from "lucide-react";
+import { AtSign, Bell, BellOff, Mail, ChevronRight, CornerDownLeft, CreditCard, Gauge, Hand, Import, KeyRound, MailX, MessagesSquare, Moon, Settings2, Sparkles, TimerOff, UserPlus, UsersRound } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -24,6 +24,7 @@ const kind: Record<Notification["type"], { icon: React.ReactNode; tone: Tone }> 
   assigned: { icon: <UserPlus />, tone: "blue" },
   mentioned: { icon: <AtSign />, tone: "indigo" },
   customer_replied: { icon: <CornerDownLeft />, tone: "teal" },
+  thread_replied: { icon: <MessagesSquare />, tone: "cyan" },
   sla_breached: { icon: <TimerOff />, tone: "red" },
   ai_handoff: { icon: <Hand />, tone: AI_TONE },
   ai_cap_reached: { icon: <Gauge />, tone: AI_TONE },
@@ -96,6 +97,11 @@ export function describe(n: Notification, t: TFunction<"shell">): string {
       return who ? t("notifications.type.mentioned", { who }) : t("notifications.type.mentionedAnon");
     case "customer_replied":
       return contact ? t("notifications.type.replied", { who: contact }) : t("notifications.type.repliedAnon");
+    case "thread_replied": {
+      const from = (n.data.from ?? {}) as { name?: unknown; email?: unknown };
+      const sender = typeof from.name === "string" && from.name ? from.name : typeof from.email === "string" && from.email ? from.email : null;
+      return sender ? t("notifications.type.threadReplied", { who: sender }) : t("notifications.type.threadRepliedAnon");
+    }
     case "sla_breached":
       return t("notifications.type.sla");
     case "ai_handoff":

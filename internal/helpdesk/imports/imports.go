@@ -158,6 +158,10 @@ type ImportCSVMapping struct {
 	AssigneeEmail string `json:"assignee_email,omitempty" maxLength:"200"`
 	Team          string `json:"team,omitempty" maxLength:"200"`
 	Company       string `json:"company,omitempty" maxLength:"200"`
+	// The email headers of each message, so replies to imported history thread into it.
+	MessageID  string `json:"message_id,omitempty" maxLength:"200"`
+	InReplyTo  string `json:"in_reply_to,omitempty" maxLength:"200"`
+	References string `json:"references,omitempty" maxLength:"200"`
 }
 
 // ImportAccount is the source account an import reads.

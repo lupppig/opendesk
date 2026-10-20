@@ -29,7 +29,9 @@ const (
 	NotifyAssigned        = "assigned"
 	NotifyMentioned       = "mentioned"
 	NotifyCustomerReplied = "customer_replied"
-	NotifySLABreached     = "sla_breached"
+	// NotifyThreadReplied: someone outside the team answered a third-party thread.
+	NotifyThreadReplied = "thread_replied"
+	NotifySLABreached   = "sla_breached"
 	// NotifyTeamJoined tells a team's leads that an admin joined it (contracts/teams.md).
 	NotifyTeamJoined = "team_joined"
 )

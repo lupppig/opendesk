@@ -90,7 +90,9 @@ const (
 	TriggerTicketCreated   = "ticket_created"
 	TriggerCustomerReplied = "customer_replied"
 	TriggerAgentReplied    = "agent_replied"
-	TriggerTicketUpdated   = "ticket_updated"
+	// TriggerThreadReplied: someone outside the team answered a third-party thread.
+	TriggerThreadReplied = "thread_replied"
+	TriggerTicketUpdated = "ticket_updated"
 )
 
 // TicketTriggerArgs runs SLA assignment, automations, auto-assignment and notifications

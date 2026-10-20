@@ -486,7 +486,7 @@
       "app": "In the app",
       "email": "Email",
       "push": "Phone",
-      "desktop": "Desktop app"
+      "desktop": "Desktop"
     },
     "groups": {
       "tickets": "Tickets",
@@ -504,7 +504,7 @@
       "emailOffShort": "off",
       "emailOff": "Notification emails are off. Choose a schedule above to send them again. Your choices here are kept.",
       "phoneHint": "Phone: the opendesk iPhone app. Each phone can also mute types of its own, in the app's settings.",
-      "desktopHint": "Desktop app: applies only in the opendesk desktop app, while its window is in the background.",
+      "desktopHint": "Desktop: in the opendesk desktop app, or in this browser once you allow notifications, while opendesk is in the background.",
       "urgent": "Urgent",
       "urgentHint": "Can be emailed sooner, at most every {{gap}}"
     },
@@ -520,6 +520,10 @@
       "customer_replied": {
         "label": "Customer replies",
         "hint": "On tickets assigned to you"
+      },
+      "thread_replied": {
+        "label": "Side conversation answers",
+        "hint": "Someone outside your team answers a side conversation on a ticket assigned to you"
       },
       "sla_breached": {
         "label": "SLA breaches",
@@ -586,7 +590,9 @@
     },
     "desktop": {
       "blocked": "Notifications are blocked for opendesk on this computer. Allow them in your system settings: on a Mac, System Settings, Notifications, opendesk; on Windows, Settings, System, Notifications.",
+      "blockedBrowser": "Notifications are blocked for opendesk in this browser. Allow them in the site settings, next to the address bar.",
       "ask": "opendesk has not asked this computer for permission to show notifications yet.",
+      "askBrowser": "opendesk has not asked this browser for permission to show notifications yet.",
       "allow": "Allow notifications"
     }
   },

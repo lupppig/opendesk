@@ -724,3 +724,84 @@ func TestIMAPPerWorkspace(t *testing.T) {
 		t.Fatalf("polled without Collab: %v %d", err, w.inboundCount(m))
 	}
 }
+
+// TestAPISyncStartNew: a mailbox connected with sync_start new reads only mail that
+// arrives from then on, through Gmail and through Graph.
+func TestAPISyncStartNew(t *testing.T) {
+	t.Run("gmail", func(t *testing.T) {
+		w := newWorld(t)
+		f := newFakeProvider(t)
+		g := &fakeGmail{profile: "200", labels: map[string][]string{}, raw: map[string][]byte{}}
+		f.handler = func(rw http.ResponseWriter, r *http.Request) bool {
+			if r.URL.Path == "/userinfo" {
+				_, _ = rw.Write([]byte(`{"email":"desk@acme.test","email_verified":true}`))
+				return true
+			}
+			return g.serve(rw, r)
+		}
+		w.collabClient(f, KindGoogle)
+		w.s.gmailBase = f.srv.URL
+		srv := w.api(w.admin)
+		u, cookie := startOAuth(t, srv.URL, "google", map[string]any{"name": "Desk", "receive": "api", "sync_start": "new"})
+		id, err := uuid.Parse(callback(t, srv.URL, "google", u.Query().Get("state"), "code-1", cookie).Query().Get("connected"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		m, _ := loadMailbox(w.ctx, w.d.DB.Pool, w.wid, id)
+		if m.Config.SyncStart != SyncStartNew {
+			t.Fatalf("config %+v", m.Config)
+		}
+		g.inbox = []string{"g1"}
+		g.raw["g1"] = customerMail(t, m.Email, "g1-"+crypto.RandomString(6))
+		if err := w.s.syncMailbox(w.ctx, id); err != nil {
+			t.Fatal(err)
+		}
+		if n := w.inboundCount(m); n != 0 || len(g.queries) != 0 {
+			t.Fatalf("first pass: %d messages, queries %q", n, g.queries)
+		}
+		if st := w.apiState(m); st.HistoryID != "200" {
+			t.Fatalf("state %+v", st)
+		}
+	})
+	t.Run("graph", func(t *testing.T) {
+		w := newWorld(t)
+		f := newFakeProvider(t)
+		var mu sync.Mutex
+		var deltaQueries []string
+		f.handler = func(rw http.ResponseWriter, r *http.Request) bool {
+			mu.Lock()
+			defer mu.Unlock()
+			switch r.URL.Path {
+			case "/me":
+				_, _ = rw.Write([]byte(`{"mail":"ops@acme.test","userPrincipalName":"ops@acme.onmicrosoft.com"}`))
+			case "/me/mailFolders/inbox/messages/delta":
+				deltaQueries = append(deltaQueries, r.URL.Query().Get("$filter"))
+				_, _ = rw.Write([]byte(`{"value":[],"@odata.deltaLink":"` + f.srv.URL + `/me/mailFolders/inbox/messages/delta?$deltatoken=d1"}`))
+			default:
+				return false
+			}
+			return true
+		}
+		w.collabClient(f, KindMicrosoft)
+		w.s.graphBase = f.srv.URL
+		srv := w.api(w.admin)
+		u, cookie := startOAuth(t, srv.URL, "microsoft", map[string]any{"name": "Ops", "receive": "api", "sync_start": "new"})
+		id, err := uuid.Parse(callback(t, srv.URL, "microsoft", u.Query().Get("state"), "code-1", cookie).Query().Get("connected"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		before := time.Now().Add(-time.Minute)
+		if err := w.s.syncMailbox(w.ctx, id); err != nil {
+			t.Fatal(err)
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if len(deltaQueries) != 1 {
+			t.Fatalf("delta queries %q", deltaQueries)
+		}
+		since, err := time.Parse(time.RFC3339, strings.TrimPrefix(deltaQueries[0], "receivedDateTime ge "))
+		if err != nil || since.Before(before) {
+			t.Fatalf("first round filter %q", deltaQueries[0])
+		}
+	})
+}

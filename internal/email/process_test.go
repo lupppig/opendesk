@@ -3,8 +3,10 @@ package email
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/useopendesk/opendesk/internal/crypto"
 	"github.com/useopendesk/opendesk/internal/domain"
@@ -329,5 +331,59 @@ func TestAutoReplyRateLimited(t *testing.T) {
 	subject, html := sent[0].GetHeader("Subject"), sent[0].HTML
 	if sent[0].GetHeader("Auto-Submitted") == "" || !strings.HasPrefix(subject, "We got it: Question 0 [#") || !strings.Contains(html, "Hi Zed") {
 		t.Fatalf("auto reply %q %q", subject, html)
+	}
+}
+
+// Imported history (contracts/imports.md "CSV") keeps its Message-IDs: a live reply threads
+// into the imported ticket, and the first mailbox sync's copy of an imported email is
+// already seen.
+func TestImportedHistoryThreadsAndDedupes(t *testing.T) {
+	w := newWorld(t)
+	m := w.mailbox(InboundForwarding, OutboundSystem, nil)
+	from := customer()
+	id := crypto.RandomString(8)
+	asked, answered := "<"+id+"@mail.customer.test>", "<answer"+id+"@acme.test>"
+	var tk domain.Ticket
+	err := w.d.DB.Tx(w.ctx, func(tx pgx.Tx) error {
+		contact, _, err := domain.UpsertContactByEmail(w.ctx, tx, w.wid, from, "Carla Customer")
+		if err != nil {
+			return err
+		}
+		created := time.Now().Add(-48 * time.Hour).UTC()
+		tk, err = domain.CreateTicket(w.ctx, tx, domain.NewTicket{WorkspaceID: w.wid, Subject: "Printer is on fire", Channel: domain.ChannelEmail,
+			MailboxID: &m.ID, ContactID: &contact, Status: domain.StatusSolved, CreatedAt: created, Imported: true})
+		if err != nil {
+			return err
+		}
+		for _, nm := range []domain.NewMessage{
+			{Direction: "inbound", AuthorType: "contact", AuthorContactID: &contact, FromEmail: from, EmailMessageID: &asked, CreatedAt: created},
+			{Direction: "outbound", AuthorType: "user", AuthorUserID: &w.uid, EmailMessageID: &answered, InReplyTo: asked,
+				References: []string{asked}, CreatedAt: created.Add(time.Hour)},
+		} {
+			nm.WorkspaceID, nm.TicketID, nm.Kind, nm.BodyHTML, nm.BodyText, nm.Imported = w.wid, tk.ID, "reply", "<p>Hi</p>", "Hi", true
+			if _, err := domain.AddMessage(w.ctx, tx, w.d.Jobs, nm); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The first sync reads the customer's email again: it is the imported one.
+	copyID := w.receive(m, fixture(t, "new_plain.eml", "{{FROM}}", from, "{{TO}}", w.forwardAddr(m, ""), "{{ID}}", id))
+	if status, reason := w.inbound(copyID); status != "ignored" || reason != "duplicate" {
+		t.Fatalf("copy of an imported email: %s %s", status, reason)
+	}
+
+	// A reply to the imported answer continues the imported ticket.
+	replyID := w.receive(m, fixture(t, "gmail_reply.eml", "{{FROM}}", from, "{{TO}}", w.forwardAddr(m, ""), "{{ID}}", crypto.RandomString(8),
+		"{{IRT}}", answered, "{{N}}", "999999"))
+	if msg := w.messageFor(replyID); msg.TicketID != tk.ID {
+		t.Fatal("a reply to imported history opened a new ticket")
+	}
+	if got := w.ticket(tk.ID); got.Status != domain.StatusOpen || got.MessageCount != 3 {
+		t.Fatalf("imported ticket after the reply: %s, %d messages", got.Status, got.MessageCount)
 	}
 }

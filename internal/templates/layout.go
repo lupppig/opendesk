@@ -29,6 +29,9 @@ type Parts struct {
 	ContentText string
 	Signature   string
 	History     []HistoryItem
+	// Forward quotes all of History (up to 10), whatever the design's history setting,
+	// and also under a custom layout without a history slot.
+	Forward bool
 }
 
 var fonts = map[string]string{
@@ -60,8 +63,12 @@ func (c *Context) RenderEmail(d Design, p Parts) Email {
 	if font == "" {
 		font = fonts["system"]
 	}
+	mode := o.History
+	if p.Forward {
+		mode = "all"
+	}
 	var hist []HistoryItem
-	switch o.History {
+	switch mode {
 	case "last":
 		if len(p.History) > 0 {
 			hist = p.History[:1]
@@ -87,6 +94,9 @@ func (c *Context) RenderEmail(d Design, p Parts) Email {
 		body = c.fillWithSlots(d.CustomHTML, slots)
 		if !Parse(d.CustomHTML).Uses("content") {
 			body += p.Content
+		}
+		if p.Forward && !Parse(d.CustomHTML).Uses("history") {
+			body += historyHTML
 		}
 	} else {
 		body = simpleBody(o, c, accent, font, p, footer, historyHTML)

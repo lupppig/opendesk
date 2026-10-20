@@ -28,6 +28,7 @@ import type {
   Tag,
   TagGroup,
   Team,
+  Thread,
   Ticket,
   User,
   UserRef,
@@ -96,6 +97,8 @@ export type WsData = {
   tickets: Ticket[];
   deletedTickets: Set<string>;
   messages: Message[];
+  /** Third-party threads (contracts/api.md "Threads"). */
+  threads: Thread[];
   originals: Record<string, string>;
   activities: Activity[];
   tags: Tag[];

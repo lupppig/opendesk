@@ -103,13 +103,14 @@ type TemplateCatalog = { variables: TemplateVariable[]; slots: TemplateSlot[]; f
 | --- | --- | --- |
 | agent replies (web, API, Ollie drafts an agent sends) | the reply is created | the stored message is what the customer got |
 | saved replies | inserted in the composer (`POST /v1/tickets/{id}/render`), and again on send | the agent sees real words, not tags |
+| third-party thread messages (contracts/api.md "Threads") | the message is created, and saved replies when inserted (`render` with `thread`) | without a ticket: the customer's and the ticket's variables stay empty |
 | automation `send_reply` | the action runs | no agent |
 | team, address and personal signatures | each email is sent | |
 | mailbox auto-reply (subject and body) | it is sent | no agent |
 | CSAT email (subject and body) | it is sent | per brand, below |
 | email layout | each email is sent | per brand, below |
 
-Notes are never filled. Chat replies are filled like email replies.
+Internal notes are never filled (a thread's messages, stored as notes, go out as email). Chat replies are filled like email replies.
 
 ## Signatures
 
@@ -191,5 +192,7 @@ Ticket endpoints (backend-helpdesk; the ticket must be visible, `404` otherwise)
 - `GET /v1/tickets/{id}/variables?mailbox_id=` (agent+) → `{ values: Record<string, string>, signature_html: string }`:
   every variable's value for this ticket with the caller as the agent, and the signature their
   reply from `mailbox_id` (else the ticket's address) would carry.
-- `POST /v1/tickets/{id}/render` (agent+) `{ body_html }` → `{ body_html }`: filled and sanitized
-  with the rich-text allowlist, for inserting saved replies.
+- `POST /v1/tickets/{id}/render` (agent+) `{ body_html, thread?: boolean }` → `{ body_html }`: filled
+  and sanitized with the rich-text allowlist, for inserting saved replies. `thread` fills for a
+  third-party thread: the ticket's brand, team and address and the caller, never the customer's or
+  the ticket's details.

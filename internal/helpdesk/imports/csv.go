@@ -157,6 +157,9 @@ var csvAliases = []struct {
 	{"assignee_email", []string{"assignee email", "assignee", "agent email", "agent", "assigned to", "owner", "owner email", "responder"}},
 	{"team", []string{"team", "group", "department", "queue", "inbox", "mailbox"}},
 	{"company", []string{"company", "organization", "organisation", "org", "account", "company name"}},
+	{"message_id", []string{"message id", "rfc message id", "email message id", "internet message id", "rfc 822 message id", "msg id"}},
+	{"in_reply_to", []string{"in reply to", "in reply to id", "in reply to message id", "parent message id"}},
+	{"references", []string{"references", "email references", "references header"}},
 }
 
 var headerSpace = regexp.MustCompile(`[\s_\-.]+`)
@@ -186,7 +189,8 @@ func suggestMapping(header []string) ImportCSVMapping {
 	}
 	return ImportCSVMapping{TicketID: pick["ticket_id"], Subject: pick["subject"], Body: pick["body"], FromEmail: pick["from_email"],
 		FromName: pick["from_name"], Author: pick["author"], Status: pick["status"], Priority: pick["priority"], Tags: pick["tags"],
-		CreatedAt: pick["created_at"], AssigneeEmail: pick["assignee_email"], Team: pick["team"], Company: pick["company"]}
+		CreatedAt: pick["created_at"], AssigneeEmail: pick["assignee_email"], Team: pick["team"], Company: pick["company"],
+		MessageID: pick["message_id"], InReplyTo: pick["in_reply_to"], References: pick["references"]}
 }
 
 // checkMapping refuses a mapping that names a column the file does not have, or has
@@ -205,7 +209,7 @@ func checkMapping(m ImportCSVMapping, header []string) error {
 
 func (m ImportCSVMapping) columns() []string {
 	return []string{m.TicketID, m.Subject, m.Body, m.FromEmail, m.FromName, m.Author, m.Status, m.Priority, m.Tags,
-		m.CreatedAt, m.AssigneeEmail, m.Team, m.Company}
+		m.CreatedAt, m.AssigneeEmail, m.Team, m.Company, m.MessageID, m.InReplyTo, m.References}
 }
 
 // csvSource reads tickets from a parsed file with a mapping. Rows with the same ticket id
@@ -318,7 +322,13 @@ func newCSVSource(f *csvFile, m ImportCSVMapping, filename, key string) *csvSour
 			t.CreatedAt = created
 		}
 		msg := source.Message{ID: id + ":" + strconv.Itoa(line), Agent: kind != "customer", Note: kind == "note",
-			Author: source.Person{Email: email, Name: name}, CreatedAt: created}
+			Author: source.Person{Email: email, Name: name}, CreatedAt: created, References: messageIDs(get(rec, m.References))}
+		if ids := messageIDs(get(rec, m.MessageID)); len(ids) > 0 {
+			msg.MessageID = ids[0]
+		}
+		if ids := messageIDs(get(rec, m.InReplyTo)); len(ids) > 0 {
+			msg.InReplyTo = ids[0]
+		}
 		if body == "" {
 			body = subject
 		}
@@ -479,6 +489,38 @@ func parseWhen(v string) time.Time {
 		}
 	}
 	return time.Time{}
+}
+
+var bracketedID = regexp.MustCompile(`<([^<>\s]{1,900})>`)
+
+// maxReferences is how many References a message keeps, the latest.
+const maxReferences = 50
+
+// messageIDs reads email Message-IDs from a cell, as "<id>": bracketed ones as a header
+// writes them, else values separated by spaces, commas or semicolons. A value without an
+// "@" is not a Message-ID (an export's own message number) and is left out.
+func messageIDs(v string) []string {
+	var raw []string
+	if m := bracketedID.FindAllStringSubmatch(v, -1); m != nil {
+		for _, g := range m {
+			raw = append(raw, g[1])
+		}
+	} else {
+		raw = strings.Fields(strings.NewReplacer(",", " ", ";", " ").Replace(v))
+	}
+	var out []string
+	for _, id := range raw {
+		if len(id) > 900 || !strings.Contains(id, "@") || strings.ContainsAny(id, "<>") {
+			continue
+		}
+		if id = "<" + id + ">"; !slices.Contains(out, id) {
+			out = append(out, id)
+		}
+	}
+	if len(out) > maxReferences {
+		out = out[len(out)-maxReferences:]
+	}
+	return out
 }
 
 var emailPattern = regexp.MustCompile(`^[^\s@<>()",;]+@[^\s@<>()",;]+\.[^\s@<>()",;]+$`)
