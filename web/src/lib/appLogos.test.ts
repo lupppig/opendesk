@@ -4,7 +4,7 @@ import { appForUrl, appLogo } from "./appLogos";
 describe("app logos", () => {
   it("ships a logo for every catalog provider and import source", () => {
     const keys = ["linear", "github", "atlassian", "sentry", "notion", "asana", "monday", "slack", "intercom", "close", "stripe", "paypal", "square", "box", "zapier"];
-    for (const k of [...keys, "zendesk", "helpscout", "freshdesk"]) expect(appLogo(k), k).toBe(`/logos/apps/${k}.svg`);
+    for (const k of [...keys, "zendesk", "helpscout", "freshdesk", "discord", "telegram"]) expect(appLogo(k), k).toBe(`/logos/apps/${k}.svg`);
     for (const k of ["custom", "link", "csv", "", null, undefined]) expect(appLogo(k)).toBeNull();
   });
 

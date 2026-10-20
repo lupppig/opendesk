@@ -115,6 +115,20 @@ describe("mock backend", () => {
     expect((await call("DELETE", `/v1/integrations/${created.body.integration.id}`)).status).toBe(204);
   });
 
+  it("connects a support channel and routes a team to it", async () => {
+    const created = await call("POST", "/v1/support-channels/connections", { provider: "slack", credentials: { bot_token: "xoxb-example", signing_secret: "secret" } });
+    expect(created.status).toBe(201);
+    const plain = await call("POST", "/v1/support-channels/destinations", { connection_id: created.body.id, external_channel_id: "C1" });
+    expect(plain.status).toBe(201);
+    expect(plain.body.include_notes).toBe(false);
+    const team = (await call("GET", "/v1/teams")).body.data.find((x: { private: boolean }) => !x.private);
+    const notes = await call("POST", "/v1/support-channels/destinations", { connection_id: created.body.id, team_id: team.id, external_channel_id: "C2", include_notes: true });
+    expect(notes.body.include_notes).toBe(true);
+    expect((await call("DELETE", `/v1/support-channels/destinations/${plain.body.id}`)).status).toBe(204);
+    expect((await call("DELETE", `/v1/support-channels/connections/${created.body.id}`)).status).toBe(204);
+    expect((await call("GET", "/v1/support-channels/destinations")).body.data).toEqual([]);
+  });
+
   it("sends presence_state when a ticket topic is joined", async () => {
     const [tid] = [...teammatePresence.keys()];
     const wid = db.workspaces[0].workspace.id;

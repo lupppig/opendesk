@@ -524,5 +524,97 @@
     "archive": "Archive in {{app}} when the ticket is solved",
     "label": "Label emails \"opendesk\" in {{app}}",
     "labelOutlook": "Outlook shows it as a category."
+  },
+  "supportChannels": {
+    "title": "Support channels",
+    "description": "Mirror email tickets into Slack, Discord and Telegram. Teammates can reply, add notes and work tickets from the ticket's thread.",
+    "linkAccount": "Link my account",
+    "linkError": "Couldn't create a link code.",
+    "link": {
+      "title": "Link your chat account",
+      "description": "Send this code to the bot from your chat account: /opendesk link {{code}} in Slack, or /link {{code}} in Discord and Telegram. It works once and expires in 10 minutes.",
+      "done": "Done"
+    },
+    "connections": {
+      "title": "Connections",
+      "description": "Bot credentials are stored encrypted. Point each bot's events at the address shown on its connection.",
+      "webhook": "Events address"
+    },
+    "empty": {
+      "title": "No support channels yet",
+      "body": "Connect a bot, then choose where each team's email tickets appear.",
+      "tipThreads": "Each ticket gets its own thread",
+      "tipOllie": "Ask Ollie about a ticket in its thread"
+    },
+    "status": {
+      "connected": "Connected",
+      "error": "Needs attention"
+    },
+    "allTeams": "All teams",
+    "withNotes": "with notes",
+    "addDestination": "Add destination",
+    "removeDestinationLabel": "Remove {{name}}",
+    "removeDestinationTitle": "Remove destination",
+    "removeDestinationBody": "Stop mirroring tickets to {{name}}? Threads already posted stay in the channel.",
+    "remove": "Remove",
+    "destinationRemoved": "Destination removed.",
+    "destinationRemoveError": "Couldn't remove the destination.",
+    "disconnect": "Disconnect",
+    "disconnectLabel": "Disconnect {{name}}",
+    "disconnectTitle": "Disconnect support channel",
+    "disconnectBody": "Disconnect {{name}}? Its destinations are removed and its ticket threads stop updating.",
+    "disconnected": "Support channel disconnected.",
+    "disconnectError": "Couldn't disconnect the support channel.",
+    "providers": {
+      "title": "Available providers",
+      "descriptionAdmin": "Connect a bot account for each chat product your team works in.",
+      "description": "An admin can connect provider accounts."
+    },
+    "provider": {
+      "slack": {
+        "description": "Mirror email tickets into Slack threads and work them by talking to Ollie.",
+        "setup": "Create a Slack app with a bot token that has chat:write and app_mentions:read, and subscribe it to app mentions."
+      },
+      "discord": {
+        "description": "Mirror email tickets into Discord threads and work them by talking to Ollie.",
+        "setup": "Create a Discord bot, turn on its Message Content intent and copy its token, public key and your server ID."
+      },
+      "telegram": {
+        "description": "Mirror email tickets into Telegram forum topics and work them by talking to Ollie.",
+        "setup": "Create a bot with BotFather, make it an admin of a forum group and turn off its privacy mode."
+      }
+    },
+    "field": {
+      "bot_token": "Bot token",
+      "signing_secret": "Signing secret",
+      "public_key": "Interactions public key",
+      "guild_id": "Server ID",
+      "webhook_secret": "Webhook secret"
+    },
+    "connect": {
+      "title": "Connect {{name}}",
+      "name": "Connection name",
+      "submit": "Connect",
+      "cancel": "Cancel",
+      "connected": "{{name}} connected.",
+      "error": "Couldn't connect {{name}}."
+    },
+    "destination": {
+      "title": "Add destination",
+      "description": "Choose a public team and the provider channel its email tickets go to. The all teams destination gets tickets of teams without their own.",
+      "team": "Team",
+      "teamPlaceholder": "Choose a team",
+      "allTeams": "All public teams",
+      "channel": "Provider channel ID",
+      "channelHint": "The channel, conversation or forum group ID shown by the provider.",
+      "displayName": "Display name",
+      "displayNamePlaceholder": "support",
+      "notes": "Include internal notes",
+      "notesHint": "Off by default. When on, notes are posted to this channel and Ollie can use them in its answers there.",
+      "submit": "Add destination",
+      "cancel": "Cancel",
+      "added": "Destination added.",
+      "error": "Couldn't add the destination."
+    }
   }
 }
