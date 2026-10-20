@@ -1,18 +1,16 @@
 SCRATCH ?= ./data
 export DATABASE_URL ?= postgres://opendesk:opendesk@localhost:55432/opendesk?sslmode=disable
-NATS_LISTEN ?= 127.0.0.1:4223
-NATS_URL ?= nats://127.0.0.1:4223
 
 .PHONY: dev-db dev api realtime web admin site docs build test lint web-embed admin-embed e2e
 
 dev-db: ## start local Postgres
 	docker compose -f docker-compose.dev.yml -p opendesk-dev up -d --wait
 
-api: ## run the Go API + workers with embedded NATS (set NATS_LISTEN= for in-process only)
-	NATS_LISTEN="$(NATS_LISTEN)" go run ./cmd/opendesk serve
+api: ## run the Go API + workers with embedded NATS (listens for the gateway on :4222)
+	NATS_LISTEN=0.0.0.0:4222 go run ./cmd/opendesk serve
 
 realtime: ## run the Elixir gateway
-	cd realtime && NATS_URL="$(NATS_URL)" mix phx.server
+	cd realtime && mix phx.server
 
 web: ## run the web app
 	cd web && pnpm dev

@@ -89,7 +89,7 @@ You need Go, Node.js with pnpm, Elixir, and Docker for Postgres.
 git clone https://github.com/useopendesk/opendesk && cd opendesk
 cp .env.example .env
 make dev-db      # Postgres on localhost:55432
-make api         # the Go API and workers, with embedded NATS on :4223
+make api         # the Go API and workers, with embedded NATS on :4222
 make realtime    # the Elixir gateway on :4000
 make web         # the web app on :5173
 ```
