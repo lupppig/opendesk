@@ -298,8 +298,12 @@ func (s *Service) processInbound(ctx context.Context, a jobs.SupportChannelInbou
 	err = s.d.DB.Pool.QueryRow(ctx, `SELECT t.ticket_id,d.include_notes FROM support_channel_threads t JOIN support_channel_destinations d ON d.id=t.destination_id
 		WHERE t.connection_id=$1 AND t.external_channel_id=$2 AND t.external_thread_id=$3`, c.ID, in.ExternalChannelID, in.ExternalThreadID).Scan(&tid, &includeNotes)
 	if db.IsNotFound(err) {
-		if in.Command != "chat" || in.ExternalThreadID == "" {
-			s.replyToProvider(ctx, adapter, creds, in, "Run ticket commands inside an opendesk ticket thread, or start with the ticket number, like 123 status solved.")
+		switch {
+		case in.ExternalThreadID == "":
+			// Outside any thread (a slash command): the ticket number is the way in.
+			s.replyToProvider(ctx, adapter, creds, in, "Start with the ticket number, like 123 status solved, or write inside the ticket's thread.")
+		case in.Command != "chat":
+			s.replyToProvider(ctx, adapter, creds, in, "Run ticket commands inside an opendesk ticket thread.")
 		}
 		return s.finishInbound(ctx, a)
 	}
