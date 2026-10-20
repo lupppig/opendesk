@@ -71,7 +71,7 @@ export function registerSupportChannels() {
     const connection = connections.find((x) => x.id === ctx.body.connection_id);
     if (!connection) throw notFound("Support channel");
     const external = String(ctx.body.external_channel_id ?? "").trim();
-    if (!external) throw invalid("external_channel_id is required");
+    if (!external) throw invalid("Enter the provider channel ID.");
     const row: SupportChannelDestination = {
       id: uuid(),
       connection_id: connection.id,
@@ -79,6 +79,7 @@ export function registerSupportChannels() {
       external_channel_id: external,
       external_channel_name: String(ctx.body.external_channel_name ?? "").trim(),
       enabled: true,
+      include_notes: ctx.body.include_notes === true,
       created_at: nowIso(),
     };
     destinations.push(row);

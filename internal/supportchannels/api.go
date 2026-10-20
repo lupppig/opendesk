@@ -171,13 +171,13 @@ func (s *Service) register(api huma.API, r chi.Router) {
 			if e != nil {
 				return nil, httpx.Wrap(e)
 			}
-			rows, e := s.d.DB.Pool.Query(ctx, `SELECT id,connection_id,team_id,external_channel_id,external_channel_name,enabled,created_at FROM support_channel_destinations WHERE workspace_id=$1 ORDER BY created_at`, p.WorkspaceID)
+			rows, e := s.d.DB.Pool.Query(ctx, `SELECT id,connection_id,team_id,external_channel_id,external_channel_name,enabled,include_notes,created_at FROM support_channel_destinations WHERE workspace_id=$1 ORDER BY created_at`, p.WorkspaceID)
 			if e != nil {
 				return nil, httpx.Wrap(e)
 			}
 			list, e := pgx.CollectRows(rows, func(r pgx.CollectableRow) (destination, error) {
 				var d destination
-				e := r.Scan(&d.ID, &d.ConnectionID, &d.TeamID, &d.ExternalChannelID, &d.ExternalChannelName, &d.Enabled, &d.CreatedAt)
+				e := r.Scan(&d.ID, &d.ConnectionID, &d.TeamID, &d.ExternalChannelID, &d.ExternalChannelName, &d.Enabled, &d.IncludeNotes, &d.CreatedAt)
 				return d, e
 			})
 			if e != nil {
@@ -202,6 +202,7 @@ func (s *Service) register(api huma.API, r chi.Router) {
 				TeamID              string `json:"team_id,omitempty"`
 				ExternalChannelID   string `json:"external_channel_id" maxLength:"200"`
 				ExternalChannelName string `json:"external_channel_name,omitempty" maxLength:"100"`
+				IncludeNotes        bool   `json:"include_notes,omitempty" doc:"Mirror internal notes too. Off by default: only customer and agent replies are posted."`
 			}
 		}) (*struct{ Body destination }, error) {
 			p, e := requireAdminUser(ctx)
@@ -232,12 +233,12 @@ func (s *Service) register(api huma.API, r chi.Router) {
 				team = &id
 			}
 			if strings.TrimSpace(in.Body.ExternalChannelID) == "" {
-				return nil, httpx.Validation("external_channel_id is required")
+				return nil, httpx.Validation("Enter the provider channel ID.")
 			}
-			d := destination{ID: ids.New(), ConnectionID: cid, TeamID: team, ExternalChannelID: strings.TrimSpace(in.Body.ExternalChannelID), ExternalChannelName: strings.TrimSpace(in.Body.ExternalChannelName), Enabled: true, CreatedAt: time.Now().UTC()}
+			d := destination{ID: ids.New(), ConnectionID: cid, TeamID: team, ExternalChannelID: strings.TrimSpace(in.Body.ExternalChannelID), ExternalChannelName: strings.TrimSpace(in.Body.ExternalChannelName), Enabled: true, IncludeNotes: in.Body.IncludeNotes, CreatedAt: time.Now().UTC()}
 			inserted := false
 			e = s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
-				tag, err := tx.Exec(ctx, `INSERT INTO support_channel_destinations(id,workspace_id,connection_id,team_id,external_channel_id,external_channel_name,created_at) SELECT $1,$2,$3,$4,$5,$6,$7 WHERE EXISTS(SELECT 1 FROM support_channel_connections WHERE workspace_id=$2 AND id=$3)`, d.ID, p.WorkspaceID, d.ConnectionID, d.TeamID, d.ExternalChannelID, d.ExternalChannelName, d.CreatedAt)
+				tag, err := tx.Exec(ctx, `INSERT INTO support_channel_destinations(id,workspace_id,connection_id,team_id,external_channel_id,external_channel_name,include_notes,created_at) SELECT $1,$2,$3,$4,$5,$6,$7,$8 WHERE EXISTS(SELECT 1 FROM support_channel_connections WHERE workspace_id=$2 AND id=$3)`, d.ID, p.WorkspaceID, d.ConnectionID, d.TeamID, d.ExternalChannelID, d.ExternalChannelName, d.IncludeNotes, d.CreatedAt)
 				if err != nil {
 					return err
 				}
@@ -248,7 +249,7 @@ func (s *Service) register(api huma.API, r chi.Router) {
 				if _, err := events.Publish(ctx, tx, events.Event{WorkspaceID: p.WorkspaceID, Type: "support_channel_destination.created", Data: map[string]any{"support_channel_destination": d}}); err != nil {
 					return err
 				}
-				return audit.Log(ctx, tx, p, p.WorkspaceID, "support_channel.destination_created", "support_channel_destination", &d.ID, map[string]any{"connection_id": d.ConnectionID, "team_id": d.TeamID})
+				return audit.Log(ctx, tx, p, p.WorkspaceID, "support_channel.destination_created", "support_channel_destination", &d.ID, map[string]any{"connection_id": d.ConnectionID, "team_id": d.TeamID, "include_notes": d.IncludeNotes})
 			})
 			if db.IsUniqueViolation(e, "") {
 				return nil, httpx.Conflict("That team or provider channel already has a destination.")

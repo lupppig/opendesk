@@ -22,6 +22,7 @@ CREATE TABLE support_channel_destinations (
     external_channel_id text NOT NULL,
     external_channel_name text NOT NULL DEFAULT '',
     enabled boolean NOT NULL DEFAULT true,
+    include_notes boolean NOT NULL DEFAULT false,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
     UNIQUE (connection_id, external_channel_id),

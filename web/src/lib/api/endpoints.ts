@@ -338,7 +338,7 @@ export const api = {
       http.create<T.SupportChannelConnection>("/v1/support-channels/connections", b),
     disconnect: (id: string) => http.del(`/v1/support-channels/connections/${id}`),
     destinations: () => http.get<{ data: T.SupportChannelDestination[] }>("/v1/support-channels/destinations"),
-    addDestination: (b: { connection_id: string; team_id?: string; external_channel_id: string; external_channel_name?: string }) =>
+    addDestination: (b: { connection_id: string; team_id?: string; external_channel_id: string; external_channel_name?: string; include_notes?: boolean }) =>
       http.create<T.SupportChannelDestination>("/v1/support-channels/destinations", b),
     removeDestination: (id: string) => http.del(`/v1/support-channels/destinations/${id}`),
     linkCode: () => http.create<{ code: string; expires_at: string }>("/v1/me/support-channel-link-code", {}),

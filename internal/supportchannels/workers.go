@@ -82,7 +82,7 @@ func (s *Service) dispatch(ctx context.Context, a jobs.SupportChannelDispatchArg
 	if t.Channel != domain.ChannelEmail {
 		return nil
 	}
-	rows, err := s.d.DB.Pool.Query(ctx, `SELECT DISTINCT ON (d.connection_id) d.id,d.connection_id,d.team_id,d.external_channel_id,d.external_channel_name,d.enabled,d.created_at,c.provider,c.credentials_enc
+	rows, err := s.d.DB.Pool.Query(ctx, `SELECT DISTINCT ON (d.connection_id) d.id,d.connection_id,d.team_id,d.external_channel_id,d.external_channel_name,d.enabled,d.include_notes,d.created_at,c.provider,c.credentials_enc
 		FROM support_channel_destinations d JOIN support_channel_connections c ON c.id=d.connection_id
 		WHERE d.workspace_id=$1 AND d.enabled AND (d.team_id IS NOT DISTINCT FROM $2 OR d.team_id IS NULL)
 		ORDER BY d.connection_id,(d.team_id IS NOT NULL) DESC`, a.WorkspaceID, t.TeamID)
@@ -91,7 +91,7 @@ func (s *Service) dispatch(ctx context.Context, a jobs.SupportChannelDispatchArg
 	}
 	targets, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (deliveryTarget, error) {
 		var d deliveryTarget
-		err := row.Scan(&d.ID, &d.ConnectionID, &d.TeamID, &d.ExternalChannelID, &d.ExternalChannelName, &d.Enabled, &d.CreatedAt, &d.Provider, &d.CredentialsEnc)
+		err := row.Scan(&d.ID, &d.ConnectionID, &d.TeamID, &d.ExternalChannelID, &d.ExternalChannelName, &d.Enabled, &d.IncludeNotes, &d.CreatedAt, &d.Provider, &d.CredentialsEnc)
 		return d, err
 	})
 	if err != nil {
@@ -158,7 +158,7 @@ func (s *Service) dispatchTo(ctx context.Context, a jobs.SupportChannelDispatchA
 	}
 	switch typ {
 	case "message.created":
-		text, decodeErr := messageCreatedText(data)
+		text, decodeErr := messageCreatedText(data, d.IncludeNotes)
 		if decodeErr != nil {
 			return decodeErr
 		}
@@ -188,13 +188,18 @@ type messageCreatedEvent struct {
 	Message *domain.Message `json:"message"`
 }
 
-func messageCreatedText(data []byte) (string, error) {
+// messageCreatedText is the line posted for a new message, or "" for nothing.
+// Internal notes are posted only to a destination that includes them.
+func messageCreatedText(data []byte, includeNotes bool) (string, error) {
 	var ev messageCreatedEvent
 	if err := json.Unmarshal(data, &ev); err != nil {
 		return "", fmt.Errorf("decode message.created event: %w", err)
 	}
 	if ev.Message == nil {
 		return "", errors.New("decode message.created event: message is missing")
+	}
+	if ev.Message.Kind == "note" && !includeNotes {
+		return "", nil
 	}
 	body := strings.TrimSpace(ev.Message.BodyText)
 	if body == "" {
@@ -289,7 +294,9 @@ func (s *Service) processInbound(ctx context.Context, a jobs.SupportChannelInbou
 		creds["channel_id"] = in.ExternalChannelID
 	}
 	var tid uuid.UUID
-	err = s.d.DB.Pool.QueryRow(ctx, `SELECT ticket_id FROM support_channel_threads WHERE connection_id=$1 AND external_channel_id=$2 AND external_thread_id=$3`, c.ID, in.ExternalChannelID, in.ExternalThreadID).Scan(&tid)
+	var includeNotes bool
+	err = s.d.DB.Pool.QueryRow(ctx, `SELECT t.ticket_id,d.include_notes FROM support_channel_threads t JOIN support_channel_destinations d ON d.id=t.destination_id
+		WHERE t.connection_id=$1 AND t.external_channel_id=$2 AND t.external_thread_id=$3`, c.ID, in.ExternalChannelID, in.ExternalThreadID).Scan(&tid, &includeNotes)
 	if db.IsNotFound(err) {
 		if in.Command != "chat" || in.ExternalThreadID == "" {
 			s.replyToProvider(ctx, adapter, creds, in, "Run ticket commands inside an opendesk ticket thread, or start with the ticket number, like 123 status solved.")
@@ -306,7 +313,7 @@ func (s *Service) processInbound(ctx context.Context, a jobs.SupportChannelInbou
 		}
 	}
 	if in.Command == "chat" {
-		answer, err := s.converse(ctx, p, c.ID, tid, in)
+		answer, err := s.converse(ctx, p, c.ID, tid, includeNotes, in)
 		if err != nil {
 			if errors.Is(err, errConversationBusy) {
 				return err

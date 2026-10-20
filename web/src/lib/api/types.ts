@@ -878,6 +878,8 @@ export type SupportChannelDestination = {
   external_channel_id: string;
   external_channel_name: string;
   enabled: boolean;
+  /** Internal notes are posted too; off by default. */
+  include_notes: boolean;
   created_at: string;
 };
 export type TicketLink = {

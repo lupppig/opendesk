@@ -48,7 +48,7 @@ type conversationState struct {
 	PendingExpires *time.Time
 }
 
-func (s *Service) converse(ctx context.Context, p *auth.Principal, connectionID, tid uuid.UUID, in channel.Inbound) (string, error) {
+func (s *Service) converse(ctx context.Context, p *auth.Principal, connectionID, tid uuid.UUID, includeNotes bool, in channel.Inbound) (string, error) {
 	processingID := uuid.New()
 	state, err := s.claimConversation(ctx, p.WorkspaceID, connectionID, processingID, in)
 	if err != nil {
@@ -86,7 +86,7 @@ func (s *Service) converse(ctx context.Context, p *auth.Principal, connectionID,
 	if err != nil || !settings.Assistant {
 		return "Ollie isn't available for this workspace. You can still use reply, note, assign, status and priority commands.", nil
 	}
-	action, answer, err := s.interpretConversation(ctx, p, tid, state.Turns, input)
+	action, answer, err := s.interpretConversation(ctx, p, tid, includeNotes, state.Turns, input)
 	if err != nil {
 		return "", fmt.Errorf("%w: %v", errConversationUnavailable, err)
 	}
@@ -110,12 +110,13 @@ func (s *Service) converse(ctx context.Context, p *auth.Principal, connectionID,
 	return answer, s.saveConversation(ctx, p.WorkspaceID, connectionID, processingID, in, state)
 }
 
-func (s *Service) interpretConversation(ctx context.Context, p *auth.Principal, tid uuid.UUID, history []conversationTurn, input string) (*conversationAction, string, error) {
+func (s *Service) interpretConversation(ctx context.Context, p *auth.Principal, tid uuid.UUID, includeNotes bool, history []conversationTurn, input string) (*conversationAction, string, error) {
 	ticket, err := domain.LoadVisibleTicket(ctx, s.d.DB.Pool, p, tid)
 	if err != nil {
 		return nil, "", err
 	}
-	messages, err := domain.ListMessages(ctx, s.d.DB.Pool, p.WorkspaceID, tid, false)
+	// Ollie answers into the external chat, so it reads notes only where they are mirrored.
+	messages, err := domain.ListMessages(ctx, s.d.DB.Pool, p.WorkspaceID, tid, !includeNotes)
 	if err != nil {
 		return nil, "", err
 	}
