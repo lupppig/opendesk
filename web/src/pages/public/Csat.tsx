@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { getRouteApi } from "@tanstack/react-router";
+import { useParams } from "@tanstack/react-router";
 import { Check } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
@@ -18,21 +18,23 @@ import { cn } from "@/lib/cn";
 import { q } from "@/lib/queries";
 import { tone, type Tone } from "@/lib/tones";
 
-const route = getRouteApi("/csat/$token");
-
 /**
- * Email links land here with ?score=1..5. The router reads a bare number as a
- * number, not the string its search schema keeps, so read the score from the
- * URL this page was loaded with.
+ * Email links land here as /csat#t=<token>&score=1..5: the token rides in the
+ * fragment, which browsers never send to a server, so no log or analytics sees it.
+ * Links sent before carried it in the path (/csat/<token>?score=); that page is
+ * moved to the fragment form at once.
  */
-function landingScore(token: string): string | undefined {
+function landing(pathToken: string | undefined): { token: string; score?: string } {
+  const hash = new URLSearchParams(location.hash.replace(/^#/, ""));
+  if (hash.get("t")) return { token: hash.get("t") ?? "", score: hash.get("score") ?? undefined };
+  let score: string | undefined;
   try {
     const nav = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
-    const url = new URL(nav?.name ?? location.href);
-    return url.pathname.endsWith(`/csat/${token}`) ? (url.searchParams.get("score") ?? undefined) : undefined;
+    score = new URL(nav?.name ?? location.href).searchParams.get("score") ?? undefined;
   } catch {
-    return undefined;
+    score = undefined;
   }
+  return { token: pathToken ?? "", score };
 }
 
 // One hue per score, from the sentiment family: frustrated red to positive green.
@@ -64,13 +66,17 @@ function Face({ score, className, draw }: { score: number; className?: string; d
 }
 
 export default function Csat() {
-  const { token } = route.useParams();
-  const search = route.useSearch();
+  const params = useParams({ strict: false }) as { token?: string };
+  const [{ token, score: landingScore }] = useState(() => landing(params.token));
+  useEffect(() => {
+    // An old path link: keep the token out of the address from here on.
+    if (params.token) history.replaceState(history.state, "", `/csat#t=${encodeURIComponent(token)}`);
+  }, [params.token, token]);
   const { data, isLoading, isError, isPending } = useQuery(q.csat(token));
   const { locale, loaded } = usePublicLocale(data?.locale || undefined, !isPending);
   const { t } = useTranslation("public");
   const label = (n: number) => t(`csat.scores.${n as 1 | 2 | 3 | 4 | 5}`);
-  const pre = Number(search.score ?? landingScore(token));
+  const pre = Number(landingScore);
   const [score, setScore] = useState<number | null>(pre >= 1 && pre <= 5 ? pre : null);
   const [comment, setComment] = useState("");
   const [sentScore, setSentScore] = useState<number | null>(null);

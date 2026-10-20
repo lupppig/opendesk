@@ -36,6 +36,6 @@ Good-faith research that follows these guidelines is welcome, and we will not pu
 
 ## Scope
 
-In scope: the opendesk code in [github.com/useopendesk/opendesk](https://github.com/useopendesk/opendesk) and the hosted service at `opendesk.sh`, `app.opendesk.sh`, `api.opendesk.sh` and `gateway.opendesk.sh`.
+In scope: the opendesk code in [github.com/useopendesk/opendesk](https://github.com/useopendesk/opendesk), the desktop and iPhone apps, and the hosted service at `opendesk.sh`, `app.opendesk.sh`, `api.opendesk.sh`, `gateway.opendesk.sh`, `admin.opendesk.sh`, `docs.opendesk.sh` and the help centers at `*.opendeskhelp.com`. Help centers on a customer's own domain are in scope for flaws in opendesk, not in the customer's domain or DNS.
 
 Out of scope: findings that need physical access or a compromised device, social engineering, reports from automated scanners without a demonstrated impact, and missing best-practice headers on pages that serve no sensitive data.

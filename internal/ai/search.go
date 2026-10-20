@@ -101,7 +101,11 @@ func prefixAND(q string) string {
 // embeddings, full-text only, falling back to any-keyword matching for natural questions.
 func (s *Service) Search(ctx context.Context, p *auth.Principal, q string) (*AISearchResults, error) {
 	res := &AISearchResults{Tickets: []domain.Ticket{}, Contacts: []domain.Contact{}, Articles: []AISearchArticle{}}
-	allowed := func(scope string) bool { return p.Kind == auth.KindUser || p.HasScope(scope) }
+	// A person signed in directly sees what their role allows; an API key or a person
+	// acting through an OAuth grant only what its scopes allow.
+	allowed := func(scope string) bool {
+		return (p.Kind == auth.KindUser && p.GrantID == uuid.Nil) || p.HasScope(scope)
+	}
 	var qvec string
 	var dims int
 	if s.semantic() {

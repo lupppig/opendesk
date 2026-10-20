@@ -25,3 +25,9 @@ variable "manage_zone_settings" {
   type        = bool
   default     = true
 }
+
+variable "edge_cipher_suites" {
+  description = "Limit TLS 1.2 at the edge to forward-secret AEAD suites. Cloudflare allows this only with Advanced Certificate Manager on the zone."
+  type        = bool
+  default     = false
+}

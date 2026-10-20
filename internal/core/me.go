@@ -12,6 +12,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/auth"
 	"github.com/useopendesk/opendesk/internal/core/oauthgrant"
 	"github.com/useopendesk/opendesk/internal/displayname"
+	"github.com/useopendesk/opendesk/internal/emails"
 	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/images"
 	"github.com/useopendesk/opendesk/internal/jobs"
@@ -120,7 +121,7 @@ func (s *svc) registerMe(api huma.API) {
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			if err := s.limit("password:change:"+p.UserID.String(), 10, time.Hour); err != nil {
+			if err := s.limitShared(ctx, "password:change:"+p.UserID.String(), 10, time.Hour); err != nil {
 				return nil, err
 			}
 			var hash *string
@@ -133,6 +134,7 @@ func (s *svc) registerMe(api huma.API) {
 					return nil, httpx.Wrap(err)
 				}
 			} else if !auth.VerifyPassword(in.Body.CurrentPassword, *hash) {
+				s.credentialFailed(ctx, p, "current_password")
 				return nil, httpx.E(401, "invalid_credentials", "Your current password is incorrect.")
 			}
 			if err := auth.CheckPassword(in.Body.NewPassword); err != nil {
@@ -159,8 +161,10 @@ func (s *svc) registerMe(api huma.API) {
 					p.UserID, ottReset); err != nil {
 					return err
 				}
-				_, err := auditUser(ctx, tx, p, p.UserID, "password.changed", nil)
-				return err
+				if _, err := auditUser(ctx, tx, p, p.UserID, "password.changed", nil); err != nil {
+					return err
+				}
+				return s.notifySecurity(ctx, tx, p.UserID, emails.PasswordChanged, "")
 			})
 			if err != nil {
 				return nil, httpx.Wrap(err)
@@ -183,7 +187,7 @@ func (s *svc) registerMe(api huma.API) {
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			if err := s.limit("me:delete:"+p.UserID.String(), 10, time.Hour); err != nil {
+			if err := s.limitShared(ctx, "me:delete:"+p.UserID.String(), 10, time.Hour); err != nil {
 				return nil, err
 			}
 			var hash *string
@@ -193,6 +197,7 @@ func (s *svc) registerMe(api huma.API) {
 			}
 			if hash != nil {
 				if !auth.VerifyPassword(in.Body.Password, *hash) {
+					s.credentialFailed(ctx, p, "current_password")
 					return nil, httpx.E(401, "invalid_credentials", "Your password is incorrect.")
 				}
 			} else if err := requireRecentLogin(ctx, s.d.DB.Pool, p); err != nil {

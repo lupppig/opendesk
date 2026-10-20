@@ -47,7 +47,9 @@ x-hardening: &hardening
 services:
   opendesk:
     <<: *hardening
-    image: ${OPENDESK_IMAGE:-ghcr.io/useopendesk/opendesk}:${OPENDESK_VERSION:-latest}
+    # OPENDESK_IMAGE_PIN is "@sha256:<digest>" from the release's images.json (the
+    # installer writes it), so the tag can never point at other bytes.
+    image: ${OPENDESK_IMAGE:-ghcr.io/useopendesk/opendesk}:${OPENDESK_VERSION:-latest}${OPENDESK_IMAGE_PIN:-}
     build:
       context: .
       dockerfile: deploy/docker/opendesk.Dockerfile
@@ -75,6 +77,9 @@ services:
       UPDATE_CHECK: ${UPDATE_CHECK:-true}
       # debug, info, warn or error (docs: self-hosting/configuration).
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # /.well-known/security.txt: who to tell about a security problem here.
+      SECURITY_CONTACT: ${SECURITY_CONTACT:-}
+      SECURITY_POLICY_URL: ${SECURITY_POLICY_URL:-}
       # Help centers at <slug>.HELP_DOMAIN (a wildcard DNS record to this host);
       # empty keeps them at OPENDESK_URL/help/<slug>. Custom domains CNAME to
       # HELP_CNAME_TARGET, the host of OPENDESK_URL when empty. Caddy issues
@@ -181,7 +186,7 @@ services:
 
   realtime:
     <<: *hardening
-    image: ${REALTIME_IMAGE:-ghcr.io/useopendesk/realtime}:${OPENDESK_VERSION:-latest}
+    image: ${REALTIME_IMAGE:-ghcr.io/useopendesk/realtime}:${OPENDESK_VERSION:-latest}${REALTIME_IMAGE_PIN:-}
     build:
       context: .
       dockerfile: deploy/docker/realtime.Dockerfile

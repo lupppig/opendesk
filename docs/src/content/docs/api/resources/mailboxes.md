@@ -197,11 +197,14 @@ A send-only connection cannot read the mailbox: forward its mail to `forwarding_
 
 ## Inbound email
 
-`POST /v1/inbound/email?to=<recipient>` accepts a raw RFC 822 message as the body and returns `202`. It requires the `OD-Inbound-Secret` header to match the server's `INBOUND_SECRET`. This is what the Cloudflare Email Worker calls; self-hosters can call it from their own mail pipeline. See [Email setup](/self-hosting/email/).
+`POST /v1/inbound/email?to=<recipient>` accepts a raw RFC 822 message as the body and returns `202`. Each request is signed with the server's `INBOUND_SECRET`: `OD-Inbound-Signature: t=<unix seconds>,v1=<hex>`, where the hex is the HMAC-SHA256 of `<t>.<recipient>.<envelope sender>.` followed by the raw message. A signature older than five minutes is refused. This is what the Cloudflare Email Worker sends; self-hosters can call it from their own mail pipeline. See [Email setup](/self-hosting/email/).
 
 ```sh
-curl "https://desk.example.com/v1/inbound/email?to=acme-x7k2@in.example.com" \
-  -H "OD-Inbound-Secret: $INBOUND_SECRET" \
+TO="acme-x7k2@in.example.com"; FROM="sender@example.com"; T=$(date +%s)
+SIG=$( { printf '%s.%s.%s.' "$T" "$TO" "$FROM"; cat message.eml; } | openssl dgst -sha256 -hmac "$INBOUND_SECRET" -hex | sed 's/^.* //')
+curl "https://desk.example.com/v1/inbound/email?to=$TO" \
+  -H "OD-Inbound-Signature: t=$T,v1=$SIG" \
+  -H "OD-Envelope-From: $FROM" \
   -H "Content-Type: message/rfc822" \
   --data-binary @message.eml
 ```

@@ -77,15 +77,23 @@ func (s *Service) open(ctx context.Context, x *row) (source.Source, error) {
 	return f(c, s.Options)
 }
 
+// uploadReadError is a failure to read a stored upload: its text names storage internals,
+// so it is logged, never shown.
+type uploadReadError struct{ err error }
+
+func (e uploadReadError) Error() string { return "read upload: " + e.err.Error() }
+func (e uploadReadError) Unwrap() error { return e.err }
+
+// readCSV reads and parses an upload. Only a parse error's text is for people.
 func (s *Service) readCSV(ctx context.Context, key string) (*csvFile, error) {
 	rc, err := s.d.Storage.Get(ctx, key)
 	if err != nil {
-		return nil, fmt.Errorf("read upload: %w", err)
+		return nil, uploadReadError{err}
 	}
 	defer rc.Close()
 	raw, err := io.ReadAll(io.LimitReader(rc, maxCSVBytes+1))
 	if err != nil {
-		return nil, fmt.Errorf("read upload: %w", err)
+		return nil, uploadReadError{err}
 	}
 	return parseCSV(raw)
 }

@@ -174,7 +174,8 @@ func (s *Service) register(api huma.API) {
 			ID   string `path:"id"`
 			Body *struct{}
 		}) (*struct{ Body SummaryOutput }, error) {
-			p, err := auth.RequireWorkspace(ctx, auth.RoleViewer, auth.ScopeTicketsRead)
+			// The summary is stored on the ticket: a write, as an agent.
+			p, err := auth.RequireWorkspace(ctx, auth.RoleAgent, auth.ScopeTicketsWrite)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
@@ -361,7 +362,7 @@ func (e *eventStream) send(event string, data any) {
 	if !e.started {
 		h := e.w.Header()
 		h.Set("Content-Type", "text/event-stream")
-		h.Set("Cache-Control", "no-cache")
+		h.Set("Cache-Control", "no-store")
 		h.Set("X-Accel-Buffering", "no")
 		_ = e.rc.SetWriteDeadline(time.Now().Add(streamTimeout + 30*time.Second))
 		e.w.WriteHeader(http.StatusOK)

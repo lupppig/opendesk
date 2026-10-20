@@ -231,6 +231,17 @@ func (s *svc) registerUsers(api huma.API) {
 				if err := userExists(ctx, tx, uid); err != nil {
 					return err
 				}
+				// Ending another admin's sessions ends their panel sessions too: only an
+				// admin who manages admins may.
+				if uid != a.UserID && !a.Role.Can(PermAdminsManage) {
+					var isAdmin bool
+					if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM instance_admins WHERE user_id = $1)`, uid).Scan(&isAdmin); err != nil {
+						return err
+					}
+					if isAdmin {
+						return httpx.E(403, "forbidden", "Only an admin who manages admins can sign another admin out.")
+					}
+				}
 				data := map[string]any{"all": sid == uuid.Nil}
 				if sid == uuid.Nil {
 					if err := s.ops.EndSessions(ctx, tx, uid); err != nil {

@@ -187,6 +187,7 @@
   "signIn": {
     "popupWaiting": "Finish signing in with {{name}} in the window that opened.",
     "popupBlocked": "Your browser blocked the {{name}} window. Allow pop-ups from the address bar to finish there.",
-    "popupThisTab": "Continue in this tab"
+    "popupThisTab": "Continue in this tab",
+    "changePassword": "Your password is on a list of leaked passwords or is shorter than we now ask. Choose a new one."
   }
 }

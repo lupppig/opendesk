@@ -74,6 +74,12 @@ export class WidgetApi {
     return s;
   }
 
+  /** Ends the session on the server: the visitor token stops working everywhere. */
+  async endSession() {
+    if (!this.visitorToken) return;
+    await this.req<void>("DELETE", "/v1/widget/session");
+  }
+
   async conversations() {
     return rows(await this.req<Conversation[] | { data: Conversation[] }>("GET", "/v1/widget/conversations"));
   }

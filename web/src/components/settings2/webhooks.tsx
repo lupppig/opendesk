@@ -16,7 +16,7 @@ import { qk, upsertInList } from "@/lib/queries";
 /** The events catalog (contracts/events.md), grouped by resource. */
 export const eventGroups: { label: string; events: string[] }[] = [
   { label: "Tickets", events: ["ticket.created", "ticket.updated", "ticket.deleted"] },
-  { label: "Messages", events: ["message.created", "message.updated"] },
+  { label: "Messages", events: ["message.created", "message.updated", "message.deleted"] },
   { label: "Activity", events: ["activity.created"] },
   { label: "Contacts", events: ["contact.created", "contact.updated", "contact.deleted"] },
   { label: "Companies", events: ["company.created", "company.updated", "company.deleted"] },

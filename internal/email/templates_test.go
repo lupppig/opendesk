@@ -209,7 +209,7 @@ func TestTemplatePreviewAndTest(t *testing.T) {
 		t.Fatalf("signature preview %d %+v", code, p.Problems)
 	}
 	code = doJSON(t, "POST", srv.URL+"/v1/templates/preview", map[string]any{"kind": "csat"}, &p)
-	if code != 200 || strings.Count(p.HTML, "/csat/preview?score=") != 5 || len(p.Problems) != 0 {
+	if code != 200 || strings.Count(p.HTML, "/csat#t=preview&amp;score=") != 5 || len(p.Problems) != 0 {
 		t.Fatalf("csat preview %d %+v", code, p.Problems)
 	}
 	code = doJSON(t, "POST", srv.URL+"/v1/templates/preview", map[string]any{"kind": "auto_reply", "subject": "Got it: {{ ticket.subject }}",

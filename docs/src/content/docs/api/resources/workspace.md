@@ -15,7 +15,7 @@ description: The workspace, its members, invitations, teams, audit logs and noti
 | `PATCH` | `/v1/members/{user_id}/profile` | Change a profile: title, phone, pronouns and personal signature ([details](/api/resources/templates/#member-profiles)) |
 | `GET`, `POST` | `/v1/invitations` | List or send invitations |
 | `DELETE` | `/v1/invitations/{id}` | Revoke an invitation |
-| `GET` | `/v1/invitations/lookup?token=` | Public: what an invitation is for |
+| `POST` | `/v1/invitations/lookup` | Public: what an invitation is for, from `{token}` |
 | `POST` | `/v1/invitations/accept` | Accept an invitation (no workspace header) |
 | `GET`, `POST` | `/v1/teams` | List or create teams |
 | `GET`, `PATCH`, `DELETE` | `/v1/teams/{id}` | |

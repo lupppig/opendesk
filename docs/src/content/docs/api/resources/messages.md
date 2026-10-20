@@ -9,6 +9,8 @@ Scopes: `tickets:read` to read, `tickets:write` to send.
 | --- | --- | --- |
 | `GET` | `/v1/tickets/{id}/messages` | All messages, ascending |
 | `POST` | `/v1/tickets/{id}/messages` | Send a reply or add a note |
+| `PATCH` | `/v1/tickets/{id}/messages/{messageId}` | Edit your own internal note |
+| `DELETE` | `/v1/tickets/{id}/messages/{messageId}` | Delete your own internal note; admins can delete any note |
 | `GET` | `/v1/messages/{id}/original` | The full original, including quoted history |
 | `POST` | `/v1/attachments` | Upload a file |
 | `GET` | `/v1/attachments/{id}` | Download a file |
@@ -38,6 +40,7 @@ type Message = {
   auth_failed: boolean;
   form_sender: string;
   created_at: string;
+  edited_at: string | null;
 };
 ```
 
@@ -81,6 +84,14 @@ curl https://api.opendesk.sh/v1/tickets/1042/messages \
 
 Notes are never sent to the customer.
 
+## Edit or delete a note
+
+Agents can edit or delete their own plain internal notes. Admins can delete any internal note. A note in a side conversation and any reply are immutable through these routes. Editing takes sanitized `body_html` and sets `edited_at`; deleting removes the note and its attachment records, and removes stored files when no other attachment uses them. Both actions add a timeline entry that identifies the actor without including the note text. Editing notifies teammates the note now mentions for the first time.
+
+Editing and deleting are for teammates signed in to the app: an API key gets `403`, and a note written with an API key can be deleted by an admin.
+
+Edits publish `message.updated`; deletion returns `204` and publishes `message.deleted`.
+
 ## Attachments
 
 Upload first, then reference the id when you send:
@@ -95,4 +106,4 @@ curl https://api.opendesk.sh/v1/attachments \
 { "id": "0192f0c5-...", "filename": "invoice.pdf", "content_type": "application/pdf", "size_bytes": 48211, "inline": false, "url": "..." }
 ```
 
-Uploaded attachments are unattached until a message that references them is sent. `GET /v1/attachments/{id}` redirects to a short-lived signed URL, or streams the file when the storage driver cannot sign. For `<img>` tags, where you cannot set headers, the `url` carries a `?token=`.
+Uploaded attachments are unattached until a message that references them is sent. `GET /v1/attachments/{id}` redirects to a short-lived signed URL, or streams the file when the storage driver cannot sign. For `<img>` tags, where you cannot set headers, the `url` is signed (`?exp=&sig=`) and expires within two hours; fetch the message again for a fresh one.

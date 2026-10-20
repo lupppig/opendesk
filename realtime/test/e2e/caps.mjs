@@ -1,7 +1,7 @@
 // Checks the per-subject socket cap against a running gateway (GATEWAY_URL, AUTH_SECRET).
 import { createHmac, randomUUID } from "node:crypto";
 
-const URL_ = (process.env.GATEWAY_URL ?? "ws://127.0.0.1:4000/socket") + "/websocket?vsn=2.0.0&token=";
+const URL_ = (process.env.GATEWAY_URL ?? "ws://127.0.0.1:4000/socket") + "/websocket?vsn=2.0.0";
 const SECRET = process.env.AUTH_SECRET ?? "development-only-auth-secret-change-me-0000";
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
 const now = Math.floor(Date.now() / 1000);
@@ -12,7 +12,8 @@ const token = `${head}.${body}.${createHmac("sha256", SECRET).update(`${head}.${
 
 const open = () =>
   new Promise((resolve) => {
-    const ws = new WebSocket(URL_ + token);
+    // The token rides in Sec-WebSocket-Protocol (Phoenix's auth token), never the URL.
+    const ws = new WebSocket(URL_, ["phoenix", "base64url.bearer.phx." + Buffer.from(token).toString("base64").replace(/=/g, "")]);
     ws.onopen = () => resolve(ws);
     ws.onerror = () => resolve(null);
   });

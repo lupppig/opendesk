@@ -1,7 +1,6 @@
 package core
 
 import (
-	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -172,7 +171,7 @@ func TestPrivateTeamKeysAndGrantHygiene(t *testing.T) {
 	if r := f.owner.do("PATCH", "/v1/api-keys/"+keyID.String(), map[string]any{"private_team_ids": []string{team.String()}}); r.Status != 200 {
 		t.Fatalf("grant: %d %s", r.Status, r.Raw)
 	}
-	recv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	recv := httptest.NewServer(echoChallenges(nil))
 	defer recv.Close()
 	hook := f.owner.do("POST", "/v1/webhooks", map[string]any{"url": recv.URL, "private_team_ids": []string{team.String()}})
 	if hook.Status != 201 {
@@ -220,7 +219,7 @@ func TestGrantedWebhookChanges(t *testing.T) {
 	f := newTeamFixture(t)
 	admin, _ := f.e.memberOf(f.wid, "hookadmin", "admin")
 	team := f.privateTeam("Security", map[uuid.UUID]string{f.ownerID: "lead"})
-	recv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	recv := httptest.NewServer(echoChallenges(nil))
 	defer recv.Close()
 	r := f.owner.do("POST", "/v1/webhooks", map[string]any{"url": recv.URL, "events": []string{"ticket.created"},
 		"private_team_ids": []string{team.String()}})

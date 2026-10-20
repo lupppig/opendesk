@@ -31,7 +31,6 @@ import (
 	"github.com/useopendesk/opendesk/internal/deps"
 	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/idempotency"
-	"github.com/useopendesk/opendesk/internal/version"
 )
 
 // Path is where the server is mounted, next to /v1.
@@ -92,6 +91,8 @@ func New(d *deps.Deps, api http.Handler) *Handler {
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Tool results carry workspace data: never stored by a browser or a cache.
+	w.Header().Set("Cache-Control", "no-store")
 	if origin := r.Header.Get("Origin"); origin != "" && !slices.Contains(h.d.Cfg.CORSOrigins, origin) {
 		problem(w, r, httpx.E(http.StatusForbidden, "origin_not_allowed", "Requests from this origin are not allowed."))
 		return
@@ -134,7 +135,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) server(p *auth.Principal, clientKey string) *mcp.Server {
 	cp := *p
 	cp.Assistant = false
-	s := mcp.NewServer(&mcp.Implementation{Name: "opendesk", Title: "opendesk", Version: version.Version},
+	s := mcp.NewServer(&mcp.Implementation{Name: "opendesk", Title: "opendesk", Version: "1"},
 		&mcp.ServerOptions{Instructions: instructions})
 	for _, t := range catalog() {
 		if !t.offered(&cp) {

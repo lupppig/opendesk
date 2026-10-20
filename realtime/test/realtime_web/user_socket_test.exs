@@ -4,6 +4,7 @@ defmodule RealtimeWeb.UserSocketTest do
   alias RealtimeWeb.{UserSocket, WidgetSocket}
 
   defp info, do: %{peer_data: %{address: Tokens.random_ip(), port: 1}, x_headers: []}
+  defp with_token(token), do: Map.put(info(), :auth_token, token)
 
   test "a ws token connects with the claims as assigns and id user_socket:<sub>" do
     claims = Tokens.ws_claims()
@@ -19,6 +20,15 @@ defmodule RealtimeWeb.UserSocketTest do
     assert UserSocket.id(socket) == "user_socket:" <> claims["sub"]
   end
 
+  test "the token is read from the auth_token header, never the query string" do
+    claims = Tokens.ws_claims()
+    header = Map.put(info(), :auth_token, Tokens.sign(claims))
+    assert {:ok, socket} = connect(UserSocket, %{}, connect_info: header)
+    assert socket.assigns.sub == claims["sub"]
+
+    assert connect(UserSocket, %{"token" => Tokens.sign(claims)}, connect_info: info()) == :error
+  end
+
   test "a widget_ws token connects to the widget socket as a contact" do
     claims = Tokens.widget_claims()
     assert {:ok, socket} = connect_claims(claims)
@@ -29,13 +39,13 @@ defmodule RealtimeWeb.UserSocketTest do
 
   test "the agents' socket refuses widget_ws tokens" do
     token = Tokens.sign(Tokens.widget_claims())
-    assert connect(UserSocket, %{"token" => token}, connect_info: info()) == :error
+    assert connect(UserSocket, %{}, connect_info: with_token(token)) == :error
   end
 
   test "the widget socket refuses ws tokens of users and API keys" do
     for kind <- ["user", "api_key"] do
       token = Tokens.sign(Tokens.ws_claims(%{"kind" => kind}))
-      assert connect(WidgetSocket, %{"token" => token}, connect_info: info()) == :error
+      assert connect(WidgetSocket, %{}, connect_info: with_token(token)) == :error
     end
   end
 
@@ -75,7 +85,7 @@ defmodule RealtimeWeb.UserSocketTest do
           Tokens.sign(Tokens.ws_claims(), alg: "HS512"),
           Tokens.unsigned(Tokens.ws_claims())
         ] do
-      assert connect(UserSocket, %{"token" => token}, connect_info: info) == :error
+      assert connect(UserSocket, %{}, connect_info: Map.put(info, :auth_token, token)) == :error
     end
 
     assert connect(UserSocket, %{}, connect_info: info) == :error

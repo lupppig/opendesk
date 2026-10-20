@@ -117,8 +117,14 @@ Authentication
   for every new or changed password (12..128 chars, refuses the embedded breached list):
   registration, reset, change, invite acceptance.
 - Login, registration and password reset are behind Turnstile (`d.Captcha.Verify`), or an
-  App Attest proof from the iPhone app, and rate limited per IP and per account (`d.Limiter`). Login answers the same for unknown
-  users and wrong passwords, in the same time (`auth.DummyVerify`).
+  App Attest proof from the iPhone app, and rate limited per IP and per account (`d.Limiter`).
+  Per-account limits on a sign-in factor (password, TOTP, step-up) count in Postgres for the
+  whole instance (`d.Limiter.Shared`), and only after the human check. Login answers the same
+  for unknown users and wrong passwords, in the same time (`auth.DummyVerify`); a password
+  that no longer passes `auth.CheckPassword` signs in with `change_password`.
+- A change to how someone signs in (password changed or reset, 2FA on or off, passkey added
+  or removed, provider linked) emails them in the same transaction (`notifySecurity`).
+  Adding or removing a factor needs a recent sign-in.
 - TOTP stores the last consumed step and refuses its replay. Recovery codes are hashed
   and single use.
 - Federated identities bind by `(issuer, subject)`. An existing password account is linked
@@ -137,7 +143,15 @@ Sessions and tokens
   cookie; a response body carries one only for a native request (`OD-Client`, no `Origin`).
   Push devices are bound to a session and removed with it. Logout, password change, member
   removal and session revocation revoke sessions **and** publish `od.control.disconnect`.
-- Cookies: HttpOnly, Secure (https), SameSite=Lax, path-scoped.
+- An access token works only while its session is live and its user not suspended: the
+  resolver checks both on every request. Sessions end 30 days after sign-in at most.
+- Cookies: HttpOnly, Secure (https), SameSite=Lax or Strict; session cookies are `__Host-`
+  prefixed on https. Refresh cookies are read only from an app origin (or no `Origin`).
+- Tokens never ride in API URLs: the realtime token goes in `Sec-WebSocket-Protocol` (the
+  gateway reads no query token), public token lookups and CSAT take a body. `/v1/`
+  responses are `no-store` unless their route says otherwise.
+- Every credential (API key, person, widget visitor) is rate limited across the API
+  (`httpx.CredentialLimit`, `RateLimit-*` headers); unresolved credentials per address.
 
 Access control
 - Every workspace-owned row is read and written with `workspace_id = $1` from the
@@ -153,6 +167,9 @@ Access control
 Input and output
 - Names people choose go through `internal/displayname` (users, workspaces, teams,
   contacts typed by agents). Untrusted names (email headers, IdP claims) use `Clean`.
+- Files from outside are type-checked and never run: executables and scripts are refused
+  (`hd.IsExecutable`), active types are stored as plain text (`hd.DetectType`), and downloads
+  are attachments with `nosniff` and a sandbox CSP (CASA 5.2.1).
 - Email HTML and agent HTML are sanitized with bluemonday before storage. Never render
   stored HTML without that.
 - Inbound email renders in a sandboxed frame without scripts, and its images from other
@@ -160,18 +177,30 @@ Input and output
   Collab mail is inbound email: the same sanitizing before storage and the same frame.
 - A private Collab account and its mail are visible to the member who connected it alone,
   admins included; Collab events go only to the people who see what changed (`events.Event.Users`).
+- Events carry only what every receiver may read: a notification goes to its recipient
+  (`Users`), settings whose reads need admin to admins (`events.Event.Admins`).
 - Webhook and other outbound URLs are HTTPS and refuse private, loopback and link-local
-  targets (SSRF), except on a development instance.
+  targets (SSRF), except on a development instance. A webhook gets events only once its
+  URL answered the `webhook.verification` challenge (CASA 7.1.2); payloads are signed
+  (HMAC-SHA256 with a timestamp). Webhooks we receive are verified alike: Stripe's, and
+  inbound email (`OD-Inbound-Signature`, five-minute window).
 
 Errors, logging, data
 - No secret, token, password, credential or full DSN in a log line, error or analytics
-  event. Request logs never include query strings or bodies.
+  event. Request logs never include query strings or bodies. Only typed, safe messages
+  (`httpx.Error`, a provider's own refusal) reach a client; anything else is a logged 500.
+- Outside a development instance on localhost there are no built-in secrets: `AUTH_SECRET`
+  and `CREDENTIALS_KEY` are required.
 - Mailbox credentials, OAuth tokens, webhook secrets, TOTP secrets: AES-GCM via `d.Box`.
 - Security events are audit-logged: login, failed login, 2FA changes, password change,
   member and role changes, API key and webhook changes, mailbox and integration connect/disconnect.
 - Users can delete their account and owners their workspace (data removed, not hidden).
 - HTTP responses carry `httpx.SecurityHeaders`; the gateway checks `Origin`.
-- CI runs `govulncheck`, `pnpm audit`, `mix deps.audit` and a Trivy image scan.
+- CI runs `govulncheck`, `pnpm audit`, `mix deps.audit`, CodeQL, gitleaks and a Trivy image
+  scan that gates the deploy. Disclosure: `SECURITY.md` and `/.well-known/security.txt`.
+- Releases sign `SHA256SUMS` with the release key (`deploy/install/release-signing.pub`,
+  secret `RELEASE_SIGNING_KEY`); the installer and `opendesk-ctl` verify it and pin image
+  digests. Desktop apps install updates themselves only where the code signature is checked.
 
 ## Web conventions (`web/`, `site/`, `docs/`)
 

@@ -385,7 +385,9 @@ func (s *service) publishMailbox(ctx context.Context, tx pgx.Tx, wid, id uuid.UU
 	if err != nil {
 		return err
 	}
-	_, err = events.Publish(ctx, tx, events.Event{WorkspaceID: wid, Type: typ, Data: map[string]any{"mailbox": s.api(m, true, a)}})
+	// Every member sees the mailbox, but only as a non-admin reads it: config and trusted
+	// senders stay with GET /v1/mailboxes for admins.
+	_, err = events.Publish(ctx, tx, events.Event{WorkspaceID: wid, Type: typ, Data: map[string]any{"mailbox": s.api(m, false, a)}})
 	return err
 }
 

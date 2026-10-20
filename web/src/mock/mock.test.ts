@@ -100,12 +100,14 @@ describe("mock backend", () => {
       "/v1/sla-policies", "/v1/automations", "/v1/mailboxes", "/v1/members", "/v1/invitations", "/v1/teams",
       "/v1/api-keys", "/v1/webhooks", "/v1/audit-logs", "/v1/notifications", "/v1/kb/collections", "/v1/kb/articles",
       "/v1/saved-replies", "/v1/me/sessions", "/v1/widget/settings", "/v1/workspace", "/v1/search?q=sso",
-      "/v1/reports/overview?from=2026-09-12&to=2026-10-11", "/v1/public/help/margin", "/v1/public/csat/demo", "/v1/auth/config",
+      "/v1/reports/overview?from=2026-09-12&to=2026-10-11", "/v1/public/help/margin", "/v1/auth/config",
       "/v1/integrations", "/v1/integrations/catalog",
       "/v1/support-channels/providers", "/v1/support-channels/connections", "/v1/support-channels/destinations",
     ]) {
       expect((await call("GET", path)).status, path).toBe(200);
     }
+    // The survey token rides in the body.
+    expect((await call("POST", "/v1/public/csat/survey", { token: "demo" })).status).toBe(200);
   });
 
   it("publishes contiguous events for mutations", async () => {

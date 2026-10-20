@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -19,8 +20,9 @@ import (
 )
 
 const (
-	// SessionMaxAge caps a session regardless of refresh activity.
-	SessionMaxAge = 90 * 24 * time.Hour
+	// SessionMaxAge caps a session regardless of refresh activity: everyone signs in
+	// again at least every 30 days (ASVS 3.3.2).
+	SessionMaxAge = 30 * 24 * time.Hour
 	// refreshReuseGrace tolerates two tabs refreshing with the same cookie at once.
 	refreshReuseGrace = 30 * time.Second
 )
@@ -37,7 +39,10 @@ type CoreAuthResult struct {
 	LinkToken    string    `json:"link_token,omitempty"`
 	Email        string    `json:"email,omitempty"`
 	RedirectTo   string    `json:"redirect_to,omitempty" doc:"App path to continue to (OAuth sign-in)"`
-	RefreshToken string    `json:"refresh_token,omitempty" doc:"Native requests only (contracts/native.md): the refresh token, which browsers get as the account's od_rt_ cookie instead"`
+	// ChangePassword: the password signed in with no longer meets the rules (it is in the
+	// breached list or shorter than they ask); the app asks for a new one.
+	ChangePassword bool   `json:"change_password,omitempty" doc:"The password used is breached or too short for the current rules: ask for a new one"`
+	RefreshToken   string `json:"refresh_token,omitempty" doc:"Native requests only (contracts/native.md): the refresh token, which browsers get as the account's od_rt_ cookie instead"`
 }
 
 type authOut struct {
@@ -46,10 +51,15 @@ type authOut struct {
 	Body         CoreAuthResult
 }
 
-// refreshCookie is a refresh cookie (one per account, contracts/tokens.md), scoped to the
-// auth routes.
+// refreshCookie is a refresh cookie (one per account, contracts/tokens.md). A __Host-
+// cookie is host-only with Path=/, as the prefix requires; any other is scoped to the
+// auth routes and COOKIE_DOMAIN.
 func (s *svc) refreshCookie(name, value string, maxAge int) string {
-	c := http.Cookie{Name: name, Value: value, Path: "/v1/auth", Domain: s.d.Cfg.CookieDomain,
+	path, domain := "/v1/auth", s.d.Cfg.CookieDomain
+	if strings.HasPrefix(name, hostCookiePrefix) {
+		path, domain = "/", ""
+	}
+	c := http.Cookie{Name: name, Value: value, Path: path, Domain: domain,
 		HttpOnly: true, Secure: s.d.Cfg.CookieSecure, SameSite: http.SameSiteLaxMode, MaxAge: maxAge}
 	if maxAge < 0 {
 		c.Expires = time.Unix(0, 0)
@@ -123,7 +133,12 @@ func (s *svc) tokenResponse(ctx context.Context, q db.Querier, uid, sid uuid.UUI
 	if ri.Native {
 		out.Body.RefreshToken = refresh
 	} else {
-		out.SetCookie = []string{s.refreshCookie(RefreshCookieName(uid), refresh, int(auth.RefreshTTL.Seconds()))}
+		name := s.refreshCookieName(uid)
+		out.SetCookie = []string{s.refreshCookie(name, refresh, int(auth.RefreshTTL.Seconds()))}
+		if old := ri.cookieFor(uid); old != nil && old.Name != name {
+			// The account's cookie moves to this instance's prefixed name.
+			out.SetCookie = append(out.SetCookie, s.clearCookie(old.Name))
+		}
 	}
 	return out, nil
 }

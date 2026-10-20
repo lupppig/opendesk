@@ -187,7 +187,12 @@ func (e *Env) AddUser(ws WS, role auth.Role, name string) User {
 	u.Email = strings.ToLower(strings.ReplaceAll(name, " ", ".")) + "." + crypto.RandomString(6) + "@example.com"
 	e.Exec(`INSERT INTO users (id, email, name) VALUES ($1, $2, $3)`, u.ID, u.Email, name)
 	e.Exec(`INSERT INTO members (workspace_id, user_id, role) VALUES ($1, $2, $3)`, ws.ID, u.ID, string(role))
-	tok, _, err := e.D.Tokens.Sign(auth.Claims{Purpose: auth.PurposeAccess, SessionID: ids.New().String()}, u.ID.String(), time.Hour)
+	// A live session that started a day ago: older than the recent sign-in owner-level
+	// operations need (SignedIn makes a fresh one).
+	sid := ids.New()
+	e.Exec(`INSERT INTO sessions (id, user_id, refresh_hash, created_at, expires_at) VALUES ($1, $2, $3, now() - interval '1 day', now() + interval '1 day')`,
+		sid, u.ID, []byte(sid.String()))
+	tok, _, err := e.D.Tokens.Sign(auth.Claims{Purpose: auth.PurposeAccess, SessionID: sid.String()}, u.ID.String(), time.Hour)
 	if err != nil {
 		e.T.Fatal(err)
 	}

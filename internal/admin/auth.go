@@ -17,8 +17,13 @@ import (
 	"github.com/useopendesk/opendesk/internal/version"
 )
 
-// RefreshCookie holds the admin panel's refresh token (contracts/admin.md).
-const RefreshCookie = "od_admin"
+// RefreshCookie holds the admin panel's refresh token (contracts/admin.md). On https it
+// is set as __Host-od_admin (HostRefreshCookie): host-only and Path=/, so no sibling
+// subdomain can plant or overwrite it (ASVS 3.4.4).
+const (
+	RefreshCookie     = "od_admin"
+	HostRefreshCookie = "__Host-" + RefreshCookie
+)
 
 const (
 	// SessionIdle ends a session this long after its last refresh.
@@ -31,6 +36,7 @@ const (
 	loginPerIP      = 30
 	loginPerAccount = 10
 	mfaPerUser      = 10
+	mfaPerUserDay   = 30
 	loginWindow     = 15 * time.Minute
 )
 
@@ -87,11 +93,14 @@ func (s *svc) me(a *Admin) AdminMe {
 			AIEnabled: cfg.AIEnabled(), AppURL: cfg.AppURL, APIURL: cfg.APIURL, SelfHosted: !cfg.BillingEnabled()}}
 }
 
-// cookie is the refresh cookie: host-only, HttpOnly, SameSite=Strict, scoped to the
-// admin auth routes.
+// cookie is the refresh cookie: host-only, HttpOnly, SameSite=Strict; __Host- prefixed
+// on https, otherwise scoped to the admin auth routes.
 func (s *svc) cookie(value string, maxAge int) string {
 	c := http.Cookie{Name: RefreshCookie, Value: value, Path: "/v1/admin/auth", HttpOnly: true,
 		Secure: s.d.Cfg.CookieSecure, SameSite: http.SameSiteStrictMode, MaxAge: maxAge}
+	if s.d.Cfg.CookieSecure {
+		c.Name, c.Path = HostRefreshCookie, "/"
+	}
 	if maxAge < 0 {
 		c.Expires = time.Unix(0, 0)
 	}
@@ -188,17 +197,19 @@ func (s *svc) login(ctx context.Context, email, password, turnstile string) (str
 	if err := s.checkOrigin(ri); err != nil {
 		return "", err
 	}
-	if err := s.limit("admin:login:ip:"+ri.IP, loginPerIP, loginWindow); err != nil {
+	if err := s.limitShared(ctx, "admin:login:ip:"+ri.IP, loginPerIP, loginWindow); err != nil {
+		return "", err
+	}
+	// The per-account limit counts only requests that passed the captcha, so nobody
+	// can lock an admin out without solving one per attempt.
+	if err := s.d.Captcha.Verify(ctx, turnstile, ri.IP); err != nil {
 		return "", err
 	}
 	email = normEmail(email)
 	if email != "" {
-		if err := s.limit("admin:login:email:"+email, loginPerAccount, loginWindow); err != nil {
+		if err := s.limitShared(ctx, "login:email:"+email, loginPerAccount, loginWindow); err != nil {
 			return "", err
 		}
-	}
-	if err := s.d.Captcha.Verify(ctx, turnstile, ri.IP); err != nil {
-		return "", err
 	}
 	var uid uuid.UUID
 	var hash *string
@@ -224,8 +235,10 @@ func (s *svc) login(ctx context.Context, email, password, turnstile string) (str
 	}
 	switch {
 	case role == nil:
-		s.d.Log.Info("admin sign-in by a non-admin", "user_id", uid, "ip", ri.IP)
-		return "", httpx.E(403, "not_admin", "This account is not an admin of this instance.")
+		// Answered like a wrong password: the panel never tells whether a password was
+		// right for an account that cannot sign in to it.
+		s.loginFailed(ctx, uid, false, ri, "password")
+		return "", errInvalidCredentials()
 	case suspended:
 		return "", httpx.E(403, "account_suspended", "This account is suspended.")
 	case !totp:
@@ -258,7 +271,7 @@ func (s *svc) mfa(ctx context.Context, mfaToken, code string) (*authOut, error) 
 	if err := s.checkOrigin(ri); err != nil {
 		return nil, err
 	}
-	if err := s.limit("admin:mfa:ip:"+ri.IP, loginPerIP, loginWindow); err != nil {
+	if err := s.limitShared(ctx, "admin:mfa:ip:"+ri.IP, loginPerIP, loginWindow); err != nil {
 		return nil, err
 	}
 	c, err := s.d.Tokens.Verify(mfaToken, auth.PurposeAdminMFA)
@@ -269,7 +282,10 @@ func (s *svc) mfa(ctx context.Context, mfaToken, code string) (*authOut, error) 
 	if err != nil {
 		return nil, errMFAToken()
 	}
-	if err := s.limit("admin:mfa:user:"+uid.String(), mfaPerUser, loginWindow); err != nil {
+	if err := s.limitShared(ctx, "admin:mfa:user:"+uid.String(), mfaPerUser, loginWindow); err != nil {
+		return nil, err
+	}
+	if err := s.limitShared(ctx, "admin:mfa:user:day:"+uid.String(), mfaPerUserDay, 24*time.Hour); err != nil {
 		return nil, err
 	}
 	var out *authOut
@@ -458,9 +474,21 @@ func (s *svc) stepUp(ctx context.Context, tx pgx.Tx, a *Admin, code string) erro
 	if code == "" {
 		return httpx.E(403, "mfa_required", "Enter a code from your authenticator app.")
 	}
-	if err := s.limit("admin:stepup:"+a.UserID.String(), mfaPerUser, loginWindow); err != nil {
+	if err := s.limitShared(ctx, "admin:stepup:"+a.UserID.String(), mfaPerUser, loginWindow); err != nil {
 		return err
 	}
 	_, err := s.ops.CheckSecondFactor(ctx, tx, a.UserID, code)
+	if he, ok := err.(*httpx.Error); ok && he.Code == "invalid_code" {
+		// Written beside the transaction, which the refusal rolls back: it waits on the
+		// user row tx holds, so it runs once the request has answered.
+		actor := *a
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if aerr := s.audit(ctx, s.d.DB.Pool, &actor, "stepup.failed", "admin", actor.UserID.String(), nil); aerr != nil {
+				s.d.Log.Error("admin: audit failed step-up", "err", aerr)
+			}
+		}()
+	}
 	return err
 }

@@ -56,3 +56,21 @@ variable "access_logs_bucket" {
   type        = string
   default     = null
 }
+
+variable "connection_logs_bucket" {
+  description = "Optional S3 bucket for ALB connection logs (client, TLS and outcome; no URLs)."
+  type        = string
+  default     = null
+}
+
+variable "connection_logs_prefix" {
+  description = "Key prefix for ALB connection logs in connection_logs_bucket. Defaults to name."
+  type        = string
+  default     = null
+}
+
+variable "access_logs_prefix" {
+  description = "Key prefix for ALB access logs in access_logs_bucket. Defaults to name."
+  type        = string
+  default     = null
+}

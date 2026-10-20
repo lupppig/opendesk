@@ -130,4 +130,5 @@ All the widgets of a workspace share one set of user ids: a verified `user_id` i
 
 - Use a stable id that never changes for the user, such as your database primary key, not an email address.
 - Send the id as a string. The hash is computed over its exact bytes.
-- When a user signs out of your product, clear the widget session so the next visitor on the same browser does not see their conversations.
+- When a user signs out of your product, call `opendesk("shutdown")`. It ends the widget session on the server too, so the next visitor on the same browser does not see their conversations.
+- A verified session is never picked up again without a `user_hash`: a page that loads the widget without one starts an anonymous visitor. A verified session also ends 30 days after it started, and the next page that verifies the user starts a new one without asking them anything.

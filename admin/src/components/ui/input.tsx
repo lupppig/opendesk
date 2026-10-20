@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useId, useRef, useState, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from "react";
-import { Search, X } from "lucide-react";
+import { Eye, EyeOff, Search, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 
 export const inputBase =
@@ -78,6 +78,28 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<H
     );
   },
 );
+
+/** A password field with a show/hide toggle. */
+export const PasswordInput = forwardRef<HTMLInputElement, InputProps>(function PasswordInput(props, ref) {
+  const [show, setShow] = useState(false);
+  return (
+    <TextInput
+      ref={ref}
+      {...props}
+      type={show ? "text" : "password"}
+      trailing={
+        <button
+          type="button"
+          onClick={() => setShow((s) => !s)}
+          aria-label={show ? "Hide password" : "Show password"}
+          className="flex size-7 items-center justify-center rounded-sm text-fg-4 transition-colors hover:bg-hover hover:text-fg"
+        >
+          {show ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+        </button>
+      }
+    />
+  );
+});
 
 export function SearchInput({
   value,

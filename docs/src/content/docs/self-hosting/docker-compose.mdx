@@ -151,7 +151,7 @@ Combine profiles with commas: `COMPOSE_PROFILES=minio,ollama`.
 | `/socket`, `/socket/*` | `realtime:4000`, including the chat widget socket at `/socket/widget` |
 | everything else | `opendesk:8080`: the API, web app, widget script, help center, `/config.js` and `/config.json` |
 
-Caddy's access log strips the `token` query parameter and the `Authorization` and `Cookie` headers, since realtime tokens travel in `?token=`.
+Caddy's access log strips the `token` query parameter and the `Authorization`, `Cookie` and `Sec-WebSocket-Protocol` headers. Realtime tokens travel in that header. The `code`, `state`, `sig` and `exp` query parameters of sign-in callbacks and signed file links are dropped too.
 
 ## Help center addresses
 

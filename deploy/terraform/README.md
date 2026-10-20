@@ -8,7 +8,8 @@ are in [`deploy/README.md`](../README.md); this file is the Terraform-specific p
 ## Layout
 
 ```
-environments/production/   the root: wiring, variables, outputs, backend
+environments/production/   the root: wiring, variables, outputs, backend; logging.tf
+                           the logs bucket, ALB connection logs and the CloudTrail trail
 modules/
   network/       VPC, public subnets, IGW, S3 gateway endpoint (no NAT Gateway)
   alb/           one ALB for api + gateway, ACM cert validated through Cloudflare
@@ -63,6 +64,9 @@ below).
      --versioning-configuration Status=Enabled
    aws s3api put-public-access-block --bucket opendesk-terraform-state-$ACCOUNT \
      --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+   aws s3api put-bucket-encryption --bucket opendesk-terraform-state-$ACCOUNT \
+     --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"aws:kms"},"BucketKeyEnabled":true}]}'
+   aws s3api put-bucket-policy --bucket opendesk-terraform-state-$ACCOUNT --policy "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"TLSOnly\",\"Effect\":\"Deny\",\"Principal\":\"*\",\"Action\":\"s3:*\",\"Resource\":[\"arn:aws:s3:::opendesk-terraform-state-$ACCOUNT\",\"arn:aws:s3:::opendesk-terraform-state-$ACCOUNT/*\"],\"Condition\":{\"Bool\":{\"aws:SecureTransport\":\"false\"}}}]}"
    ```
 
 2. **Deploy the workers once** (`pnpm exec wrangler deploy` in
@@ -234,6 +238,15 @@ go through Deploy.
   the NATS services; put the provider's token in
   `opendesk/production/NATS_TOKEN`.
 - **R2 instead of S3:** see the header of `modules/s3/main.tf`.
+- **Audit and connection logs** (`logging.tf`): the ALB writes connection logs
+  (client, TLS version and cipher, outcome; no URLs) to
+  `s3://opendesk-production-logs-<account>/alb/` (kept `alb_log_retention_days`,
+  default 90), and a multi-region CloudTrail trail with log file validation writes
+  to `cloudtrail/` (kept `cloudtrail_retention_days`, default 365), encrypted with
+  the environment key. The bucket is private and TLS only. ALB access logs stay
+  off: they record the full request line, query string included, where one-time
+  values ride (OAuth codes, signed file links). Set `cloudtrail = false` only when an
+  organization trail already covers the account.
 - **Help centers** are on with `help_domain` (default `opendeskhelp.com`): the
   api and worker get `HELP_DOMAIN`, `HELP_CNAME_TARGET` (`custom.<help_domain>`)
   and `HELP_PROXY_SECRET`. `help_domain = ""` leaves help centers at

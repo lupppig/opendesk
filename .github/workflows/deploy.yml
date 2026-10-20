@@ -268,6 +268,29 @@ jobs:
           provenance: false
           cache-from: type=gha,scope=deploy-realtime
           cache-to: type=gha,mode=max,scope=deploy-realtime
+      # Nothing rolls out with a fixable high or critical finding: migrate and the
+      # services wait on this job. ECR's login above lets Trivy pull the images.
+      - name: Trivy (opendesk)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_PLATFORM: linux/arm64
+        with:
+          image-ref: ${{ steps.refs.outputs.opendesk }}
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
+      - name: Trivy (realtime)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_PLATFORM: linux/arm64
+        with:
+          image-ref: ${{ steps.refs.outputs.realtime }}
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
+          skip-setup-trivy: true
 
   # Migrations run once, before any service moves, on the direct (unpooled)
   # connection as the migrate role. The services boot with AUTO_MIGRATE=false. Migrations
@@ -441,6 +464,8 @@ jobs:
             printf '/help/:slug https://:slug.%s/ 301\n/help/:slug/* https://:slug.%s/:splat 301\n' "$HELP_DOMAIN" "$HELP_DOMAIN" >> dist/_redirects
           fi
           node ../deploy/cloudflare/pages/app/write-config.mjs dist
+          # The site's security.txt (RFC 9116) on every opendesk.sh host.
+          mkdir -p dist/.well-known && cp ../site/public/.well-known/security.txt dist/.well-known/
           echo "DIST=web/dist" >> "$GITHUB_ENV"
 
       # The instance admin panel (contracts/admin.md) on its own origin.
@@ -456,6 +481,7 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm build:pages
           test -s dist/index.html && test -s dist/config.js
+          mkdir -p dist/.well-known && cp ../site/public/.well-known/security.txt dist/.well-known/
           echo "DIST=admin/dist" >> "$GITHUB_ENV"
 
       # opendesk.sh/install.sh is the installer of the newest release, so its
@@ -488,7 +514,9 @@ jobs:
         run: |
           pnpm install --frozen-lockfile
           pnpm build
-          [ -f dist/_headers ] || cp ../deploy/cloudflare/pages/docs/_headers dist/
+          # The docs ship their own _headers (CSP hashes filled in by its postbuild).
+          grep -q "Content-Security-Policy" dist/_headers
+          mkdir -p dist/.well-known && cp ../site/public/.well-known/security.txt dist/.well-known/
           echo "DIST=docs/dist" >> "$GITHUB_ENV"
 
       - name: Deploy to Cloudflare Pages

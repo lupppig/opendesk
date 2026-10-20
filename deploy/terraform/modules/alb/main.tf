@@ -99,11 +99,23 @@ resource "aws_lb" "this" {
   enable_deletion_protection = var.deletion_protection
   enable_http2               = true
 
+  # Access logs record each request's full URL, query string included, where one-time
+  # values ride (OAuth codes, signed file links): keep them off unless something filters
+  # them. Connection logs record the client, TLS and outcome of every connection, no URL.
   dynamic "access_logs" {
     for_each = var.access_logs_bucket == null ? [] : [1]
     content {
       bucket  = var.access_logs_bucket
-      prefix  = var.name
+      prefix  = coalesce(var.access_logs_prefix, var.name)
+      enabled = true
+    }
+  }
+
+  dynamic "connection_logs" {
+    for_each = var.connection_logs_bucket == null ? [] : [1]
+    content {
+      bucket  = var.connection_logs_bucket
+      prefix  = coalesce(var.connection_logs_prefix, var.name)
       enabled = true
     }
   }
@@ -164,8 +176,9 @@ resource "aws_lb_listener" "https" {
   load_balancer_arn = aws_lb.this.arn
   port              = 443
   protocol          = "HTTPS"
-  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
-  certificate_arn   = aws_acm_certificate_validation.this.certificate_arn
+  # TLS 1.3, and TLS 1.2 with forward-secret AEAD suites only (no CBC, no static RSA).
+  ssl_policy      = "ELBSecurityPolicy-TLS13-1-2-Res-2021-06"
+  certificate_arn = aws_acm_certificate_validation.this.certificate_arn
 
   default_action {
     type = "fixed-response"

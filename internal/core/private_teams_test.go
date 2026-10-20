@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"net/http"
 	"net/http/httptest"
 	"testing"
 
@@ -73,7 +72,7 @@ func TestPrivateTeamGrants(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	recv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	recv := httptest.NewServer(echoChallenges(nil))
 	defer recv.Close()
 
 	// Webhooks: only a member of the team adds it; the ids must be private teams.

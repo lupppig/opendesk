@@ -50,7 +50,7 @@ func TestAccountFlow(t *testing.T) {
 	}
 	_, text = e.lastMail(agentEmail)
 	tok := tokenFromText(text, "/invite?token=")
-	look := e.client().do("GET", "/v1/invitations/lookup?token="+tok, nil)
+	look := e.client().do("POST", "/v1/invitations/lookup", map[string]any{"token": tok})
 	if look.str("workspace_name") != "Acme Support" || look.str("role") != "agent" {
 		t.Fatalf("lookup: %s", look.Raw)
 	}
@@ -91,12 +91,27 @@ func TestAccountFlow(t *testing.T) {
 	if hook.Status != 201 {
 		t.Fatalf("webhook: %d %s", hook.Status, hook.Raw)
 	}
+	// Its address cannot answer the verification challenge: no events until it is verified.
+	if hook.Body["verified"] != false {
+		t.Fatalf("unreachable webhook verified: %s", hook.Raw)
+	}
+	if r := owner.do("POST", "/v1/webhooks/"+hook.str("id")+"/test", nil); r.Status != 409 || r.str("code") != "webhook_unverified" {
+		t.Fatalf("test before verification: %d %s", r.Status, r.Raw)
+	}
+	if _, err := e.d.DB.Pool.Exec(context.Background(), `UPDATE webhooks SET verified_at = now() WHERE id = $1`, hook.str("id")); err != nil {
+		t.Fatal(err)
+	}
 	if r := owner.do("POST", "/v1/webhooks/"+hook.str("id")+"/test", nil); r.Status != 202 || r.str("event_type") != "webhook.test" {
 		t.Fatalf("test: %d %s", r.Status, r.Raw)
 	}
+	// Webhook events reach the owner and admins alone: a tickets:read key replays the stand-in.
 	evs := kc.do("GET", "/v1/events?since=0", nil)
-	if evs.Status != 200 || !strings.Contains(string(evs.Raw), "member.added") || !strings.Contains(string(evs.Raw), "webhook.created") {
+	if evs.Status != 200 || !strings.Contains(string(evs.Raw), "member.added") || strings.Contains(string(evs.Raw), "webhook.created") ||
+		strings.Contains(string(evs.Raw), "127.0.0.1:1/hook") || !strings.Contains(string(evs.Raw), "event.hidden") {
 		t.Fatalf("events: %d %s", evs.Status, evs.Raw)
+	}
+	if evs := owner.do("GET", "/v1/events?since=0", nil); evs.Status != 200 || !strings.Contains(string(evs.Raw), "webhook.created") {
+		t.Fatalf("owner events: %d %s", evs.Status, evs.Raw)
 	}
 	audit := owner.do("GET", "/v1/audit-logs?limit=100", nil)
 	for _, a := range []string{"workspace.created", "workspace.updated", "invitation.created", "member.joined", "api_key.created", "webhook.created"} {

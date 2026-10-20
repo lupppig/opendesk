@@ -102,7 +102,8 @@
     "state": {
       "active": "Active",
       "failing": "Failing",
-      "paused": "Paused"
+      "paused": "Paused",
+      "unverified": "Not verified"
     },
     "noDescription": "No description",
     "allEvents": "All events",
@@ -161,6 +162,18 @@
     "emptyTips": {
       "status": "Each attempt shows its status and response time",
       "retry": "Failures are retried automatically"
+    },
+    "verify": {
+      "title": "Verify this address",
+      "description": "No events go out until the address shows it wants them. opendesk sent it a webhook.verification event with a challenge. Answer that request with the challenge as the response body and it is verified at once, or enter the challenge it received here.",
+      "codeLabel": "Challenge",
+      "codePlaceholder": "whv_...",
+      "submit": "Verify",
+      "resend": "Send a new challenge",
+      "verified": "Webhook verified",
+      "resent": "New challenge sent",
+      "stillWaiting": "The address got a new challenge but didn't echo it. Enter it here once it arrives.",
+      "error": "Couldn't verify the webhook"
     }
   },
   "webhookForm": {

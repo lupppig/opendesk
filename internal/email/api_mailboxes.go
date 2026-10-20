@@ -220,6 +220,8 @@ func (s *service) registerMailboxRoutes(api huma.API) {
 			m.ID = ids.New()
 			m.Name, m.Email, m.DisplayName = b.Name, b.Email, b.DisplayName
 			m.InboundKind, m.OutboundKind, m.Config, m.TeamID = b.InboundKind, b.OutboundKind, b.Config, b.TeamID
+			// The Google or Microsoft connection sets these, never a request.
+			m.Config.OAuthEmail, m.Config.OAuthGrant, m.Config.OAuthClient = "", "", ""
 			m.SignatureHTML, m.AutoReplyEnabled, m.AutoReplySubject, m.AutoReplyHTML = b.SignatureHTML, b.AutoReplyEnabled, b.AutoReplySubject, b.AutoReplyHTML
 			m.Aliases, m.FromNameFormat, m.AliasTeams = b.Aliases, b.FromNameFormat, b.AliasTeams
 			if b.BrandID != nil {

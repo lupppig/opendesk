@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -428,6 +429,9 @@ func (s *Service) loadUpload(ctx context.Context, wid, id uuid.UUID) (upload, *c
 		return up, nil, httpx.Wrap(err)
 	}
 	f, err := s.readCSV(ctx, up.key)
+	if errors.As(err, new(uploadReadError)) {
+		return up, nil, httpx.Wrap(err)
+	}
 	if err != nil {
 		return up, nil, httpx.E(http.StatusUnprocessableEntity, "csv_unreadable", err.Error())
 	}

@@ -1,0 +1,9 @@
+Contact: mailto:team@opendesk.sh
+Contact: https://github.com/useopendesk/opendesk/security/advisories/new
+Expires: 2027-10-19T00:00:00.000Z
+Preferred-Languages: en
+Policy: https://docs.opendesk.sh/security/disclosure/
+Canonical: https://opendesk.sh/.well-known/security.txt
+Canonical: https://app.opendesk.sh/.well-known/security.txt
+Canonical: https://admin.opendesk.sh/.well-known/security.txt
+Canonical: https://docs.opendesk.sh/.well-known/security.txt

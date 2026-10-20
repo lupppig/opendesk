@@ -169,18 +169,18 @@ func TestDetectRoute(t *testing.T) {
 	w := newWorld(t)
 	srv := w.api(w.admin)
 	var d detection
-	if code := doJSON(t, http.MethodGet, srv.URL+"/v1/mailboxes/detect?email=Help%40Gmail.com", nil, &d); code != 200 ||
+	if code := doJSON(t, http.MethodPost, srv.URL+"/v1/mailboxes/detect", map[string]any{"email": "Help@Gmail.com"}, &d); code != 200 ||
 		d.Host != "gmail" || d.Label != "Gmail" || d.Source != "known" || d.PasswordAuth != "app_password" ||
 		d.AppPasswordURL != "https://myaccount.google.com/apppasswords" || d.OAuth == nil || *d.OAuth != "google" ||
 		d.Settings == nil || d.Settings.IMAP.Host != "imap.gmail.com" {
 		t.Fatalf("detect: %d %+v", code, d)
 	}
-	if code := doJSON(t, http.MethodGet, srv.URL+"/v1/mailboxes/detect?email=nope", nil, nil); code != 422 {
+	if code := doJSON(t, http.MethodPost, srv.URL+"/v1/mailboxes/detect", map[string]any{"email": "nope"}, nil); code != 422 {
 		t.Fatalf("invalid address: %d", code)
 	}
 	limited := false
 	for i := 0; i < detectPerMinute+2; i++ {
-		if doJSON(t, http.MethodGet, srv.URL+"/v1/mailboxes/detect?email=a%40yahoo.com", nil, nil) == 429 {
+		if doJSON(t, http.MethodPost, srv.URL+"/v1/mailboxes/detect", map[string]any{"email": "a@yahoo.com"}, nil) == 429 {
 			limited = true
 			break
 		}
@@ -190,7 +190,7 @@ func TestDetectRoute(t *testing.T) {
 	}
 	agent := *w.admin
 	agent.Role = "agent"
-	if code := doJSON(t, http.MethodGet, w.api(&agent).URL+"/v1/mailboxes/detect?email=a%40gmail.com", nil, nil); code != 403 {
+	if code := doJSON(t, http.MethodPost, w.api(&agent).URL+"/v1/mailboxes/detect", map[string]any{"email": "a@gmail.com"}, nil); code != 403 {
 		t.Fatalf("agent: %d", code)
 	}
 }

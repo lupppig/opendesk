@@ -1,0 +1,60 @@
+name: CodeQL
+
+# Static analysis of the Go API and workers and of every TypeScript and JavaScript
+# project (web, admin, site, docs, desktop, workers). Findings land in the
+# repository's code scanning alerts. Weekly as well, since new queries find old code.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "41 5 * * 2"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: go
+            build-mode: manual
+          - language: javascript-typescript
+            build-mode: none
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - if: matrix.language == 'go'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: github/codeql-action/init@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          queries: security-extended
+      # internal/webui embeds dist/, which the image build fills with the web app. A
+      # placeholder is enough to compile the Go code.
+      - name: Build Go
+        if: matrix.language == 'go'
+        run: |
+          mkdir -p internal/webui/dist
+          [ -f internal/webui/dist/index.html ] || echo '<!doctype html><title>opendesk</title>' > internal/webui/dist/index.html
+          go build ./...
+      - uses: github/codeql-action/analyze@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        with:
+          category: /language:${{ matrix.language }}

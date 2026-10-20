@@ -37,7 +37,7 @@ var (
 	ErrPasswordBreached = errors.New("this password has appeared in a data breach; choose a different one")
 )
 
-// breachedList is the NCSC top-100k breached passwords. See passwords/README.md.
+// breachedList is the 12-to-128-character passwords of two breach corpora. See passwords/README.md.
 //
 //go:embed passwords/breached.txt
 var breachedList []byte
@@ -58,7 +58,7 @@ func CheckPassword(pw string) error {
 		return ErrPasswordTooLong
 	}
 	breachedOnce.Do(func() {
-		breachedSet = make(map[string]struct{}, 48000)
+		breachedSet = make(map[string]struct{}, 31000)
 		sc := bufio.NewScanner(bytes.NewReader(breachedList))
 		for sc.Scan() {
 			if line := strings.TrimSpace(sc.Text()); line != "" {

@@ -8,6 +8,10 @@ cloudflare_account_id = "0123456789abcdef0123456789abcdef"
 # help_domain  = "opendeskhelp.com"
 # help_zone_id = "..."                   # optional; looked up from help_domain otherwise
 
+# TLS 1.2 at the edge limited to forward-secret AEAD suites. Turn on once the zones
+# have Cloudflare's Advanced Certificate Manager, which a cipher list needs.
+# edge_cipher_suites = true
+
 aws_region = "us-east-1"
 
 # Create the database in the PlanetScale dashboard first: Postgres, AWS

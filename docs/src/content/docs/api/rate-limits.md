@@ -3,11 +3,11 @@ title: Rate limits
 description: How opendesk limits request rates and the headers that tell you where you stand.
 ---
 
-opendesk limits how fast clients can call the API, to keep the service fast for everyone. Limits apply per credential, and sign-in, registration and password reset are additionally limited per IP address and per account.
+opendesk limits how fast clients can call the API, to keep the service fast for everyone. Limits apply per credential (an API key, a signed-in person or a chat widget visitor): 1,200 requests a minute, of which at most 600 may change something (`POST`, `PUT`, `PATCH`, `DELETE`). Sign-in, registration and password reset are additionally limited per IP address and per account.
 
 ## Headers
 
-Rate-limited responses carry the IETF `RateLimit` headers:
+Every response to an authenticated request carries the IETF `RateLimit` headers:
 
 | Header | Meaning |
 | --- | --- |

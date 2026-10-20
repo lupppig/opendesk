@@ -11,8 +11,12 @@ client appends `/websocket`.
 
 | socket | `new Socket(...)` URL | wire path | tokens | Origin | topics |
 | --- | --- | --- | --- | --- | --- |
-| agents | `GATEWAY_URL` | `/socket/websocket?vsn=2.0.0&token=<jwt>` | `ws` only | must be in `CHECK_ORIGINS` (non-browser clients send none and are allowed) | `workspace:`, `team:`, `user:`, `ticket:` |
-| widget | `GATEWAY_URL + "/widget"` | `/socket/widget/websocket?vsn=2.0.0&token=<jwt>` | `widget_ws` only | any (the widget is embedded on customer sites) | `contact:<wid>:<sub>` only |
+| agents | `GATEWAY_URL` | `/socket/websocket?vsn=2.0.0` + the token header | `ws` only | must be in `CHECK_ORIGINS` (non-browser clients send none and are allowed) | `workspace:`, `team:`, `user:`, `ticket:` |
+| widget | `GATEWAY_URL + "/widget"` | `/socket/widget/websocket?vsn=2.0.0` + the token header | `widget_ws` only | any (the widget is embedded on customer sites) | `contact:<wid>:<sub>` only |
+
+The token rides in `Sec-WebSocket-Protocol: phoenix, base64url.bearer.phx.<unpadded base64 of the jwt>`
+(the `phoenix` client's `authToken`, read at every connect; the gateway's `auth_token`), never in the
+URL, where proxies and access logs keep it. A token in the query string is not read.
 
 1. Client gets a token: agents `POST /v1/realtime/token` (purpose `ws`), widget
    `POST /v1/widget/session` (purpose `widget_ws`; its response also carries

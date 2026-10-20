@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { deliver, parseRetryAfter, TemporaryFailure, type Env, type InboundMessage } from "../src/index";
+import { deliver, parseRetryAfter, signInbound, TemporaryFailure, type Env, type InboundMessage } from "../src/index";
 
 const RAW = "From: a@example.com\r\nTo: t0k3n@in.opendesk.sh\r\nSubject: Hi\r\n\r\nHello\r\n";
 const env: Env = { INBOUND_URL: "https://api.opendesk.sh/v1/inbound/email", INBOUND_SECRET: "s3cret" };
@@ -41,7 +41,8 @@ describe("deliver", () => {
     expect(calls[0]!.url).toBe("https://api.opendesk.sh/v1/inbound/email?to=t0k3n%2Bx%40in.opendesk.sh");
     expect(calls[0]!.body).toBe(RAW);
     const h = calls[0]!.init.headers as Record<string, string>;
-    expect(h["OD-Inbound-Secret"]).toBe("s3cret");
+    expect(h["OD-Inbound-Secret"]).toBeUndefined();
+    expect(h["OD-Inbound-Signature"]).toMatch(/^t=\d+,v1=[0-9a-f]{64}$/);
     expect(h["Content-Type"]).toBe("message/rfc822");
     expect(h["OD-Envelope-From"]).toBe("sender@example.com");
     expect(calls[0]!.init.method).toBe("POST");
@@ -132,5 +133,14 @@ describe("parseRetryAfter", () => {
     expect(parseRetryAfter(new Date(10_000).toUTCString(), 4_000)).toBe(6000);
     expect(parseRetryAfter("soon")).toBeNull();
     expect(parseRetryAfter(null)).toBeNull();
+  });
+});
+
+describe("signInbound", () => {
+  it("matches the API's HMAC-SHA256 over the timestamp, recipient, sender and message", async () => {
+    const body = new TextEncoder().encode("Subject: hi\r\n\r\nhello").buffer as ArrayBuffer;
+    // The same HMAC computed outside JavaScript (internal/email SignInbound signs alike).
+    const want = "c030b4033566ca50f8d5b887d26b405893d76b89ebaac855375d1978999d9e47";
+    expect(await signInbound("s3cret", 1700000000, "t0k3n@in.opendesk.sh", "sender@example.com", body)).toBe(`t=1700000000,v1=${want}`);
   });
 });

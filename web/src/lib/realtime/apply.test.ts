@@ -95,6 +95,15 @@ describe("Collab events", () => {
   });
 });
 
+describe("ticket message events", () => {
+  it("removes a deleted note from the ticket cache", () => {
+    const qc = new QueryClient();
+    qc.setQueryData<Message[]>(qk.messages("t1"), [{ id: "m1", ticket_id: "t1" } as Message, { id: "m2", ticket_id: "t1" } as Message]);
+    applyEnvelope(qc, env(13, { type: "message.deleted", data: { ticket_id: "t1", message_id: "m1" } }), { me: "u1" });
+    expect(qc.getQueryData<Message[]>(qk.messages("t1"))?.map((m) => m.id)).toEqual(["m2"]);
+  });
+});
+
 describe("third-party threads", () => {
   const thread = (over: Partial<Thread> = {}): Thread => ({
     id: "th1",
@@ -143,6 +152,7 @@ describe("third-party threads", () => {
       delivery_error: "",
       ai: false,
       created_at: "2026-10-19T10:00:00Z",
+      edited_at: null,
     };
     const temp: Message = { ...base, id: "tmp-1", body_html: "<p>note</p>", delivery_status: "none" };
     qc.setQueryData(qk.messages("t1"), [temp]);

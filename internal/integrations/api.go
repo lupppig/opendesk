@@ -16,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"golang.org/x/oauth2"
 
 	"github.com/useopendesk/opendesk/internal/audit"
@@ -107,6 +108,31 @@ func parseID(raw string) (uuid.UUID, error) {
 	return id, nil
 }
 
+// wrapLoad answers a failed load of an integration: 404, or a logged 500.
+func wrapLoad(err error) error {
+	if db.IsNotFound(err) {
+		return httpx.NotFound("Integration")
+	}
+	return httpx.Wrap(err)
+}
+
+// internalErr reports an error of opendesk's own storage, whose text is never shown.
+func internalErr(err error) bool {
+	var pgErr *pgconn.PgError
+	var connectErr *pgconn.ConnectError
+	return errors.As(err, &pgErr) || errors.As(err, &connectErr)
+}
+
+// remoteFailed answers a failed first connection to the product with what went wrong.
+func remoteFailed(prefix string, err error) error {
+	if internalErr(err) {
+		return httpx.Wrap(err)
+	}
+	return httpx.E(422, "integration_failed", prefix+clip(err.Error(), 300))
+}
+
+// wrapRemote answers a failed call to the connected product. Only what the product said
+// or how reaching it failed is shown; the database's own errors stay a logged 500.
 func wrapRemote(err error) error {
 	var he *httpx.Error
 	if errors.As(err, &he) {
@@ -115,7 +141,7 @@ func wrapRemote(err error) error {
 	if db.IsNotFound(err) {
 		return httpx.NotFound("Integration")
 	}
-	if errors.Is(err, context.Canceled) {
+	if errors.Is(err, context.Canceled) || internalErr(err) {
 		return httpx.Wrap(err)
 	}
 	return httpx.E(http.StatusBadGateway, "integration_failed", "Couldn't reach the server: "+clip(err.Error(), 300))
@@ -246,9 +272,9 @@ func (s *Service) registerRoutes(api huma.API, r chi.Router) {
 				if errors.Is(err, errNoAuthNeeded) {
 					x.AuthType = "none"
 				} else if err != nil {
-					return nil, httpx.E(422, "integration_failed", "Couldn't start the sign-in: "+clip(err.Error(), 300))
+					return nil, remoteFailed("Couldn't start the sign-in: ", err)
 				} else if client, err = s.identify(ctx, x.Provider, asm); err != nil {
-					return nil, httpx.E(422, "integration_failed", clip(err.Error(), 300))
+					return nil, remoteFailed("", err)
 				} else {
 					client.Resource, client.Scope = canonicalResource(x.URL, prm), scope
 					if x.OAuthEnc, err = s.d.Box.SealJSON(client); err != nil {
@@ -261,7 +287,7 @@ func (s *Service) registerRoutes(api huma.API, r chi.Router) {
 				x.ID = ids.New()
 				if err := s.sync(ctx, x); err != nil {
 					s.forget(x.ID)
-					return nil, httpx.E(422, "integration_failed", "Couldn't connect: "+clip(err.Error(), 300))
+					return nil, remoteFailed("Couldn't connect: ", err)
 				}
 			}
 			err = s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
@@ -324,18 +350,18 @@ func (s *Service) registerRoutes(api huma.API, r chi.Router) {
 			}
 			x, err := loadRow(ctx, s.d.DB.Pool, p.WorkspaceID, id)
 			if err != nil {
-				return nil, wrapRemote(err)
+				return nil, wrapLoad(err)
 			}
 			if x.AuthType != "oauth" {
 				return nil, httpx.Validation("This integration signs in with a token. Update the token instead.")
 			}
 			asm, prm, scope, err := s.discover(ctx, x.URL)
 			if err != nil {
-				return nil, httpx.E(422, "integration_failed", "Couldn't start the sign-in: "+clip(err.Error(), 300))
+				return nil, remoteFailed("Couldn't start the sign-in: ", err)
 			}
 			client, err := s.identify(ctx, x.Provider, asm)
 			if err != nil {
-				return nil, httpx.E(422, "integration_failed", clip(err.Error(), 300))
+				return nil, remoteFailed("", err)
 			}
 			client.Resource, client.Scope = canonicalResource(x.URL, prm), scope
 			sealed, err := s.d.Box.SealJSON(client)
@@ -370,7 +396,7 @@ func (s *Service) registerRoutes(api huma.API, r chi.Router) {
 			}
 			x, err := loadRow(ctx, s.d.DB.Pool, p.WorkspaceID, id)
 			if err != nil {
-				return nil, wrapRemote(err)
+				return nil, wrapLoad(err)
 			}
 			if err := s.sync(ctx, x); err != nil {
 				return nil, wrapRemote(err)
@@ -407,7 +433,7 @@ func (s *Service) registerRoutes(api huma.API, r chi.Router) {
 			}
 			x, err := loadRow(ctx, s.d.DB.Pool, p.WorkspaceID, id)
 			if err != nil {
-				return nil, wrapRemote(err)
+				return nil, wrapLoad(err)
 			}
 			b := in.Body
 			changed := []string{}
@@ -448,7 +474,7 @@ func (s *Service) registerRoutes(api huma.API, r chi.Router) {
 				err = s.sync(ctx, &probe)
 				s.forget(probe.ID)
 				if err != nil {
-					return nil, httpx.E(422, "integration_failed", "Couldn't connect with this token: "+clip(err.Error(), 300))
+					return nil, remoteFailed("Couldn't connect with this token: ", err)
 				}
 				s.forget(x.ID)
 				x.CredentialsEnc, x.Tools, x.Status, x.LastError, x.SyncedAt = sealed, probe.Tools, probe.Status, probe.LastError, probe.SyncedAt
@@ -604,6 +630,10 @@ func (s *Service) oauthCallback(w http.ResponseWriter, r *http.Request) {
 	var role string
 	if err := s.d.DB.Pool.QueryRow(ctx, `SELECT role FROM members WHERE workspace_id = $1 AND user_id = $2`, wid, uid).Scan(&role); err != nil ||
 		!auth.Role(role).AtLeast(auth.RoleAdmin) {
+		fail("forbidden")
+		return
+	}
+	if suspended, err := domain.WorkspaceSuspended(ctx, s.d.DB.Pool, wid); err != nil || suspended {
 		fail("forbidden")
 		return
 	}

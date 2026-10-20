@@ -10,6 +10,7 @@ import { AuthHeading } from "@/app/AuthLayout";
 import { Button } from "@/components/ui/button";
 import { TextInput } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { toast } from "@/components/ui/toast";
 import { MfaStep } from "@/components/auth/MfaStep";
 import { AuthField, completeSignIn, FieldError, Notice, oauthErrorMessage, OrDivider, PasswordInput, ProviderButtons, safeNext } from "@/components/auth/parts";
 import { Turnstile, type TurnstileHandle } from "@/components/auth/Turnstile";
@@ -57,7 +58,14 @@ export default function Login() {
 
   const finish = async (tok: TokenResponse, method: "password" | "passkey" = "password") => {
     track("login_succeeded", { method });
-    router.history.push(await completeSignIn(tok, search.next));
+    const next = await completeSignIn(tok, search.next);
+    // A breached or too short password still signs in, straight to choosing a new one.
+    if (tok.change_password) {
+      toast.info(t("signIn.changePassword"));
+      router.history.push("/settings/security");
+      return;
+    }
+    router.history.push(next);
   };
 
   const answer = async (r: LoginResponse, method: "password" | "passkey") => {

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"github.com/google/uuid"
 	"strings"
 	"testing"
 )
@@ -39,7 +40,7 @@ func TestMemberProfile(t *testing.T) {
 	if r := agent.do("PATCH", "/v1/members/me/profile", map[string]any{"pronouns": strings.Repeat("x", 41)}); r.Status != 422 {
 		t.Fatalf("long: %d", r.Status)
 	}
-	// Agents edit only their own; admins anyone's.
+	// Agents edit only their own; the owner anyone's.
 	ownerID := owner.do("GET", "/v1/me", nil).Body["user"].(map[string]any)["id"].(string)
 	if r := agent.do("PATCH", "/v1/members/"+ownerID+"/profile", map[string]any{"title": "x"}); r.Status != 403 {
 		t.Fatalf("other: %d", r.Status)
@@ -47,6 +48,18 @@ func TestMemberProfile(t *testing.T) {
 	if r := owner.do("PATCH", "/v1/members/"+agentID+"/profile", map[string]any{"pronouns": "they/them"}); r.Status != 200 ||
 		r.Body["profile"].(map[string]any)["pronouns"] != "they/them" || r.Body["profile"].(map[string]any)["title"] != "Support engineer" {
 		t.Fatalf("admin: %d %s", r.Status, r.Raw)
+	}
+	// An admin edits agents' profiles, never the owner's or another admin's.
+	admin, adminID := e.memberOf(uuid.MustParse(wid), "profadmin", "admin")
+	if r := admin.do("PATCH", "/v1/members/"+agentID+"/profile", map[string]any{"title": "Lead"}); r.Status != 200 {
+		t.Fatalf("admin on agent: %d %s", r.Status, r.Raw)
+	}
+	if r := admin.do("PATCH", "/v1/members/"+ownerID+"/profile", map[string]any{"signature_html": "<p>x</p>"}); r.Status != 403 {
+		t.Fatalf("admin on owner: %d", r.Status)
+	}
+	other, _ := e.memberOf(uuid.MustParse(wid), "profadmin2", "admin")
+	if r := other.do("PATCH", "/v1/members/"+adminID.String()+"/profile", map[string]any{"title": "x"}); r.Status != 403 {
+		t.Fatalf("admin on admin: %d", r.Status)
 	}
 	var events int
 	_ = e.d.DB.Pool.QueryRow(ctx, `SELECT count(*) FROM events WHERE workspace_id = $1 AND type = 'member.updated'`, wid).Scan(&events)

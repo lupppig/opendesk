@@ -19,6 +19,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/config"
 	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/displayname"
+	"github.com/useopendesk/opendesk/internal/emails"
 	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/ids"
 )
@@ -381,8 +382,10 @@ func (s *svc) registerPasskeys(api huma.API) {
 				if err != nil {
 					return err
 				}
-				_, err = auditUser(ctx, tx, p, p.UserID, "passkey.added", map[string]any{"passkey_id": k.ID, "name": k.Name})
-				return err
+				if _, err := auditUser(ctx, tx, p, p.UserID, "passkey.added", map[string]any{"passkey_id": k.ID, "name": k.Name}); err != nil {
+					return err
+				}
+				return s.notifySecurity(ctx, tx, p.UserID, emails.PasskeyAdded, passkeyDetail(k.Name))
 			})
 			if err != nil {
 				return nil, httpx.Wrap(err)
@@ -426,8 +429,16 @@ func (s *svc) registerPasskeys(api huma.API) {
 		func(ctx context.Context, in *struct {
 			ID string `path:"id"`
 		}) (*struct{}, error) {
+			// Removing a way to sign in asks what adding one does: the second factor and a
+			// recent sign-in. It works with passkeys turned off, to clean up.
 			p, err := auth.RequireUser(ctx)
 			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			if err := s.requireMFA(ctx, p); err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			if err := requireRecentLogin(ctx, s.d.DB.Pool, p); err != nil {
 				return nil, httpx.Wrap(err)
 			}
 			id, err := parseID(in.ID, "Passkey")
@@ -443,8 +454,10 @@ func (s *svc) registerPasskeys(api huma.API) {
 				if err != nil {
 					return err
 				}
-				_, err = auditUser(ctx, tx, p, p.UserID, "passkey.removed", map[string]any{"passkey_id": id, "name": name})
-				return err
+				if _, err := auditUser(ctx, tx, p, p.UserID, "passkey.removed", map[string]any{"passkey_id": id, "name": name}); err != nil {
+					return err
+				}
+				return s.notifySecurity(ctx, tx, p.UserID, emails.PasskeyRemoved, passkeyDetail(name))
 			})
 			if err != nil {
 				return nil, httpx.Wrap(err)
@@ -480,7 +493,7 @@ func (s *svc) handlePasskeyLogin(ctx context.Context, token string, credential m
 		return nil, errPasskeysOff()
 	}
 	ri := requestInfo(ctx)
-	if err := s.limit("passkey:ip:"+ri.IP, loginPerIP, loginWindow); err != nil {
+	if err := s.limitShared(ctx, "passkey:ip:"+ri.IP, loginPerIP, loginWindow); err != nil {
 		return nil, err
 	}
 	data, ok, err := s.takeCeremony(ctx, token, auth.PurposePasskeyLogin, uuid.Nil, uuid.Nil)
@@ -509,7 +522,7 @@ func (s *svc) handlePasskeyLogin(ctx context.Context, token string, credential m
 	if err != nil {
 		return nil, httpx.Wrap(err)
 	}
-	if err := s.limit("passkey:user:"+uid.String(), loginPerAccount, loginWindow); err != nil {
+	if err := s.limitShared(ctx, "passkey:user:"+uid.String(), loginPerAccount, loginWindow); err != nil {
 		return nil, err
 	}
 	var totp bool
@@ -554,7 +567,7 @@ func (s *svc) handlePasskeyLogin(ctx context.Context, token string, credential m
 			}
 			return nil, httpx.Wrap(err)
 		}
-		return s.completeFirstFactor(ctx, uid, totp, "passkey", "", ri)
+		return s.completeFirstFactor(ctx, uid, totp, "passkey", "", false, ri)
 	}
 	var out *authOut
 	err = s.tx(ctx, func(tx pgx.Tx) error {

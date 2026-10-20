@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/useopendesk/opendesk/internal/domain"
+	"github.com/useopendesk/opendesk/internal/events"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hdtest"
 	"github.com/useopendesk/opendesk/internal/httpx"
@@ -211,7 +212,8 @@ func TestMessagesAndMentions(t *testing.T) {
 	}
 	var topics []string
 	e.Scalar(`SELECT topics FROM events WHERE workspace_id = $1 AND type = 'notification.created' ORDER BY seq DESC LIMIT 1`, &topics, ws.ID)
-	if len(topics) != 2 || !strings.HasPrefix(topics[1], "user:") {
+	// Only the recipient's topic: the workspace channel gets the stand-in.
+	if len(topics) != 2 || topics[0] != events.PrivateTopic || !strings.HasPrefix(topics[1], "user:") {
 		t.Fatalf("notification topics %v", topics)
 	}
 	// A reply mentioning someone does not notify (mentions are for notes).

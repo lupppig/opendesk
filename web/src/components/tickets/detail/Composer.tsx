@@ -158,6 +158,7 @@ function useSend(ticket: Ticket, ctx: TeamsCtx) {
         attachments: [],
         delivery_status: body.kind === "reply" ? "pending" : "none",
         delivery_error: "",
+        edited_at: null,
         created_at: now,
       };
       qc.setQueryData<Message[]>(qk.messages(ticket.id), (old) => [...(old ?? []), temp]);

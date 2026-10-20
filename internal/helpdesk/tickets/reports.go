@@ -332,7 +332,11 @@ type SearchResults struct {
 // what that brand shows (its own and shared ones).
 func search(ctx context.Context, q db.Querier, p *auth.Principal, query string, brand *uuid.UUID) (SearchResults, error) {
 	res := SearchResults{Tickets: []domain.Ticket{}, Contacts: []domain.Contact{}, Articles: []kb.KbArticle{}}
-	allowed := func(scope string) bool { return p.Kind == auth.KindUser || p.HasScope(scope) }
+	// A person signed in directly sees what their role allows; an API key or a person
+	// acting through an OAuth grant only what its scopes allow.
+	allowed := func(scope string) bool {
+		return (p.Kind == auth.KindUser && p.GrantID == uuid.Nil) || p.HasScope(scope)
+	}
 	if allowed(auth.ScopeTicketsRead) {
 		lq, err := forCaller(ctx, q, p, listQuery{TicketFilters: hd.TicketFilters{Q: query}})
 		if err != nil {

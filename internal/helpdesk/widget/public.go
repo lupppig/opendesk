@@ -359,6 +359,20 @@ func (h *handler) registerPublic(api huma.API) {
 			"user_hash = hex HMAC-SHA256(widget_secret, user_id) marks the visitor verified.",
 		Middlewares: huma.Middlewares{h.withClientIP}},
 		h.session)
+
+	huma.Register(api, huma.Operation{OperationID: "widget-end-session", Method: http.MethodDelete, Path: "/v1/widget/session",
+		Summary: "End the visitor's chat widget session", Tags: []string{"Widget"}, DefaultStatus: http.StatusNoContent,
+		Description: "The visitor token stops working at once; the widget's shutdown calls it when the host page signs its user out."},
+		func(ctx context.Context, _ *struct{}) (*struct{}, error) {
+			p, err := auth.RequireVisitor(ctx)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			if _, err := h.d.DB.Pool.Exec(ctx, `DELETE FROM widget_sessions WHERE workspace_id = $1 AND id = $2`, p.WorkspaceID, p.VisitorID); err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			return nil, nil
+		})
 }
 
 // errInvalidHash answers a user_hash that does not verify.
@@ -432,7 +446,7 @@ func (h *handler) session(ctx context.Context, in *widgetSessionInput) (*widgetS
 			var sessVerified, blocked bool
 			var external *string
 			err := tx.QueryRow(ctx, `SELECT s.contact_id, s.widget_id, s.verified, c.blocked, c.external_id FROM widget_sessions s
-				JOIN contacts c ON c.id = s.contact_id WHERE s.workspace_id = $1 AND s.token_hash = $2`,
+				JOIN contacts c ON c.id = s.contact_id WHERE s.workspace_id = $1 AND s.token_hash = $2 AND `+auth.VisitorSessionLive,
 				wid, crypto.HashToken(t)).Scan(&sessContact, &sessWidget, &sessVerified, &blocked, &external)
 			switch {
 			case db.IsNotFound(err):
@@ -442,6 +456,9 @@ func (h *handler) session(ctx context.Context, in *widgetSessionInput) (*widgetS
 				return httpx.E(http.StatusForbidden, "blocked", "This conversation is not available.")
 			case verified && (external == nil || *external != userID):
 				// A different signed-in user on this browser gets a session of their own.
+			case sessVerified && !verified:
+				// A signed-in visitor's session is not someone's who is not signed in: on a
+				// shared computer, the next person starts anonymous and sees nothing of it.
 			case sessWidget != nil && *sessWidget != g.ID:
 				// The same visitor on another widget of the workspace: a session of this
 				// widget. An identity is verified with each widget's own secret, so a

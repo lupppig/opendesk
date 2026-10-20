@@ -87,6 +87,39 @@ func (s *svc) enqueueMail(ctx context.Context, tx pgx.Tx, to string, m mailer.Ma
 
 func (s *svc) site() emails.Site { return emails.SiteFrom(s.d.Cfg) }
 
+// notifySecurity emails the user about a change to how they sign in, in the transaction
+// that made it.
+func (s *svc) notifySecurity(ctx context.Context, tx pgx.Tx, uid uuid.UUID, change emails.SecurityChange, detail string) error {
+	var email string
+	if err := tx.QueryRow(ctx, `SELECT email FROM users WHERE id = $1`, uid).Scan(&email); err != nil {
+		return err
+	}
+	return s.enqueueMail(ctx, tx, email, emails.SecurityNotice(s.site(), change, detail))
+}
+
+// passkeyDetail names a passkey in a security email.
+func passkeyDetail(name string) string {
+	if name == "" {
+		return ""
+	}
+	return "Passkey: " + name
+}
+
+// providerDetail names a sign-in provider in a security email.
+func providerDetail(provider string) string {
+	switch provider {
+	case "google":
+		return "Sign in with Google"
+	case "microsoft":
+		return "Sign in with Microsoft"
+	case "github":
+		return "Sign in with GitHub"
+	case "":
+		return ""
+	}
+	return "Single sign-on (" + provider + ")"
+}
+
 func (s *svc) sendVerifyEmail(ctx context.Context, tx pgx.Tx, uid uuid.UUID, email string) error {
 	tok, err := createOneTime(ctx, tx, ottVerifyEmail, &uid, email, nil, verifyTTL)
 	if err != nil {
@@ -174,6 +207,10 @@ func (w *cleanupWorker) Work(ctx context.Context, _ *river.Job[cleanupArgs]) err
 		`DELETE FROM webhook_deliveries WHERE created_at < now() - interval '30 days'`,
 		`DELETE FROM idempotency_keys WHERE created_at < now() - interval '24 hours'`,
 		`DELETE FROM passkey_challenges WHERE expires_at < now()`,
+		// Visitor sessions past auth.VisitorSessionLive.
+		`DELETE FROM widget_sessions WHERE last_seen_at < now() - interval '90 days' OR (verified AND created_at < now() - interval '30 days')`,
+		// Shared sign-in throttle windows; every period is shorter than a day.
+		`DELETE FROM auth_throttle WHERE window_start < now() - interval '2 days'`,
 		// App Attest: spent-by-time challenges and keys no install has used for 180 days.
 		`DELETE FROM app_attest_challenges WHERE expires_at < now()`,
 		`DELETE FROM app_attest_keys WHERE COALESCE(last_used_at, created_at) < now() - interval '180 days'`,

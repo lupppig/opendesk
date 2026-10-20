@@ -35,6 +35,12 @@ jobs:
       fail-fast: false
       matrix:
         dir: [web, admin, site, docs, deploy/cloudflare/email-worker, deploy/cloudflare/help-worker]
+        prod: [--prod]
+        # Electron is a devDependency of the desktop app but ships inside it, so the
+        # desktop audit covers every dependency.
+        include:
+          - dir: desktop
+            prod: ""
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -46,7 +52,24 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
       - working-directory: ${{ matrix.dir }}
-        run: pnpm audit --prod --audit-level high
+        env:
+          PROD: ${{ matrix.prod }}
+        run: pnpm audit ${PROD:+"$PROD"} --audit-level high
+
+  # RFC 9116: a security.txt past its Expires date must be ignored by readers.
+  security-txt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: security.txt expires in more than 30 days
+        run: |
+          exp=$(sed -n 's/^Expires: //p' site/public/.well-known/security.txt)
+          if [ "$(date -d "$exp" +%s)" -le "$(date -d '+30 days' +%s)" ]; then
+            echo "::error::Move Expires in site/public/.well-known/security.txt a year ahead"
+            exit 1
+          fi
 
   mix-audit:
     runs-on: ubuntu-latest
@@ -89,3 +112,12 @@ jobs:
         with:
           sarif_file: trivy.sarif
           category: scheduled-${{ matrix.image }}
+      # The report above lists everything; a fixable critical finding fails the run.
+      - name: Fail on fixable critical findings
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ghcr.io/useopendesk/${{ matrix.image }}:latest
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          skip-setup-trivy: true

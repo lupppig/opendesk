@@ -13,7 +13,7 @@ updates:
     groups:
       go: { patterns: ["*"], update-types: [minor, patch] }
   - package-ecosystem: npm
-    directories: [/web, /site, /docs, /qa, /deploy/cloudflare/email-worker]
+    directories: [/web, /admin, /site, /docs, /qa, /desktop, /deploy/cloudflare/email-worker, /deploy/cloudflare/help-worker, /scripts/e2e]
     schedule: { interval: weekly }
     groups:
       npm: { patterns: ["*"], update-types: [minor, patch] }

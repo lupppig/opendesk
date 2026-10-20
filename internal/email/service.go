@@ -27,7 +27,7 @@ type service struct {
 	providers map[string]*oauthProvider
 	// apiClients are the Collab OAuth clients an api grant connects with.
 	apiClients map[string]*oauthProvider
-	// detector names a domain's mail host and servers (GET /v1/mailboxes/detect).
+	// detector names a domain's mail host and servers (POST /v1/mailboxes/detect).
 	detector  *mailhost.Detector
 	gmailBase string // https://gmail.googleapis.com
 	graphBase string // https://graph.microsoft.com/v1.0

@@ -33,9 +33,32 @@ const (
 	maxPresentedCookies = 2*MaxAccounts + 1
 )
 
-// RefreshCookieName is the refresh cookie of one account.
+// RefreshCookieName is the refresh cookie of one account, before its prefix.
 func RefreshCookieName(uid uuid.UUID) string {
 	return RefreshCookiePrefix + hex.EncodeToString(uid[:])
+}
+
+// Cookie name prefixes the browser enforces: a __Host- cookie was set by this host alone,
+// over https, for Path=/, so no sibling subdomain can plant or overwrite it (ASVS 3.4.4).
+// __Secure- is the most an instance with COOKIE_DOMAIN can use.
+const (
+	hostCookiePrefix   = "__Host-"
+	secureCookiePrefix = "__Secure-"
+)
+
+// refreshCookieName is the name an account's refresh cookie is set under on this
+// instance: __Host- prefixed on https, __Secure- with COOKIE_DOMAIN, bare on plain http.
+// Cookies set under the bare name by earlier versions are still read, and replaced the
+// next time the account's cookie is set.
+func (s *svc) refreshCookieName(uid uuid.UUID) string {
+	switch {
+	case !s.d.Cfg.CookieSecure:
+		return RefreshCookieName(uid)
+	case s.d.Cfg.CookieDomain == "":
+		return hostCookiePrefix + RefreshCookieName(uid)
+	default:
+		return secureCookiePrefix + RefreshCookieName(uid)
+	}
 }
 
 // presentedCookie is a refresh cookie sent by the browser. UserID is the account its
@@ -58,11 +81,12 @@ func readRefreshCookies(r *http.Request) []presentedCookie {
 		if c.Value == "" || len(c.Value) > 200 {
 			continue
 		}
+		name := strings.TrimPrefix(strings.TrimPrefix(c.Name, hostCookiePrefix), secureCookiePrefix)
 		switch {
 		case c.Name == LegacyRefreshCookie:
 			out = append(out, presentedCookie{Name: c.Name, Value: c.Value})
-		case strings.HasPrefix(c.Name, RefreshCookiePrefix):
-			raw, err := hex.DecodeString(strings.TrimPrefix(c.Name, RefreshCookiePrefix))
+		case strings.HasPrefix(name, RefreshCookiePrefix):
+			raw, err := hex.DecodeString(strings.TrimPrefix(name, RefreshCookiePrefix))
 			if err != nil || len(raw) != 16 {
 				continue
 			}
@@ -223,7 +247,7 @@ func (s *svc) adoptCookies(ctx context.Context, q db.Querier, uid uuid.UUID, ri 
 func (s *svc) migrateLegacy(h heldSession, ri reqInfo) []string {
 	out := []string{s.clearCookie(LegacyRefreshCookie)}
 	if ri.cookieFor(h.Account) == nil {
-		out = append(out, s.refreshCookie(RefreshCookieName(h.Account), h.Value, cookieMaxAge(h.Expires)))
+		out = append(out, s.refreshCookie(s.refreshCookieName(h.Account), h.Value, cookieMaxAge(h.Expires)))
 	}
 	return out
 }

@@ -269,7 +269,7 @@ func TestAdminSignIn(t *testing.T) {
 	panel := e.client(panelOrigin)
 	want(t, "wrong password", panel.do("POST", "/v1/admin/auth/login", map[string]any{"email": owner.email, "password": "nope nope nope"}), 401, "invalid_credentials")
 	want(t, "unknown email", panel.do("POST", "/v1/admin/auth/login", map[string]any{"email": "nobody-" + crypto.RandomString(6) + "@example.com", "password": goodPassword}), 401, "invalid_credentials")
-	want(t, "not an admin", panel.do("POST", "/v1/admin/auth/login", map[string]any{"email": owner.email, "password": goodPassword}), 403, "not_admin")
+	want(t, "not an admin", panel.do("POST", "/v1/admin/auth/login", map[string]any{"email": owner.email, "password": goodPassword}), 401, "invalid_credentials")
 
 	// An admin without two-factor authentication sets it up first.
 	e.grant(owner, RoleSuper)
@@ -440,6 +440,10 @@ func TestAdminUserActions(t *testing.T) {
 	want(t, "suspended sign-in", mfa, 403, "account_suspended")
 	want(t, "suspended refresh", user.app.do("POST", "/v1/auth/refresh", map[string]any{}), 401)
 	want(t, "unsuspend", support.do("POST", "/v1/admin/users/"+user.id.String()+"/unsuspend", nil), 200)
+
+	// Support signs users out, never another admin.
+	want(t, "support signs admin out", support.do("POST", "/v1/admin/users/"+staff.id.String()+"/sessions/revoke", nil), 403, "forbidden")
+	want(t, "support signs user out", support.do("POST", "/v1/admin/users/"+user.id.String()+"/sessions/revoke", nil), 204)
 
 	// Turning off 2FA is super's, with a step-up code, and the user is told.
 	want(t, "support cannot", support.do("POST", "/v1/admin/users/"+user.id.String()+"/mfa/disable", map[string]any{"code": "123456"}), 403, "forbidden")

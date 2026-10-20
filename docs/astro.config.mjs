@@ -223,6 +223,7 @@ export default defineConfig({
           label: 'Security',
           items: [
             { label: 'Security controls', slug: 'security' },
+            { label: 'CASA controls', slug: 'security/casa' },
             { label: 'Responsible disclosure', slug: 'security/disclosure' },
           ],
         },

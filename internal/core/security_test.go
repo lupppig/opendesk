@@ -242,14 +242,14 @@ func TestWebhookSignature(t *testing.T) {
 		hdr  http.Header
 	}
 	ch := make(chan got, 4)
-	recv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	recv := httptest.NewServer(echoChallenges(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		ch <- got{b, r.Header.Clone()}
 		_, _ = w.Write([]byte(strings.Repeat("x", 5000)))
 	}))
 	defer recv.Close()
 	r := u.do("POST", "/v1/webhooks", map[string]any{"url": recv.URL + "/hook", "events": []string{"team.created"}})
-	if r.Status != 201 || !strings.HasPrefix(r.str("secret"), "whsec_") {
+	if r.Status != 201 || !strings.HasPrefix(r.str("secret"), "whsec_") || r.Body["verified"] != true {
 		t.Fatalf("create webhook: %d %s", r.Status, r.Raw)
 	}
 	secret := r.str("secret")

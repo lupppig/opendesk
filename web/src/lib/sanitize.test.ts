@@ -18,6 +18,11 @@ describe("sanitize", () => {
     for (const bad of ["onclick", "<script", "alert"]) expect(out).not.toContain(bad);
   });
 
+  it("drops a style sheet that uses CSS escapes", () => {
+    const { html } = sanitizeEmailHtml(`<style>.x{background:\\75 rl(https://t.example/a.png)}</style><p class="x">x</p>`);
+    expect(html).not.toContain("t.example");
+  });
+
   it("tells designed emails from plain ones", () => {
     expect(isDesignedEmail(`<table width="600"><tr><td>x</td></tr></table>`)).toBe(true);
     expect(isDesignedEmail(`<div style="background-color: #f6f9fc">x</div>`)).toBe(true);

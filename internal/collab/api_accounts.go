@@ -185,7 +185,7 @@ func (s *service) registerAccountRoutes(api huma.API) {
 					return nil, err
 				}
 				if err := s.testIMAP(ctx, cfg, a.Email, creds); err != nil {
-					return nil, errConnection(err.Error())
+					return nil, errConnection(safeError(err))
 				}
 				if sealed, err = s.sealCreds(creds); err != nil {
 					return nil, httpx.Wrap(err)

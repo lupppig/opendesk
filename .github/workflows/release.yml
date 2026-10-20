@@ -256,6 +256,23 @@ jobs:
           printf '{\n  "version": "%s",\n  "opendesk": "%s",\n  "realtime": "%s"\n}\n' \
             "$TAG" "$OPENDESK_DIGEST" "$REALTIME_DIGEST" > dist/images.json
           (cd dist && sha256sum images.json >> SHA256SUMS && sha256sum -c SHA256SUMS)
+      # SHA256SUMS lists every file and images.json: signing it signs the release.
+      # Installers and opendesk-ctl refuse a release after v0.2.0 without a signature
+      # that holds against deploy/install/release-signing.pub.
+      - name: Sign SHA256SUMS
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          if [ -z "$RELEASE_SIGNING_KEY" ]; then
+            echo "::error::RELEASE_SIGNING_KEY is not set: a release must be signed (deploy/install/release-signing.pub)"
+            exit 1
+          fi
+          umask 077
+          key=$(mktemp)
+          trap 'rm -f "$key"' EXIT
+          printf '%s\n' "$RELEASE_SIGNING_KEY" > "$key"
+          openssl dgst -sha256 -sign "$key" -out dist/SHA256SUMS.sig dist/SHA256SUMS
+          openssl dgst -sha256 -verify deploy/install/release-signing.pub -signature dist/SHA256SUMS.sig dist/SHA256SUMS
       - name: Create the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

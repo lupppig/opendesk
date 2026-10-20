@@ -351,7 +351,7 @@ type TestDef = {
   deleteAfter: number | null;
   plan: "free" | "pro" | "collab";
   reason: string;
-  owner: { testEmail: string; name: string; passwordDays: number } | { existing: () => UserRec };
+  owner: { testEmail: string; name: string; passwordFor: number } | { existing: () => UserRec };
   batches: { size: SampleSize; kinds: SampleKind[] }[];
   failed?: string;
 };
@@ -378,7 +378,7 @@ function seedTestWorkspaces() {
       deleteAfter: 30,
       plan: "free",
       reason: "Checking the chat widget on a free workspace",
-      owner: { testEmail: "owner-q4wd@widget-qa.invalid", name: "Widget tester", passwordDays: 14 },
+      owner: { testEmail: "owner-q4wd@widget-qa.invalid", name: "Widget tester", passwordFor: -23 * DAY },
       batches: [],
     },
     {
@@ -388,7 +388,7 @@ function seedTestWorkspaces() {
       deleteAfter: 30,
       plan: "pro",
       reason: "Sales demo for Acme on Thursday",
-      owner: { testEmail: "owner-k7m2@acme-demo.invalid", name: "Alex Morgan", passwordDays: 30 },
+      owner: { testEmail: "owner-k7m2@acme-demo.invalid", name: "Alex Morgan", passwordFor: 30 * HOUR },
       batches: [{ size: "realistic", kinds: all }],
     },
     {
@@ -411,7 +411,7 @@ function seedTestWorkspaces() {
       deleteAfter: 7,
       plan: "free",
       reason: "Long lists and reports at a year of data",
-      owner: { testEmail: "owner-l9tx@load-test-large.invalid", name: "Load tester", passwordDays: 7 },
+      owner: { testEmail: "owner-l9tx@load-test-large.invalid", name: "Load tester", passwordFor: 20 * HOUR },
       batches: [{ size: "large", kinds: all }],
       failed: "sample: insert tickets: context deadline exceeded",
     },
@@ -430,7 +430,8 @@ function seedTestWorkspaces() {
         totp_enabled: false,
         has_password: true,
         test_account: true,
-        password_expires_at: iso(NOW - createdMs + d.owner.passwordDays * DAY),
+        // How long the password still works (negative: it has run out); at most 2 days from its last renewal.
+        password_expires_at: iso(NOW + d.owner.passwordFor),
         last_seen_at: d.name === "Widget QA" ? ago(12 * DAY) : ago(int(2, 30) * HOUR),
       });
     }

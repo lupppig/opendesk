@@ -1,6 +1,6 @@
 // Mail hosts: display names, logos, how a password signs in, and the one-line
 // connection label the mailbox list shows ("Gmail · App password"). The API is the
-// source of truth for detection (GET /v1/mailboxes/detect); this mirrors its tables
+// source of truth for detection (POST /v1/mailboxes/detect); this mirrors its tables
 // for mailboxes that are already connected.
 
 import type { Mailbox, MailHost, PasswordAuth } from "@/lib/api/types";

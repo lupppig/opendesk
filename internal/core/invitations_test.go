@@ -65,6 +65,9 @@ func TestInvitationLinks(t *testing.T) {
 	if acc := agent.do("POST", "/v1/invitations/accept", map[string]any{"token": tok}); acc.Status != 200 {
 		t.Fatalf("accept: %d %s", acc.Status, acc.Raw)
 	}
+	if verified(email) {
+		t.Error("accepting a copied link confirmed the address")
+	}
 	agent.workspace = wid
 	if r := agent.do("POST", "/v1/invitations/"+id+"/link", nil); r.Status != 403 {
 		t.Errorf("an agent copied a link: %d", r.Status)
@@ -87,10 +90,10 @@ func TestInvitationLinks(t *testing.T) {
 	if link3.Status != 200 || fresh == "" || fresh == tok3 {
 		t.Fatalf("legacy link: %s", link3.Raw)
 	}
-	if r := e.client().do("GET", "/v1/invitations/lookup?token="+tok3, nil); r.Status != 404 {
+	if r := e.client().do("POST", "/v1/invitations/lookup", map[string]any{"token": tok3}); r.Status != 404 {
 		t.Errorf("old link still works: %d", r.Status)
 	}
-	if r := e.client().do("GET", "/v1/invitations/lookup?token="+fresh, nil); r.Status != 200 {
+	if r := e.client().do("POST", "/v1/invitations/lookup", map[string]any{"token": fresh}); r.Status != 200 {
 		t.Errorf("new link: %d %s", r.Status, r.Raw)
 	}
 

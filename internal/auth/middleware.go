@@ -67,14 +67,21 @@ func (rv *Resolver) resolve(r *http.Request) *Principal {
 		}
 		p := base
 		p.Kind, p.UserID, p.SessionID, p.MFAVerified = KindUser, uid, sid, c.MFA
-		if wid, err := uuid.Parse(r.Header.Get(WorkspaceHeader)); err == nil {
-			var role string
-			var suspended bool
-			err := rv.Pool.QueryRow(ctx, `SELECT m.role, w.suspended_at IS NOT NULL FROM members m JOIN workspaces w ON w.id = m.workspace_id
-				WHERE m.workspace_id = $1 AND m.user_id = $2`, wid, uid).Scan(&role, &suspended)
-			if err == nil {
-				p.WorkspaceID, p.Role, p.WorkspaceSuspended = wid, Role(role), suspended
-			}
+		// An access token works only while its session does: logout, revocation, a
+		// password change or a suspension ends it at once, not when the token expires.
+		wid, _ := uuid.Parse(r.Header.Get(WorkspaceHeader))
+		var role *string
+		var suspended *bool
+		err = rv.Pool.QueryRow(ctx, `SELECT m.role, w.suspended_at IS NOT NULL FROM sessions s
+			JOIN users u ON u.id = s.user_id AND u.suspended_at IS NULL
+			LEFT JOIN members m ON m.user_id = s.user_id AND m.workspace_id = $3
+			LEFT JOIN workspaces w ON w.id = m.workspace_id
+			WHERE s.id = $1 AND s.user_id = $2 AND s.revoked_at IS NULL AND s.expires_at > now()`, sid, uid, wid).Scan(&role, &suspended)
+		if err != nil {
+			return nil
+		}
+		if role != nil && suspended != nil {
+			p.WorkspaceID, p.Role, p.WorkspaceSuspended = wid, Role(*role), *suspended
 		}
 		return &p
 	case strings.EqualFold(scheme, "Visitor"):
@@ -102,12 +109,17 @@ func (rv *Resolver) resolveAPIKey(ctx context.Context, key string, p *Principal)
 	return true
 }
 
+// VisitorSessionLive is the SQL condition (widget_sessions alias s) of a visitor session
+// that still works: used within 90 days, and a verified one started within 30 days. A
+// signed-in visitor's page verifies them again, so a fresh session follows without asking.
+const VisitorSessionLive = `s.last_seen_at > now() - interval '90 days' AND (NOT s.verified OR s.created_at > now() - interval '30 days')`
+
 func (rv *Resolver) resolveVisitor(ctx context.Context, token string, p *Principal) bool {
 	var widgetID *uuid.UUID
 	err := rv.Pool.QueryRow(ctx, `SELECT s.id, s.workspace_id, s.contact_id, s.verified, s.widget_id FROM widget_sessions s
 		JOIN contacts c ON c.id = s.contact_id AND NOT c.blocked
 		JOIN workspaces w ON w.id = s.workspace_id AND w.suspended_at IS NULL
-		WHERE s.token_hash = $1`, crypto.HashToken(token)).Scan(&p.VisitorID, &p.WorkspaceID, &p.ContactID, &p.Verified, &widgetID)
+		WHERE s.token_hash = $1 AND `+VisitorSessionLive, crypto.HashToken(token)).Scan(&p.VisitorID, &p.WorkspaceID, &p.ContactID, &p.Verified, &widgetID)
 	if err != nil {
 		return false
 	}

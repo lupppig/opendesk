@@ -281,6 +281,94 @@ func TestPatch(t *testing.T) {
 	}
 }
 
+func TestPatchContact(t *testing.T) {
+	e, ws := newEnv(t)
+	mb := addMailbox(t, e, ws)
+	tk := createTicket(t, e, ws, map[string]any{
+		"mailbox_id": mb.String(), "contact": map[string]any{"email": "old@example.com", "name": "Old Contact"},
+	})
+
+	newContactID := ids.New()
+	e.Exec(`INSERT INTO contacts (id, workspace_id, email, name) VALUES ($1, $2, $3, $4)`, newContactID, ws.ID, "new@example.com", "New Contact")
+	_, seq := e.Events(ws.ID, 0)
+
+	var got domain.Ticket
+	e.Do("PATCH", "/v1/tickets/"+tk.ID.String(), ws.Agent.As(ws), map[string]any{"contact_id": newContactID.String()}).
+		Want(t, 200).JSON(t, &got)
+	if got.Contact == nil || got.Contact.ID != newContactID || got.Contact.Name != "New Contact" || got.Contact.Email == nil || *got.Contact.Email != "new@example.com" {
+		t.Fatalf("contact was not changed: %+v", got.Contact)
+	}
+	var n int
+	e.Scalar(`SELECT count(*) FROM activities WHERE ticket_id = $1 AND type = 'contact_changed'
+		AND data->'from'->>'id' = $2 AND data->'to'->>'id' = $3
+		AND data->'from'->>'name' = 'Old Contact' AND data->'to'->>'name' = 'New Contact'`,
+		&n, tk.ID, tk.Contact.ID.String(), newContactID.String())
+	if n != 1 {
+		t.Fatalf("contact_changed activity count %d", n)
+	}
+	e.Scalar(`SELECT count(*) FROM events WHERE workspace_id = $1 AND type = 'ticket.updated'
+		AND data->'changes' @> '["contact_id"]'::jsonb AND data->'ticket'->'contact'->>'id' = $2`, &n, ws.ID, newContactID.String())
+	if n != 1 {
+		t.Fatalf("ticket.updated contact change count %d", n)
+	}
+	types, _ := e.Events(ws.ID, seq)
+	if !slices.Contains(types, "ticket.updated") || !slices.Contains(types, "activity.created") {
+		t.Fatalf("contact change events %v", types)
+	}
+
+	// Existing messages keep their original recipient; later replies use the new contact.
+	var messages struct{ Data []domain.Message }
+	e.Do("GET", "/v1/tickets/"+tk.ID.String()+"/messages", ws.Agent.As(ws), nil).Want(t, 200).JSON(t, &messages)
+	if len(messages.Data) != 1 || len(messages.Data[0].To) != 1 || messages.Data[0].To[0] != "old@example.com" {
+		t.Fatalf("existing message recipient changed: %+v", messages.Data)
+	}
+	var reply domain.Message
+	e.Do("POST", "/v1/tickets/"+tk.ID.String()+"/messages", ws.Agent.As(ws), map[string]any{"kind": "reply", "body_html": "<p>Following up</p>"}).
+		Want(t, 201).JSON(t, &reply)
+	if len(reply.To) != 1 || reply.To[0] != "new@example.com" {
+		t.Fatalf("reply recipient %+v", reply.To)
+	}
+
+	// Admins can also change the contact; viewers cannot.
+	adminContactID := ids.New()
+	e.Exec(`INSERT INTO contacts (id, workspace_id, email, name) VALUES ($1, $2, $3, $4)`, adminContactID, ws.ID, "admin@example.com", "Admin Contact")
+	e.Do("PATCH", "/v1/tickets/"+tk.ID.String(), ws.Admin.As(ws), map[string]any{"contact_id": adminContactID.String()}).Want(t, 200)
+	e.Do("PATCH", "/v1/tickets/"+tk.ID.String(), ws.Viewer.As(ws), map[string]any{"contact_id": newContactID.String()}).Want(t, 403)
+
+	other := e.NewWorkspace()
+	foreign := createTicket(t, e, other, map[string]any{"contact": map[string]any{"email": "foreign@example.com"}})
+	for _, body := range []map[string]any{
+		{"contact_id": foreign.Contact.ID.String()},
+		{"contact_id": ids.New().String()},
+		{"contact_id": nil},
+	} {
+		if res := e.Do("PATCH", "/v1/tickets/"+tk.ID.String(), ws.Agent.As(ws), body); res.Status != 422 {
+			t.Errorf("%v: status %d %s", body, res.Status, res.Body)
+		}
+	}
+	got = getTicket(t, e, ws, tk.ID)
+	if got.Contact == nil || got.Contact.ID != adminContactID {
+		t.Fatalf("invalid or unauthorized patch changed contact: %+v", got.Contact)
+	}
+
+	// Setting the contact it already has records nothing.
+	e.Do("PATCH", "/v1/tickets/"+tk.ID.String(), ws.Agent.As(ws), map[string]any{"contact_id": adminContactID.String()}).Want(t, 200)
+	if n := countRows(t, e, `SELECT count(*) FROM activities WHERE ticket_id = $1 AND type = 'contact_changed'`, tk.ID); n != 2 {
+		t.Fatalf("contact_changed activities %d", n)
+	}
+	// An API key needs tickets:write; bulk never changes a contact.
+	read := e.APIKey(ws, "tickets:read")
+	e.Do("PATCH", "/v1/tickets/"+tk.ID.String(), hdtest.Auth{Bearer: read}, map[string]any{"contact_id": newContactID.String()}).Want(t, 403)
+	e.Do("POST", "/v1/tickets/bulk", ws.Agent.As(ws), map[string]any{"ids": []string{tk.ID.String()},
+		"patch": map[string]any{"contact_id": newContactID.String()}}).Want(t, 422)
+	// A live chat stays with its visitor, whose widget lists it by contact.
+	e.Exec(`UPDATE tickets SET channel = 'chat' WHERE id = $1`, tk.ID)
+	e.Do("PATCH", "/v1/tickets/"+tk.ID.String(), ws.Agent.As(ws), map[string]any{"contact_id": newContactID.String()}).Want(t, 422)
+	// A ticket of a private team the caller is not on is not there at all.
+	hidden, _ := privateTicket(t, e, ws)
+	e.Do("PATCH", "/v1/tickets/"+hidden.ID.String(), ws.Agent.As(ws), map[string]any{"contact_id": newContactID.String()}).Want(t, 404)
+}
+
 func TestBulkDeleteMerge(t *testing.T) {
 	e, ws := newEnv(t)
 	a := createTicket(t, e, ws, map[string]any{"subject": "A", "tags": []string{"one"}})

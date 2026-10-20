@@ -170,7 +170,7 @@ func (s *svc) registerAvatars(api huma.API) {
 
 	register(s, api, huma.Operation{OperationID: "update-member-availability", Method: http.MethodPatch,
 		Path: "/v1/members/{user_id}/availability", Summary: "Set a member's availability and assignment cap", Tags: []string{"Members"},
-		Description: "user_id may be me. Members set their own availability; admins set anyone's and max_open_tickets."},
+		Description: "user_id may be me. Members set their own availability; the owner anyone's, admins those of agents and viewers, and max_open_tickets."},
 		func(ctx context.Context, in *struct {
 			UserID string `path:"user_id"`
 			Body   struct {
@@ -192,6 +192,21 @@ func (s *svc) registerAvatars(api huma.API) {
 			admin := p.Role.AtLeast(auth.RoleAdmin)
 			if (!self && !admin) || (in.Body.MaxOpenTickets.Set && !admin) {
 				return nil, httpx.Forbidden()
+			}
+			if !self {
+				// Someone else's only as far as their role allows (canManage): an admin sets
+				// agents' and viewers', never the owner's or another admin's.
+				var role string
+				err := s.d.DB.Pool.QueryRow(ctx, `SELECT role FROM members WHERE workspace_id = $1 AND user_id = $2`, p.WorkspaceID, uid).Scan(&role)
+				if db.IsNotFound(err) {
+					return nil, httpx.NotFound("Member")
+				}
+				if err != nil {
+					return nil, httpx.Wrap(err)
+				}
+				if !canManage(p.Role, auth.Role(role)) {
+					return nil, httpx.Forbidden()
+				}
 			}
 			if a := in.Body.Availability; a != nil && !slices.Contains([]string{"online", "away", "offline"}, *a) {
 				return nil, httpx.Validation("availability must be online, away or offline.")

@@ -282,8 +282,8 @@ func startThread(ctx context.Context, tx pgx.Tx, d *deps.Deps, p *auth.Principal
 
 // forwardAttachments copies attachments of the ticket's public replies as the caller's
 // uploads, to send along in a thread. Files of inbound mail that failed its sender checks
-// stay out, as the timeline keeps them. A copy shares the stored file: attachments of a
-// ticket are only ever removed with the ticket, so the file outlives neither.
+// stay out, as the timeline keeps them. A copy shares the stored file: only replies are
+// copied, and their attachments are removed only with the ticket, so the file outlives neither.
 func forwardAttachments(ctx context.Context, tx pgx.Tx, p *auth.Principal, tid uuid.UUID, raw []string) ([]uuid.UUID, error) {
 	src, err := hd.ParseAttachmentIDs(raw)
 	if err != nil || len(src) == 0 {

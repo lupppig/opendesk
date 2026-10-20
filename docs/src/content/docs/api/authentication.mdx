@@ -56,7 +56,7 @@ Access tokens are short-lived JWTs (15 minutes) issued when a user signs in.
 3. Before it expires, `POST /v1/auth/refresh` with the cookie returns a new access token. The refresh token rotates on every use.
 4. `POST /v1/auth/logout` revokes the session and closes its live sockets.
 
-The refresh token lives in a cookie named after the account, `od_rt_<user id>` (HttpOnly, Secure, SameSite=Lax, scoped to `/v1/auth`), so it is never readable by page scripts.
+The refresh token lives in a cookie named after the account, `__Host-od_rt_<user id>` (HttpOnly, Secure, SameSite=Lax, host-only), so it is never readable by page scripts and no other site can set it.
 
 ### Several accounts
 

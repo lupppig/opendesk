@@ -48,6 +48,7 @@ import { q } from "@/lib/queries";
 import { atLeast, useRole } from "@/lib/session";
 import { AI_TONE, tone } from "@/lib/tones";
 import { cn } from "@/lib/cn";
+import { sanitizeHtml } from "@/lib/sanitize";
 
 type Turn =
   | { id: string; role: "visitor"; text: string }
@@ -425,7 +426,7 @@ function AgentBubble({
         ) : shown || turn.html ? (
           <div className={cn("rounded-2xl rounded-tl-md border px-3.5 py-2 text-[13px] leading-5 text-fg", tone[AI_TONE].soft, tone[AI_TONE].line)} data-ph-mask>
             {turn.html && !turn.streaming ? (
-              <div className="prose-od text-[13px] leading-5 [&_li]:my-0.5 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_p]:my-1.5 [&_ul]:my-1 [&_ul]:pl-4" dangerouslySetInnerHTML={{ __html: turn.html }} />
+              <div className="prose-od text-[13px] leading-5 [&_li]:my-0.5 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_p]:my-1.5 [&_ul]:my-1 [&_ul]:pl-4" dangerouslySetInnerHTML={{ __html: sanitizeHtml(turn.html) }} />
             ) : (
               <span className="whitespace-pre-wrap break-words">
                 {shown}

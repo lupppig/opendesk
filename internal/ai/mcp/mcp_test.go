@@ -224,6 +224,16 @@ func TestBearerAndHeaderAuth(t *testing.T) {
 		t.Fatalf("rename %+v", s)
 	}
 
+	// A saved token never follows the server to a new address: it must be entered again.
+	other := newFakeMCP(t, false)
+	other.set(func(f *fakeMCP) { f.auth, f.token = "bearer", "tok-good-123" })
+	e.Do(http.MethodPatch, "/v1/ai/mcp-servers/"+s.ID.String(), e.admin(), map[string]any{"url": other.url()}).Want(t, 422)
+	e.Do(http.MethodPatch, "/v1/ai/mcp-servers/"+s.ID.String(), e.admin(), map[string]any{"url": other.url(), "auth": map[string]any{"kind": "bearer"}}).Want(t, 422)
+	e.Do(http.MethodPatch, "/v1/ai/mcp-servers/"+s.ID.String(), e.admin(), map[string]any{"url": other.url(),
+		"auth": map[string]any{"kind": "bearer", "token": "tok-good-123"}}).Want(t, 200)
+	e.Do(http.MethodPatch, "/v1/ai/mcp-servers/"+s.ID.String(), e.admin(), map[string]any{"url": f.url(),
+		"auth": map[string]any{"kind": "bearer", "token": "tok-good-123"}}).Want(t, 200)
+
 	// A revoked token found by a call marks the server.
 	f.set(func(f *fakeMCP) { f.token = "rotated" })
 	e.R.forget(s.ID)

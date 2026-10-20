@@ -9,7 +9,11 @@ defmodule RealtimeWeb.EndpointTest do
 
   defp upgrade_conn(token, origin, path \\ "/socket") do
     conn =
-      conn(:get, path <> "/websocket?vsn=2.0.0&token=" <> token)
+      conn(:get, path <> "/websocket?vsn=2.0.0")
+      |> put_req_header(
+        "sec-websocket-protocol",
+        "phoenix, base64url.bearer.phx." <> Base.encode64(token, padding: false)
+      )
       |> put_req_header("connection", "Upgrade")
       |> put_req_header("upgrade", "websocket")
       |> put_req_header("sec-websocket-version", "13")
@@ -28,6 +32,19 @@ defmodule RealtimeWeb.EndpointTest do
 
   test "unknown paths are 404" do
     assert Endpoint.call(conn(:get, "/"), []).status == 404
+  end
+
+  test "every answer carries the security headers" do
+    for conn <- [Endpoint.call(conn(:get, "/"), []), Endpoint.call(conn(:get, "/health"), [])] do
+      assert get_resp_header(conn, "x-content-type-options") == ["nosniff"]
+      assert [_] = get_resp_header(conn, "strict-transport-security")
+    end
+
+    refused =
+      Endpoint.call(upgrade_conn(Tokens.sign(Tokens.ws_claims()), "https://evil.example"), [])
+
+    assert refused.status == 403
+    assert get_resp_header(refused, "x-content-type-options") == ["nosniff"]
   end
 
   test "an allowed Origin upgrades" do

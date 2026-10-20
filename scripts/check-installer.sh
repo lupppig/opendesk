@@ -9,6 +9,8 @@
 #   * a real --no-start install writes a .env docker compose accepts, and a
 #     second run keeps every secret (idempotency is the data-loss guard)
 #   * --proxy external drops Caddy and is kept between runs; --proxy caddy undoes it
+#   * a release's images.json pins both images to their digests
+#   * a release after v0.2.0 needs a SHA256SUMS signature by the release key
 #   * a release file that does not match SHA256SUMS stops the install
 #   * install.sh.sha256 matches install.sh
 #
@@ -163,6 +165,57 @@ if sh "$SCRIPT" --yes --no-start --no-color --domain localhost --version v0.0.0-
   fail "the installer took over a non-empty directory it did not create"
 fi
 pass "refuses a non-empty directory it did not create"
+
+# A release's images.json pins the images to their digests.
+pinned="$work/pinned-assets"
+cp -r "$work/assets" "$pinned"
+app=sha256:$(printf 'app' | sha256sum | cut -d' ' -f1)
+gw=sha256:$(printf 'gw' | sha256sum | cut -d' ' -f1)
+printf '{\n  "version": "v0.0.0-test",\n  "opendesk": "%s",\n  "realtime": "%s"\n}\n' "$app" "$gw" >"$pinned/images.json"
+(cd "$pinned" && sha256sum images.json >>SHA256SUMS)
+OPENDESK_ASSETS_URL="file://$pinned" sh "$SCRIPT" --yes --no-start --no-color --domain localhost --version v0.0.0-test \
+  --dir "$work/pinned" >/dev/null </dev/null || fail "a pinned install failed"
+grep -qx "OPENDESK_IMAGE_PIN=@$app" "$work/pinned/.env" || fail "the opendesk image was not pinned to its digest"
+grep -qx "REALTIME_IMAGE_PIN=@$gw" "$work/pinned/.env" || fail "the realtime image was not pinned to its digest"
+if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+  (cd "$work/pinned" && docker compose config) | grep -q "image: ghcr.io/useopendesk/opendesk:v0.0.0-test@$app" ||
+    fail "docker compose does not run the pinned opendesk image"
+fi
+grep -qx "OPENDESK_IMAGE_PIN=" "$work/inst/.env" || fail "an install without images.json pinned something"
+pass "pins the images to the digests in the release's images.json"
+
+# A release after v0.2.0 installs only with a SHA256SUMS signature that holds.
+signed="$work/signed-assets"
+cp -r "$work/pinned-assets" "$signed"
+openssl ecparam -name prime256v1 -genkey -noout -out "$work/test.key" 2>/dev/null
+openssl ec -in "$work/test.key" -pubout -out "$work/test.pub" 2>/dev/null
+export OPENDESK_RELEASE_PUBKEY_FILE="$work/test.pub"
+if OPENDESK_ASSETS_URL="file://$signed" sh "$SCRIPT" --yes --no-start --no-color --domain localhost --version v9.9.9 \
+  --dir "$work/unsigned" >/dev/null 2>&1 </dev/null; then
+  fail "a release after v0.2.0 installed without a signature"
+fi
+openssl dgst -sha256 -sign "$work/test.key" -out "$signed/SHA256SUMS.sig" "$signed/SHA256SUMS"
+OPENDESK_ASSETS_URL="file://$signed" sh "$SCRIPT" --yes --no-start --no-color --domain localhost --version v9.9.9 \
+  --dir "$work/signed" >/dev/null </dev/null || fail "a signed release did not install"
+openssl ecparam -name prime256v1 -genkey -noout -out "$work/other.key" 2>/dev/null
+openssl dgst -sha256 -sign "$work/other.key" -out "$signed/SHA256SUMS.sig" "$signed/SHA256SUMS"
+if OPENDESK_ASSETS_URL="file://$signed" sh "$SCRIPT" --yes --no-start --no-color --domain localhost --version v9.9.9 \
+  --dir "$work/forged" >/dev/null 2>&1 </dev/null; then
+  fail "a release signed with another key installed"
+fi
+noimg="$work/noimg-assets"
+cp -r "$work/assets" "$noimg"
+openssl dgst -sha256 -sign "$work/test.key" -out "$noimg/SHA256SUMS.sig" "$noimg/SHA256SUMS"
+if OPENDESK_ASSETS_URL="file://$noimg" sh "$SCRIPT" --yes --no-start --no-color --domain localhost --version v9.9.9 \
+  --dir "$work/noimg" >/dev/null 2>&1 </dev/null; then
+  fail "a signed release without image digests installed"
+fi
+unset OPENDESK_RELEASE_PUBKEY_FILE
+openssl ec -in deploy/install/release-signing.pub -pubin -noout 2>/dev/null || fail "deploy/install/release-signing.pub is not a public key"
+for f in "$SCRIPT" deploy/self-host/opendesk-ctl; do
+  grep -q "$(sed -n 2p deploy/install/release-signing.pub)" "$f" || fail "$f does not embed deploy/install/release-signing.pub"
+done
+pass "installs a release after v0.2.0 only with a signature that holds"
 
 echo "# tampered" >>"$work/assets/docker-compose.yml"
 if sh "$SCRIPT" --yes --no-start --no-color --domain localhost --version v0.0.0-test --dir "$work/tampered" >/dev/null 2>&1 </dev/null; then

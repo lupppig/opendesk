@@ -1,11 +1,13 @@
-import { useQuery } from "@tanstack/react-query";
-import { AlertCircle, Check, CheckCheck, Download, FileText, Globe, ImageOff, Lock, MessagesSquare, MoreHorizontal, Quote, Reply, RotateCcw, RotateCw, ShieldAlert } from "lucide-react";
-import { memo, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AlertCircle, Check, CheckCheck, Download, FileText, Globe, ImageOff, Lock, MessagesSquare, MoreHorizontal, Pencil, Quote, Reply, RotateCcw, RotateCw, ShieldAlert, Trash2 } from "lucide-react";
+import { memo, useMemo, useRef, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { tone } from "@/lib/tones";
-import type { Attachment, Message, Thread } from "@/lib/api/types";
+import type { Attachment, Member, Message, Thread } from "@/lib/api/types";
 import { api } from "@/lib/api/endpoints";
-import { q } from "@/lib/queries";
+import { q, qk } from "@/lib/queries";
+import { atLeast, useRole, useSession } from "@/lib/session";
+import { isBlankHtml } from "@/lib/collab/html";
 import { isDesignedEmail, type Sanitized, sanitizeEmailHtml, sanitizeProse } from "@/lib/sanitize";
 import { bytes, clock, fullDate } from "@/lib/format";
 import { cn } from "@/lib/cn";
@@ -20,6 +22,11 @@ import { ImproveAnswerButton } from "@/components/agent/quality";
 import { AiAuthorLabel, TranslateButton, TranslatedNote, useMessageTranslation } from "@/components/ai/ticket/MessageAi";
 import { BotRefFace } from "@/components/bots/BotFace";
 import { EmailFrame } from "./EmailFrame";
+import { RichEditor } from "@/components/editor/RichEditor";
+import { mentionExtension, useSuggest } from "./suggestions";
+import { useConfirm } from "@/components/ui/confirm";
+import { Menu, MenuContent, MenuItem, MenuTrigger } from "@/components/ui/menu";
+import { toast } from "@/components/ui/toast";
 
 function authorName(m: Message): string {
   if (m.author.user) return m.author.user.name;
@@ -268,6 +275,57 @@ function ThreadBar({ thread, actions, first }: { thread: Thread; actions?: Threa
   );
 }
 
+/** Edits a note in place, with the composer's @mentions; Escape or Cancel leaves it as it was. */
+function NoteEditor({ m, onDone }: { m: Message; onDone: () => void }) {
+  const { t } = useTranslation("inbox");
+  const qc = useQueryClient();
+  const [html, setHtml] = useState(m.body_html);
+  const { data: members } = useQuery(q.members());
+  const membersRef = useRef<Member[]>([]);
+  membersRef.current = members ?? [];
+  // The composer's SuggestionPopup shows the list; it is on the page whenever a note can be edited.
+  const extensions = useMemo(() => [mentionExtension(() => membersRef.current)], []);
+  const empty = isBlankHtml(html) && m.attachments.length === 0;
+  const save = useMutation({
+    mutationFn: (body_html: string) => api.tickets.editMessage(m.ticket_id, m.id, { body_html }),
+    onSuccess: (updated) => {
+      qc.setQueryData<Message[]>(qk.messages(m.ticket_id), (old) => old?.map((item) => (item.id === updated.id ? updated : item)));
+      qc.invalidateQueries({ queryKey: qk.activities(m.ticket_id) });
+      onDone();
+    },
+    onError: (error) => toast.error(error),
+  });
+  return (
+    <div className="rounded-md border border-line bg-surface">
+      <RichEditor
+        value={html}
+        onChange={setHtml}
+        autofocus
+        editable={!save.isPending}
+        toolbar="none"
+        extensions={extensions}
+        contentClassName="min-h-[48px] text-[13px]"
+        ariaLabel={t("message.edit")}
+        onSubmit={() => !empty && save.mutate(html)}
+        onKeyDown={(e) => {
+          // Escape first closes an open @mention list.
+          if (e.key !== "Escape" || useSuggest.getState().open) return false;
+          onDone();
+          return true;
+        }}
+      />
+      <div className="flex justify-end gap-1.5 px-2 pb-2">
+        <Button size="xs" variant="ghost" onClick={onDone}>
+          {t("message.cancel")}
+        </Button>
+        <Button size="xs" variant="primary" loading={save.isPending} disabled={empty} onClick={() => save.mutate(html)}>
+          {t("message.save")}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export const MessageItem = memo(function MessageItem({
   m,
   onRetry,
@@ -303,6 +361,24 @@ export const MessageItem = memo(function MessageItem({
   const avatar = m.author.user?.avatar_url ?? m.author.contact?.avatar_url;
   const tr = useMessageTranslation(m);
   const { t } = useTranslation("inbox");
+  const qc = useQueryClient();
+  const confirm = useConfirm();
+  const me = useSession((s) => s.user?.id);
+  const admin = atLeast(useRole(), "admin");
+  const mine = !!me && m.author.user?.id === me;
+  const editableNote = note && mine;
+  const deletableNote = note && (mine || admin);
+  const [editing, setEditing] = useState(false);
+  const remove = () =>
+    confirm.show(
+      t("message.deleteConfirm"),
+      async () => {
+        await api.tickets.deleteMessage(m.ticket_id, m.id);
+        qc.setQueryData<Message[]>(qk.messages(m.ticket_id), (old) => old?.filter((item) => item.id !== m.id));
+        qc.invalidateQueries({ queryKey: qk.activities(m.ticket_id) });
+      },
+      { title: t("message.deleteTitle"), confirmLabel: t("message.delete"), danger: true },
+    );
   const address = useMessageAddress(m, receivedAt);
   const inbound = m.direction === "inbound" && !note;
   const [remote, setRemote] = useState(false);
@@ -365,6 +441,33 @@ export const MessageItem = memo(function MessageItem({
             {clock(m.created_at)}
           </time>
         </Tooltip>
+        {note && m.edited_at && <span className="shrink-0 text-[10.5px] text-fg-4">{t("message.edited")}</span>}
+        {deletableNote && !editing && !m.id.startsWith("tmp-") && (
+          <Menu>
+            <MenuTrigger asChild>
+              <button
+                type="button"
+                aria-label={t("message.menu")}
+                className="ml-auto flex size-6 shrink-0 items-center justify-center rounded-md text-fg-4 opacity-0 transition-opacity hover:bg-hover hover:text-fg focus-visible:opacity-100 group-hover/msg:opacity-100 data-[state=open]:opacity-100"
+              >
+                <MoreHorizontal className="size-3.5" />
+              </button>
+            </MenuTrigger>
+            <MenuContent>
+              {editableNote && (
+                <MenuItem
+                  icon={<Pencil />}
+                  onSelect={() => setEditing(true)}
+                >
+                  {t("message.edit")}
+                </MenuItem>
+              )}
+              <MenuItem icon={<Trash2 />} danger onSelect={remove}>
+                {t("message.delete")}
+              </MenuItem>
+            </MenuContent>
+          </Menu>
+        )}
       </header>
       <div className="px-4 pb-3.5 pl-[50px] pt-1">
         {inThread && thread && <ThreadBar thread={thread} actions={threadActions} first={threadFirst} />}
@@ -392,7 +495,7 @@ export const MessageItem = memo(function MessageItem({
         )}
         <TranslatedNote tr={tr} />
         {body.held > 0 && <HeldImages onLoad={() => setRemote(true)} />}
-        <Body body={body} />
+        {editing ? <NoteEditor m={m} onDone={() => setEditing(false)} /> : <Body body={body} />}
         {m.has_quoted && (
           <div>
             <Tooltip content={showOriginal ? t("message.hideQuoted") : t("message.showOriginal")}>

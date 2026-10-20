@@ -3,6 +3,7 @@ package httpx
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -40,6 +41,15 @@ func (e *Error) ContentType(ct string) string {
 // E builds an error with a stable code.
 func E(status int, code, detail string) *Error {
 	return &Error{Status: status, Title: http.StatusText(status), Code: code, Detail: detail}
+}
+
+// WriteError answers a request with e from outside a huma handler (middleware).
+func WriteError(w http.ResponseWriter, r *http.Request, e *Error) {
+	out := *e
+	out.RequestID = RequestIDFrom(r.Context())
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(out.Status)
+	_ = json.NewEncoder(w).Encode(&out)
 }
 
 func NotFound(what string) *Error     { return E(404, "not_found", what+" not found") }

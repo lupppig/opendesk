@@ -24,6 +24,7 @@ export const qk = {
   contacts: (q: { q?: string; company_id?: string }) => ["contacts", "list", q] as const,
   contact: (id: string) => ["contacts", "detail", id] as const,
   contactTickets: (id: string) => ["contacts", "tickets", id] as const,
+  contactPicker: (q: string) => ["contacts", "picker", q] as const,
   companyLists: ["companies", "list"] as const,
   companies: (q: { q?: string }) => ["companies", "list", q] as const,
   company: (id: string) => ["companies", "detail", id] as const,

@@ -232,6 +232,39 @@ schema_version() {
     compose exec -T postgres psql -U opendesk -d opendesk -tAc 'SELECT version FROM schema_migrations' 2>/dev/null | tr -d '[:space:]' || true
 }
 
+# ── Release signature ──────────────────────────────────────────────────────
+# Every release after v0.2.0 signs its SHA256SUMS (ECDSA P-256, SHA-256) with the
+# release key, whose public half is below (deploy/install/release-signing.pub).
+# A file is trusted only through a checksum in a SHA256SUMS whose signature holds,
+# so the files, the installer and the image digests (images.json) are all signed.
+# OPENDESK_RELEASE_PUBKEY_FILE points at another public key (tests, forks).
+SIGNED_AFTER=v0.2.0
+RELEASE_PUBKEY='-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEkUCqvrYPMrlFxwBgXxvM7Yg0WNNP
+VzSEruZx1ipyROXv/c6tffohZCetfIyWH/GGeLkrhbWRxyEjM5NENSuuPA==
+-----END PUBLIC KEY-----'
+
+# sums_signed VERSION: whether that release must carry a signature.
+sums_signed() {
+    awk -v a="${1#v}" -v b="${SIGNED_AFTER#v}" 'BEGIN {
+        sub(/-.*/, "", a); split(a, x, "."); split(b, y, ".")
+        for (i = 1; i <= 3; i++) { if (x[i] + 0 > y[i] + 0) exit 0; if (x[i] + 0 < y[i] + 0) exit 1 }
+        exit 1
+    }'
+}
+
+# verify_sums FILE SIGNATURE: the release key signed FILE. Returns 1 when it did not, or
+# when openssl, which checks it, is missing.
+verify_sums() {
+    command -v openssl >/dev/null 2>&1 || return 1
+    _pub=${OPENDESK_RELEASE_PUBKEY_FILE:-}
+    if [ -z "$_pub" ]; then
+        _pub="$1.pub"
+        printf '%s\n' "$RELEASE_PUBKEY" >"$_pub"
+    fi
+    openssl dgst -sha256 -verify "$_pub" -signature "$2" "$1" >/dev/null 2>&1
+}
+
 # run_installer VERSION [flags]: that release's installer, checked against the
 # checksum it published, so the compose file and Caddyfile move with the images.
 # The installer keeps every secret and setting in .env.
@@ -242,9 +275,20 @@ run_installer() {
     _d="$TMPD/installer-$_v"
     mkdir -p "$_d"
     curl -fsSL "$RELEASES/download/$_v/install.sh" -o "$_d/install.sh" || { warn "no installer published for $_v"; return 1; }
-    curl -fsSL "$RELEASES/download/$_v/install.sh.sha256" -o "$_d/install.sh.sha256" || { warn "no checksum published for $_v"; return 1; }
-    _want=$(cut -d' ' -f1 "$_d/install.sh.sha256")
-    [ "$(sha256 "$_d/install.sh")" = "$_want" ] || { warn "the $_v installer does not match its published checksum"; return 1; }
+    if sums_signed "$_v"; then
+        # A signed release's installer is trusted through its signed SHA256SUMS.
+        curl -fsSL "$RELEASES/download/$_v/SHA256SUMS" -o "$_d/SHA256SUMS" || { warn "no SHA256SUMS published for $_v"; return 1; }
+        curl -fsSL "$RELEASES/download/$_v/SHA256SUMS.sig" -o "$_d/SHA256SUMS.sig" || { warn "$_v is not signed"; return 1; }
+        verify_sums "$_d/SHA256SUMS" "$_d/SHA256SUMS.sig" || { warn "the signature of $_v does not hold (or openssl is missing)"; return 1; }
+        _want=$(awk '$2 == "install.sh" || $2 == "*install.sh" { print $1 }' "$_d/SHA256SUMS")
+    else
+        curl -fsSL "$RELEASES/download/$_v/install.sh.sha256" -o "$_d/install.sh.sha256" || { warn "no checksum published for $_v"; return 1; }
+        _want=$(cut -d' ' -f1 "$_d/install.sh.sha256")
+    fi
+    if [ -z "$_want" ] || [ "$(sha256 "$_d/install.sh")" != "$_want" ]; then
+        warn "the $_v installer does not match its published checksum"
+        return 1
+    fi
     sh "$_d/install.sh" --dir "$DIR" --version "$_v" --yes "$@"
 }
 
@@ -314,9 +358,11 @@ go_back() {
     schema=$3
     info "Putting back the $prev files"
     if ! run_installer "$prev" --no-start; then
-        # Without its installer (GitHub unreachable), the pin alone still starts
-        # the previous images, which are on this machine.
+        # Without its installer (GitHub unreachable), the version alone still starts
+        # the previous images, which are on this machine; the newer digests go.
         env_set OPENDESK_VERSION "$prev"
+        env_set OPENDESK_IMAGE_PIN ""
+        env_set REALTIME_IMAGE_PIN ""
         DETAIL="$DETAIL The $prev installer could not run; run opendesk-ctl upgrade $prev once GitHub answers."
         warn "$DETAIL"
     fi
@@ -344,8 +390,18 @@ go_back() {
 cmd_upgrade() {
     target=${1:-}
     have curl || die "curl is required"
-    [ -n "$target" ] || target=$(resolve_latest)
-    [ -n "$target" ] || die "could not resolve the newest release; pass one: opendesk-ctl upgrade v1.2.3"
+    if [ -z "$target" ]; then
+        # Without a version, only forward to a published release; going back to an
+        # older one is done by naming it.
+        target=$(resolve_latest)
+        [ -n "$target" ] || die "could not resolve the newest release; pass one: opendesk-ctl upgrade v1.2.3"
+        is_release "$target" || die "the newest release, $target, is not a release version; pass one: opendesk-ctl upgrade v1.2.3"
+        _cur=$(env_get OPENDESK_VERSION)
+        if is_release "$_cur" && ! newer "$target" "$_cur"; then
+            say "$_cur is up to date (the newest release is $target)"
+            return 0
+        fi
+    fi
     lock
     _rc=0
     upgrade_to "$target" || _rc=$?

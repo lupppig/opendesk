@@ -135,7 +135,7 @@ curl -X PATCH https://api.opendesk.sh/v1/tickets/1042 \
   -d '{ "status": "solved", "tags": ["billing", "refund"] }'
 ```
 
-Fields: `subject`, `status`, `priority`, `severity` (`null` clears), `assignee_id`, `team_id`, `snoozed_until`, `spam`, `tags` (replaces the set), `add_tags`, `remove_tags`, `fields` (merged, `null` clears), `custom`. See [Labels and custom fields](/api/resources/labels-fields/) for the label rules and value types. Solving a ticket while a required field is empty answers `422 field_required`. Changing `priority`, `severity`, `team_id`, `spam` or labels removes Ollie's pending suggestion for that field (see [Decisions](/api/resources/ai/#decisions)).
+Fields: `subject`, `status`, `priority`, `severity` (`null` clears), `contact_id` (a contact in this workspace), `assignee_id`, `team_id`, `snoozed_until`, `spam`, `tags` (replaces the set), `add_tags`, `remove_tags`, `fields` (merged, `null` clears), `custom`. Changing `contact_id` changes the recipient of future replies and records `contact_changed`; past messages stay as sent. A live chat stays with the visitor who started it, so changing its contact answers `422`, and a bulk update cannot change contacts. The update publishes `ticket.updated` with `contact_id` in `changes`. See [Labels and custom fields](/api/resources/labels-fields/) for the label rules and value types. Solving a ticket while a required field is empty answers `422 field_required`. Changing `priority`, `severity`, `team_id`, `spam` or labels removes Ollie's pending suggestion for that field (see [Decisions](/api/resources/ai/#decisions)).
 
 ## Bulk update
 
@@ -169,6 +169,7 @@ curl https://api.opendesk.sh/v1/tickets/1042/merge \
 | `sla_breached` | `{ kind }` |
 | `merged` | `{ into }` |
 | `csat_received` | `{ score }` |
+| `contact_changed` | `{ from, to }`, each `{ id, name }` (the name, else the email) or `null` |
 
 ## Events
 

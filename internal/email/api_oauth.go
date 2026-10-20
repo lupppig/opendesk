@@ -21,6 +21,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/crypto"
 	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/displayname"
+	"github.com/useopendesk/opendesk/internal/domain"
 	"github.com/useopendesk/opendesk/internal/email/mailhost"
 	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/ids"
@@ -247,6 +248,10 @@ func (s *service) oauthCallback(w http.ResponseWriter, r *http.Request) {
 	var role string
 	if err := s.d.DB.Pool.QueryRow(ctx, `SELECT role FROM members WHERE workspace_id = $1 AND user_id = $2`, wid, uid).Scan(&role); err != nil ||
 		!auth.Role(role).AtLeast(auth.RoleAdmin) {
+		fail("forbidden")
+		return
+	}
+	if suspended, err := domain.WorkspaceSuspended(ctx, s.d.DB.Pool, wid); err != nil || suspended {
 		fail("forbidden")
 		return
 	}

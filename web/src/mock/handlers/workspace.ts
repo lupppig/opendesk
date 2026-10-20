@@ -194,8 +194,8 @@ export function registerWorkspace() {
     }
     return null;
   };
-  get("/v1/invitations/lookup", (ctx) => {
-    const token = ctx.query.get("token") ?? "";
+  post("/v1/invitations/lookup", (ctx) => {
+    const token = required(ctx, "token");
     if (!token || token === "expired") throw new HttpError(404, "not_found", "This invitation has expired or was revoked");
     const f = findInvite(token);
     if (f) return { workspace_name: f.w.workspace.name, email: f.inv.email, role: f.inv.role };
@@ -252,6 +252,7 @@ export function registerWorkspace() {
   });
 
   // Webhooks.
+  const echoless = (url: string) => url.startsWith("https://hooks.zapier.com/");
   const checkUrl = (url: string) => {
     if (!/^https:\/\/[^/\s]+/.test(url)) throw invalid("Webhook URLs must use https");
     if (/^https:\/\/(localhost|127\.|10\.|192\.168\.|169\.254\.)/.test(url)) throw invalid("Webhook URLs can't point to private or local addresses");
@@ -264,7 +265,9 @@ export function registerWorkspace() {
     checkUrl(url);
     const events = strArr(ctx.body.events) ?? [];
     if (!events.length) throw invalid("Choose at least one event");
-    const hook: Webhook = { id: uuid(), url, description: s(ctx, "description") ?? "", events, enabled: ctx.body.enabled !== false, created_at: nowIso() };
+    // The mock's addresses echo the verification challenge, except Zapier's catch hooks,
+    // which (like the real ones) cannot choose their answer: their code is entered instead.
+    const hook: Webhook = { id: uuid(), url, description: s(ctx, "description") ?? "", events, enabled: ctx.body.enabled !== false, verified: !echoless(url), created_at: nowIso() };
     setGrants(ctx.ws, hook, privateTeams(ctx, []));
     ctx.ws.webhooks.unshift(hook);
     ctx.ws.deliveries[hook.id] = [];
@@ -287,6 +290,15 @@ export function registerWorkspace() {
     publish(ctx.ws, "webhook.deleted", { webhook_id: hook.id });
     audit(ctx.ws, "webhook.deleted", "webhook", hook.id);
     return respond(204);
+  });
+  // The code a demo address "received" in its webhook.verification event.
+  post("/v1/webhooks/:id/verify", (ctx) => {
+    const hook = findHook(ctx);
+    const code = s(ctx, "code");
+    if (code !== undefined && code !== "whv_demo") throw invalid("That code does not match the last challenge sent to this address.");
+    if (code !== undefined || !echoless(hook.url)) hook.verified = true;
+    publish(ctx.ws, "webhook.updated", { webhook: hook });
+    return respond(200, hook);
   });
   get("/v1/webhooks/:id/deliveries", (ctx) => paginate(ctx, ctx.ws.deliveries[findHook(ctx).id] ?? []));
   post("/v1/webhooks/:id/test", (ctx) => {

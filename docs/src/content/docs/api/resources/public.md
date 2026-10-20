@@ -26,7 +26,7 @@ The rendered help center is served at its own address, not under `/v1` ([Help ce
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `GET` | `/v1/public/csat/{token}` | The rating request |
-| `POST` | `/v1/public/csat/{token}` | `{ score, comment? }` |
+| `POST` | `/v1/public/csat/survey` | The rating request, from `{ token }` |
+| `POST` | `/v1/public/csat/rating` | `{ token, score, comment? }` |
 
 The token comes from the link in the rating email. See [CSAT](/guides/csat/).

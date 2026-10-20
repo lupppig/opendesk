@@ -7,10 +7,14 @@ import (
 	"net/http"
 	"runtime/debug"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/useopendesk/opendesk/internal/auth"
 	"github.com/useopendesk/opendesk/internal/crypto"
 )
 
@@ -53,7 +57,7 @@ func Logger(log *slog.Logger) func(http.Handler) http.Handler {
 				if r.URL.Path == "/healthz" || r.URL.Path == "/readyz" {
 					return
 				}
-				log.Info("http", "method", r.Method, "path", r.URL.Path, "status", sw.status,
+				log.Info("http", "method", r.Method, "path", LogPath(r.URL.Path), "status", sw.status,
 					"ms", time.Since(start).Milliseconds(), "request_id", RequestIDFrom(r.Context()))
 			}()
 			next.ServeHTTP(sw, r)
@@ -61,8 +65,20 @@ func Logger(log *slog.Logger) func(http.Handler) http.Handler {
 	}
 }
 
+// LogPath is a request path as logs may keep it: a survey link of an earlier version
+// carried its token in the path (/csat/<token>), which is left out.
+func LogPath(p string) string {
+	if strings.HasPrefix(p, "/csat/") {
+		return "/csat/…"
+	}
+	return p
+}
+
 // SecurityHeaders sets HSTS, nosniff, frame denial, referrer policy and a default-deny CSP
-// on every API response. Scope an exception to a route rather than removing a header.
+// on every API response. API responses (/v1/) are not stored by browsers or proxies unless
+// their route says otherwise (ASVS 8.2.1), and JSON ones carry Content-Disposition:
+// attachment so a browser never renders them (14.4.2). Scope an exception to a route rather
+// than removing a header.
 func SecurityHeaders(hsts bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -78,10 +94,47 @@ func SecurityHeaders(hsts bool) func(http.Handler) http.Handler {
 			if h.Get("Content-Security-Policy") == "" {
 				h.Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
 			}
+			if strings.HasPrefix(r.URL.Path, "/v1/") {
+				h.Set("Cache-Control", "no-store")
+				w = &apiWriter{ResponseWriter: w}
+			}
 			next.ServeHTTP(w, r)
 		})
 	}
 }
+
+// apiWriter marks a JSON response as a download when its route set no disposition.
+type apiWriter struct {
+	http.ResponseWriter
+	wrote bool
+}
+
+func (w *apiWriter) WriteHeader(code int) {
+	if !w.wrote {
+		w.wrote = true
+		h := w.Header()
+		ct := h.Get("Content-Type")
+		if (strings.HasPrefix(ct, "application/json") || strings.HasPrefix(ct, "application/problem+json")) && h.Get("Content-Disposition") == "" {
+			h.Set("Content-Disposition", `attachment; filename="api.json"`)
+		}
+	}
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *apiWriter) Write(b []byte) (int, error) {
+	if !w.wrote {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.ResponseWriter.Write(b)
+}
+
+func (w *apiWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func (w *apiWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 // CORS allows the configured app origins with credentials. Widget and public routes,
 // and the MCP server's OAuth metadata, registration, token and revocation endpoints
@@ -183,11 +236,14 @@ func forwardedFor(r *http.Request, hops int) string {
 	return list[len(list)-hops]
 }
 
-// Limiter is an in-memory fixed-window rate limiter keyed by string. Per process;
-// good enough for auth throttling on each API instance.
+// Limiter is a fixed-window rate limiter keyed by string. Allow counts in memory, per
+// process; Shared counts in Postgres once UseDB is set, across every API process and
+// restarts, for the per-account limits on sign-in factors (ASVS 2.2.1).
 type Limiter struct {
 	mu      sync.Mutex
 	windows map[string]*window
+	db      *pgxpool.Pool
+	log     *slog.Logger
 }
 
 type window struct {
@@ -222,6 +278,108 @@ func (l *Limiter) Allow(key string, limit int, period time.Duration) bool {
 	}
 	w.count++
 	return w.count <= limit
+}
+
+// Take records a hit like Allow and also reports what is left of the window and when it
+// ends, for the RateLimit headers.
+func (l *Limiter) Take(key string, limit int, period time.Duration) (ok bool, remaining int, reset time.Duration) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	w, found := l.windows[key]
+	if !found || time.Since(w.start) > period {
+		w = &window{start: time.Now()}
+		l.windows[key] = w
+	}
+	w.count++
+	return w.count <= limit, max(limit-w.count, 0), max(period-time.Since(w.start), 0)
+}
+
+// Per-credential request limits (ASVS 11.1.4): every request an API key, a person or a
+// widget visitor makes counts, and writes also count on their own.
+const (
+	credentialRequestsPerMinute = 1200
+	credentialWritesPerMinute   = 600
+	// badCredentialsPerMinute bounds requests from one address whose credentials do not
+	// resolve (wrong, expired or revoked): enough for a busy office whose tabs all hold
+	// an expired token, too few to try keys.
+	badCredentialsPerMinute = 300
+)
+
+// CredentialLimit throttles authenticated requests per credential and answers them with
+// the RateLimit headers (contracts/api.md), and requests whose credentials do not
+// resolve per address. Anonymous routes keep their own limits.
+func CredentialLimit(l *Limiter, clientIP func(*http.Request) string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			p := auth.FromContext(r.Context())
+			if p == nil {
+				if r.Header.Get("Authorization") != "" && !l.Allow("api:badcred:"+clientIP(r), badCredentialsPerMinute, time.Minute) {
+					WriteError(w, r, RateLimited())
+					return
+				}
+				next.ServeHTTP(w, r)
+				return
+			}
+			var id string
+			switch p.Kind {
+			case auth.KindAPIKey:
+				id = "key:" + p.APIKeyID.String()
+			case auth.KindVisitor:
+				id = "visitor:" + p.VisitorID.String()
+			default:
+				id = "user:" + p.UserID.String()
+			}
+			limit := credentialRequestsPerMinute
+			ok, remaining, reset := l.Take("api:"+id, limit, time.Minute)
+			if ok && r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions {
+				var wRemaining int
+				var wReset time.Duration
+				if ok, wRemaining, wReset = l.Take("api:write:"+id, credentialWritesPerMinute, time.Minute); wRemaining < remaining {
+					limit, remaining, reset = credentialWritesPerMinute, wRemaining, wReset
+				}
+			}
+			h := w.Header()
+			h.Set("RateLimit-Limit", strconv.Itoa(limit))
+			h.Set("RateLimit-Remaining", strconv.Itoa(remaining))
+			h.Set("RateLimit-Reset", strconv.Itoa(int(reset.Seconds()+0.999)))
+			if !ok {
+				WriteError(w, r, RateLimited())
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// UseDB makes Shared count in Postgres (the auth_throttle table).
+func (l *Limiter) UseDB(pool *pgxpool.Pool, log *slog.Logger) {
+	l.mu.Lock()
+	l.db, l.log = pool, log
+	l.mu.Unlock()
+}
+
+// Shared records a hit and reports whether key is within limit per period, counted for
+// the whole instance. Without a database, or when the write fails, it counts in memory.
+func (l *Limiter) Shared(ctx context.Context, key string, limit int, period time.Duration) bool {
+	l.mu.Lock()
+	pool, log := l.db, l.log
+	l.mu.Unlock()
+	if pool == nil {
+		return l.Allow(key, limit, period)
+	}
+	var count int
+	err := pool.QueryRow(context.WithoutCancel(ctx), `INSERT INTO auth_throttle (key, window_start, count) VALUES ($1, now(), 1)
+		ON CONFLICT (key) DO UPDATE SET
+			count = CASE WHEN auth_throttle.window_start <= now() - make_interval(secs => $2) THEN 1 ELSE auth_throttle.count + 1 END,
+			window_start = CASE WHEN auth_throttle.window_start <= now() - make_interval(secs => $2) THEN now() ELSE auth_throttle.window_start END
+		RETURNING count`, crypto.HashToken(key), period.Seconds()).Scan(&count)
+	if err != nil {
+		if log != nil {
+			log.Error("shared rate limit", "err", err)
+		}
+		return l.Allow(key, limit, period)
+	}
+	return count <= limit
 }
 
 // RateLimited is the 429 every throttled route returns.

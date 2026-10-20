@@ -21,7 +21,7 @@ export async function run(t) {
     await agent.goto(cfg.app + "/settings/security");
     await agent.getByRole("button", { name: "Delete account" }).click();
     const dialog = agent.getByRole("dialog", { name: "Delete your account?" });
-    await dialog.getByLabel("Password").fill(PASSWORD);
+    await dialog.getByLabel("Password", { exact: true }).fill(PASSWORD);
     await dialog.getByLabel(/to confirm/).fill("delete");
     await dialog.getByRole("button", { name: "Delete account" }).click();
     await agent.waitForURL(/\/login/);
@@ -46,7 +46,7 @@ export async function run(t) {
     // With no workspace left, onboarding is the only page: it offers log out and delete.
     await owner.getByRole("button", { name: "Delete account" }).click();
     const dialog = owner.getByRole("dialog", { name: "Delete your account?" });
-    await dialog.getByLabel("Password").fill(PASSWORD);
+    await dialog.getByLabel("Password", { exact: true }).fill(PASSWORD);
     await dialog.getByLabel(/to confirm/).fill("delete");
     await dialog.getByLabel("Two-factor code").fill(await freshCode(owner, t));
     await dialog.getByRole("button", { name: "Delete account" }).click();

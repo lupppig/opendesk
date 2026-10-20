@@ -174,6 +174,14 @@ func (s *svc) registerAPIKeys(api huma.API) {
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
+			// A key is a long-lived credential: making one asks for the second factor
+			// and a recent sign-in, like other owner-level operations.
+			if err := s.requireMFA(ctx, p); err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			if err := requireRecentLogin(ctx, s.d.DB.Pool, p); err != nil {
+				return nil, httpx.Wrap(err)
+			}
 			name, err := displayname.Validate("Key name", in.Body.Name, displayname.Workspace, false)
 			if err != nil {
 				return nil, httpx.Wrap(err)

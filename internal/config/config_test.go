@@ -251,3 +251,26 @@ func TestLogLevel(t *testing.T) {
 		t.Fatal("LOG_LEVEL=loud was accepted")
 	}
 }
+
+// TestEnvDefault: without OPENDESK_ENV, only an instance on localhost is development.
+func TestEnvDefault(t *testing.T) {
+	t.Setenv("OPENDESK_ENV", "")
+	t.Setenv("AUTH_SECRET", strings.Repeat("s", MinAuthSecretLength))
+	t.Setenv("CREDENTIALS_KEY", strings.Repeat("ab", 32))
+	t.Setenv("NATS_LISTEN", "127.0.0.1:4222")
+	t.Setenv("APP_URL", "https://desk.example.com")
+	t.Setenv("API_URL", "https://desk.example.com")
+	c, err := Load()
+	if err != nil || !c.IsProduction() {
+		t.Fatalf("public URLs: %v %v", c, err)
+	}
+	t.Setenv("APP_URL", "http://localhost:5173")
+	t.Setenv("API_URL", "http://localhost:8080")
+	if c, err := Load(); err != nil || c.IsProduction() {
+		t.Fatalf("localhost: %v", err)
+	}
+	t.Setenv("OPENDESK_ENV", "staging")
+	if _, err := Load(); err == nil {
+		t.Fatal("unknown OPENDESK_ENV accepted")
+	}
+}

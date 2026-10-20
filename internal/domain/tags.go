@@ -9,9 +9,11 @@ import (
 	"github.com/useopendesk/opendesk/internal/db"
 )
 
-// TagSelect reads Tag rows (alias g), with usage counts.
+// TagSelect reads Tag rows (alias g), with usage counts. The ticket count leaves out
+// private teams' tickets: everyone reads it, so it tells nobody about tickets they can't see.
 const TagSelect = `SELECT g.id, g.name, g.color, g.description, g.group_id, g.position, g.archived, g.applies_to,
-	(SELECT count(*) FROM ticket_tags x JOIN tickets t ON t.id = x.ticket_id AND t.deleted_at IS NULL WHERE x.tag_id = g.id),
+	(SELECT count(*) FROM ticket_tags x JOIN tickets t ON t.id = x.ticket_id AND t.deleted_at IS NULL
+		WHERE x.tag_id = g.id AND NOT EXISTS (SELECT 1 FROM teams pt WHERE pt.id = t.team_id AND pt.private)),
 	(SELECT count(*) FROM contact_tags x WHERE x.tag_id = g.id),
 	(SELECT count(*) FROM company_tags x WHERE x.tag_id = g.id),
 	g.created_at, g.updated_at

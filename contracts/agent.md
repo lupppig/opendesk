@@ -448,7 +448,7 @@ interface McpTool {
 | --- | --- | --- |
 | GET | `/v1/ai/mcp-servers` | → `{data: McpServer[]}` |
 | POST | `/v1/ai/mcp-servers` | `{name, url, auth: {kind, token? /* bearer */, header_name?, header_value? /* header */}}` → `McpServer` (connects and lists tools; an OAuth-protected server answers `status: "needs_auth"`) |
-| PATCH | `/v1/ai/mcp-servers/{id}` | `{name?, url?, enabled?, auth?, tools?: Record<string, Partial<Pick<McpTool, "enabled" \| "policy" \| "verified_only">>>}` → `McpServer` |
+| PATCH | `/v1/ai/mcp-servers/{id}` | `{name?, url?, enabled?, auth?, tools?: Record<string, Partial<Pick<McpTool, "enabled" \| "policy" \| "verified_only">>>}` → `McpServer`. A new `url` on a bearer or header server needs the token or header value again in `auth` (`422` otherwise): a saved secret never goes to another address |
 | DELETE | `/v1/ai/mcp-servers/{id}` | → 204 (revokes OAuth tokens when the server supports revocation) |
 | POST | `/v1/ai/mcp-servers/{id}/sync` | → `McpServer` (reconnect, list tools again; tool settings are kept by name) |
 | POST | `/v1/ai/mcp-servers/{id}/oauth/start` | → `{url}`: the authorization URL (browser redirect) |

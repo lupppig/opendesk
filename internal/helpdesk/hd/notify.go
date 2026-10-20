@@ -123,8 +123,9 @@ func Notify(ctx context.Context, tx pgx.Tx, wid, userID uuid.UUID, typ string, t
 			return err
 		}
 	}
+	// A notification is its recipient's alone: no other member's socket or replay sees it.
 	if _, err := events.Publish(ctx, tx, events.Event{WorkspaceID: wid, Type: "notification.created",
-		Topics: []string{events.UserTopic(userID)}, Data: map[string]any{"notification": n}}); err != nil {
+		Users: []uuid.UUID{userID}, Data: map[string]any{"notification": n}}); err != nil {
 		return err
 	}
 	return enqueuePush(ctx, tx, wid, userID, n.ID)

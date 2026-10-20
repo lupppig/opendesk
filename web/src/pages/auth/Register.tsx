@@ -29,7 +29,11 @@ function inviteTokenFrom(next: string | undefined): string | undefined {
 const schema = z.object({
   name: z.string().trim().min(1, "Tell us your name.").max(80, "Use at most 80 characters."),
   email: z.string().trim().min(1, "Enter your email.").email("Enter a valid email address."),
-  password: z.string().min(12, "Use at least 12 characters.").max(128, "Use at most 128 characters."),
+  // Counted in characters (code points), as the server counts them.
+  password: z
+    .string()
+    .refine((s) => [...s].length >= 12, "Use at least 12 characters.")
+    .refine((s) => [...s].length <= 128, "Use at most 128 characters."),
 });
 type Values = z.infer<typeof schema>;
 
@@ -125,7 +129,7 @@ export default function Register() {
         <AuthField label="Password">
           {(id) => (
             <div className="flex flex-col gap-2">
-              <PasswordInput id={id} autoComplete="new-password" maxLength={128} invalid={!!errors.password} {...register("password")} />
+              <PasswordInput id={id} autoComplete="new-password" invalid={!!errors.password} {...register("password")} />
               {errors.password ? <FieldError message={errors.password.message} /> : <StrengthMeter password={password} userInputs={[name, email]} />}
             </div>
           )}

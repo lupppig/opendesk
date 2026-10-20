@@ -80,7 +80,7 @@ func TestTestWorkspaces(t *testing.T) {
 
 	email := "demo-" + crypto.RandomString(6) + "@acme.test.invalid"
 	body := map[string]any{"name": "Acme demo", "owner": map[string]any{"email": email, "name": "Alex Demo"}, "plan": "collab",
-		"sample": map[string]any{"size": "small", "kinds": []string{"team", "kb", "tickets"}}, "delete_after_days": 7, "password_days": 5,
+		"sample": map[string]any{"size": "small", "kinds": []string{"team", "kb", "tickets"}}, "delete_after_days": 7, "password_days": 2,
 		"reason": "Sales demo for Acme"}
 	with := func(code string) map[string]any {
 		out := map[string]any{}
@@ -112,7 +112,7 @@ func TestTestWorkspaces(t *testing.T) {
 	if d := time.Until(expires); d < 7*24*time.Hour-time.Minute || d > 7*24*time.Hour+time.Minute {
 		t.Fatalf("test_expires_at %s", expires)
 	}
-	if pe, _ := time.Parse(time.RFC3339, cr.str("owner", "password_expires_at")); time.Until(pe) < 5*24*time.Hour-time.Minute {
+	if pe, _ := time.Parse(time.RFC3339, cr.str("owner", "password_expires_at")); time.Until(pe) < 2*24*time.Hour-time.Minute || time.Until(pe) > 2*24*time.Hour+time.Minute {
 		t.Fatalf("password_expires_at %s", pe)
 	}
 	if s := sampleOf(cr, "workspace"); s["status"] != "running" || s["size"] != "small" || s["batches"] != 1.0 {
@@ -184,9 +184,11 @@ func TestTestWorkspaces(t *testing.T) {
 	}
 
 	// Renew the password (step-up), and keep the workspace.
-	want(t, "viewer renew", viewer.do("PATCH", "/v1/admin/test-workspaces/"+wid, map[string]any{"password_days": 3, "code": "123456"}), 403)
-	want(t, "renew without code", support.do("PATCH", "/v1/admin/test-workspaces/"+wid, map[string]any{"password_days": 3}), 403, "mfa_required")
-	rn := support.do("PATCH", "/v1/admin/test-workspaces/"+wid, map[string]any{"password_days": 3, "delete_after_days": nil, "code": e.code(helper)})
+	// A generated password lives two days at most (CASA 1.1.2).
+	want(t, "renew too long", support.do("PATCH", "/v1/admin/test-workspaces/"+wid, map[string]any{"password_days": 3, "code": "123456"}), 422)
+	want(t, "viewer renew", viewer.do("PATCH", "/v1/admin/test-workspaces/"+wid, map[string]any{"password_days": 2, "code": "123456"}), 403)
+	want(t, "renew without code", support.do("PATCH", "/v1/admin/test-workspaces/"+wid, map[string]any{"password_days": 2}), 403, "mfa_required")
+	rn := support.do("PATCH", "/v1/admin/test-workspaces/"+wid, map[string]any{"password_days": 2, "delete_after_days": nil, "code": e.code(helper)})
 	want(t, "renew", rn, 200)
 	renewed := rn.str("owner", "password")
 	if renewed == "" || renewed == password || rn.Body["workspace"].(map[string]any)["test_expires_at"] != nil {
@@ -224,7 +226,7 @@ func TestTestWorkspaces(t *testing.T) {
 		t.Fatalf("pro: %s", pw.Raw)
 	}
 	want(t, "owner keeps their password", e.client("http://app.test").do("POST", "/v1/auth/login", map[string]any{"email": owner.email, "password": goodPassword}), 200)
-	want(t, "renew a real account", panel.do("PATCH", "/v1/admin/test-workspaces/"+proID, map[string]any{"password_days": 3, "code": e.code(staff)}), 409, "not_test_account")
+	want(t, "renew a real account", panel.do("PATCH", "/v1/admin/test-workspaces/"+proID, map[string]any{"password_days": 2, "code": e.code(staff)}), 409, "not_test_account")
 
 	// Sample data only goes into test workspaces.
 	reg := owner.app.do("POST", "/v1/workspaces", map[string]any{"name": "Real " + crypto.RandomString(4)})

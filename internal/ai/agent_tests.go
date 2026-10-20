@@ -215,7 +215,7 @@ func (s *Service) registerAgentQuality(api huma.API) {
 				if err := audit.Log(ctx, tx, p, p.WorkspaceID, "ai.agent_test_deleted", "ai_agent_test", &in.ID, map[string]any{"name": name}); err != nil {
 					return err
 				}
-				_, err := events.Publish(ctx, tx, events.Event{WorkspaceID: p.WorkspaceID, Type: "ai_agent_test.deleted", Data: map[string]any{"test_id": in.ID}})
+				_, err := events.Publish(ctx, tx, events.Event{WorkspaceID: p.WorkspaceID, Type: "ai_agent_test.deleted", Admins: true, Data: map[string]any{"test_id": in.ID}})
 				return err
 			})
 			if err != nil {
@@ -433,7 +433,7 @@ func (s *Service) updateTest(ctx context.Context, p *auth.Principal, id uuid.UUI
 }
 
 func publishTest(ctx context.Context, tx pgx.Tx, wid uuid.UUID, typ string, t AgentTest) error {
-	_, err := events.Publish(ctx, tx, events.Event{WorkspaceID: wid, Type: typ, Data: map[string]any{"test": t}})
+	_, err := events.Publish(ctx, tx, events.Event{WorkspaceID: wid, Type: typ, Admins: true, Data: map[string]any{"test": t}})
 	return err
 }
 

@@ -199,7 +199,11 @@ func (s *svc) resolve(ctx huma.Context, next func(huma.Context)) {
 		ri.IP = httpx.ClientIP(s.d.Cfg.TrustProxy, s.d.Cfg.ProxyHops)(r)
 		ri.UserAgent = truncate(r.UserAgent(), 400)
 		ri.Origin = r.Header.Get("Origin")
-		if c, err := r.Cookie(RefreshCookie); err == nil {
+		name := RefreshCookie
+		if s.d.Cfg.CookieSecure {
+			name = HostRefreshCookie
+		}
+		if c, err := r.Cookie(name); err == nil {
 			ri.Cookie = c.Value
 		}
 		scheme, cred, ok := strings.Cut(r.Header.Get("Authorization"), " ")
@@ -248,6 +252,15 @@ func require(ctx context.Context, perm string) (*Admin, error) {
 
 func (s *svc) limit(key string, n int, per time.Duration) error {
 	if !s.d.Limiter.Allow(key, n, per) {
+		return httpx.RateLimited()
+	}
+	return nil
+}
+
+// limitShared throttles sign-in attempts (per account or per address), counted across
+// every API process and restart (ASVS 2.2.1).
+func (s *svc) limitShared(ctx context.Context, key string, n int, per time.Duration) error {
+	if !s.d.Limiter.Shared(ctx, key, n, per) {
 		return httpx.RateLimited()
 	}
 	return nil

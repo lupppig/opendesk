@@ -30,6 +30,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/crypto"
 	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/displayname"
+	"github.com/useopendesk/opendesk/internal/emails"
 	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/ids"
 )
@@ -552,6 +553,9 @@ func (s *svc) resolveIdentity(ctx context.Context, id *fedIdentity, redirectTo, 
 			if _, err := auditUser(ctx, tx, userPrincipal(uid, ri), uid, "identity.linked", map[string]any{"provider": id.Provider}); err != nil {
 				return err
 			}
+			if err := s.notifySecurity(ctx, tx, uid, emails.ProviderLinked, providerDetail(id.Provider)); err != nil {
+				return err
+			}
 		case db.IsNotFound(err):
 			if !s.d.Cfg.SignupEnabled {
 				var invited bool
@@ -641,7 +645,7 @@ func (s *svc) registerOAuth(api huma.API, r chi.Router) {
 			if err := s.d.DB.Pool.QueryRow(ctx, `SELECT totp_enabled FROM users WHERE id = $1`, *o.UserID).Scan(&totp); err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			return s.completeFirstFactor(ctx, *o.UserID, totp, o.Data["method"], o.Data["rt"], ri)
+			return s.completeFirstFactor(ctx, *o.UserID, totp, o.Data["method"], o.Data["rt"], false, ri)
 		})
 
 	register(s, api, huma.Operation{OperationID: "auth-oauth-link", Method: http.MethodPost, Path: "/v1/auth/oauth/link",
@@ -653,7 +657,7 @@ func (s *svc) registerOAuth(api huma.API, r chi.Router) {
 			}
 		}) (*authOut, error) {
 			ri := requestInfo(ctx)
-			if err := s.limit("login:ip:"+ri.IP, loginPerIP, loginWindow); err != nil {
+			if err := s.limitShared(ctx, "login:ip:"+ri.IP, loginPerIP, loginWindow); err != nil {
 				return nil, err
 			}
 			var uid uuid.UUID
@@ -668,7 +672,7 @@ func (s *svc) registerOAuth(api huma.API, r chi.Router) {
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			if err := s.limit("login:email:"+email, loginPerAccount, loginWindow); err != nil {
+			if err := s.limitShared(ctx, "login:email:"+email, loginPerAccount, loginWindow); err != nil {
 				return nil, err
 			}
 			var hash *string
@@ -698,12 +702,14 @@ func (s *svc) registerOAuth(api huma.API, r chi.Router) {
 				if err := insertIdentity(ctx, tx, uid, id); err != nil {
 					return err
 				}
-				_, err = auditUser(ctx, tx, userPrincipal(uid, ri), uid, "identity.linked", map[string]any{"provider": id.Provider})
-				return err
+				if _, err := auditUser(ctx, tx, userPrincipal(uid, ri), uid, "identity.linked", map[string]any{"provider": id.Provider}); err != nil {
+					return err
+				}
+				return s.notifySecurity(ctx, tx, uid, emails.ProviderLinked, providerDetail(id.Provider))
 			})
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			return s.completeFirstFactor(ctx, uid, totp, data["method"], data["rt"], ri)
+			return s.completeFirstFactor(ctx, uid, totp, data["method"], data["rt"], false, ri)
 		})
 }

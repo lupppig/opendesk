@@ -74,6 +74,37 @@ data "aws_iam_policy_document" "kms" {
       values   = ["arn:aws:logs:${var.aws_region}:${local.account}:log-group:*"]
     }
   }
+
+  # The CloudTrail trail (logging.tf) encrypts its log files with this key.
+  statement {
+    sid       = "CloudTrailEncrypt"
+    actions   = ["kms:GenerateDataKey*"]
+    resources = ["*"]
+    principals {
+      type        = "Service"
+      identifiers = ["cloudtrail.amazonaws.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceArn"
+      values   = [local.trail_arn]
+    }
+    condition {
+      test     = "StringLike"
+      variable = "kms:EncryptionContext:aws:cloudtrail:arn"
+      values   = ["arn:aws:cloudtrail:*:${local.account}:trail/*"]
+    }
+  }
+
+  statement {
+    sid       = "CloudTrailDescribe"
+    actions   = ["kms:DescribeKey"]
+    resources = ["*"]
+    principals {
+      type        = "Service"
+      identifiers = ["cloudtrail.amazonaws.com"]
+    }
+  }
 }
 
 resource "aws_kms_key" "this" {
@@ -265,6 +296,10 @@ module "alb" {
   idle_timeout           = var.alb_idle_timeout
   restrict_to_cloudflare = var.restrict_alb_to_cloudflare
   deletion_protection    = var.alb_deletion_protection
+  connection_logs_bucket = aws_s3_bucket.logs.id
+  connection_logs_prefix = "alb"
+
+  depends_on = [aws_s3_bucket_policy.logs]
 }
 
 module "cloudflare" {
@@ -276,6 +311,7 @@ module "cloudflare" {
   origin_hostnames     = [local.host.api, local.host.gateway]
   inbound_hostname     = local.host.inbound
   manage_zone_settings = var.manage_zone_settings
+  edge_cipher_suites   = var.edge_cipher_suites
   pages_projects = {
     site = { name = "${var.name}-site", domain = local.host.site }
     docs = { name = "${var.name}-docs", domain = local.host.docs }
@@ -295,6 +331,7 @@ module "cloudflare_help" {
   zone_id              = local.help_zone_id
   help_domain          = var.help_domain
   manage_zone_settings = var.manage_zone_settings
+  edge_cipher_suites   = var.edge_cipher_suites
 }
 
 # ── Compute ───────────────────────────────────────────────────────────────

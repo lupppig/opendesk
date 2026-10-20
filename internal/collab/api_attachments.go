@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/useopendesk/opendesk/internal/db"
+	"github.com/useopendesk/opendesk/internal/domain"
 	"github.com/useopendesk/opendesk/internal/email"
 	"github.com/useopendesk/opendesk/internal/ids"
 )
@@ -46,6 +47,15 @@ func (s *service) attachmentHandler(w http.ResponseWriter, r *http.Request) {
 	stored := m.Attachments[at]
 	a, err := loadAccountByID(ctx, s.d.DB.Pool, m.AccountID)
 	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	// A link stops working with the workspace's access to Collab, not only when it expires.
+	if suspended, err := domain.WorkspaceSuspended(ctx, s.d.DB.Pool, a.WorkspaceID); err != nil || suspended {
+		http.NotFound(w, r)
+		return
+	}
+	if err := s.d.Plan.RequireCollab(ctx, s.d.DB.Pool, a.WorkspaceID); err != nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -87,7 +97,7 @@ func (s *service) attachmentHandler(w http.ResponseWriter, r *http.Request) {
 	h.Set("Content-Length", strconv.Itoa(len(part.Content)))
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Content-Security-Policy", "default-src 'none'; sandbox")
-	h.Set("Cache-Control", "private, max-age=3600")
+	h.Set("Cache-Control", "private, no-store")
 	h.Set("Referrer-Policy", "no-referrer")
 	w.WriteHeader(http.StatusOK)
 	if r.Method != http.MethodHead {

@@ -90,7 +90,8 @@ LABEL org.opencontainers.image.title="opendesk" \
       org.opencontainers.image.revision="${COMMIT}"
 COPY --from=go /out/opendesk /opendesk
 COPY --from=go --chown=65532:65532 /out/data /data
-ENV DATA_DIR=/data HTTP_ADDR=:8080
+# The image is for running opendesk, so it is production unless told otherwise.
+ENV DATA_DIR=/data HTTP_ADDR=:8080 OPENDESK_ENV=production
 USER 65532:65532
 VOLUME /data
 # 8080 HTTP. 4222 the embedded NATS, for the realtime gateway (NATS_LISTEN).

@@ -147,7 +147,9 @@ func (s *s3store) Put(ctx context.Context, key string, r io.Reader, size int64, 
 	if err := validKey(key); err != nil {
 		return err
 	}
-	in := &s3.PutObjectInput{Bucket: &s.bucket, Key: &key, Body: r, ContentType: aws.String(contentType)}
+	// Stored files are people's: never kept by a browser or a shared cache.
+	in := &s3.PutObjectInput{Bucket: &s.bucket, Key: &key, Body: r, ContentType: aws.String(contentType),
+		CacheControl: aws.String("private, no-store")}
 	if size >= 0 {
 		in.ContentLength = aws.Int64(size)
 	}
@@ -174,7 +176,7 @@ func (s *s3store) Delete(ctx context.Context, key string) error {
 func (s *s3store) SignedURL(ctx context.Context, key, filename string, ttl time.Duration) (string, error) {
 	disp := "attachment; filename*=UTF-8''" + url.PathEscape(filename)
 	req, err := s.presign.PresignGetObject(ctx, &s3.GetObjectInput{Bucket: &s.bucket, Key: &key,
-		ResponseContentDisposition: &disp}, s3.WithPresignExpires(ttl))
+		ResponseContentDisposition: &disp, ResponseCacheControl: aws.String("private, no-store")}, s3.WithPresignExpires(ttl))
 	if err != nil {
 		return "", err
 	}

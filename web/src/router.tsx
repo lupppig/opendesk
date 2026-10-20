@@ -78,10 +78,18 @@ const helpRoute = createRoute({
   staticData: { title: "Help center" },
 });
 
+// The survey token rides in the fragment (/csat#t=<token>&score=); /csat/$token serves
+// links sent before, and moves them to the fragment form.
 const csatRoute = createRoute({
   getParentRoute: () => rootRoute,
+  path: "/csat",
+  component: page(() => import("./pages/public/Csat")),
+  staticData: { title: "Rate your conversation" },
+});
+
+const csatLegacyRoute = createRoute({
+  getParentRoute: () => rootRoute,
   path: "/csat/$token",
-  validateSearch: (s: Record<string, unknown>): { score?: string } => ({ score: typeof s.score === "number" ? String(s.score) : str(s.score) }),
   component: page(() => import("./pages/public/Csat")),
   staticData: { title: "Rate your conversation" },
 });
@@ -788,6 +796,7 @@ const sImport = createRoute({
 const routeTree = rootRoute.addChildren([
   helpRoute,
   csatRoute,
+  csatLegacyRoute,
   authLayout.addChildren([
     loginRoute,
     registerRoute,

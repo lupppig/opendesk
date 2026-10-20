@@ -66,7 +66,7 @@ Add a **catch-all** routing rule that sends every address to the worker.
 
 Set `INBOUND_AUTHSERV_ID=mx.cloudflare.net` so opendesk believes the sender checks (SPF, DKIM, DMARC) Email Routing writes into each message.
 
-The worker posts each raw message to `POST /v1/inbound/email?to=<recipient>` with the `OD-Inbound-Secret` header and the envelope sender in `OD-Envelope-From`. It retries briefly on network errors and `5xx`; if the API stays unreachable, Email Routing treats it as a temporary failure and the sending server retries later, so mail is not lost. Unknown addresses and oversized messages bounce with a short reason.
+The worker posts each raw message to `POST /v1/inbound/email?to=<recipient>` signed with `INBOUND_SECRET` in the `OD-Inbound-Signature` header, with the envelope sender in `OD-Envelope-From`. It retries briefly on network errors and `5xx`; if the API stays unreachable, Email Routing treats it as a temporary failure and the sending server retries later, so mail is not lost. Unknown addresses and oversized messages bounce with a short reason.
 
 ### Option B: the built-in SMTP receiver
 
@@ -104,7 +104,7 @@ The built-in receiver does not check senders (SPF, DKIM, DMARC), so leave `INBOU
 
 ### Option C: your own pipeline
 
-Anything that can make an HTTPS request can deliver mail: post the raw RFC 822 message to `/v1/inbound/email?to=<recipient>` with `OD-Inbound-Secret`, and the SMTP envelope sender in `OD-Envelope-From` (empty for the null sender of a delivery report). See [Mailboxes API](/api/resources/mailboxes/#inbound-email).
+Anything that can make an HTTPS request can deliver mail: post the raw RFC 822 message to `/v1/inbound/email?to=<recipient>`, signed in `OD-Inbound-Signature`, and the SMTP envelope sender in `OD-Envelope-From` (empty for the null sender of a delivery report). See [Mailboxes API](/api/resources/mailboxes/#inbound-email).
 
 Redelivery is safe: each raw message is stored once per mailbox, keyed by its `Message-ID` and a hash of its content, so a different message reusing a `Message-ID` is still received.
 

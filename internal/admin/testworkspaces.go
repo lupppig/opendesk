@@ -44,10 +44,12 @@ var (
 // Test workspace rules.
 const (
 	// DefaultPasswordDays is how long a generated password works unless asked otherwise.
-	DefaultPasswordDays = 30
+	// Signing in with one asks for a new password (change_password), so it is never
+	// meant to last (ASVS 2.3.1).
+	DefaultPasswordDays = 1
 	// DefaultDeleteAfterDays is when a test workspace is deleted unless asked otherwise.
 	DefaultDeleteAfterDays = 30
-	maxPasswordDays        = 90
+	maxPasswordDays        = 2 // CASA 1.1.2: a generated password expires within 48 hours
 	maxDeleteAfterDays     = 365
 	// TestEmailSuffix ends every new test account's address: the reserved .invalid
 	// top-level domain never resolves, so nothing is ever delivered to it.
@@ -744,7 +746,7 @@ func (nullableDays) Schema(huma.Registry) *huma.Schema {
 type testWorkspaceChangeBody struct {
 	Code            string       `json:"code,omitempty" maxLength:"64" doc:"A current authenticator code (or a recovery code) of the acting admin"`
 	DeleteAfterDays nullableDays `json:"delete_after_days,omitempty" doc:"1..365 days from now; null keeps the workspace"`
-	PasswordDays    *int         `json:"password_days,omitempty" doc:"Renews the owner's password: a new one, working for 1..90 days"`
+	PasswordDays    *int         `json:"password_days,omitempty" doc:"Renews the owner's password: a new one, working for 1..2 days"`
 }
 
 func (s *svc) registerTestWorkspaces(api huma.API) {
@@ -784,7 +786,7 @@ func (s *svc) registerTestWorkspaces(api huma.API) {
 					UserID string `json:"user_id,omitempty" maxLength:"36"`
 					Name   string `json:"name,omitempty" maxLength:"200" doc:"A new test account's name"`
 				} `json:"owner"`
-				PasswordDays    *int           `json:"password_days,omitempty" doc:"How long a new account's password works, 1..90 days (default 30)"`
+				PasswordDays    *int           `json:"password_days,omitempty" doc:"How long a new account's password works, 1..2 days (default 1)"`
 				Plan            string         `json:"plan" enum:"free,pro,collab"`
 				Sample          *SampleRequest `json:"sample,omitempty"`
 				DeleteAfterDays nullableDays   `json:"delete_after_days,omitempty" doc:"Deleted after 1..365 days (default 30); null keeps it"`

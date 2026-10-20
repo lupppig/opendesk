@@ -21,7 +21,7 @@ func postInbound(t *testing.T, base, secret, to, body string) (int, map[string]a
 	t.Helper()
 	req, _ := http.NewRequest(http.MethodPost, base+"/v1/inbound/email?to="+url.QueryEscape(to), strings.NewReader(body))
 	if secret != "" {
-		req.Header.Set(InboundSecretHeader, secret)
+		req.Header.Set(InboundSignatureHeader, SignInbound(secret, time.Now().Unix(), to, "", []byte(body)))
 	}
 	req.Header.Set("Content-Type", "message/rfc822")
 	resp, err := http.DefaultClient.Do(req)
@@ -45,6 +45,17 @@ func TestInboundHTTP(t *testing.T) {
 	}
 	if code, _ := postInbound(t, srv.URL, "wrong", w.forwardAddr(m, ""), raw); code != http.StatusUnauthorized {
 		t.Fatalf("wrong secret: %d", code)
+	}
+	// A signature is good for five minutes, and the secret itself is never enough.
+	stale, _ := http.NewRequest(http.MethodPost, srv.URL+"/v1/inbound/email?to="+url.QueryEscape(w.forwardAddr(m, "")), strings.NewReader(raw))
+	stale.Header.Set(InboundSignatureHeader, SignInbound("test", time.Now().Add(-10*time.Minute).Unix(), w.forwardAddr(m, ""), "", []byte(raw)))
+	if resp, err := http.DefaultClient.Do(stale); err != nil || resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("stale signature: %v %v", resp, err)
+	}
+	bare, _ := http.NewRequest(http.MethodPost, srv.URL+"/v1/inbound/email?to="+url.QueryEscape(w.forwardAddr(m, "")), strings.NewReader(raw))
+	bare.Header.Set("OD-Inbound-Secret", "test")
+	if resp, err := http.DefaultClient.Do(bare); err != nil || resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("bare secret: %v %v", resp, err)
 	}
 	if code, _ := postInbound(t, srv.URL, "test", "nobody-x@in.test", raw); code != http.StatusNotFound {
 		t.Fatalf("unknown rcpt: %d", code)
@@ -131,5 +142,20 @@ func TestSMTPReceiver(t *testing.T) {
 	}
 	if msg := w.messageFor(id); msg.FromEmail != from || !bytes.Contains([]byte(msg.BodyText), []byte("printer")) {
 		t.Fatalf("message %+v", msg)
+	}
+}
+
+// TestSignInboundMatchesWorker: the API and the Cloudflare Email Worker sign alike (the
+// worker's test pins the same value).
+func TestSignInboundMatchesWorker(t *testing.T) {
+	got := SignInbound("s3cret", 1700000000, "t0k3n@in.opendesk.sh", "sender@example.com", []byte("Subject: hi\r\n\r\nhello"))
+	if got != "t=1700000000,v1=c030b4033566ca50f8d5b887d26b405893d76b89ebaac855375d1978999d9e47" {
+		t.Fatalf("signature %s", got)
+	}
+	if !inboundSignatureOK(got, "s3cret", "t0k3n@in.opendesk.sh", "sender@example.com", []byte("Subject: hi\r\n\r\nhello"), time.Unix(1700000060, 0)) {
+		t.Fatal("own signature refused")
+	}
+	if inboundSignatureOK(got, "s3cret", "other@in.opendesk.sh", "sender@example.com", []byte("Subject: hi\r\n\r\nhello"), time.Unix(1700000060, 0)) {
+		t.Fatal("signature accepted for another recipient")
 	}
 }

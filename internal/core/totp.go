@@ -17,6 +17,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/auth"
 	"github.com/useopendesk/opendesk/internal/crypto"
 	"github.com/useopendesk/opendesk/internal/db"
+	"github.com/useopendesk/opendesk/internal/emails"
 	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/ids"
 )
@@ -161,6 +162,11 @@ func (s *svc) registerTOTP(api huma.API) {
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
+			// Setting up a second factor needs a recent sign-in, so a long-held session
+			// cannot lock its owner out with a factor of its own.
+			if err := requireRecentLogin(ctx, s.d.DB.Pool, p); err != nil {
+				return nil, httpx.Wrap(err)
+			}
 			if err := s.limit("totp:setup:"+p.UserID.String(), 10, time.Hour); err != nil {
 				return nil, err
 			}
@@ -207,7 +213,7 @@ func (s *svc) registerTOTP(api huma.API) {
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			if err := s.limit("totp:verify:"+p.UserID.String(), mfaPerUser, loginWindow); err != nil {
+			if err := s.limitShared(ctx, "totp:verify:"+p.UserID.String(), mfaPerUser, loginWindow); err != nil {
 				return nil, err
 			}
 			codes := make([]string, recoveryCodeCount)
@@ -246,9 +252,14 @@ func (s *svc) registerTOTP(api huma.API) {
 				if _, err := tx.Exec(ctx, `UPDATE sessions SET mfa_verified = true WHERE id = $1 AND user_id = $2`, p.SessionID, p.UserID); err != nil {
 					return err
 				}
-				_, err = auditUser(ctx, tx, p, p.UserID, "2fa.enabled", nil)
-				return err
+				if _, err := auditUser(ctx, tx, p, p.UserID, "2fa.enabled", nil); err != nil {
+					return err
+				}
+				return s.notifySecurity(ctx, tx, p.UserID, emails.TwoFactorEnabled, "")
 			})
+			if he, ok := err.(*httpx.Error); ok && he.Code == "invalid_code" {
+				s.credentialFailed(ctx, p, "totp_enable")
+			}
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
@@ -269,7 +280,7 @@ func (s *svc) registerTOTP(api huma.API) {
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			if err := s.limit("totp:verify:"+p.UserID.String(), mfaPerUser, loginWindow); err != nil {
+			if err := s.limitShared(ctx, "totp:verify:"+p.UserID.String(), mfaPerUser, loginWindow); err != nil {
 				return nil, err
 			}
 			if err := s.requireMFA(ctx, p); err != nil {
@@ -288,9 +299,14 @@ func (s *svc) registerTOTP(api huma.API) {
 				if _, err := tx.Exec(ctx, `DELETE FROM totp_recovery_codes WHERE user_id = $1`, p.UserID); err != nil {
 					return err
 				}
-				_, err = auditUser(ctx, tx, p, p.UserID, "2fa.disabled", nil)
-				return err
+				if _, err := auditUser(ctx, tx, p, p.UserID, "2fa.disabled", nil); err != nil {
+					return err
+				}
+				return s.notifySecurity(ctx, tx, p.UserID, emails.TwoFactorTurnedOff, "")
 			})
+			if he, ok := err.(*httpx.Error); ok && he.Code == "invalid_code" {
+				s.credentialFailed(ctx, p, "totp_disable")
+			}
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}

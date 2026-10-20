@@ -228,7 +228,7 @@ func wrapNotFound(err error) error {
 }
 
 func publishServer(ctx context.Context, tx pgx.Tx, typ string, s *server, view McpServer) error {
-	_, err := events.Publish(ctx, tx, events.Event{WorkspaceID: s.WorkspaceID, Type: typ, Data: map[string]any{"mcp_server": view}})
+	_, err := events.Publish(ctx, tx, events.Event{WorkspaceID: s.WorkspaceID, Type: typ, Admins: true, Data: map[string]any{"mcp_server": view}})
 	return err
 }
 
@@ -417,6 +417,14 @@ func registerRoutes(r *Registry, api huma.API, router chi.Router) {
 					changes = append(changes, "auth")
 				}
 			}
+			// A saved token or header value goes only to the address it was entered for: a new
+			// address needs it entered again.
+			if urlChanged && (draft.AuthKind == AuthBearer || draft.AuthKind == AuthHeader) {
+				fresh := b.Auth != nil && ((draft.AuthKind == AuthBearer && b.Auth.Token != "") || (draft.AuthKind == AuthHeader && b.Auth.HeaderValue != ""))
+				if !fresh {
+					return nil, httpx.Validation("Enter the token again for the new address.")
+				}
+			}
 			if b.Enabled != nil && *b.Enabled != draft.Enabled {
 				draft.Enabled = *b.Enabled
 				changes = append(changes, "enabled")
@@ -551,7 +559,7 @@ func registerRoutes(r *Registry, api huma.API, router chi.Router) {
 				if tag.RowsAffected() == 0 {
 					return pgx.ErrNoRows
 				}
-				if _, err := events.Publish(ctx, tx, events.Event{WorkspaceID: p.WorkspaceID, Type: "ai_mcp_server.deleted",
+				if _, err := events.Publish(ctx, tx, events.Event{WorkspaceID: p.WorkspaceID, Type: "ai_mcp_server.deleted", Admins: true,
 					Data: map[string]any{"mcp_server_id": id}}); err != nil {
 					return err
 				}

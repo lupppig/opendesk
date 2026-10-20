@@ -4,9 +4,13 @@
 // worker, which POSTs the raw RFC 822 bytes to the API:
 //
 //   POST {INBOUND_URL}?to=<rcpt>
-//   OD-Inbound-Secret: <INBOUND_SECRET>
+//   OD-Inbound-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256>
 //   OD-Envelope-From: <envelope sender>
 //   Content-Type: message/rfc822
+//
+// The signature is HMAC-SHA256, keyed with INBOUND_SECRET, over
+// "<t>.<rcpt>.<envelope sender>." followed by the raw message; the API refuses one
+// older than five minutes, so each attempt signs again (CASA 7.2).
 //
 // Body handling: the message is read once into memory and the same bytes are
 // sent on every attempt. A ReadableStream can be consumed only once, so a
@@ -23,6 +27,18 @@
 //     keeps the message and retries later. Used when the API is unreachable,
 //     answers 5xx/408/429 after every attempt, when the worker is not
 //     configured, or for any other unexpected status.
+
+/** The OD-Inbound-Signature value for a message at unix time t. */
+export async function signInbound(secret: string, t: number, to: string, from: string, body: ArrayBuffer): Promise<string> {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const prefix = enc.encode(`${t}.${to}.${from}.`);
+  const data = new Uint8Array(prefix.byteLength + body.byteLength);
+  data.set(prefix, 0);
+  data.set(new Uint8Array(body), prefix.byteLength);
+  const mac = new Uint8Array(await crypto.subtle.sign("HMAC", key, data));
+  return `t=${t},v1=${Array.from(mac, (b) => b.toString(16).padStart(2, "0")).join("")}`;
+}
 
 export interface Env {
   INBOUND_URL: string;
@@ -45,6 +61,8 @@ export interface DeliverOptions {
   log?: (line: Record<string, unknown>) => void;
   maxAttempts?: number;
   timeoutMs?: number;
+  /** Milliseconds since the epoch, for the signature's timestamp (tests). */
+  now?: () => number;
 }
 
 export const MAX_ATTEMPTS = 4;
@@ -117,11 +135,12 @@ export async function deliver(message: InboundMessage, env: Env, opts: DeliverOp
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     let res: Response;
     try {
+      const signature = await signInbound(env.INBOUND_SECRET, Math.floor((opts.now?.() ?? Date.now()) / 1000), message.to, message.from, body);
       res = await doFetch(url, {
         method: "POST",
         headers: {
           "Content-Type": "message/rfc822",
-          "OD-Inbound-Secret": env.INBOUND_SECRET,
+          "OD-Inbound-Signature": signature,
           "OD-Envelope-From": message.from,
         },
         body,

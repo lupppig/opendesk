@@ -3,13 +3,16 @@ package email
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,8 +21,14 @@ import (
 	"github.com/useopendesk/opendesk/internal/httpx"
 )
 
-// InboundSecretHeader authenticates the Cloudflare Email Worker (or SES relay).
-const InboundSecretHeader = "OD-Inbound-Secret"
+// InboundSignatureHeader authenticates a message posted by the Cloudflare Email Worker
+// (or another relay): "t=<unix seconds>,v1=<hex HMAC-SHA256>" over
+// "<t>.<to>.<envelope from>." followed by the raw message, keyed with INBOUND_SECRET.
+// A signature older than inboundSignatureTolerance is refused (CASA 7.2).
+const InboundSignatureHeader = "OD-Inbound-Signature"
+
+// inboundSignatureTolerance bounds how old (or how far ahead) a signed request may be.
+const inboundSignatureTolerance = 5 * time.Minute
 
 // EnvelopeFromHeader carries the SMTP envelope sender from the relay; empty is the null
 // sender of a delivery report.
@@ -31,13 +40,40 @@ func writeProblem(w http.ResponseWriter, status int, code, detail string) {
 	_ = json.NewEncoder(w).Encode(httpx.E(status, code, detail))
 }
 
-// secretOK compares in constant time (hashing first so length does not leak either).
-func secretOK(got, want string) bool {
-	if want == "" {
+// SignInbound is the OD-Inbound-Signature value for a message (the relay's side).
+func SignInbound(secret string, t int64, to, envelopeFrom string, body []byte) string {
+	ts := strconv.FormatInt(t, 10)
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(ts + "." + to + "." + envelopeFrom + "."))
+	mac.Write(body)
+	return "t=" + ts + ",v1=" + hex.EncodeToString(mac.Sum(nil))
+}
+
+// inboundSignatureOK checks an OD-Inbound-Signature: the HMAC matches (compared in
+// constant time) and its timestamp is recent.
+func inboundSignatureOK(header, secret, to, envelopeFrom string, body []byte, now time.Time) bool {
+	if secret == "" {
 		return false
 	}
-	a, b := sha256.Sum256([]byte(got)), sha256.Sum256([]byte(want))
-	return subtle.ConstantTimeCompare(a[:], b[:]) == 1
+	var ts, sig string
+	for _, part := range strings.Split(header, ",") {
+		k, v, _ := strings.Cut(strings.TrimSpace(part), "=")
+		switch k {
+		case "t":
+			ts = v
+		case "v1":
+			sig = v
+		}
+	}
+	t, err := strconv.ParseInt(ts, 10, 64)
+	if err != nil || sig == "" {
+		return false
+	}
+	if d := now.Sub(time.Unix(t, 0)); d > inboundSignatureTolerance || d < -inboundSignatureTolerance {
+		return false
+	}
+	want := SignInbound(secret, t, to, envelopeFrom, body)
+	return subtle.ConstantTimeCompare([]byte(want), []byte("t="+ts+",v1="+strings.ToLower(sig))) == 1
 }
 
 // inboundHTTP accepts one raw RFC 822 message for a forwarding address.
@@ -46,8 +82,9 @@ func (s *service) inboundHTTP(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, http.StatusNotFound, "not_found", "Inbound email is not enabled on this instance.")
 		return
 	}
-	if !secretOK(r.Header.Get(InboundSecretHeader), s.d.Cfg.InboundSecret) {
-		writeProblem(w, http.StatusUnauthorized, "unauthenticated", "Missing or wrong inbound secret.")
+	signature := r.Header.Get(InboundSignatureHeader)
+	if signature == "" {
+		writeProblem(w, http.StatusUnauthorized, "unauthenticated", "Missing or wrong inbound signature.")
 		return
 	}
 	rcpt := r.URL.Query().Get("to")
@@ -62,6 +99,10 @@ func (s *service) inboundHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case len(bytes.TrimSpace(body)) == 0:
 		writeProblem(w, http.StatusBadRequest, "bad_request", "The message is empty.")
+		return
+	}
+	if !inboundSignatureOK(signature, s.d.Cfg.InboundSecret, rcpt, r.Header.Get(EnvelopeFromHeader), body, time.Now()) {
+		writeProblem(w, http.StatusUnauthorized, "unauthenticated", "Missing or wrong inbound signature.")
 		return
 	}
 	m, err := s.mailboxForRecipient(r.Context(), rcpt)

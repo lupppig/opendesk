@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -337,7 +338,7 @@ func TestBounceEnvelopeFromHTTP(t *testing.T) {
 	post := func(raw, envFrom string) {
 		t.Helper()
 		req, _ := http.NewRequest(http.MethodPost, srv.URL+"/v1/inbound/email?to="+w.forwardAddr(m, ""), strings.NewReader(raw))
-		req.Header.Set(InboundSecretHeader, "test")
+		req.Header.Set(InboundSignatureHeader, SignInbound("test", time.Now().Unix(), w.forwardAddr(m, ""), envFrom, []byte(raw)))
 		req.Header.Set(EnvelopeFromHeader, envFrom)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {

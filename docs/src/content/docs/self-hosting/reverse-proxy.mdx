@@ -94,6 +94,10 @@ Rate limits on sign-in, sign-up and the public endpoints, and the IP in the audi
 
 Set it in `.env`. It applies to opendesk and the realtime gateway. Make sure your proxy appends to `X-Forwarded-For` or sets it to the peer's address (nginx's `$proxy_add_x_forwarded_for`, Traefik's and Caddy's defaults), and that opendesk's ports are reachable only through it. A client that reaches port 8080 directly could write any `X-Forwarded-For` it likes.
 
+## Keep tokens out of access logs
+
+The apps open the realtime connection with a short-lived token in the `Sec-WebSocket-Protocol` header. Don't log that header for `/socket/`, and don't log query strings anywhere: sign-in callbacks and signed file links carry codes and signatures in them. Turn off the `/socket/` access log, or log paths alone. opendesk itself never logs query strings, `Authorization` or cookies, and the bundled Caddy drops them from its log. The examples below do the same.
+
 ## Examples
 
 Replace `desk.example.com` with your domain. These were tested with the services published on the host, or reached by name on `opendesk_proxy`.
@@ -119,6 +123,8 @@ server {
     client_max_body_size 30m;
 
     location /socket/ {
+        # The realtime token rides in the connection's query string: keep it out of logs.
+        access_log off;
         proxy_pass http://127.0.0.1:4000;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
@@ -183,7 +189,7 @@ docker network connect opendesk_proxy traefik
 docker compose up -d
 ```
 
-Use your own entrypoint and certificate resolver names. The longer rule wins, so `/socket/` goes to realtime. Traefik's default body size has no limit.
+Use your own entrypoint and certificate resolver names. The longer rule wins, so `/socket/` goes to realtime. Traefik's default body size has no limit. If Traefik's access log is on, drop the request path, which carries the query string, in its static configuration: `--accesslog.fields.names.RequestPath=drop`. Traefik drops request headers from the access log unless told otherwise; keep `Authorization` and `Cookie` dropped.
 
 </TabItem>
 <TabItem label="Caddy">
@@ -230,6 +236,8 @@ client_max_body_size 30m;
 proxy_read_timeout 1h;
 ```
 
+On the `/socket/` custom location, open its gear icon and add `access_log off;`, so the realtime token in its query string is never logged.
+
 </Step>
 </Steps>
 
@@ -264,7 +272,7 @@ Each brand's help center is at `https://desk.example.com/help/<slug>` with no mo
 
 - **Attachments with the `minio` profile.** Downloads are presigned URLs on `S3_ENDPOINT`, so browsers must reach it. Put the `s3` service on the `proxy` network in your own compose file and route a host to `s3:9000`.
 - **Inbound mail.** Unchanged: the built-in SMTP receiver (`smtp-inbound` profile) has its own port and never goes through the proxy.
-- **Logs.** There is no `caddy` service, so `opendesk-ctl logs caddy` has nothing to show. Your proxy's access log should not record query strings on `/socket/`: realtime tokens travel in `?token=`.
+- **Logs.** There is no `caddy` service, so `opendesk-ctl logs caddy` has nothing to show. Your proxy's access log should not record query strings or the `Sec-WebSocket-Protocol` header on `/socket/`: realtime tokens travel there.
 
 ## Check it
 

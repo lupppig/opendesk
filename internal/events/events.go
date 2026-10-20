@@ -47,6 +47,9 @@ type Event struct {
 	// goes to their user topics only, the workspace gets the stand-in, replay hides it from
 	// everyone else and no webhook receives it. A non-nil empty list reaches nobody.
 	Users []uuid.UUID
+	// Admins scopes the event to the workspace's owner and admins, like Users: settings
+	// whose reads need admin (webhooks, MCP servers, agent tests) never reach other members.
+	Admins bool
 }
 
 // TicketRef is a payload that names the ticket it is about. Publish scopes an event whose
@@ -174,6 +177,15 @@ func Publish(ctx context.Context, tx pgx.Tx, ev Event) (Envelope, error) {
 	topics := []string{WorkspaceTopic(ev.WorkspaceID)}
 	if team != nil {
 		topics = []string{TeamTopic(ev.WorkspaceID, *team)}
+	}
+	if ev.Admins {
+		if err := tx.QueryRow(ctx, `SELECT coalesce(array_agg(user_id), '{}') FROM members
+			WHERE workspace_id = $1 AND role IN ('owner', 'admin')`, ev.WorkspaceID).Scan(&ev.Users); err != nil {
+			return Envelope{}, fmt.Errorf("event admins: %w", err)
+		}
+		if ev.Users == nil {
+			ev.Users = []uuid.UUID{}
+		}
 	}
 	var users []uuid.UUID
 	if ev.Users != nil {

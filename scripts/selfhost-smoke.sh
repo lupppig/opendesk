@@ -5,8 +5,8 @@
 #
 #   * /healthz and /readyz answer 200 (the database and NATS are connected)
 #   * the web index, /config.js and /widget/v1.js are served by opendesk
-#   * /socket/websocket upgrades to a WebSocket with a valid `ws` token, and
-#     refuses one without a token
+#   * /socket/websocket upgrades to a WebSocket with a valid `ws` token in
+#     Sec-WebSocket-Protocol, and refuses one in the URL or none
 #   * an event published on NATS reaches a joined workspace channel
 #
 #   scripts/selfhost-smoke.sh            build this checkout, then test
@@ -72,14 +72,18 @@ s = base64.urlsafe_b64encode(hmac.new(os.environ["SECRET"].encode(), f"{h}.{p}".
 print(f"{h}.{p}.{s}")
 PY
 )
+# The token rides in Sec-WebSocket-Protocol, as phoenix.js sends it (contracts/realtime.md);
+# the gateway reads no token from the URL.
+protocol="phoenix, base64url.bearer.phx.$(printf '%s' "$token" | base64 -w0 | tr '+/' '-_' | tr -d '=')"
 upgrade() {
   curl -sk --http1.1 -o /dev/null -w '%{http_code}' --max-time 5 \
     -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' \
-    -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' -H "Origin: $BASE" "$1" || true
+    -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' -H "Origin: $BASE" "$@" || true
 }
-[[ $(upgrade "$BASE/socket/websocket?vsn=2.0.0&token=$token") == 101 ]] || fail "/socket/websocket did not upgrade with a valid token"
+[[ $(upgrade -H "Sec-WebSocket-Protocol: $protocol" "$BASE/socket/websocket?vsn=2.0.0") == 101 ]] || fail "/socket/websocket did not upgrade with a valid token"
+[[ $(upgrade "$BASE/socket/websocket?vsn=2.0.0&token=$token") == 403 ]] || fail "/socket/websocket accepted a token in the URL"
 [[ $(upgrade "$BASE/socket/websocket?vsn=2.0.0") == 403 ]] || fail "/socket/websocket accepted a connection without a token"
-pass "/socket/websocket upgrades with a ws token (101) and refuses none (403)"
+pass "/socket/websocket upgrades with a ws token in its protocol header (101) and refuses one in the URL or none (403)"
 
 if command -v node >/dev/null 2>&1 && [[ $(node -p 'process.versions.node.split(".")[0]') -ge 22 ]]; then
   nats_token=$(sed -n 's/^NATS_TOKEN=//p' "$work/.env")
@@ -90,9 +94,9 @@ if command -v node >/dev/null 2>&1 && [[ $(node -p 'process.versions.node.split(
     docker run --rm --network "${PROJECT}_internal" natsio/nats-box:latest \
       nats --server "nats://${nats_token}@opendesk:4222" pub "od.events.$wid" "$envelope" >/dev/null 2>&1
   ) &
-  NODE_TLS_REJECT_UNAUTHORIZED=0 URL="wss://localhost:${HTTPS_PORT}/socket/websocket?vsn=2.0.0&token=$token" WID="$wid" \
+  NODE_TLS_REJECT_UNAUTHORIZED=0 URL="wss://localhost:${HTTPS_PORT}/socket/websocket?vsn=2.0.0" TOKEN="$token" WID="$wid" \
     node --no-warnings -e '
-      const ws = new WebSocket(process.env.URL);
+      const ws = new WebSocket(process.env.URL, ["phoenix", "base64url.bearer.phx." + Buffer.from(process.env.TOKEN).toString("base64url")]);
       const t = setTimeout(() => { console.error("no event within 20s"); process.exit(1); }, 20000);
       ws.onopen = () => ws.send(JSON.stringify(["1", "1", `workspace:${process.env.WID}`, "phx_join", {}]));
       ws.onmessage = (m) => { const [, , , ev] = JSON.parse(m.data); if (ev === "event") { clearTimeout(t); process.exit(0); } };

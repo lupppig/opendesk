@@ -14,20 +14,22 @@ const groups: { icon: IconName; title: string; items: string[] }[] = [
     title: 'Authentication',
     items: [
       'Passwords are hashed with Argon2id, 12 to 128 characters, and checked against a list of breached passwords.',
-      'Sign-in, sign-up and password reset are rate limited per IP and per account, and protected by Turnstile.',
+      'Sign-in, sign-up and password reset are rate limited per IP and per account, and protected by Turnstile. Account limits hold across every server.',
       'Sign-in answers the same, in the same time, for an unknown email and a wrong password.',
       'Two-factor with TOTP refuses a code that was already used. Recovery codes are hashed and single use.',
       'Sensitive owner actions, such as deleting a workspace or disabling two-factor, need a recent sign-in and two-factor.',
+      'You get an email when your password, two-factor, passkeys or sign-in providers change.',
     ],
   },
   {
     icon: 'lock',
     title: 'Sessions and tokens',
     items: [
-      'Access tokens live 15 minutes. Refresh tokens rotate on every use and are stored hashed.',
+      'Access tokens live 15 minutes and stop working the moment their session ends. Refresh tokens rotate on every use and are stored hashed.',
+      'Sessions last at most 30 days before you sign in again.',
       'Every token carries a purpose and is accepted by exactly one consumer.',
       'Signing out, changing a password or removing a member ends sessions and closes open sockets.',
-      'Cookies are HttpOnly, Secure and SameSite=Lax, scoped to the path that needs them.',
+      'Session cookies are HttpOnly, Secure, SameSite and __Host- prefixed, so only our own host can set them.',
       'API keys are shown once, stored hashed, scoped and bound to one workspace.',
     ],
   },
@@ -38,13 +40,14 @@ const groups: { icon: IconName; title: string; items: string[] }[] = [
       'Every read and write of workspace data is scoped to the caller’s workspace on the server.',
       'Any referenced record, such as a contact, team or mailbox, is checked to belong to the same workspace.',
       'Roles are owner, admin, agent and viewer. Viewers read only, and settings need an admin.',
+      'A private Collab mail account is visible only to the person who connected it, admins included.',
     ],
   },
   {
     icon: 'database',
     title: 'Data protection',
     items: [
-      'Traffic is encrypted in transit with TLS. Data at rest is encrypted by our storage providers.',
+      'Traffic from browsers, apps and integrations uses TLS 1.2 or later, and the database connection verifies its certificate. Data at rest is encrypted by our storage providers.',
       'Mailbox passwords, OAuth tokens, webhook secrets and two-factor secrets are also encrypted with AES-GCM by the application.',
       'Email and agent HTML is sanitized before it is stored.',
       'Webhooks and other outbound requests go to HTTPS addresses only, never to private or internal networks.',
@@ -57,14 +60,14 @@ const groups: { icon: IconName; title: string; items: string[] }[] = [
     items: [
       'Security events are kept in an audit log: sign-ins and failures, two-factor and password changes, member and role changes, API keys, webhooks, and mailbox connections.',
       'Users can delete their account, and owners their workspace. Data is removed, not hidden.',
-      'Dependencies and images are scanned for known vulnerabilities in CI.',
+      'Dependencies, code and images are scanned in CI and every week, and an image with a fixable critical finding is never deployed.',
     ],
   },
 ];
 
 const pillars: [IconName, string, string][] = [
-  ['shield', 'CASA Tier 1', 'A self-hosted opendesk can sync Gmail with a restricted Google scope, so opendesk is built to the App Defense Alliance Cloud Application Security Assessment, Tier 1 (OWASP ASVS 4.0.3 Level 1).'],
-  ['lock', 'Encrypted in transit and at rest', 'TLS for every connection, encryption at rest by our providers, and application-level AES-GCM for every stored credential.'],
+  ['shield', 'CASA Tier 1', 'Collab mail accounts and support inboxes read Gmail with a restricted Google scope, so opendesk is built to the App Defense Alliance Cloud Application Security Assessment, Tier 1 (OWASP ASVS 4.0.3 Level 1).'],
+  ['lock', 'Encrypted in transit and at rest', 'TLS for traffic from browsers, apps and integrations, encryption at rest by our providers, and application-level AES-GCM for every stored credential.'],
   ['code', 'Open to inspection', 'The code that runs the cloud is public. You, your security team or anyone else can audit it.'],
 ];
 ---

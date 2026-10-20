@@ -464,7 +464,7 @@ func TestAPIFolders(t *testing.T) {
 	if st := doJSON(t, "POST", srv.URL+"/v1/collab/accounts/"+a.ID.String()+"/folders", map[string]any{"name": "a/b"}, nil); st != 422 {
 		t.Fatalf("slash: %d", st)
 	}
-	fake.err = errors.New("the label name is taken")
+	fake.err = &providerError{msg: "the label name is taken", permanent: true}
 	if st := doJSON(t, "POST", srv.URL+"/v1/collab/accounts/"+a.ID.String()+"/folders", map[string]any{"name": "Clients"}, &e); st != 502 || e.Code != "provider_error" {
 		t.Fatalf("provider refusal: %d %+v", st, e)
 	}
@@ -559,7 +559,7 @@ func TestAPISend(t *testing.T) {
 		t.Fatalf("someone else's account: %d", st)
 	}
 	var e apiError
-	fake.err = errors.New("the recipient address was refused")
+	fake.err = &providerError{msg: "the recipient address was refused", permanent: true}
 	if st := send(map[string]any{"account_id": a.ID, "mode": "new", "to": []string{"x@example.com"}, "subject": "Hi", "body_html": "x"}, &e); st != 502 ||
 		e.Code != "send_failed" || e.Detail != "the recipient address was refused" {
 		t.Fatalf("refused: %d %+v", st, e)

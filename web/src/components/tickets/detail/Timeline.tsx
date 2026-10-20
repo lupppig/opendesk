@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { AlarmClock, Hand, ShieldAlert, Sparkles, ArrowRightLeft, CircleDot, GitMerge, Link2, MessagesSquare, PencilLine, Star, Tag as TagIcon, TimerOff, Users, UserRound } from "lucide-react";
+import { AlarmClock, Hand, ShieldAlert, Sparkles, ArrowRightLeft, CircleDot, GitMerge, Link2, MessagesSquare, PencilLine, Star, Tag as TagIcon, TimerOff, Trash2, Users, UserRound } from "lucide-react";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -75,6 +75,15 @@ function teamLabel(v: unknown, teams: Team[] | undefined): string | null {
   return null;
 }
 
+function contactLabel(v: unknown, t: TFunction<"inbox">): string {
+  if (v && typeof v === "object") {
+    const contact = v as { name?: unknown; email?: unknown };
+    if (typeof contact.name === "string" && contact.name) return contact.name;
+    if (typeof contact.email === "string" && contact.email) return contact.email;
+  }
+  return t("activity.noContact");
+}
+
 /** An address in activity data: a mailbox id, an email or an object with one. */
 function addressOf(v: unknown, mailboxes: Mailbox[] | undefined): string | null {
   if (!v) return null;
@@ -90,6 +99,10 @@ function describe(a: Activity, t: TFunction<"inbox">, { teams, members, tags, fi
     <Trans t={t} i18nKey={key as never} values={{ who, ...values }} components={{ b: B, m: M }} />
   );
   switch (a.type) {
+    case "note_edited":
+      return { icon: <PencilLine />, text: line("activity.noteEdited") };
+    case "note_deleted":
+      return { icon: <Trash2 />, text: line("activity.noteDeleted") };
     case "status_changed": {
       const to = d.to as TicketStatus;
       if (d.reason === "thread_replied") {
@@ -154,6 +167,11 @@ function describe(a: Activity, t: TFunction<"inbox">, { teams, members, tags, fi
         ),
       };
     }
+    case "contact_changed":
+      return {
+        icon: <Users />,
+        text: line("activity.contactChanged", { from: contactLabel(d.from, t), to: contactLabel(d.to, t) }),
+      };
     case "tagged":
     case "untagged": {
       const raw = d.tag as string | { name?: string; color?: string | null } | undefined;

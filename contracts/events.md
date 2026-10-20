@@ -42,6 +42,11 @@ gateway pushes it in full to those user channels and the `event.hidden` stand-in
 (so `seq` stays contiguous), `GET /v1/events` replays it to them and the stand-in to everyone else
 (`events.user_ids`), and no webhook receives it.
 
+`events.Event.Admins` scopes an event the same way to the workspace's owner and admins at publish
+time: settings whose REST reads need admin (`webhook.*`, `ai_mcp_server.*`, `ai_agent_test*`) never
+reach other members, API keys or webhooks. A notification is scoped to its recipient, and a personal
+view to its owner.
+
 ## Transport
 
 1. `events.Relay` (worker role) reads unpublished rows in seq order, publishes each to
@@ -64,7 +69,8 @@ gateway pushes it in full to those user channels and the `event.hidden` stand-in
 | `ticket.updated`         | agents     | `user:<assignee>` when assignee changes | `{ "ticket": Ticket, "changes": ["status","assignee_id","tags","fields",...] }` |
 | `ticket.deleted`         | agents     | —                                     | `{ "ticket_id": "..." }` |
 | `message.created`        | agents (note) / public (reply on chat ticket) / agents (reply on email ticket) | `contact:<wid>:<cid>:<brand_id>` when public | `{ "ticket_id": "...", "message": Message }` |
-| `message.updated`        | agents (public on chat tickets) | `contact:<wid>:<cid>:<brand_id>` when public | `{ "ticket_id": "...", "message": Message }` (delivery status; the widget agent's action card status and visitor rating, `contracts/agent.md`) |
+| `message.updated`        | agents (public on chat tickets) | `contact:<wid>:<cid>:<brand_id>` when public | `{ "ticket_id": "...", "message": Message }` (delivery status; an internal note's edit; the widget agent's action card status and visitor rating, `contracts/agent.md`) |
+| `message.deleted`        | agents | — | `{ "ticket_id": "...", "message_id": "..." }` (an internal note was deleted) |
 | `activity.created`       | agents     | —                                     | `{ "ticket_id": "...", "activity": Activity }` |
 | `thread.created` / `thread.updated` | agents | — | `{ "ticket_id": "...", "thread": Thread }` (contracts/api.md "Threads"): started; a message written or answered, closed or reopened |
 | `contact.created` / `contact.updated` / `contact.deleted` | agents | — | `{ "contact": Contact }` / `{ "contact_id" }`. `contact.updated` also when a picture is uploaded, removed or found automatically |
@@ -73,19 +79,20 @@ gateway pushes it in full to those user channels and the `event.hidden` stand-in
 | `tag.merged`             | agents     | —                                     | `{ "tag_id": "<removed>", "into": Tag }` (records that carried it are updated without per-record events; refetch lists) |
 | `tag_group.created` / `tag_group.updated` / `tag_group.deleted` | agents | — | `{ "tag_group": TagGroup }` / `{ "tag_group_id" }` |
 | `custom_field.created` / `custom_field.updated` / `custom_field.deleted` | agents | — | `{ "custom_field": CustomField }` / `{ "custom_field_id", "entity", "key" }` |
-| `mailbox.created` / `mailbox.updated` / `mailbox.deleted` | agents | — | `{ "mailbox": Mailbox }` / `{ "mailbox_id" }` |
+| `mailbox.created` / `mailbox.updated` / `mailbox.deleted` | agents | — | `{ "mailbox": Mailbox }` (the members' view: no `config` or `trusted_form_senders`; admins refetch) / `{ "mailbox_id" }` |
 | `member.added` / `member.updated` / `member.removed` | agents | `user:<uid>` | `{ "member": Member }` / `{ "user_id" }`. `member.updated` also on availability, profile and picture changes (in every workspace of that user) |
 | `workspace.updated`      | agents     | —                                     | `{ "workspace": Workspace }` (name, settings, logo and brand images) |
-| `notification.created`   | agents     | `user:<uid>`                          | `{ "notification": Notification }` |
+| `notification.created`   | agents     | `private`, `user:<uid>` (the recipient alone) | `{ "notification": Notification }` |
 | `ai_suggested_reply.created` / `ai_suggested_reply.updated` | agents | — | `{ "ticket_id": "...", "suggested_reply": SuggestedReply }` (`contracts/agent.md` "Email"). `created` when the agent suggests a reply on an email ticket (it supersedes the pending one); `updated` when a teammate sends or discards it |
-| `ai_mcp_server.created` / `ai_mcp_server.updated` / `ai_mcp_server.deleted` | agents | — | `{ "mcp_server": McpServer }` / `{ "mcp_server_id" }` (`contracts/agent.md`). `updated` also when a sync changes the tools or the status |
+| `ai_mcp_server.created` / `ai_mcp_server.updated` / `ai_mcp_server.deleted` | agents | admins (`private`, `user:<uid>`) | `{ "mcp_server": McpServer }` / `{ "mcp_server_id" }` (`contracts/agent.md`). `updated` also when a sync changes the tools or the status |
 | `ai_knowledge.created` / `ai_knowledge.updated` / `ai_knowledge.deleted` | agents | — | `{ "source": KnowledgeSource }` / `{ "source_id" }` (`contracts/agent.md`). `updated` on every status change of a sync |
-| `ai_agent_test.created` / `ai_agent_test.updated` / `ai_agent_test.deleted` | agents | — | `{ "test": AgentTest }` / `{ "test_id" }` (`contracts/agent.md` "Tests") |
-| `ai_agent_test_run.created` / `ai_agent_test_run.updated` | agents | — | `{ "run": AgentTestRun }` (without `results`): on start, when the job picks it up, after each test and when it ends or is stopped |
-| `ai_agent_test_result.updated` | agents | — | `{ "result": AgentTestResult }`: a test of a run finished (`passed`, `failed` or `error`); it becomes that test's `last_result` |
+| `ai_agent_test.created` / `ai_agent_test.updated` / `ai_agent_test.deleted` | agents | admins (`private`, `user:<uid>`) | `{ "test": AgentTest }` / `{ "test_id" }` (`contracts/agent.md` "Tests") |
+| `ai_agent_test_run.created` / `ai_agent_test_run.updated` | agents | admins (`private`, `user:<uid>`) | `{ "run": AgentTestRun }` (without `results`): on start, when the job picks it up, after each test and when it ends or is stopped |
+| `ai_agent_test_result.updated` | agents | admins (`private`, `user:<uid>`) | `{ "result": AgentTestResult }`: a test of a run finished (`passed`, `failed` or `error`); it becomes that test's `last_result` |
 | `ai_agent_review.updated` | agents | — | `{ "message_id", "ticket_id", "outcome": "dismissed" \| "improved" }`: an agent reply left the review queue |
 | `billing.updated`        | agents     | —                                     | `Billing` (`contracts/billing.md`): plan, status, seats, limits, usage, AI balance, prices. Sent on subscription changes, seat syncs, AI top-ups and recharges |
-| `saved_reply.*`, `view.*`, `automation.*`, `sla_policy.*`, `kb_article.*`, `kb_collection.*`, `team.*`, `webhook.*` | agents | — | `{ "<resource>": Obj }` / `{ "<resource>_id" }` |
+| `saved_reply.*`, `view.*`, `automation.*`, `sla_policy.*`, `kb_article.*`, `kb_collection.*`, `team.*` | agents | — (a personal `view.*`: its owner, `private`) | `{ "<resource>": Obj }` / `{ "<resource>_id" }` |
+| `webhook.*` | agents | admins (`private`, `user:<uid>`) | `{ "webhook": Webhook }` / `{ "webhook_id" }` |
 | `brand.created` / `brand.updated` / `brand.deleted` | agents | — | `{ "brand": Brand }` / `{ "brand_id" }` |
 | `routing_rule.created` / `routing_rule.updated` / `routing_rule.deleted` | agents | — | `{ "routing_rule": RoutingRule }` / `{ "routing_rule_id" }` |
 | `widget.created` / `widget.updated` / `widget.deleted` | agents | — | `{ "widget": Widget }` / `{ "widget_id" }` |

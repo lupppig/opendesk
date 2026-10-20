@@ -285,10 +285,13 @@ func (s *svc) registerInvitations(api huma.API) {
 			return &struct{ Body CoreInvitation }{out}, nil
 		})
 
-	register(s, api, huma.Operation{OperationID: "lookup-invitation", Method: http.MethodGet, Path: "/v1/invitations/lookup",
+	// The token rides in the body, never the URL, where proxies and browsers keep it.
+	register(s, api, huma.Operation{OperationID: "lookup-invitation", Method: http.MethodPost, Path: "/v1/invitations/lookup",
 		Summary: "Describe an invitation from its token", Tags: tags, Security: []map[string][]string{}},
 		func(ctx context.Context, in *struct {
-			Token string `query:"token" maxLength:"200"`
+			Body struct {
+				Token string `json:"token" maxLength:"200"`
+			}
 		}) (*struct {
 			Body struct {
 				WorkspaceName string `json:"workspace_name"`
@@ -307,7 +310,7 @@ func (s *svc) registerInvitations(api huma.API) {
 				}
 			}{}
 			err := s.d.DB.Pool.QueryRow(ctx, `SELECT w.name, i.email, i.role FROM invitations i JOIN workspaces w ON w.id = i.workspace_id
-				WHERE i.token_hash = $1 AND i.accepted_at IS NULL AND i.expires_at > now()`, crypto.HashToken(in.Token)).
+				WHERE i.token_hash = $1 AND i.accepted_at IS NULL AND i.expires_at > now()`, crypto.HashToken(in.Body.Token)).
 				Scan(&out.Body.WorkspaceName, &out.Body.Email, &out.Body.Role)
 			if db.IsNotFound(err) {
 				return nil, httpx.E(404, "invalid_invitation", "This invitation is invalid or has expired.")
@@ -336,9 +339,10 @@ func (s *svc) registerInvitations(api huma.API) {
 			err = s.tx(ctx, func(tx pgx.Tx) error {
 				var id, wid uuid.UUID
 				var email, role string
-				err := tx.QueryRow(ctx, `SELECT id, workspace_id, email, role FROM invitations
+				var copied bool
+				err := tx.QueryRow(ctx, `SELECT id, workspace_id, email, role, link_copied_at IS NOT NULL FROM invitations
 					WHERE token_hash = $1 AND accepted_at IS NULL AND expires_at > now() FOR UPDATE`, crypto.HashToken(in.Body.Token)).
-					Scan(&id, &wid, &email, &role)
+					Scan(&id, &wid, &email, &role, &copied)
 				if db.IsNotFound(err) {
 					return httpx.E(404, "invalid_invitation", "This invitation is invalid or has expired.")
 				}
@@ -363,9 +367,12 @@ func (s *svc) registerInvitations(api huma.API) {
 				if err != nil {
 					return err
 				}
-				// The token arrived by email, which proves the address.
-				if _, err := tx.Exec(ctx, `UPDATE users SET email_verified_at = COALESCE(email_verified_at, now()) WHERE id = $1`, p.UserID); err != nil {
-					return err
+				// A token that only ever went by the invitation email proves the address; a
+				// link an admin copied and sent another way does not (as at sign-up).
+				if !copied {
+					if _, err := tx.Exec(ctx, `UPDATE users SET email_verified_at = COALESCE(email_verified_at, now()) WHERE id = $1`, p.UserID); err != nil {
+						return err
+					}
 				}
 				if tag.RowsAffected() == 1 {
 					mem, err := loadMember(ctx, tx, wid, p.UserID)

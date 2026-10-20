@@ -58,7 +58,7 @@ export function registerTestWorkspaces() {
     if (!reason || reason.length > 500) throw invalid("Give a reason of 1 to 500 characters.");
     const plan = (s(ctx, "plan") ?? "free") as TestPlan;
     if (!["free", "pro", "collab"].includes(plan)) throw invalid("plan must be free, pro or collab.");
-    const passwordDays = has(ctx, "password_days") ? days(ctx.body.password_days, 90, "password_days") : 30;
+    const passwordDays = has(ctx, "password_days") ? days(ctx.body.password_days, 2, "password_days") : 1;
     const deleteAfter = !has(ctx, "delete_after_days") ? 30 : ctx.body.delete_after_days === null ? null : days(ctx.body.delete_after_days, 365, "delete_after_days");
     const sample = has(ctx, "sample") && ctx.body.sample !== null ? sampleRequest(ctx.body.sample) : null;
 
@@ -161,7 +161,7 @@ export function registerTestWorkspaces() {
     const renew = has(ctx, "password_days") && ctx.body.password_days !== null;
     if (!setDelete && !renew) throw invalid("Give delete_after_days or password_days.");
     const deleteAfter = setDelete && ctx.body.delete_after_days !== null ? days(ctx.body.delete_after_days, 365, "delete_after_days") : null;
-    const passwordDays = renew ? days(ctx.body.password_days, 90, "password_days") : 0;
+    const passwordDays = renew ? days(ctx.body.password_days, 2, "password_days") : 0;
     stepUp(ctx);
     const t = w.test!;
     const data: Record<string, unknown> = {};

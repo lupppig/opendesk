@@ -26,8 +26,12 @@ defmodule RealtimeWeb.ChannelCase do
 
       Phoenix.ChannelTest.connect(
         RealtimeWeb.ChannelCase.socket_for(claims),
-        %{"token" => Tokens.sign(claims)},
-        connect_info: %{peer_data: %{address: unquote(ip), port: 1234}, x_headers: []}
+        %{},
+        connect_info: %{
+          peer_data: %{address: unquote(ip), port: 1234},
+          x_headers: [],
+          auth_token: Tokens.sign(claims)
+        }
       )
     end
   end

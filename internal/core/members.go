@@ -204,7 +204,7 @@ func (s *svc) registerMembers(api huma.API) {
 
 	register(s, api, huma.Operation{OperationID: "update-member-profile", Method: http.MethodPatch, Path: "/v1/members/{user_id}/profile",
 		Summary: "Change a member's profile", Tags: tags,
-		Description: "user_id may be me. Title, phone, pronouns and personal signature feed the agent template variables; members edit their own, admins anyone's."},
+		Description: "user_id may be me. Title, phone, pronouns and personal signature feed the agent template variables; members edit their own; the owner anyone's, admins those of agents and viewers."},
 		func(ctx context.Context, in *struct {
 			UserID string `path:"user_id"`
 			Body   struct {
@@ -250,6 +250,21 @@ func (s *svc) registerMembers(api huma.API) {
 			}
 			var m CoreMember
 			err = s.tx(ctx, func(tx pgx.Tx) error {
+				// Someone else's profile only as far as their role allows (canManage): an
+				// admin edits agents and viewers, never the owner or another admin.
+				if uid != p.UserID {
+					var role string
+					err := tx.QueryRow(ctx, `SELECT role FROM members WHERE workspace_id = $1 AND user_id = $2 FOR UPDATE`, p.WorkspaceID, uid).Scan(&role)
+					if db.IsNotFound(err) {
+						return httpx.NotFound("Member")
+					}
+					if err != nil {
+						return err
+					}
+					if !canManage(p.Role, auth.Role(role)) {
+						return httpx.Forbidden()
+					}
+				}
 				tag, err := tx.Exec(ctx, `UPDATE members SET title = COALESCE($3, title), phone = COALESCE($4, phone),
 					pronouns = COALESCE($5, pronouns), signature_html = COALESCE($6, signature_html)
 					WHERE workspace_id = $1 AND user_id = $2`, p.WorkspaceID, uid, title, phone, pronouns, signature)

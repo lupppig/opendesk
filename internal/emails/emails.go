@@ -141,6 +141,77 @@ func TwoFactorDisabled(s Site) mailer.Mail {
 	})
 }
 
+// SecurityChange is a change to how someone signs in, which they are told about by email
+// (ASVS 2.2.3, 2.5.5): if they did not make it, the email is how they find out.
+type SecurityChange string
+
+const (
+	PasswordChanged    SecurityChange = "password_changed"
+	PasswordReset      SecurityChange = "password_reset"
+	TwoFactorEnabled   SecurityChange = "totp_enabled"
+	TwoFactorTurnedOff SecurityChange = "totp_disabled"
+	RecoveryCodesNew   SecurityChange = "recovery_codes"
+	PasskeyAdded       SecurityChange = "passkey_added"
+	PasskeyRemoved     SecurityChange = "passkey_removed"
+	ProviderLinked     SecurityChange = "provider_linked"
+)
+
+// securityChanges are each change's subject and first line.
+var securityChanges = map[SecurityChange][2]string{
+	PasswordChanged:    {"Your password was changed", "The password of your opendesk account was changed, and every other session was signed out."},
+	PasswordReset:      {"Your password was reset", "The password of your opendesk account was reset from a link sent to this address, and every session was signed out."},
+	TwoFactorEnabled:   {"Two-factor authentication was turned on", "Two-factor authentication was turned on for your opendesk account. Signing in now also asks for a code from your authenticator app."},
+	TwoFactorTurnedOff: {"Two-factor authentication was turned off", "Two-factor authentication was turned off for your opendesk account. Signing in now asks for your password only."},
+	RecoveryCodesNew:   {"New recovery codes were made", "New two-factor recovery codes were made for your opendesk account. The old ones no longer work."},
+	PasskeyAdded:       {"A passkey was added", "A passkey was added to your opendesk account. It can now be used to sign in."},
+	PasskeyRemoved:     {"A passkey was removed", "A passkey was removed from your opendesk account. It can no longer be used to sign in."},
+	ProviderLinked:     {"A sign-in method was added", "A new way to sign in was linked to your opendesk account."},
+}
+
+// SecurityNotice tells a person their sign-in settings changed. detail names what changed
+// when there is more to say (a passkey's name, the provider linked); it may be empty.
+func SecurityNotice(s Site, change SecurityChange, detail string) mailer.Mail {
+	text, ok := securityChanges[change]
+	if !ok {
+		text = [2]string{"Your account's security settings changed", "The security settings of your opendesk account changed."}
+	}
+	intro := []string{text[1]}
+	if detail != "" {
+		intro = append(intro, detail)
+	}
+	intro = append(intro, "If this was you, there is nothing to do. If it was not, reset your password now and check your security settings.")
+	return s.build(mailer.Email{
+		Subject:   text[0],
+		Preheader: text[1],
+		Heading:   text[0],
+		Intro:     intro,
+		Button:    &mailer.Button{Label: "Open security settings", URL: s.App("/settings/security")},
+		Outro:     []string{"Not you? Reset your password at " + s.App("/forgot") + "."},
+		Footer: mailer.Footer{
+			Reason:  "You get this email because the security settings of your opendesk account changed. We always send it, so you know about every change.",
+			Contact: s.Contact,
+		},
+	})
+}
+
+// SignupAttempt tells the owner of an address that someone tried to create an account
+// with it, so a probe for who has an account does not go unnoticed.
+func SignupAttempt(s Site) mailer.Mail {
+	return s.build(mailer.Email{
+		Subject:   "Someone tried to sign up with your email",
+		Preheader: "Your opendesk account already uses this address, so no new account was made.",
+		Heading:   "You already have an account",
+		Intro: []string{"Someone tried to create an opendesk account with this email address. You already have one, so nothing changed.",
+			"If it was you, sign in instead, or reset your password if you forgot it. If it was not, there is nothing to do."},
+		Button: &mailer.Button{Label: "Sign in", URL: s.App("/login")},
+		Outro:  []string{"Forgot your password? Reset it at " + s.App("/forgot") + "."},
+		Footer: mailer.Footer{
+			Reason:  "You get this email because someone entered this address to create an opendesk account.",
+			Contact: s.Contact,
+		},
+	})
+}
+
 // PaymentFailed tells owners and admins a subscription payment failed.
 func PaymentFailed(s Site, workspace string, workspaceID string) mailer.Mail {
 	return s.build(mailer.Email{

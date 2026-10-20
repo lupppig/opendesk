@@ -68,8 +68,8 @@ in the claims.
 
 | credential      | format                          | where                                            |
 | --------------- | ------------------------------- | ------------------------------------------------ |
-| refresh token   | 32 random bytes, base64url      | one cookie per signed-in account, `od_rt_<user id as 32 hex chars>`: HttpOnly, Secure (https), SameSite=Lax, Path=`/v1/auth`, Domain=`COOKIE_DOMAIN` (see "Several accounts in one browser"). Native requests (below): `refresh_token` in the response body instead, sent back as `{refresh_token}` to `/v1/auth/refresh` and `/v1/auth/logout` |
-| admin refresh token | 32 random bytes, base64url | cookie `od_admin`: HttpOnly, Secure (https), SameSite=Strict, Path=`/v1/admin/auth`, host-only; rotates on use, a session ends 1 h after its last refresh and 12 h after sign-in (contracts/admin.md). Never in a body |
+| refresh token   | 32 random bytes, base64url      | one cookie per signed-in account, `__Host-od_rt_<user id as 32 hex chars>`: HttpOnly, Secure, SameSite=Lax, Path=`/`, host-only. With `COOKIE_DOMAIN` it is `__Secure-od_rt_<hex>`, Path=`/v1/auth`, Domain=`COOKIE_DOMAIN`; on plain http (development) the bare `od_rt_<hex>`, Path=`/v1/auth`. A bare cookie set by an earlier version is still read and replaced by the prefixed one the next time it is set (see "Several accounts in one browser"). Only a request without `Origin` or from an app origin (`CORS_ORIGINS`) has its refresh cookies read. Native requests (below): `refresh_token` in the response body instead, sent back as `{refresh_token}` to `/v1/auth/refresh` and `/v1/auth/logout` |
+| admin refresh token | 32 random bytes, base64url | cookie `__Host-od_admin` (plain http: `od_admin`, Path=`/v1/admin/auth`): HttpOnly, Secure (https), SameSite=Strict, Path=`/`, host-only; rotates on use, a session ends 1 h after its last refresh and 12 h after sign-in (contracts/admin.md). Never in a body |
 | App Attest challenge | 32 random bytes, base64url, single use, 5 min | `POST /v1/auth/app-attest/challenge`; consumed by the first key registration or proof that names it, success or not |
 | push device token | APNs token (hex) or relay token | `POST /v1/me/devices`; stored SHA-256 hashed for lookup and sealed with `d.Box` for sending |
 | API key         | `od_live_` + 32 bytes base64url | `Authorization: Bearer od_live_...`              |
@@ -83,7 +83,7 @@ in the claims.
 
 A browser can be signed in to up to **5** accounts at once (different users), like Linear. Each account has its own
 refresh cookie, `od_rt_<user id hex>`, with the attributes above; nothing else about a session changes (stored hashed,
-rotates on use, reuse outside the 30 s grace window revokes it, 30-day idle and 90-day absolute caps).
+rotates on use, reuse outside the 30 s grace window revokes it, 30-day cap whether used or idle).
 
 - **Issuing.** Every session-issuing answer to a browser (register, login, `mfa`, `oauth/exchange`, `oauth/link`,
   passkey login) sets that account's cookie and leaves the other accounts' cookies alone. If the browser already held a
@@ -112,7 +112,7 @@ rotates on use, reuse outside the 30 s grace window revokes it, 30-day idle and 
 - **Native request**: `OD-Client: ios/<version>` and no `Origin` header. Browsers always send `Origin` on `POST`, so
   page script can never read a refresh token from a body. Every session-issuing answer to a native request carries
   `refresh_token` in the body and sets no cookie; the session is otherwise the same (stored hashed, rotates on use,
-  reuse outside the 30 s grace window revokes it, 90-day cap).
+  reuse outside the 30 s grace window revokes it, 30-day cap).
 - **App Attest key**: an ECDSA P-256 key attested by Apple (`internal/appattest`, the Apple App Attestation Root CA
   embedded), stored in `app_attest_keys` with its app id, environment and counter. Each proof is an assertion over
   `"opendesk-app-attest/v1\n" + action + "\n" + challenge`; the counter must grow. Keys unused for 180 days are deleted.

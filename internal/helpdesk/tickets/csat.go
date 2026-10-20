@@ -63,9 +63,10 @@ func requestCSAT(ctx context.Context, tx pgx.Tx, d *deps.Deps, wid, tid uuid.UUI
 	return err
 }
 
-// CSATURL is the survey link of a token, without its score.
+// CSATURL is the survey link of a token, without its score. The token rides in the
+// fragment, which browsers never send to a server, so no access log or analytics keeps it.
 func CSATURL(appURL, token string) string {
-	return strings.TrimRight(appURL, "/") + "/csat/" + token + "?score="
+	return strings.TrimRight(appURL, "/") + "/csat#t=" + token + "&score="
 }
 
 // CSATView is what the public survey page shows.
@@ -132,15 +133,18 @@ func clientIP(ctx context.Context) string { s, _ := ctx.Value(ipKey{}).(string);
 
 func registerCSAT(d *deps.Deps, api huma.API) {
 	mw := huma.Middlewares{clientIPMiddleware(d)}
-	huma.Register(api, huma.Operation{OperationID: "get-csat", Method: http.MethodGet, Path: "/v1/public/csat/{token}",
+	// The survey token rides in the body, never the URL, where proxies and logs keep it.
+	huma.Register(api, huma.Operation{OperationID: "get-csat", Method: http.MethodPost, Path: "/v1/public/csat/survey",
 		Summary: "Get a satisfaction survey", Tags: []string{"Public"}, Security: []map[string][]string{}, Middlewares: mw},
 		func(ctx context.Context, in *struct {
-			Token string `path:"token"`
+			Body struct {
+				Token string `json:"token" maxLength:"200"`
+			}
 		}) (*struct{ Body CsatSurvey }, error) {
 			if !d.Limiter.Allow("csat:"+clientIP(ctx), 60, time.Minute) {
 				return nil, httpx.RateLimited()
 			}
-			r, err := loadCSAT(ctx, d.DB.Pool, in.Token, false)
+			r, err := loadCSAT(ctx, d.DB.Pool, in.Body.Token, false)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
@@ -148,14 +152,14 @@ func registerCSAT(d *deps.Deps, api huma.API) {
 		})
 
 	type csatAnswerBody struct {
+		Token   string `json:"token" maxLength:"200"`
 		Score   int    `json:"score" minimum:"1" maximum:"5"`
 		Comment string `json:"comment,omitempty" maxLength:"2000"`
 	}
-	huma.Register(api, huma.Operation{OperationID: "submit-csat", Method: http.MethodPost, Path: "/v1/public/csat/{token}",
+	huma.Register(api, huma.Operation{OperationID: "submit-csat", Method: http.MethodPost, Path: "/v1/public/csat/rating",
 		Summary: "Answer a satisfaction survey", Tags: []string{"Public"}, Security: []map[string][]string{}, Middlewares: mw},
 		func(ctx context.Context, in *struct {
-			Token string `path:"token"`
-			Body  csatAnswerBody
+			Body csatAnswerBody
 		}) (*struct{ Body CsatSurvey }, error) {
 			if !d.Limiter.Allow("csat:"+clientIP(ctx), 30, time.Minute) {
 				return nil, httpx.RateLimited()
@@ -163,7 +167,7 @@ func registerCSAT(d *deps.Deps, api huma.API) {
 			comment := strings.TrimSpace(hd.HTMLToText(in.Body.Comment))
 			var out CsatSurvey
 			err := d.DB.Tx(ctx, func(tx pgx.Tx) error {
-				r, err := loadCSAT(ctx, tx, in.Token, true)
+				r, err := loadCSAT(ctx, tx, in.Body.Token, true)
 				if err != nil {
 					return err
 				}

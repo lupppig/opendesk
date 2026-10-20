@@ -46,7 +46,7 @@ docker-compose.yml             (repo root) the self-host stack the installer run
         │                                                 │      │ host api.*          │ host gateway.*     │
         ▼                                                 │      ▼                     ▼                    │
   Email Worker ── POST /v1/inbound/email?to=… ──────────► │   ECS opendesk-api      ECS opendesk-gateway   │
-  (OD-Inbound-Secret)                                     │   (Go, role=api) ×1-3   (Elixir) ×1-2          │
+  (OD-Inbound-Signature)                                  │   (Go, role=api) ×1-3   (Elixir) ×1-2          │
                                                           │      │                     │  Erlang dist,      │
                                                           │      │   ECS opendesk-worker  Presence across  │
                                                           │      │   (Go, role=worker:   nodes (Cloud Map)  │
@@ -770,8 +770,9 @@ restore the backup taken before the upgrade instead.
 
 **Logs.** `docker compose logs -f --tail=200 opendesk`. Container logs rotate
 at 10 MB, five files per service. Request logs never contain query strings,
-tokens or bodies, and Caddy's access log drops `?token=`, `Authorization` and
-`Cookie`.
+tokens or bodies, and Caddy's access log drops the `token`, `code`, `state`,
+`sig` and `exp` query parameters and the `Authorization`, `Cookie` and
+`Sec-WebSocket-Protocol` headers.
 
 ### Options
 
@@ -816,8 +817,9 @@ it, port 25 open (many VPS providers block it until asked),
 `INBOUND_SMTP_ADDR=:2525` and `smtp-inbound` in `COMPOSE_PROFILES`. Or keep
 port 25 closed and have any relay that can POST raw messages (the Cloudflare
 worker in `deploy/cloudflare/email-worker` works for a domain on Cloudflare)
-deliver to `https://<domain>/v1/inbound/email?to=<rcpt>` with the
-`OD-Inbound-Secret` header set to `INBOUND_SECRET`.
+deliver to `https://<domain>/v1/inbound/email?to=<rcpt>`, signed with
+`INBOUND_SECRET` in the `OD-Inbound-Signature` header (docs: Mailboxes API,
+"Inbound email").
 
 **Reading mailboxes over IMAP.** On by default (`MAILBOX_IMAP=true`): besides
 forwarding, mailboxes can connect over IMAP and SMTP, and Google and Microsoft

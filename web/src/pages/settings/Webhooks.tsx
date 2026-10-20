@@ -22,7 +22,7 @@ import { q, qk } from "@/lib/queries";
 import { atLeast, useRole } from "@/lib/session";
 import { cn } from "@/lib/cn";
 
-type Health = { state: "active" | "failing" | "paused"; last: WebhookDelivery | null; total: number; failed: number };
+type Health = { state: "active" | "failing" | "paused" | "unverified"; last: WebhookDelivery | null; total: number; failed: number };
 
 /** A webhook is failing when its latest delivery failed or is retrying after an error. */
 function health(h: Webhook, rows: WebhookDelivery[] | undefined): Health {
@@ -31,7 +31,7 @@ function health(h: Webhook, rows: WebhookDelivery[] | undefined): Health {
   const failed = list.filter((d) => d.status === "failed").length;
   // A delivery still retrying after an error response counts as failing too.
   const retrying = list[0]?.status === "pending" && (list[0].response_code ?? 0) >= 400;
-  const state = !h.enabled ? "paused" : retrying || finished?.status === "failed" ? "failing" : "active";
+  const state = !h.verified ? "unverified" : !h.enabled ? "paused" : retrying || finished?.status === "failed" ? "failing" : "active";
   return { state, last: list[0] ?? null, total: list.filter((d) => d.status !== "pending").length, failed };
 }
 
@@ -70,7 +70,7 @@ export default function Webhooks() {
   const healths = list.map((h, i) => health(h, deliveries[i]?.data));
   const sum = healths.reduce(
     (c, x) => ({ ...c, [x.state]: c[x.state] + 1, total: c.total + x.total, failed: c.failed + x.failed }),
-    { active: 0, failing: 0, paused: 0, total: 0, failed: 0 },
+    { active: 0, failing: 0, paused: 0, unverified: 0, total: 0, failed: 0 },
   );
   const rate = sum.total ? Math.round(((sum.total - sum.failed) / sum.total) * 100) : null;
 
@@ -145,7 +145,7 @@ export default function Webhooks() {
                       className="group flex cursor-pointer flex-wrap items-center gap-3 px-4 py-2.5 outline-none transition-colors hover:bg-sunken focus-visible:bg-sunken md:grid md:grid-cols-[minmax(0,1fr)_200px_110px_96px_64px] md:gap-4"
                     >
                       <div className="flex min-w-0 flex-1 items-center gap-3">
-                        <IconTile tone={hp.state === "failing" ? "red" : hp.state === "paused" ? "gray" : "teal"}>
+                        <IconTile tone={hp.state === "failing" ? "red" : hp.state === "paused" ? "gray" : hp.state === "unverified" ? "amber" : "teal"}>
                           <WebhookIcon />
                         </IconTile>
                         <div className={cn("min-w-0", !h.enabled && "opacity-60")}>
@@ -192,7 +192,7 @@ export default function Webhooks() {
                         )}
                       </span>
                       <span>
-                        <StatePill state={hp.state}>{t(`webhooks.state.${hp.state}`)}</StatePill>
+                        <StatePill state={hp.state === "unverified" ? "pending" : hp.state}>{t(`webhooks.state.${hp.state}`)}</StatePill>
                       </span>
                       <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
                         <Switch checked={h.enabled} onCheckedChange={(enabled) => toggle.mutate({ id: h.id, enabled })} aria-label={`Webhook ${h.url} active`} />

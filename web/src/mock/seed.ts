@@ -1179,14 +1179,17 @@ function seedMargin(): WsData {
   keys[0].private_team_ids = [];
   ws.apiKeys = keys;
   const hooks: Webhook[] = [
-    { id: uuid(), url: "https://hooks.margin.app/opendesk", description: "Internal event bus", events: ["ticket.created", "ticket.updated", "message.created"], enabled: true, created_at: ago(100 * DAY),
+    { id: uuid(), url: "https://hooks.margin.app/opendesk", description: "Internal event bus", events: ["ticket.created", "ticket.updated", "message.created"], enabled: true, verified: true, created_at: ago(100 * DAY),
       private_team_ids: [teamId("Security")!], private_teams: [{ id: teamId("Security")!, name: "Security", granted_by: userRef(uid("priya")) }] },
-    { id: uuid(), url: "https://hooks.slack.com/services/T0001/B0002/XXXX", description: "Urgent tickets to #support-alerts", events: ["ticket.created"], enabled: true, created_at: ago(30 * DAY) },
+    { id: uuid(), url: "https://hooks.slack.com/services/T0001/B0002/XXXX", description: "Urgent tickets to #support-alerts", events: ["ticket.created"], enabled: true, verified: true, created_at: ago(30 * DAY) },
+    // A Zapier catch hook cannot echo the verification challenge: it waits for the code.
+    { id: uuid(), url: "https://hooks.zapier.com/hooks/catch/48213/b7kq2x/", description: "New tickets to the CRM", events: ["ticket.created"], enabled: true, verified: false, created_at: ago(2 * HOUR) },
   ];
   ws.webhooks = hooks;
   for (const h of hooks) {
     const list: WebhookDelivery[] = [];
-    for (let i = 0; i < (h === hooks[0] ? 14 : 8); i++) {
+    // An address gets no events until it is verified.
+    for (let i = 0; h.verified && i < (h === hooks[0] ? 14 : 8); i++) {
       const failed = chance(0.2);
       list.push({
         id: uuid(),

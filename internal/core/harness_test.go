@@ -249,3 +249,26 @@ func tokenFromText(text, marker string) string {
 	}
 	return rest
 }
+
+// echoChallenges is a webhook receiver that answers verification challenges the way
+// the docs show, by echoing the challenge, and hands every other request to next (nil:
+// answer 200).
+func echoChallenges(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		var ev struct {
+			Type string `json:"type"`
+			Data struct {
+				Challenge string `json:"challenge"`
+			} `json:"data"`
+		}
+		if json.Unmarshal(b, &ev) == nil && ev.Type == "webhook.verification" {
+			_, _ = w.Write([]byte(ev.Data.Challenge))
+			return
+		}
+		if next != nil {
+			r.Body = io.NopCloser(bytes.NewReader(b))
+			next(w, r)
+		}
+	}
+}

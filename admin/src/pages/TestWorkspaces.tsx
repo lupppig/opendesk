@@ -441,7 +441,7 @@ function CreateDialog({ billing, onClose, onCreated }: { billing: boolean; onClo
   const [email, setEmail] = useState("");
   const [emailEdited, setEmailEdited] = useState(false);
   const [ownerName, setOwnerName] = useState("");
-  const [passwordDays, setPasswordDays] = useState(30);
+  const [passwordDays, setPasswordDays] = useState(1);
   const [user, setUser] = useState<AdminUserRow | null>(null);
   const [plan, setPlan] = useState<TestPlan>("pro");
   const [withSample, setWithSample] = useState(true);
@@ -459,7 +459,7 @@ function CreateDialog({ billing, onClose, onCreated }: { billing: boolean; onClo
     (mode === "new" ? isTestEmail(ownerEmail) : !!user) &&
     (!withSample || kinds.length > 0) &&
     passwordDays >= 1 &&
-    passwordDays <= 90;
+    passwordDays <= 2;
 
   return (
     <StepUpDialog
@@ -542,8 +542,8 @@ function CreateDialog({ billing, onClose, onCreated }: { billing: boolean; onClo
             <Field label="Name" optional>
               {(p) => <TextInput {...p} value={ownerName} onChange={(e) => setOwnerName(e.target.value)} placeholder="Alex Morgan" maxLength={200} autoComplete="off" />}
             </Field>
-            <Field label="Password lasts" hint="A strong password is generated and shown once.">
-              {(p) => <NumberInput id={p.id} aria-describedby={p["aria-describedby"]} value={passwordDays} onChange={setPasswordDays} min={1} max={90} suffix="days" />}
+            <Field label="Password lasts" hint="A strong password is generated and shown once. It works for 1 or 2 days.">
+              {(p) => <NumberInput id={p.id} aria-describedby={p["aria-describedby"]} value={passwordDays} onChange={setPasswordDays} min={1} max={2} suffix="days" />}
             </Field>
           </div>
         ) : (
@@ -685,14 +685,14 @@ function ChangeDialog({ w, onClose, onChanged }: { w: AdminTestWorkspace; onClos
   type Choice = DeleteChoice | "same";
   const [choice, setChoice] = useState<Choice>("same");
   const [renew, setRenew] = useState(false);
-  const [days, setDays] = useState(30);
+  const [days, setDays] = useState(1);
   const testAccount = !!w.owner?.test_account;
   const current = w.test_expires_at ? `Keep the current day (${shortDate(w.test_expires_at)})` : "Keep it until deleted (as now)";
   const options: { value: Choice; label: string }[] = [
     { value: "same", label: current },
     ...DELETE_CHOICES.map((c) => ({ value: c.value as Choice, label: c.value === "keep" ? c.label : `${c.label}, from today` })),
   ];
-  const ready = choice !== "same" || (renew && days >= 1 && days <= 90);
+  const ready = choice !== "same" || (renew && days >= 1 && days <= 2);
   return (
     <StepUpDialog
       open
@@ -733,7 +733,7 @@ function ChangeDialog({ w, onClose, onChanged }: { w: AdminTestWorkspace; onClos
           </label>
           {renew && (
             <Field label="New password lasts">
-              {(p) => <NumberInput id={p.id} value={days} onChange={setDays} min={1} max={90} suffix="days" />}
+              {(p) => <NumberInput id={p.id} value={days} onChange={setDays} min={1} max={2} suffix="days" />}
             </Field>
           )}
         </div>

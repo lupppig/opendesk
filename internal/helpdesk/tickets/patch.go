@@ -48,6 +48,7 @@ type Patch struct {
 	Status   *string
 	Priority *string
 	Severity Opt[string] // null or "" clears
+	Contact  Opt[uuid.UUID]
 	Assignee Opt[uuid.UUID]
 	Team     Opt[uuid.UUID]
 	// Mailbox is the reply address: an address of the ticket's brand.
@@ -66,7 +67,7 @@ type Patch struct {
 }
 
 func (p Patch) empty() bool {
-	return p.Subject == nil && p.Status == nil && p.Priority == nil && !p.Severity.Set && !p.Assignee.Set && !p.Team.Set && !p.Snooze.Set &&
+	return p.Subject == nil && p.Status == nil && p.Priority == nil && !p.Severity.Set && !p.Contact.Set && !p.Assignee.Set && !p.Team.Set && !p.Snooze.Set &&
 		p.Mailbox == nil && p.Brand == nil && p.Spam == nil && p.Tags == nil && len(p.AddTags) == 0 && len(p.RemoveTags) == 0 && p.Custom == nil && p.Fields == nil
 }
 
@@ -95,6 +96,7 @@ type ticketState struct {
 	Status   string
 	Priority string
 	Severity *string
+	Contact  *uuid.UUID
 	Assignee *uuid.UUID
 	Team     *uuid.UUID
 	Snoozed  *time.Time
@@ -109,10 +111,10 @@ type ticketState struct {
 
 func lockTicket(ctx context.Context, tx pgx.Tx, wid, tid uuid.UUID) (ticketState, error) {
 	var s ticketState
-	err := tx.QueryRow(ctx, `SELECT number, subject, status, priority, severity, assignee_id, team_id, snoozed_until, spam, custom, fields,
+	err := tx.QueryRow(ctx, `SELECT number, subject, status, priority, severity, contact_id, assignee_id, team_id, snoozed_until, spam, custom, fields,
 		channel, brand_id, mailbox_id, routed
 		FROM tickets WHERE workspace_id = $1 AND id = $2 AND deleted_at IS NULL FOR UPDATE`, wid, tid).
-		Scan(&s.Number, &s.Subject, &s.Status, &s.Priority, &s.Severity, &s.Assignee, &s.Team, &s.Snoozed, &s.Spam, &s.Custom, &s.Fields,
+		Scan(&s.Number, &s.Subject, &s.Status, &s.Priority, &s.Severity, &s.Contact, &s.Assignee, &s.Team, &s.Snoozed, &s.Spam, &s.Custom, &s.Fields,
 			&s.Channel, &s.Brand, &s.Mailbox, &s.Routed)
 	if err != nil {
 		if db.IsNotFound(err) {
@@ -210,6 +212,36 @@ func applyPatch(ctx context.Context, tx pgx.Tx, d *deps.Deps, wid, tid uuid.UUID
 			next.Severity = to
 			changes = append(changes, "severity")
 			acts = append(acts, act{"severity_changed", map[string]any{"from": strOrNil(cur.Severity), "to": strOrNil(to)}})
+		}
+	}
+	if p.Contact.Set {
+		if p.Contact.Null {
+			return nil, httpx.Validation("contact_id cannot be null")
+		}
+		to := p.Contact.Value
+		if !sameID(cur.Contact, &to) {
+			// A live chat is the visitor's own conversation in the widget: it stays theirs.
+			if cur.Channel == domain.ChannelChat {
+				return nil, httpx.Validation("a live chat stays with the visitor who started it")
+			}
+			toName, err := contactLabel(ctx, tx, wid, to)
+			if db.IsNotFound(err) {
+				return nil, httpx.Validation("contact not found in this workspace")
+			} else if err != nil {
+				return nil, err
+			}
+			var fromName string
+			if cur.Contact != nil {
+				if fromName, err = contactLabel(ctx, tx, wid, *cur.Contact); err != nil && !db.IsNotFound(err) {
+					return nil, err
+				}
+			}
+			next.Contact = &to
+			changes = append(changes, "contact_id")
+			acts = append(acts, act{"contact_changed", map[string]any{
+				"from": contactActivityRef(cur.Contact, fromName),
+				"to":   contactActivityRef(&to, toName),
+			}})
 		}
 	}
 	if p.Assignee.Set {
@@ -469,14 +501,14 @@ func applyPatch(ctx context.Context, tx pgx.Tx, d *deps.Deps, wid, tid uuid.UUID
 		}
 	}
 	if len(changes) > 1 || !tagChanged {
-		_, err = tx.Exec(ctx, `UPDATE tickets SET subject = $3, status = $4, priority = $5, assignee_id = $6, team_id = $7,
-			snoozed_until = $8, spam = $9, custom = $10, fields = $11, severity = $12,
+		_, err = tx.Exec(ctx, `UPDATE tickets SET subject = $3, status = $4, priority = $5, contact_id = $6, assignee_id = $7, team_id = $8,
+			snoozed_until = $9, spam = $10, custom = $11, fields = $12, severity = $13,
 			solved_at = CASE WHEN $4 IN ('solved', 'closed') THEN COALESCE(solved_at, now()) ELSE NULL END,
 			closed_at = CASE WHEN $4 = 'closed' THEN COALESCE(closed_at, now()) ELSE NULL END,
-			brand_id = $13, mailbox_id = $14, routed = $15,
+			brand_id = $14, mailbox_id = $15, routed = $16,
 			updated_at = now()
 			WHERE workspace_id = $1 AND id = $2`,
-			wid, tid, next.Subject, next.Status, next.Priority, next.Assignee, next.Team, next.Snoozed, next.Spam, next.Custom, next.Fields, next.Severity,
+			wid, tid, next.Subject, next.Status, next.Priority, next.Contact, next.Assignee, next.Team, next.Snoozed, next.Spam, next.Custom, next.Fields, next.Severity,
 			next.Brand, next.Mailbox, next.Routed)
 	} else {
 		_, err = tx.Exec(ctx, `UPDATE tickets SET updated_at = now() WHERE workspace_id = $1 AND id = $2`, wid, tid)
@@ -571,6 +603,20 @@ func idOrNil(id *uuid.UUID) any {
 		return nil
 	}
 	return id.String()
+}
+
+// contactLabel is how the timeline names a contact: their name, else their email.
+func contactLabel(ctx context.Context, tx pgx.Tx, wid, id uuid.UUID) (string, error) {
+	var label string
+	err := tx.QueryRow(ctx, `SELECT COALESCE(NULLIF(name, ''), email::text, '') FROM contacts WHERE workspace_id = $1 AND id = $2`, wid, id).Scan(&label)
+	return label, err
+}
+
+func contactActivityRef(id *uuid.UUID, name string) any {
+	if id == nil {
+		return nil
+	}
+	return map[string]any{"id": id.String(), "name": name}
 }
 
 func sameStr(a, b *string) bool {

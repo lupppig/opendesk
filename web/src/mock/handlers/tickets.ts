@@ -3,7 +3,7 @@
 import type { Attachment, Channel, Message, Priority, ReportsOverview, Severity, SuggestionField, Thread, Ticket, TicketPatch, TicketStatus } from "@/lib/api/types";
 import { contactRef, db, me, userRef, type WsData } from "../db";
 import { publish } from "../gateway";
-import { HttpError, del, get, invalid, notFound, paginate, patch, post, required, respond, s, strArr, type Ctx } from "../router";
+import { HttpError, del, forbidden, get, invalid, notFound, paginate, patch, post, required, respond, s, strArr, type Ctx } from "../router";
 import { canCreateLabels, checkRequiredOnSolve, mergeFields } from "../labels";
 import { canSeeTicket, defaultBrand, teamRole } from "../teams";
 import { addActivity, addMessage, applyPatch, buildMessage, canSendFrom, counts, fieldFiltersFromQuery, findTicket, matches, newTicket, notify, publishTicketUpdated, sortTickets, type ListFilters } from "../tickets";
@@ -57,6 +57,8 @@ function ticket(ctx: Ctx): Ticket {
 
 /** Team, brand and reply address checks for a patch (contracts/teams.md). */
 function checkPatch(ws: WsData, t: Ticket, p: TicketPatch) {
+  if (p.contact_id && !ws.contacts.some((x) => x.id === p.contact_id)) throw invalid("Unknown contact");
+  if (p.contact_id && p.contact_id !== t.contact?.id && t.channel === "chat") throw invalid("A live chat stays with the visitor who started it");
   if (p.team_id && !ws.teams.some((x) => x.id === p.team_id)) throw invalid("Unknown team");
   if (p.brand_id !== undefined && !ws.brands.some((b) => b.id === p.brand_id)) throw invalid("Unknown brand");
   if (p.mailbox_id) {
@@ -78,6 +80,10 @@ function hideIfPrivate(ws: WsData, t: Ticket, fromTeam: string | null) {
 
 function readPatch(body: Record<string, unknown>): TicketPatch {
   const p: TicketPatch = {};
+  if ("contact_id" in body) {
+    if (typeof body.contact_id !== "string" || !body.contact_id.trim()) throw invalid("contact_id must be a contact id");
+    p.contact_id = body.contact_id;
+  }
   if (typeof body.subject === "string") {
     if (!body.subject.trim()) throw invalid("Subject can't be empty");
     p.subject = body.subject.trim().slice(0, 250);
@@ -393,6 +399,40 @@ export function registerTickets() {
     );
     if (msg.delivery_status === "pending") simulateDelivery(ctx.ws, t, msg.id);
     return respond(201, msg);
+  });
+  patch("/v1/tickets/:id/messages/:messageId", (ctx) => {
+    const t = ticket(ctx);
+    const role = ctx.ws.members.find((m) => m.user_id === db.meId)?.role;
+    if (!role || role === "viewer") throw forbidden();
+    const message = ctx.ws.messages.find((m) => m.id === ctx.params.messageId && m.ticket_id === t.id);
+    if (!message) throw notFound("Message");
+    if (message.kind !== "note" || message.thread_id) throw invalid("Only internal notes can be edited");
+    if (message.author.user?.id !== db.meId) throw forbidden();
+    const html = typeof ctx.body.body_html === "string" ? ctx.body.body_html : null;
+    if (html === null) throw invalid("body_html is required");
+    message.body_html = html;
+    message.body_text = html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+    message.edited_at = nowIso();
+    addActivity(ctx.ws, t, "note_edited", { message_id: message.id }, userRef(db.meId));
+    publish(ctx.ws, "message.updated", { ticket_id: t.id, message });
+    return message;
+  });
+  del("/v1/tickets/:id/messages/:messageId", (ctx) => {
+    const t = ticket(ctx);
+    const index = ctx.ws.messages.findIndex((m) => m.id === ctx.params.messageId && m.ticket_id === t.id);
+    if (index < 0) throw notFound("Message");
+    const message = ctx.ws.messages[index];
+    if (message.kind !== "note" || message.thread_id) throw invalid("Only internal notes can be deleted");
+    const role = ctx.ws.members.find((m) => m.user_id === db.meId)?.role;
+    const mine = message.author.user?.id === db.meId;
+    if (!mine && role !== "admin" && role !== "owner") throw forbidden();
+    ctx.ws.messages.splice(index, 1);
+    delete ctx.ws.originals[message.id];
+    const attachments = new Set(message.attachments.map((a) => a.id));
+    for (let i = db.attachments.length - 1; i >= 0; i--) if (attachments.has(db.attachments[i].id)) db.attachments.splice(i, 1);
+    addActivity(ctx.ws, t, "note_deleted", { message_id: message.id }, userRef(db.meId));
+    publish(ctx.ws, "message.deleted", { ticket_id: t.id, message_id: message.id });
+    return undefined;
   });
   get("/v1/tickets/:id/activities", (ctx) => {
     const t = ticket(ctx);

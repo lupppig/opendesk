@@ -138,7 +138,7 @@ func (e *stream) send(event string, data any) {
 	if !e.started {
 		h := e.w.Header()
 		h.Set("Content-Type", "text/event-stream")
-		h.Set("Cache-Control", "no-cache")
+		h.Set("Cache-Control", "no-store")
 		h.Set("X-Accel-Buffering", "no")
 		_ = e.rc.SetWriteDeadline(time.Now().Add(10 * time.Minute))
 		e.w.WriteHeader(http.StatusOK)

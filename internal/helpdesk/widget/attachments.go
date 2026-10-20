@@ -120,6 +120,8 @@ type storedAttachment struct {
 	Size             int64
 	Key              string
 	UploaderContact  *uuid.UUID
+	UploaderUser     *uuid.UUID
+	UploaderKey      *uuid.UUID
 	TicketContact    *uuid.UUID
 	MessageKind      *string
 	TicketDeleted    bool
@@ -131,18 +133,19 @@ type storedAttachment struct {
 func loadStored(ctx context.Context, q db.Querier, id uuid.UUID) (storedAttachment, error) {
 	var a storedAttachment
 	err := q.QueryRow(ctx, `SELECT a.workspace_id, a.filename, a.content_type, a.size_bytes, a.storage_key,
-		a.uploaded_by_contact_id, t.contact_id, m.kind, COALESCE(t.deleted_at IS NOT NULL, false), m.id IS NOT NULL,
-		t.team_id, t.assignee_id
+		a.uploaded_by_contact_id, a.uploaded_by, a.uploaded_by_api_key_id, t.contact_id, m.kind,
+		COALESCE(t.deleted_at IS NOT NULL, false), m.id IS NOT NULL, t.team_id, t.assignee_id
 		FROM attachments a LEFT JOIN messages m ON m.id = a.message_id LEFT JOIN tickets t ON t.id = m.ticket_id
 		WHERE a.id = $1`, id).Scan(&a.WorkspaceID, &a.Filename, &a.ContentType, &a.Size, &a.Key,
-		&a.UploaderContact, &a.TicketContact, &a.MessageKind, &a.TicketDeleted, &a.TicketIsAttached,
-		&a.TicketTeam, &a.TicketAssignee)
+		&a.UploaderContact, &a.UploaderUser, &a.UploaderKey, &a.TicketContact, &a.MessageKind, &a.TicketDeleted,
+		&a.TicketIsAttached, &a.TicketTeam, &a.TicketAssignee)
 	return a, err
 }
 
 // mayRead decides access: a signed link, a member or key of the owning workspace who may
-// see the ticket carrying it (contracts/teams.md "Visibility"), or the visitor who uploaded
-// the file or whose conversation carries it in a public reply.
+// see the ticket carrying it (contracts/teams.md "Visibility") or who uploaded it while it
+// is not sent yet, or the visitor who uploaded the file or whose conversation carries it
+// in a public reply.
 func mayRead(r *http.Request, q db.Querier, id uuid.UUID, a storedAttachment) (bool, error) {
 	query := r.URL.Query()
 	if exp, sig := query.Get("exp"), query.Get("sig"); exp != "" && sig != "" && domain.VerifyAttachmentSig(id, exp, sig) {
@@ -158,7 +161,12 @@ func mayRead(r *http.Request, q db.Querier, id uuid.UUID, a storedAttachment) (b
 			return false, nil
 		}
 		if !a.TicketIsAttached {
-			return true, nil
+			// An upload not yet sent is its uploader's alone (a private Collab draft's
+			// pictures included), as attaching it is.
+			if p.Kind == auth.KindUser {
+				return a.UploaderUser != nil && *a.UploaderUser == p.UserID, nil
+			}
+			return a.UploaderKey != nil && *a.UploaderKey == p.APIKeyID, nil
 		}
 		return domain.CanSee(r.Context(), q, p, a.TicketTeam, a.TicketAssignee)
 	case auth.KindVisitor:
@@ -225,7 +233,7 @@ func (h *handler) download(w http.ResponseWriter, r *http.Request) {
 	hdr.Set("Content-Length", strconv.FormatInt(a.Size, 10))
 	hdr.Set("Content-Disposition", contentDisposition(a.Filename, hd.InlineSafe(ct)))
 	hdr.Set("X-Content-Type-Options", "nosniff")
-	hdr.Set("Cache-Control", "private, max-age=300")
+	hdr.Set("Cache-Control", "private, no-store")
 	hdr.Set("Content-Security-Policy", "default-src 'none'; sandbox")
 	hdr.Set("Cross-Origin-Resource-Policy", "cross-origin")
 	w.WriteHeader(http.StatusOK)

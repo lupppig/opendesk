@@ -76,7 +76,7 @@ in the response body and keeps it in the Keychain.
   `/oauth/exchange`, `/passkey/login/finish`, `/v1/auth/refresh`) answers a native request
   with `refresh_token` in the body (`CoreAuthResult.refresh_token`) and **sets no cookie**.
   Everything else about the session is unchanged: stored hashed, rotates on use, reuse
-  outside the grace window revokes it, 90-day cap.
+  outside the grace window revokes it, 30-day cap.
 - `POST /v1/auth/refresh` and `POST /v1/auth/logout` accept `{ "refresh_token": "…" }` in the
   body when there is no cookie.
 - Sessions record their client (`sessions.client`: `web`, `desktop`, `ios`), taken from

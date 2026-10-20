@@ -1,13 +1,14 @@
 defmodule RealtimeWeb.UserSocket do
   @moduledoc """
   The agents' socket at `/socket` (`contracts/realtime.md`). Connect with
-  `?vsn=2.0.0&token=<jwt>`; only `ws` tokens (users and API keys) are accepted,
+  `?vsn=2.0.0` and the token in `Sec-WebSocket-Protocol` (the client's
+  `authToken`); only `ws` tokens (users and API keys) are accepted,
   and browser origins must be in `CHECK_ORIGINS`. The chat widget uses
   `RealtimeWeb.WidgetSocket` instead.
 
   The token is verified once at connect and then forgotten: only its claims are
-  kept in assigns. Connection logging is off so the query string, which holds
-  the token, is never written anywhere.
+  kept in assigns. A token in the URL is never read, and connection logging is
+  off.
   """
 
   use Phoenix.Socket, log: false

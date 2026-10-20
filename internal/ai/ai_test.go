@@ -184,7 +184,7 @@ func TestNoBalance(t *testing.T) {
 		t.Fatal("model called without balance")
 	}
 	// A $0.01 feature still runs.
-	e.Do("POST", "/v1/tickets/"+tk.ID.String()+"/ai/summary", e.viewer(), nil).Want(t, 200)
+	e.Do("POST", "/v1/tickets/"+tk.ID.String()+"/ai/summary", e.agent(), nil).Want(t, 200)
 	if n := e.count(`SELECT count(*) FROM ai_usage WHERE workspace_id = $1`, e.WS.ID); n != 1 {
 		t.Fatalf("usage %d", n)
 	}
@@ -194,7 +194,7 @@ func TestProviderErrorsCostNothing(t *testing.T) {
 	e := newEnv(t, opts{billing: true})
 	tk := e.ticket("Hi", "Question")
 	e.F.fail(529, 529, 529, 529, 529, 529, 529, 529, 529)
-	r := e.Do("POST", "/v1/tickets/"+tk.ID.String()+"/ai/summary", e.viewer(), nil).Want(t, 503)
+	r := e.Do("POST", "/v1/tickets/"+tk.ID.String()+"/ai/summary", e.agent(), nil).Want(t, 503)
 	if problemCode(t, r) != "ai_busy" {
 		t.Fatal(string(r.Body))
 	}
@@ -206,10 +206,10 @@ func TestProviderErrorsCostNothing(t *testing.T) {
 	e.F.mu.Unlock()
 	// A transient 529 is retried.
 	e.F.fail(529)
-	e.Do("POST", "/v1/tickets/"+tk.ID.String()+"/ai/summary", e.viewer(), nil).Want(t, 200)
+	e.Do("POST", "/v1/tickets/"+tk.ID.String()+"/ai/summary", e.agent(), nil).Want(t, 200)
 	// Malformed JSON from the model is a 502, not stored.
 	e.F.set("summary", "not json")
-	r = e.Do("POST", "/v1/tickets/"+tk.ID.String()+"/ai/summary", e.viewer(), nil).Want(t, 502)
+	r = e.Do("POST", "/v1/tickets/"+tk.ID.String()+"/ai/summary", e.agent(), nil).Want(t, 502)
 	if problemCode(t, r) != "ai_bad_output" {
 		t.Fatal(string(r.Body))
 	}
@@ -220,7 +220,7 @@ func TestSummary(t *testing.T) {
 	tk := e.ticket("Charged twice", "I was charged twice")
 	_, seq := e.Events(e.WS.ID, 0)
 	var out SummaryOutput
-	e.Do("POST", "/v1/tickets/%23"+itoa(tk.Number)+"/ai/summary", e.viewer(), nil).Want(t, 200).JSON(t, &out)
+	e.Do("POST", "/v1/tickets/%23"+itoa(tk.Number)+"/ai/summary", e.agent(), nil).Want(t, 200).JSON(t, &out)
 	if out.Summary != "Customer was double charged and wants a refund." || len(out.KeyPoints) != 2 || out.Sentiment != "negative" {
 		t.Fatalf("%+v", out)
 	}
@@ -237,7 +237,9 @@ func TestSummary(t *testing.T) {
 	if e.F.last()["model"] != "claude-sonnet-5-5" {
 		t.Fatal(e.F.last()["model"])
 	}
-	e.Do("POST", "/v1/tickets/"+ids.New().String()+"/ai/summary", e.viewer(), nil).Want(t, 404)
+	e.Do("POST", "/v1/tickets/"+ids.New().String()+"/ai/summary", e.agent(), nil).Want(t, 404)
+	// A summary is stored on the ticket: viewers read it, agents make it.
+	e.Do("POST", "/v1/tickets/"+tk.ID.String()+"/ai/summary", e.viewer(), nil).Want(t, 403)
 }
 
 func itoa(n int64) string { return strings.TrimSpace(strings.Replace(jsonNum(n), "\n", "", -1)) }
@@ -445,7 +447,7 @@ func TestOpenAIProvider(t *testing.T) {
 	tk := e.ticket("Charged twice", "I was charged twice")
 	// json_schema refused: falls back to json_object, then succeeds.
 	var out SummaryOutput
-	e.Do("POST", "/v1/tickets/"+tk.ID.String()+"/ai/summary", e.viewer(), nil).Want(t, 200).JSON(t, &out)
+	e.Do("POST", "/v1/tickets/"+tk.ID.String()+"/ai/summary", e.agent(), nil).Want(t, 200).JSON(t, &out)
 	if out.Sentiment != "negative" {
 		t.Fatalf("%+v", out)
 	}

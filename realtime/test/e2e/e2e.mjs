@@ -47,7 +47,8 @@ const until = async (fn, ms = 3000) => {
 
 function connect(token, url = GATEWAY_URL) {
   const socket = new Socket(url, {
-    params: { token },
+    // The token rides in Sec-WebSocket-Protocol, never the URL.
+    authToken: token,
     reconnectAfterMs: () => 60_000,
     // Silence the client's own logging.
     logger: () => {},

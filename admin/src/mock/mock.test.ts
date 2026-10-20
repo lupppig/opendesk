@@ -106,7 +106,7 @@ describe("admin mock", () => {
       code: CODE,
       name: "QA demo",
       owner: { email: "owner-abcd@qa-demo.invalid" },
-      password_days: 30,
+      password_days: 2,
       plan: "pro",
       sample: { size: "small", kinds: ["tickets"] },
       delete_after_days: 7,

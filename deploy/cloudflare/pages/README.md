@@ -13,8 +13,9 @@ runs with the same Node, pnpm and lockfile as CI.
 | `opendesk-app` | `web/` (Vite) | `pnpm install --frozen-lockfile && pnpm build` | `web/dist` | `app.opendesk.sh` |
 | `opendesk-admin` | `admin/` (Vite) | `pnpm install --frozen-lockfile && pnpm build:pages` | `admin/dist` | `admin.opendesk.sh` |
 
-The files in this directory are copied into the app and docs build outputs before
-upload, unless that build already ships its own.
+The files in this directory are copied into the app build output before upload,
+unless that build already ships its own. Every project also gets the site's
+`security.txt` (`site/public/.well-known/security.txt`) at `/.well-known/security.txt`.
 
 ## opendesk-site
 
@@ -34,9 +35,11 @@ wrangler pages deploy site/dist --project-name opendesk-site --branch main
 
 ## opendesk-docs
 
+The docs own their headers (`docs/public/_headers`): a CSP with the hashes of the
+build's inline scripts, filled in by `docs/scripts/postbuild.mjs` like the site's.
+
 ```sh
 (cd docs && pnpm install --frozen-lockfile && pnpm build)
-[ -f docs/dist/_headers ] || cp deploy/cloudflare/pages/docs/_headers docs/dist/
 wrangler pages deploy docs/dist --project-name opendesk-docs --branch main
 ```
 

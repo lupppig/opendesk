@@ -57,12 +57,13 @@ authentication turns it on in the app first. Passkeys and federated sign-in do n
 ```
 POST /v1/admin/auth/login   {email, password, turnstile_token?}
   → 200 {mfa_token}                          purpose admin_mfa, 5 min
-  → 401 invalid_credentials                  unknown email or wrong password, same answer and time
-  → 403 not_admin                            the password was right, the account is not an admin
+  → 401 invalid_credentials                  unknown email, wrong password, or an account that is not an
+                                             admin: one answer, in the same time. The per-account limit is
+                                             the app login's (login:email:), shared across processes
   → 403 admin_mfa_setup_required             an admin without two-factor authentication
   → 403 account_suspended
 POST /v1/admin/auth/mfa     {mfa_token, code}         code: 6 digits or a recovery code
-  → 200 AdminAuthResult, Set-Cookie od_admin=<refresh>
+  → 200 AdminAuthResult, Set-Cookie __Host-od_admin=<refresh>
 POST /v1/admin/auth/refresh                            the cookie
   → 200 AdminAuthResult, the cookie rotated; 401 unauthenticated clears it;
     409 refresh_in_progress when another tab rotated it in the last 30 s (try again)
@@ -81,8 +82,8 @@ GET  /v1/admin/me           → AdminMe
   rotated on every refresh (a rotated token presented again outside a 30 s grace window revokes
   the session). A session ends **1 hour after its last refresh and 12 hours after sign-in**, whichever
   is first.
-- Refresh cookie `od_admin`: HttpOnly, Secure (https), **SameSite=Strict**, `Path=/v1/admin/auth`,
-  host-only (no `Domain`). A response body never carries the refresh token.
+- Refresh cookie `__Host-od_admin` on https (`Path=/`, as the prefix requires; plain http:
+  `od_admin`, `Path=/v1/admin/auth`): HttpOnly, Secure (https), **SameSite=Strict**, host-only (no `Domain`). A response body never carries the refresh token.
 - Access token: purpose `admin` (contracts/tokens.md), `sub` the user, `sid` the admin session,
   10 minutes, kept in memory by the panel. Every admin route checks that the session is live, the
   user is not suspended and is still an admin, then the route's permission.
@@ -235,7 +236,7 @@ are left out of the public OpenAPI spec. Lists take `?limit=&cursor=` and answer
 | POST | `/v1/admin/updates/check` | read | looks for a new release now (6 / min per admin) → `AdminUpdates`; `409 update_check_off` when the instance does not look |
 | GET | `/v1/admin/users` | read | `?q=` email, name or id; `?filter=suspended\|admins\|unverified`; newest first → `Page<AdminUserRow>` |
 | GET | `/v1/admin/users/{id}` | read | `AdminUser` |
-| POST | `/v1/admin/users/{id}/sessions/revoke` | users.sessions | `{session_id?}`: one session, or every session → 204 |
+| POST | `/v1/admin/users/{id}/sessions/revoke` | users.sessions | `{session_id?}`: one session, or every session → 204. Another instance admin's sessions need `admins.manage` too (`403`) |
 | POST | `/v1/admin/users/{id}/verification-email` | users.sessions | resends the verification email; `409 already_verified` → 204 |
 | POST | `/v1/admin/users/{id}/suspend` | users.suspend | `{reason: 1..500}` → `AdminUser`; `409` for yourself or an admin |
 | POST | `/v1/admin/users/{id}/unsuspend` | users.suspend | → `AdminUser` |
@@ -251,8 +252,8 @@ are left out of the public OpenAPI spec. Lists take `?limit=&cursor=` and answer
 | DELETE | `/v1/admin/workspaces/{id}` | workspaces.delete (any), workspaces.test (a test workspace) | `{code, confirm_name}` → 204; `422 confirm_name_mismatch`. A test workspace's test accounts go with it (see "Test workspaces") |
 | POST | `/v1/admin/workspaces/{id}/sample-data` | workspaces.test | `{size, kinds}` (kinds: 1..6 of the six) → 202 `AdminTestWorkspace`; another batch on top of the last. `409 not_test` for any other workspace, `409 seeding` while a batch runs |
 | GET | `/v1/admin/test-workspaces` | read | oldest first → `Page<AdminTestWorkspace>` |
-| POST | `/v1/admin/test-workspaces` | workspaces.test | `{code, name, owner: {email, name?} \| {user_id}, password_days?: 1..90 (default 30), plan: "free"\|"pro"\|"collab", sample?: {size, kinds}, delete_after_days?: 1..365 \| null (default 30; null keeps it), reason: 1..500}` → 201 `TestWorkspaceResult`. `422 test_email_required` (a new account's address must end in `.invalid`), `404 user_not_found`, `409 account_suspended`; 30 per admin per hour |
-| PATCH | `/v1/admin/test-workspaces/{id}` | workspaces.test | `{code, delete_after_days?: 1..365 \| null, password_days?: 1..90}` (at least one) → `TestWorkspaceResult`, with a new password when `password_days` was given; `409 not_test_account` to renew an owner's own account; `404` for any other workspace |
+| POST | `/v1/admin/test-workspaces` | workspaces.test | `{code, name, owner: {email, name?} \| {user_id}, password_days?: 1..2 (default 1; signing in with it answers change_password), plan: "free"\|"pro"\|"collab", sample?: {size, kinds}, delete_after_days?: 1..365 \| null (default 30; null keeps it), reason: 1..500}` → 201 `TestWorkspaceResult`. `422 test_email_required` (a new account's address must end in `.invalid`), `404 user_not_found`, `409 account_suspended`; 30 per admin per hour |
+| PATCH | `/v1/admin/test-workspaces/{id}` | workspaces.test | `{code, delete_after_days?: 1..365 \| null, password_days?: 1..2}` (at least one) → `TestWorkspaceResult`, with a new password when `password_days` was given; `409 not_test_account` to renew an owner's own account; `404` for any other workspace |
 | GET | `/v1/admin/jobs` | read | `?state=` (default `retryable`), `?kind=`, `?queue=`; newest first → `Page<AdminJob>` |
 | GET | `/v1/admin/jobs/stats` | read | `AdminJobStats` |
 | POST | `/v1/admin/jobs/{id}/retry` | jobs.manage | runs a retryable, discarded or cancelled job now → `AdminJob` |

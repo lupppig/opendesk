@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
+import { PasswordInput } from "@/components/auth/parts";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, TextInput } from "@/components/ui/input";
@@ -60,7 +61,7 @@ export function DeleteAccountDialog({ onClose }: { onClose: () => void }) {
       <div className="flex flex-col gap-3 pb-1">
         <Field label="Password" hint="Leave empty if you only sign in with Google, Microsoft, GitHub or SSO.">
           {({ id, ...a }) => (
-            <TextInput id={id} {...a} type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            <PasswordInput id={id} {...a} inputSize="md" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
           )}
         </Field>
         {totp && (

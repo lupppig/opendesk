@@ -127,7 +127,12 @@ func (e *env) user(ws uuid.UUID) caller {
 			e.t.Fatal(err)
 		}
 	}
-	tok, _, err := e.tokens.Sign(auth.Claims{Purpose: auth.PurposeAccess, SessionID: uuid.NewString()}, uid.String(), time.Minute)
+	sid := uuid.New()
+	if _, err := e.db.Pool.Exec(ctx, `INSERT INTO sessions (id, user_id, refresh_hash, expires_at) VALUES ($1, $2, $3, now() + interval '1 day')`,
+		sid, uid, []byte(sid.String())); err != nil {
+		e.t.Fatal(err)
+	}
+	tok, _, err := e.tokens.Sign(auth.Claims{Purpose: auth.PurposeAccess, SessionID: sid.String()}, uid.String(), time.Minute)
 	if err != nil {
 		e.t.Fatal(err)
 	}

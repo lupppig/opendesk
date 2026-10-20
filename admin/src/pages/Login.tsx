@@ -10,7 +10,7 @@ import { CodeField, codeReady, type CodeMode } from "@/components/CodeField";
 import { Notice } from "@/components/layout";
 import { Turnstile, turnstileEnabled, type TurnstileHandle } from "@/components/Turnstile";
 import { Button } from "@/components/ui/button";
-import { Field, TextInput } from "@/components/ui/input";
+import { Field, PasswordInput, TextInput } from "@/components/ui/input";
 import { errorMessage, isApiError } from "@/lib/api/client";
 import { api } from "@/lib/api/endpoints";
 import { config } from "@/lib/config";
@@ -31,7 +31,7 @@ export function loginError(e: unknown): ReactNode {
   if (!isApiError(e)) return errorMessage(e);
   switch (e.code) {
     case "invalid_credentials":
-      return "That email and password don't match.";
+      return "That email and password don't match an instance admin.";
     case "not_admin":
       return "This account isn't an instance admin. A super admin grants access from the panel, or the operator with opendesk admin grant.";
     case "admin_mfa_setup_required":
@@ -167,9 +167,8 @@ export default function Login() {
                   </Field>
                   <Field label="Password">
                     {(p) => (
-                      <TextInput
+                      <PasswordInput
                         {...p}
-                        type="password"
                         inputSize="lg"
                         autoComplete="current-password"
                         required

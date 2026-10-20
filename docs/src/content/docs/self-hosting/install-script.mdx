@@ -19,7 +19,7 @@ The installer sets up opendesk with Docker, behind automatic HTTPS. Nothing is c
 2. Creates one directory (default `/opt/opendesk`) and writes only inside it.
 3. Generates every secret with `openssl` (or `/dev/urandom`) and writes `.env` with mode `0600`.
 4. Resolves the release once and **pins** it in `.env` as `OPENDESK_VERSION`. It never installs "latest" floating.
-5. Downloads `docker-compose.yml`, `compose.external-proxy.yml`, `Caddyfile`, `env.template` and `opendesk-ctl` from that release, and refuses any file whose entry in the release's `SHA256SUMS` differs.
+5. Downloads `docker-compose.yml`, `compose.external-proxy.yml`, `Caddyfile`, `env.template` and `opendesk-ctl` from that release, and refuses any file whose entry in the release's `SHA256SUMS` differs. It also reads the release's `images.json` (checked the same way) and pins both images to their published digests in `.env` (`OPENDESK_IMAGE_PIN`, `REALTIME_IMAGE_PIN`), so what runs is exactly what the release built, even if a tag moved on the registry. Every release after v0.2.0 also signs its `SHA256SUMS` with the opendesk release key (ECDSA P-256; the public key is in the installer and in `deploy/install/release-signing.pub`): the installer and `opendesk-ctl` check that signature with `openssl` before they trust any checksum, and stop when it does not hold.
 6. Runs `docker compose pull` and `docker compose up -d`, then waits for opendesk to answer.
 
 <Callout type="warning" title="Run it as yourself">

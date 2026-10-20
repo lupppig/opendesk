@@ -74,14 +74,16 @@ export function OrDivider({ label = "or" }: { label?: string }) {
   );
 }
 
-export const PasswordInput = forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement> & { invalid?: boolean }>(
-  function PasswordInput({ className, ...rest }, ref) {
+type PasswordInputProps = React.InputHTMLAttributes<HTMLInputElement> & { invalid?: boolean; inputSize?: "sm" | "md" | "lg" };
+
+export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
+  function PasswordInput({ className, inputSize = "lg", ...rest }, ref) {
     const [show, setShow] = useState(false);
     return (
       <TextInput
         ref={ref}
         type={show ? "text" : "password"}
-        inputSize="lg"
+        inputSize={inputSize}
         className={className}
         trailing={
           <button
@@ -105,8 +107,9 @@ const strengthBar = [tone.red.solid, tone.red.solid, tone.amber.solid, tone.gree
 /** Four segments that warm up as the password gets harder to guess (zxcvbn), plus its one warning. */
 export function StrengthMeter({ password, userInputs }: { password: string; userInputs?: string[] }) {
   const { score, warning } = usePasswordStrength(password, userInputs);
-  const short = password.length > 0 && password.length < 12;
-  const label = !password ? "12 characters minimum" : short ? `${12 - password.length} more characters` : strengthWords[score];
+  const length = [...password].length;
+  const short = length > 0 && length < 12;
+  const label = !password ? "12 characters minimum" : short ? `${12 - length} more characters` : strengthWords[score];
   const filled = !password ? 0 : Math.max(1, score);
   return (
     <div className="flex flex-col gap-1.5" aria-live="polite">

@@ -12,8 +12,9 @@ name: Desktop
 #                             apps and the download links stay where they are
 #   workflow_dispatch: package all three as workflow artifacts, publishing nothing
 #
-# Signing and notarization use these secrets when they exist; without them the
-# builds are unsigned:
+# Signing and notarization use these secrets. A desktop-v* tag refuses to package
+# macOS or Windows without them, and checks the signatures before publishing; pull
+# requests and manual runs build unsigned when they are missing:
 #   macOS signing:        CSC_LINK, CSC_KEY_PASSWORD
 #   macOS notarization:   APPLE_API_KEY (base64 .p8), APPLE_API_KEY_ID, APPLE_API_ISSUER
 #                         or APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID
@@ -74,8 +75,9 @@ jobs:
       - run: pnpm build
       - name: Bundles are in dist/
         run: test -s dist/main.cjs && test -s dist/preload.cjs && test -s dist/picker-preload.cjs && test -s dist/picker/index.html
+      # Electron is a devDependency but ships inside the app: audit everything.
       - name: pnpm audit
-        run: pnpm audit --prod --audit-level high
+        run: pnpm audit --audit-level high
 
   validate:
     name: Validate tag
@@ -143,6 +145,7 @@ jobs:
       - name: Package
         env:
           FLAG: ${{ matrix.flag }}
+          TAGGED: ${{ needs.validate.outputs.version != '' }}
           # macOS
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
@@ -163,6 +166,21 @@ jobs:
           AZURE_TRUSTED_SIGNING_PROFILE: ${{ secrets.AZURE_TRUSTED_SIGNING_PROFILE }}
           AZURE_TRUSTED_SIGNING_PUBLISHER: ${{ secrets.AZURE_TRUSTED_SIGNING_PUBLISHER }}
         run: |
+          # A release is always signed (and notarized on macOS): no secrets, no release.
+          if [ "$TAGGED" = true ]; then
+            case "$RUNNER_OS" in
+              macOS)
+                if [ -z "$CSC_LINK" ] || { { [ -z "$APPLE_API_KEY_BASE64" ] || [ -z "$APPLE_API_KEY_ID" ] || [ -z "$APPLE_API_ISSUER" ]; } &&
+                  { [ -z "$APPLE_ID" ] || [ -z "$APPLE_APP_SPECIFIC_PASSWORD" ] || [ -z "$APPLE_TEAM_ID" ]; }; }; then
+                  echo "::error::A desktop release needs the macOS signing (CSC_LINK) and notarization secrets"; exit 1
+                fi ;;
+              Windows)
+                if [ -z "$WIN_CSC_LINK" ] && { [ -z "$AZURE_TENANT_ID" ] || [ -z "$AZURE_CLIENT_ID" ] || [ -z "$AZURE_CLIENT_SECRET" ] ||
+                  [ -z "$AZURE_TRUSTED_SIGNING_ENDPOINT" ] || [ -z "$AZURE_TRUSTED_SIGNING_ACCOUNT" ] || [ -z "$AZURE_TRUSTED_SIGNING_PROFILE" ] || [ -z "$AZURE_TRUSTED_SIGNING_PUBLISHER" ]; }; then
+                  echo "::error::A desktop release needs the Windows signing secrets (Azure Trusted Signing or WIN_CSC_LINK)"; exit 1
+                fi ;;
+            esac
+          fi
           # No certificate: an unsigned build rather than a search of the keychain.
           if [ -z "$CSC_LINK" ] && [ -z "$WIN_CSC_LINK" ]; then export CSC_IDENTITY_AUTO_DISCOVERY=false; fi
           [ -z "$CSC_LINK" ] && unset CSC_LINK CSC_KEY_PASSWORD
@@ -180,6 +198,26 @@ jobs:
           fi
           unset APPLE_API_KEY_BASE64
           pnpm exec electron-builder --config electron-builder.config.cjs "$FLAG" --publish never
+      - name: Check the macOS signature and notarization
+        if: needs.validate.outputs.version != '' && runner.os == 'macOS'
+        run: |
+          found=0
+          while IFS= read -r app; do
+            found=1
+            codesign --verify --deep --strict --verbose=2 "$app"
+            spctl --assess --type execute --verbose=2 "$app"
+          done < <(find release -maxdepth 2 -name '*.app' -type d)
+          [ "$found" = 1 ] || { echo "::error::no .app in release/"; exit 1; }
+      - name: Check the Windows signature
+        if: needs.validate.outputs.version != '' && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $exes = Get-ChildItem release -Filter *.exe
+          if ($exes.Count -eq 0) { Write-Error "no .exe in release/"; exit 1 }
+          foreach ($exe in $exes) {
+            $sig = Get-AuthenticodeSignature $exe.FullName
+            if ($sig.Status -ne 'Valid') { Write-Error "$($exe.Name): signature $($sig.Status)"; exit 1 }
+          }
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: desktop-${{ matrix.name }}

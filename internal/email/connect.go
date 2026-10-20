@@ -100,8 +100,11 @@ type connectOptions struct {
 	SystemSender string `json:"system_sender" doc:"The address replies come from when a mailbox sends through opendesk"`
 }
 
+// detectInput takes the address in the body: an address is personal data, kept out of URLs.
 type detectInput struct {
-	Email string `query:"email" required:"true" maxLength:"254" doc:"The mailbox address"`
+	Body struct {
+		Email string `json:"email" maxLength:"254" doc:"The mailbox address"`
+	}
 }
 
 type detection struct {
@@ -142,7 +145,7 @@ func (s *service) registerConnectRoutes(api huma.API) {
 			return &struct{ Body connectOptions }{out}, nil
 		})
 
-	huma.Register(api, huma.Operation{OperationID: "detect-mailbox-host", Method: http.MethodGet, Path: "/v1/mailboxes/detect",
+	huma.Register(api, huma.Operation{OperationID: "detect-mailbox-host", Method: http.MethodPost, Path: "/v1/mailboxes/detect",
 		Summary:     "Detect a mailbox's provider and servers",
 		Description: "Reads the domain's MX records and autoconfig files to name its mail host, its IMAP and SMTP servers and how a password signs in there.",
 		Tags:        tags},
@@ -157,7 +160,7 @@ func (s *service) registerConnectRoutes(api huma.API) {
 			if !s.d.Limiter.Allow("mailbox-detect:"+p.UserID.String(), detectPerMinute, time.Minute) {
 				return nil, httpx.RateLimited()
 			}
-			addr := strings.ToLower(strings.TrimSpace(in.Email))
+			addr := strings.ToLower(strings.TrimSpace(in.Body.Email))
 			if !validAddress(addr) {
 				return nil, httpx.Validation("Enter a valid email address.")
 			}

@@ -33,6 +33,7 @@ import { q, qk, upsertInList } from "@/lib/queries";
 import { atLeast, useRole } from "@/lib/session";
 import { AI_TONE, tone } from "@/lib/tones";
 import { cn } from "@/lib/cn";
+import { sanitizeHtml } from "@/lib/sanitize";
 
 type Filter = "all" | "failing" | "passing" | "never";
 type Editing = { test: AgentTest | null } | null;
@@ -444,7 +445,7 @@ function TestDetail({ test, toolName }: { test: AgentTest; toolName: (k: string)
               </p>
             )}
             {r.answer_html ? (
-              <div className="prose-od rounded-lg border border-line bg-surface px-3 py-2 text-[12.5px] leading-[18px] [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_p]:my-1.5" data-ph-mask dangerouslySetInnerHTML={{ __html: r.answer_html }} />
+              <div className="prose-od rounded-lg border border-line bg-surface px-3 py-2 text-[12.5px] leading-[18px] [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_p]:my-1.5" data-ph-mask dangerouslySetInnerHTML={{ __html: sanitizeHtml(r.answer_html) }} />
             ) : (
               !r.error && <p className="text-[12.5px] text-fg-3">{t("detail.noAnswer")}</p>
             )}

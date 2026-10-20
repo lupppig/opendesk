@@ -259,7 +259,7 @@ export const api = {
     resend: (id: string) => http.post<T.Invitation>(`/v1/invitations/${id}/resend`),
     accept: (token: string) => http.post<T.Membership>("/v1/invitations/accept", { token }, { workspace: false }),
     lookup: (token: string) =>
-      http.get<{ workspace_name: string; email: string; role: T.Role }>("/v1/invitations/lookup", { ...pub, query: { token } }),
+      http.post<{ workspace_name: string; email: string; role: T.Role }>("/v1/invitations/lookup", { token }, pub),
   },
   teams: {
     ...crud<T.Team, TeamBody>("/v1/teams"),
@@ -335,6 +335,8 @@ export const api = {
     deliveries: (id: string, q?: ListQuery) =>
       http.get<T.Page<T.WebhookDelivery>>(`/v1/webhooks/${id}/deliveries`, { query: q }),
     test: (id: string) => http.post<T.WebhookDelivery>(`/v1/webhooks/${id}/test`),
+    /** With a code: verifies the address with the code it received. Without: sends a new challenge. */
+    verify: (id: string, code?: string) => http.post<T.Webhook>(`/v1/webhooks/${id}/verify`, code ? { code } : {}),
   },
   integrations: {
     catalog: () => http.get<{ data: T.IntegrationProvider[] }>("/v1/integrations/catalog"),
@@ -415,6 +417,8 @@ export const api = {
     merge: (id: string, into_id: string) => http.post<T.Ticket>(`/v1/tickets/${id}/merge`, { into_id }),
     messages: (id: string) => http.get<T.Page<T.Message>>(`/v1/tickets/${id}/messages`),
     send: (id: string, b: SendMessageBody) => http.create<T.Message>(`/v1/tickets/${id}/messages`, b),
+    editMessage: (id: string, messageId: string, b: { body_html: string }) => http.patch<T.Message>(`/v1/tickets/${id}/messages/${messageId}`, b),
+    deleteMessage: (id: string, messageId: string) => http.del(`/v1/tickets/${id}/messages/${messageId}`),
     activities: (id: string) => http.get<T.Page<T.Activity>>(`/v1/tickets/${id}/activities`),
     threads: (id: string) => http.get<{ data: T.Thread[] }>(`/v1/tickets/${id}/threads`),
     startThread: (id: string, b: StartThreadBody) => http.create<{ thread: T.Thread; message: T.Message }>(`/v1/tickets/${id}/threads`, b),
@@ -505,7 +509,7 @@ export const api = {
     oauthStart: (provider: "google" | "microsoft", b: { mailbox_id?: string; name: string; email?: string; receive?: MailboxReceive; sync_start?: T.SyncStart }) =>
       http.post<{ url: string }>(`/v1/mailboxes/oauth/${provider}/start`, b),
     connectOptions: () => http.get<T.MailboxConnectOptions>("/v1/mailboxes/connect-options"),
-    detect: (email: string) => http.get<T.MailDetection>("/v1/mailboxes/detect", { query: { email } }),
+    detect: (email: string) => http.post<T.MailDetection>("/v1/mailboxes/detect", { email }),
   },
   billing: {
     get: () => http.get<T.Billing>("/v1/billing"),
@@ -667,8 +671,8 @@ export const api = {
   },
   public: {
     csat: (token: string) =>
-      http.get<T.CsatSurvey>(`/v1/public/csat/${token}`, pub),
-    submitCsat: (token: string, b: { score: number; comment?: string }) => http.post<void>(`/v1/public/csat/${token}`, b, pub),
+      http.post<T.CsatSurvey>("/v1/public/csat/survey", { token }, pub),
+    submitCsat: (token: string, b: { score: number; comment?: string }) => http.post<void>("/v1/public/csat/rating", { token, ...b }, pub),
   },
 };
 

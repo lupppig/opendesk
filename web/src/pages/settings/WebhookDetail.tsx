@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { BackLink, NoAccess, Section, SettingsPage } from "@/components/layout";
 import { Button } from "@/components/ui/button";
+import { TextInput } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { EmptyState } from "@/components/ui/empty";
 import { SettingsEmpty } from "@/components/settings2/SettingsEmpty";
@@ -102,7 +103,7 @@ export default function WebhookDetail() {
   const timed = all.filter((d) => d.duration_ms != null);
   const avg = timed.length ? Math.round(timed.reduce((n, d) => n + (d.duration_ms ?? 0), 0) / timed.length) : null;
   const retrying = all[0]?.status === "pending" && (all[0].response_code ?? 0) >= 400;
-  const state = !hook.enabled ? "paused" : retrying || done[0]?.status === "failed" ? "failing" : "active";
+  const state = !hook.verified ? "unverified" : !hook.enabled ? "paused" : retrying || done[0]?.status === "failed" ? "failing" : "active";
   const everything = isAllEvents(hook.events);
 
   return (
@@ -114,10 +115,10 @@ export default function WebhookDetail() {
       actions={
         <>
           <label className="mr-1 flex items-center gap-2 text-[12.5px] text-fg-2">
-            <StatePill state={state}>{t(`webhooks.state.${state}`)}</StatePill>
+            <StatePill state={state === "unverified" ? "pending" : state}>{t(`webhooks.state.${state}`)}</StatePill>
             <Switch checked={hook.enabled} onCheckedChange={(v) => toggle.mutate(v)} aria-label="Webhook active" />
           </label>
-          <Button icon={<Send className="size-3.5" />} loading={test.isPending} onClick={() => test.mutate()} disabled={!hook.enabled}>
+          <Button icon={<Send className="size-3.5" />} loading={test.isPending} onClick={() => test.mutate()} disabled={!hook.enabled || !hook.verified}>
             {t("webhook.sendTest")}
           </Button>
           <Button square aria-label="Edit webhook" icon={<Pencil className="size-3.5" />} onClick={() => setEditing(true)} />
@@ -144,6 +145,8 @@ export default function WebhookDetail() {
         </>
       }
     >
+      {!hook.verified && <VerifyWebhook hook={hook} />}
+
       <SummaryStrip
         items={[
           { label: t("webhook.summary.delivered"), value: rate === null ? "–" : `${rate}%`, tone: rate === null ? undefined : rate >= 95 ? "green" : rate >= 80 ? "amber" : "red" },
@@ -249,5 +252,55 @@ export default function WebhookDetail() {
       </Section>
       {editing && <WebhookDialog hook={hook} onClose={() => setEditing(false)} />}
     </SettingsPage>
+  );
+}
+
+/** An address that has not answered its verification challenge: enter the challenge it got, or send a new one. */
+function VerifyWebhook({ hook }: { hook: Webhook }) {
+  const { t } = useTranslation("settingsDev");
+  const qc = useQueryClient();
+  const [code, setCode] = useState("");
+  const done = (w: Webhook) => {
+    qc.setQueryData<Webhook[]>(qk.webhooks, (rows) => rows?.map((r) => (r.id === w.id ? w : r)));
+    return w.verified;
+  };
+  const verify = useMutation({
+    mutationFn: () => api.webhooks.verify(hook.id, code.trim()),
+    onSuccess: (w) => {
+      if (done(w)) toast.success(t("webhook.verify.verified"));
+    },
+    onError: (e) => toast.error(e, t("webhook.verify.error")),
+  });
+  const resend = useMutation({
+    mutationFn: () => api.webhooks.verify(hook.id),
+    onSuccess: (w) => (done(w) ? toast.success(t("webhook.verify.verified")) : toast.info(t("webhook.verify.resent"), { description: t("webhook.verify.stillWaiting") })),
+    onError: (e) => toast.error(e, t("webhook.verify.error")),
+  });
+  return (
+    <Section title={t("webhook.verify.title")} description={t("webhook.verify.description")}>
+      <form
+        className="flex flex-wrap items-center gap-2 py-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (code.trim()) verify.mutate();
+        }}
+      >
+        <TextInput
+          aria-label={t("webhook.verify.codeLabel")}
+          placeholder={t("webhook.verify.codePlaceholder")}
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+          className="mono w-72"
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <Button type="submit" variant="primary" loading={verify.isPending} disabled={!code.trim()}>
+          {t("webhook.verify.submit")}
+        </Button>
+        <Button type="button" loading={resend.isPending} onClick={() => resend.mutate()}>
+          {t("webhook.verify.resend")}
+        </Button>
+      </form>
+    </Section>
   );
 }

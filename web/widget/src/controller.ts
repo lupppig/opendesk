@@ -513,6 +513,9 @@ export class Controller {
 
   shutdown() {
     this.stop();
+    // The host page signed its user out: end the session on the server too, so the
+    // token stops working even where a copy of it survives.
+    void this.api.endSession().catch(() => {});
     this.remember(null);
     this.api.visitorToken = null;
   }

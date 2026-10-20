@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/crypto"
 	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/displayname"
+	"github.com/useopendesk/opendesk/internal/emails"
 	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/ids"
 	"github.com/useopendesk/opendesk/internal/jobs"
@@ -27,15 +29,20 @@ const (
 	loginPerAccount = 10
 	loginWindow     = 15 * time.Minute
 	mfaPerUser      = 10
-	registerPerIP   = 10
-	forgotPerIP     = 10
-	forgotPerEmail  = 3
-	resetPerIP      = 20
+	// mfaPerUserDay caps second-factor attempts on one account per day.
+	mfaPerUserDay  = 30
+	registerPerIP  = 10
+	forgotPerIP    = 10
+	forgotPerEmail = 3
+	resetPerIP     = 20
 )
 
 func errInvalidCredentials() *httpx.Error {
 	return httpx.E(401, "invalid_credentials", "The email or password is incorrect.")
 }
+
+// errEmailTaken answers a sign-up with an address that has an account.
+var errEmailTaken = httpx.E(409, "email_taken", "An account with this email already exists. Sign in instead.")
 
 func errInvalidToken() *httpx.Error {
 	return httpx.E(400, "invalid_token", "This link is invalid or has expired.")
@@ -206,14 +213,14 @@ func (s *svc) registerAuth(api huma.API) {
 			}
 		}) (*struct{}, error) {
 			ri := requestInfo(ctx)
-			if err := s.limit("forgot:ip:"+ri.IP, forgotPerIP, time.Hour); err != nil {
+			if err := s.limitShared(ctx, "forgot:ip:"+ri.IP, forgotPerIP, time.Hour); err != nil {
 				return nil, err
 			}
 			if err := s.humanCheck(ctx, ri, appattest.ActionPasswordForgot, in.Body.TurnstileToken, in.Body.AppAttest); err != nil {
 				return nil, httpx.Wrap(err)
 			}
 			email := normEmail(in.Body.Email)
-			if email == "" || !s.d.Limiter.Allow("forgot:email:"+email, forgotPerEmail, time.Hour) {
+			if email == "" || !s.d.Limiter.Shared(ctx, "forgot:email:"+email, forgotPerEmail, time.Hour) {
 				return nil, nil
 			}
 			if _, err := s.d.Jobs.Insert(ctx, forgotArgs{Email: email}, &river.InsertOpts{Queue: jobs.QueueEmail, MaxAttempts: 5}); err != nil {
@@ -232,7 +239,7 @@ func (s *svc) registerAuth(api huma.API) {
 			}
 		}) (*struct{}, error) {
 			ri := requestInfo(ctx)
-			if err := s.limit("reset:ip:"+ri.IP, resetPerIP, time.Hour); err != nil {
+			if err := s.limitShared(ctx, "reset:ip:"+ri.IP, resetPerIP, time.Hour); err != nil {
 				return nil, err
 			}
 			// The emailed token is this route's gate; a native request's proof, when sent,
@@ -280,8 +287,10 @@ func (s *svc) registerAuth(api huma.API) {
 				if _, err := oauthgrant.Revoke(ctx, tx, userPrincipal(uid, ri), uid, uuid.Nil, uuid.Nil, oauthgrant.ReasonSignedOut); err != nil {
 					return err
 				}
-				_, err = auditUser(ctx, tx, userPrincipal(uid, ri), uid, "password.reset", nil)
-				return err
+				if _, err := auditUser(ctx, tx, userPrincipal(uid, ri), uid, "password.reset", nil); err != nil {
+					return err
+				}
+				return s.notifySecurity(ctx, tx, uid, emails.PasswordReset, "")
 			})
 			if err != nil {
 				return nil, httpx.Wrap(err)
@@ -351,7 +360,7 @@ func (s *svc) registerAuth(api huma.API) {
 
 func (s *svc) handleRegister(ctx context.Context, in *coreRegisterBody) (*authOut, error) {
 	ri := requestInfo(ctx)
-	if err := s.limit("register:ip:"+ri.IP, registerPerIP, time.Hour); err != nil {
+	if err := s.limitShared(ctx, "register:ip:"+ri.IP, registerPerIP, time.Hour); err != nil {
 		return nil, err
 	}
 	if err := s.humanCheck(ctx, ri, appattest.ActionRegister, in.TurnstileToken, in.AppAttest); err != nil {
@@ -401,7 +410,7 @@ func (s *svc) handleRegister(ctx context.Context, in *coreRegisterBody) (*authOu
 		_, err := tx.Exec(ctx, `INSERT INTO users (id, email, name, password_hash, email_verified_at) VALUES ($1, $2, $3, $4, $5)`,
 			uid, email, name, hash, verified)
 		if db.IsUniqueViolation(err, "") {
-			return httpx.E(409, "email_taken", "An account with this email already exists. Sign in instead.")
+			return errEmailTaken
 		}
 		if err != nil {
 			return err
@@ -414,6 +423,18 @@ func (s *svc) handleRegister(ctx context.Context, in *coreRegisterBody) (*authOu
 		out, err = s.issueSession(ctx, tx, uid, false, ri)
 		return err
 	})
+	if errors.Is(err, errEmailTaken) {
+		// The address's owner hears about the attempt (at most a few times a day), so a
+		// probe for who has an account here does not go unnoticed.
+		if s.d.Limiter.Shared(ctx, "register:taken:"+email, 3, 24*time.Hour) {
+			m := emails.SignupAttempt(s.site())
+			if _, err := s.d.Jobs.Insert(ctx, jobs.SystemEmailArgs{To: email, Subject: m.Subject, HTML: m.HTML, Text: m.Text, Headers: m.Headers},
+				&river.InsertOpts{Queue: jobs.QueueEmail, MaxAttempts: 8}); err != nil {
+				s.d.Log.Error("queue sign-up attempt email", "err", err)
+			}
+		}
+		return nil, errEmailTaken
+	}
 	if err != nil {
 		return nil, httpx.Wrap(err)
 	}
@@ -423,24 +444,27 @@ func (s *svc) handleRegister(ctx context.Context, in *coreRegisterBody) (*authOu
 
 func (s *svc) handleLogin(ctx context.Context, in *coreLoginBody) (*authOut, error) {
 	ri := requestInfo(ctx)
-	if err := s.limit("login:ip:"+ri.IP, loginPerIP, loginWindow); err != nil {
+	if err := s.limitShared(ctx, "login:ip:"+ri.IP, loginPerIP, loginWindow); err != nil {
 		return nil, err
 	}
-	email := normEmail(in.Email)
-	if email != "" {
-		if err := s.limit("login:email:"+email, loginPerAccount, loginWindow); err != nil {
-			return nil, err
-		}
-	}
+	// The per-account limit counts only requests that passed the human check, so
+	// nobody can lock an account out without solving one per attempt.
 	if err := s.humanCheck(ctx, ri, appattest.ActionLogin, in.TurnstileToken, in.AppAttest); err != nil {
 		return nil, httpx.Wrap(err)
 	}
+	email := normEmail(in.Email)
+	if email != "" {
+		if err := s.limitShared(ctx, "login:email:"+email, loginPerAccount, loginWindow); err != nil {
+			return nil, err
+		}
+	}
 	var uid uuid.UUID
 	var hash *string
-	var totp bool
+	var totp, generated bool
 	found := false
 	if email != "" {
-		err := s.d.DB.Pool.QueryRow(ctx, `SELECT id, `+auth.PasswordHashSQL+`, totp_enabled FROM users WHERE email = $1`, email).Scan(&uid, &hash, &totp)
+		err := s.d.DB.Pool.QueryRow(ctx, `SELECT id, `+auth.PasswordHashSQL+`, totp_enabled, password_expires_at IS NOT NULL FROM users WHERE email = $1`,
+			email).Scan(&uid, &hash, &totp, &generated)
 		if err != nil && !db.IsNotFound(err) {
 			return nil, httpx.Wrap(err)
 		}
@@ -455,14 +479,22 @@ func (s *svc) handleLogin(ctx context.Context, in *coreLoginBody) (*authOut, err
 		s.loginFailed(ctx, uid, ri, "password")
 		return nil, errInvalidCredentials()
 	}
-	return s.completeFirstFactor(ctx, uid, totp, "password", "", ri)
+	// A password that no longer meets the rules (breached, or shorter than they now ask)
+	// still signs in, and the answer asks for a new one (ASVS 2.1.7); so does a password
+	// an admin generated for a test account, which is never meant to last (2.3.1).
+	weak := auth.CheckPassword(in.Password) != nil || generated
+	return s.completeFirstFactor(ctx, uid, totp, "password", "", weak, ri)
 }
 
 // completeFirstFactor answers a verified first factor with tokens, or with an MFA
-// challenge when the user has TOTP on.
-func (s *svc) completeFirstFactor(ctx context.Context, uid uuid.UUID, totp bool, method, redirectTo string, ri reqInfo) (*authOut, error) {
+// challenge when the user has TOTP on. weakPassword asks for a new password once signed in.
+func (s *svc) completeFirstFactor(ctx context.Context, uid uuid.UUID, totp bool, method, redirectTo string, weakPassword bool, ri reqInfo) (*authOut, error) {
 	if totp {
-		tok, _, err := s.d.Tokens.Sign(auth.Claims{Purpose: auth.PurposeMFA, Data: map[string]string{"method": method, "rt": redirectTo}},
+		data := map[string]string{"method": method, "rt": redirectTo}
+		if weakPassword {
+			data["cp"] = "1"
+		}
+		tok, _, err := s.d.Tokens.Sign(auth.Claims{Purpose: auth.PurposeMFA, Data: data},
 			uid.String(), auth.MFATTL)
 		if err != nil {
 			return nil, httpx.Wrap(err)
@@ -481,9 +513,21 @@ func (s *svc) completeFirstFactor(ctx context.Context, uid uuid.UUID, totp bool,
 	if err != nil {
 		return nil, httpx.Wrap(err)
 	}
-	out.Body.RedirectTo = redirectTo
+	out.Body.RedirectTo, out.Body.ChangePassword = redirectTo, weakPassword
 	s.d.Analytics.Capture(uid.String(), "", "user_logged_in", map[string]any{"method": method, "mfa": false})
 	return out, nil
+}
+
+// credentialFailed records a wrong password or code given to confirm an action of a
+// signed-in person (check: current_password, totp_enable, totp_disable).
+func (s *svc) credentialFailed(ctx context.Context, p *auth.Principal, check string) {
+	err := s.tx(context.WithoutCancel(ctx), func(tx pgx.Tx) error {
+		_, err := auditUser(ctx, tx, p, p.UserID, "credential.failed", map[string]any{"check": check})
+		return err
+	})
+	if err != nil {
+		s.d.Log.Error("audit failed credential check", "err", err)
+	}
 }
 
 // loginFailed records a failed sign-in: an audit row in the user's workspaces when
@@ -511,7 +555,7 @@ func (s *svc) loginFailed(ctx context.Context, uid uuid.UUID, ri reqInfo, method
 
 func (s *svc) handleMFA(ctx context.Context, mfaToken, code string) (*authOut, error) {
 	ri := requestInfo(ctx)
-	if err := s.limit("mfa:ip:"+ri.IP, loginPerIP, loginWindow); err != nil {
+	if err := s.limitShared(ctx, "mfa:ip:"+ri.IP, loginPerIP, loginWindow); err != nil {
 		return nil, err
 	}
 	c, err := s.d.Tokens.Verify(mfaToken, auth.PurposeMFA)
@@ -522,7 +566,10 @@ func (s *svc) handleMFA(ctx context.Context, mfaToken, code string) (*authOut, e
 	if err != nil {
 		return nil, httpx.E(401, "invalid_mfa_token", "Your sign-in attempt expired. Start again.")
 	}
-	if err := s.limit("mfa:user:"+uid.String(), mfaPerUser, loginWindow); err != nil {
+	if err := s.limitShared(ctx, "mfa:user:"+uid.String(), mfaPerUser, loginWindow); err != nil {
+		return nil, err
+	}
+	if err := s.limitShared(ctx, "mfa:user:day:"+uid.String(), mfaPerUserDay, 24*time.Hour); err != nil {
 		return nil, err
 	}
 	method := c.Data["method"]
@@ -546,7 +593,7 @@ func (s *svc) handleMFA(ctx context.Context, mfaToken, code string) (*authOut, e
 		}
 		return nil, httpx.Wrap(err)
 	}
-	out.Body.RedirectTo = c.Data["rt"]
+	out.Body.RedirectTo, out.Body.ChangePassword = c.Data["rt"], c.Data["cp"] == "1"
 	s.d.Analytics.Capture(uid.String(), "", "user_logged_in", map[string]any{"method": method, "mfa": true})
 	return out, nil
 }
@@ -556,6 +603,9 @@ func (s *svc) handleMFA(ctx context.Context, mfaToken, code string) (*authOut, e
 // account it used most recently. Native requests send the token in the body.
 func (s *svc) handleRefresh(ctx context.Context, in *refreshBody) (*authOut, error) {
 	ri := requestInfo(ctx)
+	if err := s.limit("refresh:ip:"+ri.IP, 120, time.Minute); err != nil {
+		return nil, err
+	}
 	if in == nil {
 		in = &refreshBody{}
 	}

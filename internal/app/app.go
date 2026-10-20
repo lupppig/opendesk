@@ -3,6 +3,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -123,7 +124,7 @@ func Build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*deps.Dep
 		return nil, nil, err
 	}
 	m, err := mailer.New(ctx, mailer.Options{Driver: cfg.MailDriver, From: cfg.MailFrom, Host: cfg.SMTPHost, Port: cfg.SMTPPort,
-		Username: cfg.SMTPUsername, Password: cfg.SMTPPassword, TLS: cfg.SMTPTLS, Region: cfg.SESRegion}, log)
+		Username: cfg.SMTPUsername, Password: cfg.SMTPPassword, TLS: cfg.SMTPTLS, Region: cfg.SESRegion, LogBodies: cfg.MailLogBodies}, log)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -137,6 +138,7 @@ func Build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*deps.Dep
 		Analytics: analytics.New(cfg.PosthogKey, cfg.PosthogHost, log), Box: box, Tokens: auth.NewTokens(cfg.AuthSecret),
 		Captcha: turnstile, Limiter: httpx.NewLimiter(), Plan: plan.New(cfg.BillingEnabled(), cfg.AIUsageMarkup)}
 	d.Plan.CollabOff = !cfg.Collab
+	d.Limiter.UseDB(database.Pool, log)
 	domain.Configure(cfg.APIURL, cfg.AuthSecret)
 	domain.ConfigureSending(cfg.MailboxSystemSend)
 	if cfg.APNsKey != "" {
@@ -187,16 +189,19 @@ func Router(d *deps.Deps) http.Handler {
 	// sessions are read (contracts/teams.md "Help center addresses").
 	r.Use(helpsite.Middleware(d))
 	resolver := &auth.Resolver{Pool: d.DB.Pool, Tokens: d.Tokens, ClientIP: httpx.ClientIP(cfg.TrustProxy, cfg.ProxyHops)}
-	r.Use(resolver.Middleware, idempotency.New(d.DB.Pool, d.Box, cfg.AuthSecret, d.Log).Middleware)
+	r.Use(resolver.Middleware, httpx.CredentialLimit(d.Limiter, httpx.ClientIP(cfg.TrustProxy, cfg.ProxyHops)), idempotency.New(d.DB.Pool, d.Box, cfg.AuthSecret, d.Log).Middleware)
 
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(http.StatusNotFound)
-		_, _ = w.Write([]byte(`{"status":404,"title":"Not Found","code":"not_found","detail":"No route matches ` + r.Method + ` ` + strings.ReplaceAll(r.URL.Path, `"`, ``) + `"}`))
+		_ = json.NewEncoder(w).Encode(map[string]any{"status": 404, "title": "Not Found", "code": "not_found",
+			"detail": "No route matches " + r.Method + " " + r.URL.Path})
 	})
 	mountHealth(r, d)
+	mountSecurityTxt(r, cfg)
 
-	hc := huma.DefaultConfig("opendesk API", version.Version)
+	// The API version, not the build: a public spec never says which release runs here.
+	hc := huma.DefaultConfig("opendesk API", "1")
 	hc.Info.Description = "The opendesk public API. The opendesk web app uses exactly this API."
 	hc.OpenAPIPath = "/v1/openapi"
 	hc.DocsPath = "/docs"
@@ -250,7 +255,7 @@ func webCSP(cfg *config.Config) string {
 	connect = append(connect, "https://*.posthog.com", "https://challenges.cloudflare.com")
 	return strings.Join([]string{
 		"default-src 'self'",
-		"script-src 'self' https://challenges.cloudflare.com https://*.posthog.com",
+		"script-src 'self' https://challenges.cloudflare.com",
 		"style-src 'self' 'unsafe-inline'",
 		"img-src 'self' data: blob: https:",
 		"font-src 'self' data:",

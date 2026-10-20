@@ -204,7 +204,7 @@ func (s *service) registerDraftRoutes(api huma.API) {
 				ThreadRemoteID: t.RemoteID})
 			if err != nil {
 				s.log.Warn("collab draft send refused", "account_id", a.ID, "err", err)
-				return nil, errSend(err.Error())
+				return nil, errSend(safeError(err))
 			}
 			id, err := s.storeSentDraft(ctx, a, raw, ref, p.UserID, m)
 			if err != nil {

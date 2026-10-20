@@ -17,6 +17,24 @@ In **Settings → Webhooks** (admin), or with the [API](/api/resources/api-keys-
 
 The signing **secret** is shown once, when the endpoint is created. It is encrypted at rest.
 
+## Verify the endpoint
+
+Before it sends any event, opendesk checks that the endpoint wants this workspace's webhooks. Right after you create it, or change its URL, the endpoint gets a signed `webhook.verification` event:
+
+```json
+{
+  "type": "webhook.verification",
+  "data": { "webhook_id": "...", "challenge": "whv_..." }
+}
+```
+
+Answer it in one of two ways:
+
+- **Echo the challenge.** Respond `2xx` with the challenge as the whole body, or as JSON `{"challenge": "whv_..."}`. The webhook is verified at once.
+- **Enter it in opendesk.** Tools that can't choose their response, like Zapier or Make, show the request they received. Copy its `challenge` into **Settings → Webhooks → (the webhook) → Verify this address**, or send it to `POST /v1/webhooks/{id}/verify` as `{"code": "whv_..."}`, within 24 hours.
+
+**Send a new challenge** (or `POST /v1/webhooks/{id}/verify` with no body) sends another one. A webhook answers `verified: true` once it is verified; until then it receives no events, and test events are refused.
+
 Send a test event with **Send test** or `POST /v1/webhooks/{id}/test`. It delivers a `webhook.test` event.
 
 ## Payload

@@ -3,6 +3,7 @@
 // and #123 ticket references, which open the ticket.
 
 import { Fragment, type ReactNode } from "react";
+import { safeNext } from "@/components/auth/parts";
 import { cn } from "@/lib/cn";
 import type { AssistantRef } from "./api";
 import { openTicket } from "./refs";
@@ -11,10 +12,10 @@ type Ctx = { tickets: Map<number, AssistantRef> };
 
 const INLINE = /(\*\*[^*\n]+\*\*|`[^`\n]+`|\[[^\]\n]+\]\([^)\s]+\)|(?<![\w&])#\d{1,9}\b|(?<![\w*])\*[^*\n]+\*(?!\w)|(?<![\w_])_[^_\n]+_(?!\w))/g;
 
+/** An absolute https/http link, or a same-origin app path (safeNext refuses "//" and "/\\" tricks). */
 function safeHref(href: string): string | null {
   if (/^https?:\/\//i.test(href)) return href;
-  if (href.startsWith("/") && !href.startsWith("//")) return href;
-  return null;
+  return safeNext(href);
 }
 
 export function TicketChip({ number, ticket }: { number: number; ticket?: AssistantRef }) {

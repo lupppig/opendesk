@@ -448,7 +448,7 @@ func (s *service) preview(ctx context.Context, p *auth.Principal, b previewBody)
 		if accent == "" {
 			accent = tc.BrandColor
 		}
-		buttons, _ := templates.SurveyButtons(s.d.Cfg.AppURL+"/csat/preview?score=", accent)
+		buttons, _ := templates.SurveyButtons(s.d.Cfg.AppURL+"/csat#t=preview&score=", accent)
 		tc.Values.HTML["survey"] = buttons
 		content = tc.Fill(body)
 		subject = autoSubject(tc.FillText(subj), "", number)

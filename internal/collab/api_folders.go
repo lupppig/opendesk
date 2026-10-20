@@ -2,12 +2,14 @@ package collab
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/useopendesk/opendesk/internal/auth"
 	"github.com/useopendesk/opendesk/internal/db"
@@ -58,8 +60,20 @@ func cleanFolderName(s string) (string, error) {
 	return s, nil
 }
 
-// errProvider is a provider's refusal of a folder change; its text is safe to show.
-func errProvider(err error) error { return httpx.E(502, "provider_error", err.Error()) }
+// errProvider answers a failed provider action as a 502 with what safeError shows: a
+// provider's or mail server's own message, else a fixed one. The database's own errors
+// are a logged 500.
+func errProvider(err error) error {
+	var he *httpx.Error
+	var pgErr *pgconn.PgError
+	switch {
+	case errors.As(err, &he):
+		return he
+	case errors.As(err, &pgErr), db.IsNotFound(err):
+		return httpx.Wrap(err)
+	}
+	return httpx.E(502, "provider_error", safeError(err))
+}
 
 // actableFolder loads a folder of an account the caller sees and acts on.
 func (s *service) actableFolder(ctx context.Context, p *auth.Principal, rawID string) (*folderRow, *accountRow, error) {

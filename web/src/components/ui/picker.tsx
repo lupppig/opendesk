@@ -93,7 +93,7 @@ export function Picker(props: Single | Multi) {
         >
           <Command loop shouldFilter={!props.onQueryChange} className="flex flex-col">
             <div className={pickerSearch.row}>
-              <Command.Input autoFocus value={query} onValueChange={setQuery} placeholder={placeholder} className={pickerSearch.input} />
+              <Command.Input aria-label={placeholder} autoFocus value={query} onValueChange={setQuery} placeholder={placeholder} className={pickerSearch.input} />
             </div>
             <Command.List className="max-h-[280px] overflow-y-auto p-1">
               <Command.Empty className="px-2 py-5 text-center text-xs text-fg-3">{emptyText}</Command.Empty>

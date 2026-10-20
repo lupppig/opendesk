@@ -85,7 +85,7 @@ func (s *service) send(ctx context.Context, p *auth.Principal, in *sendInput) (M
 	// Sent through the provider within the request: nothing is stored when it refuses.
 	prov, err := s.provider(ctx, a)
 	if err != nil {
-		return MailMessage{}, errSend(err.Error())
+		return MailMessage{}, errSend(safeError(err))
 	}
 	defer prov.Close()
 	info := SendInfo{From: a.Email, Recipients: out.Recipients}
@@ -99,7 +99,7 @@ func (s *service) send(ctx context.Context, p *auth.Principal, in *sendInput) (M
 	ref, err := prov.Send(sctx, out.Raw, info)
 	if err != nil {
 		s.log.Warn("collab send refused", "account_id", a.ID, "err", err)
-		return MailMessage{}, errSend(err.Error())
+		return MailMessage{}, errSend(safeError(err))
 	}
 	mid, err := s.storeSent(ctx, a, out.Raw, ref, p.UserID, threadID)
 	if err != nil {

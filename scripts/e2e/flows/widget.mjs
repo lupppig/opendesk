@@ -82,9 +82,12 @@ export async function run(t) {
   await t.step("AI answer bot replies in the widget", async () => {
     await visitor.locator(".thread").getByText("You can reset your password from the sign-in page").waitFor({ timeout: 20_000 });
     await visitor.locator(".thread .ai-pill").first().waitFor();
-    const msgs = (await api("GET", `/v1/tickets/${ticket.id}/messages`, opts())).json.data;
-    const bot = msgs.find((m) => m.ai);
-    assert(bot && bot.author.type === "system", "bot message stored with ai=true");
+    // The widget shows the answer while it streams; the message is stored when it ends.
+    const bot = await until(async () => {
+      const r = await api("GET", `/v1/tickets/${ticket.id}/messages`, opts());
+      return r.json?.data?.find((m) => m.ai);
+    }, "bot message stored with ai=true");
+    assert(bot.author.type === "system", "bot message is from the system");
     assert(bot.body_html.includes(`/help/`), "answer links the cited article");
     await shot(visitor, "widget-ai-answer");
   });

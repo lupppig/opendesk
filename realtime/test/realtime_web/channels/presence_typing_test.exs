@@ -126,6 +126,15 @@ defmodule RealtimeWeb.PresenceTypingTest do
       }
     end
 
+    test "a viewer's typing never reaches the customer", c do
+      viewer = Tokens.ws_claims(%{"wid" => c.wid, "role" => "viewer", "name" => "Vic"})
+      {:ok, v} = connect_claims(viewer)
+      {:ok, _, vt} = subscribe_and_join(v, TicketChannel, c.topic)
+      :ok = Endpoint.subscribe("contact:#{c.wid}:#{c.cid}")
+      push(vt, "typing", %{"contact_id" => c.cid})
+      refute_receive %Broadcast{topic: "contact:" <> _, event: "typing"}, 100
+    end
+
     test "a malformed contact_id is refused and nothing is sent", c do
       :ok = Endpoint.subscribe("contact:#{c.wid}:#{c.cid}")
       ref = push(c.ticket, "typing", %{"contact_id" => "../../x"})

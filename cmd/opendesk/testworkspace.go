@@ -123,7 +123,7 @@ func testWorkspaceCommand() *cobra.Command {
 	cf.String("sample", "", "add sample data: small, realistic or large")
 	cf.StringSlice("kinds", admin.SampleKinds, "kinds of sample data: "+strings.Join(admin.SampleKinds, ","))
 	cf.Int("delete-after", admin.DefaultDeleteAfterDays, "delete the workspace after this many days (0 keeps it)")
-	cf.Int("password-days", admin.DefaultPasswordDays, "how long a new account's password works, in days (1..90)")
+	cf.Int("password-days", admin.DefaultPasswordDays, "how long a new account's password works, in days (1..2)")
 	cf.String("reason", "Demo data from the command line", "why it exists, for the admin audit log")
 	cf.Bool("queue", false, "queue the sample data for the instance's workers instead of adding it now")
 	_ = create.MarkFlagRequired("name")

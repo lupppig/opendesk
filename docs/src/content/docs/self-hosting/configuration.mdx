@@ -19,8 +19,9 @@ Edit `/opt/opendesk/.env`, then run `/opt/opendesk/opendesk-ctl start` (it runs 
 
 opendesk checks its secrets at start and refuses to run when they are unsafe:
 
-- `AUTH_SECRET` shorter than 32 bytes. Outside production a development secret is used when it is empty.
-- `CREDENTIALS_KEY` missing in production, or not 32 bytes.
+- `AUTH_SECRET` shorter than 32 bytes, or empty. Only a development instance whose `APP_URL` and `API_URL` are both on `localhost` falls back to a public development secret.
+- `CREDENTIALS_KEY` missing or not 32 bytes, with the same localhost-only development fallback.
+- In production, `COOKIE_SECURE=false` while `API_URL` is `https`.
 - In production, embedded NATS listening beyond `127.0.0.1` without `NATS_TOKEN`.
 - `OPENDESK_ROLE` other than `all`, `api` or `worker`.
 - `STRIPE_SECRET_KEY` set without `STRIPE_WEBHOOK_SECRET` and `STRIPE_PRICE_PRO`.
@@ -33,10 +34,13 @@ The realtime gateway also refuses to start with an `AUTH_SECRET` under 32 bytes.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `OPENDESK_ENV` | `development` | `development` or `production`. Production enforces the checks above. |
+| `OPENDESK_ENV` | `production`, or `development` when `APP_URL` and `API_URL` are on `localhost` (the image sets `production`) | `development` or `production`. Production enforces the checks above. |
 | `OPENDESK_ROLE` | `all` | `all` (API and workers), `api` or `worker`. See [Scaling](/self-hosting/scaling/). |
 | `HTTP_ADDR` | `:8080` | Address the HTTP server listens on. |
 | `LOG_LEVEL` | `info` in production, `debug` otherwise | `debug`, `info`, `warn` or `error`. `debug` adds a line for every mailbox sync (new messages, cursor, duration). |
+| `SECURITY_CONTACT` | empty | Where to report a security problem with this instance, `mailto:` or `https://`. When set, opendesk serves `/.well-known/security.txt` with it. |
+| `SECURITY_POLICY_URL` | empty | An `https://` page describing how you handle reports, listed in `security.txt`. |
+| `MAIL_LOG_BODIES` | `true` outside production | With `MAIL_DRIVER=log`, print message bodies (with their sign-in and reset links) to the log. Production prints only the subject and refuses `true`, so links never land in logs. |
 | `DATA_DIR` | `./data` | Local data: attachments with the `local` driver, and embedded NATS storage. |
 | `SERVE_WEB` | `false` | Serve the embedded web app, `/config.js` and `/config.json` (for the desktop and iPhone apps) from this binary. `true` in the self-host bundle. |
 | `SIGNUP_ENABLED` | `true` | Allow anyone to register. When `false`, only invited people can create an account. |
@@ -87,8 +91,8 @@ See [Postgres and Neon](/self-hosting/postgres/).
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `AUTH_SECRET` | none in production | At least 32 bytes. Signs every JWT. **Must be identical** in opendesk and the realtime gateway. |
-| `CREDENTIALS_KEY` | none in production | 32 bytes, hex or base64. Encrypts mailbox credentials, OAuth tokens, webhook secrets and TOTP secrets with AES-256-GCM. **Never change it**: existing credentials become unreadable. |
+| `AUTH_SECRET` | none (development on localhost: a public development secret) | At least 32 bytes. Signs every JWT. **Must be identical** in opendesk and the realtime gateway. |
+| `CREDENTIALS_KEY` | none (development on localhost: a public development key) | 32 bytes, hex or base64. Encrypts mailbox credentials, OAuth tokens, webhook secrets and TOTP secrets with AES-256-GCM. **Never change it**: existing credentials become unreadable. |
 
 <Callout type="warning" title="Back up CREDENTIALS_KEY">
 
@@ -160,7 +164,7 @@ How often notification emails may go to one person (see [How emails are paced](/
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `INBOUND_DOMAIN` | `in.localhost` | Forwarding addresses are `<token>@INBOUND_DOMAIN`. |
-| `INBOUND_SECRET` | | Shared secret for `POST /v1/inbound/email` (the `OD-Inbound-Secret` header). Empty turns the endpoint off. |
+| `INBOUND_SECRET` | | Signs `POST /v1/inbound/email` (the `OD-Inbound-Signature` header, an HMAC-SHA256 with a timestamp). Empty turns the endpoint off. |
 | `INBOUND_SMTP_ADDR` | empty (off) | Address for the built-in SMTP receiver, such as `:2525` or `:25`. |
 | `INBOUND_AUTHSERV_ID` | empty | Comma-separated authserv-ids of the receiving servers whose `Authentication-Results` are believed, such as `mx.cloudflare.net` for the Cloudflare Email Worker. Only the first such header from the top counts. Gmail and Microsoft 365 mailboxes always trust their own provider. Leave empty with the built-in SMTP receiver: it does not check senders, so their DMARC result is unknown. |
 

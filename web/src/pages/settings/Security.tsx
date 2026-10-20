@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { Download, Laptop, ShieldCheck, Smartphone } from "lucide-react";
 import { useState } from "react";
 import { DeleteAccountDialog } from "@/components/account/DeleteAccountDialog";
+import { PasswordInput, StrengthMeter } from "@/components/auth/parts";
 import { PasskeysSection } from "@/components/auth/PasskeysSection";
 import { SettingsPage, Section, Row, ListRow } from "@/components/layout";
 import { Badge } from "@/components/ui/badge";
@@ -39,6 +40,7 @@ export default function Security() {
 // ─── Password ──────────────────────────────────────────────────────────────
 
 function PasswordSection() {
+  const user = useSession((s) => s.user)!;
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
@@ -57,8 +59,10 @@ function PasswordSection() {
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (next.length < 12) return setError("Use at least 12 characters.");
-    if (next.length > 128) return setError("Use at most 128 characters.");
+    // Counted in characters (code points), as the server counts them.
+    const length = [...next].length;
+    if (length < 12) return setError("Use at least 12 characters.");
+    if (length > 128) return setError("Use at most 128 characters.");
     if (next !== confirmPw) return setError("The new passwords don't match.");
     change.mutate();
   };
@@ -67,15 +71,20 @@ function PasswordSection() {
       <form onSubmit={submit} className="grid gap-3 py-3.5 sm:grid-cols-3">
         <Field label="Current password">
           {({ id }) => (
-            <TextInput id={id} type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
+            <PasswordInput id={id} inputSize="md" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
           )}
         </Field>
         <Field label="New password">
-          {({ id }) => <TextInput id={id} type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} />}
+          {({ id }) => (
+            <div className="flex flex-col gap-1.5">
+              <PasswordInput id={id} inputSize="md" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} />
+              <StrengthMeter password={next} userInputs={[user.name, user.email]} />
+            </div>
+          )}
         </Field>
         <Field label="Confirm new password">
           {({ id }) => (
-            <TextInput id={id} type="password" autoComplete="new-password" value={confirmPw} onChange={(e) => setConfirmPw(e.target.value)} />
+            <PasswordInput id={id} inputSize="md" autoComplete="new-password" value={confirmPw} onChange={(e) => setConfirmPw(e.target.value)} />
           )}
         </Field>
         <div className="flex items-center justify-between gap-3 sm:col-span-3">

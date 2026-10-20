@@ -13,7 +13,7 @@ defmodule RealtimeWeb.SocketAuth do
   alias Realtime.Sockets
 
   @doc "Connects `socket` if the token's kind is one of `kinds`."
-  def connect(params, socket, connect_info, kinds) do
+  def connect(_params, socket, connect_info, kinds) do
     ip = ClientIP.from_connect_info(connect_info)
 
     with :ok <-
@@ -21,7 +21,7 @@ defmodule RealtimeWeb.SocketAuth do
              {:connect, ip},
              Application.fetch_env!(:realtime, :connect_rate_per_ip)
            ),
-         {:ok, identity} <- Auth.verify(params["token"]),
+         {:ok, identity} <- Auth.verify(token(connect_info)),
          :ok <- accept_kind(identity, kinds),
          :ok <- Sockets.admit(identity.sub, ip) do
       Metrics.incr({:connected, identity.kind})
@@ -33,6 +33,11 @@ defmodule RealtimeWeb.SocketAuth do
         :error
     end
   end
+
+  # The token from the Sec-WebSocket-Protocol header (Phoenix's auth_token). A token in
+  # the URL is never read: proxies and access logs keep URLs.
+  defp token(%{auth_token: token}) when is_binary(token) and token != "", do: token
+  defp token(_connect_info), do: nil
 
   defp accept_kind(%{kind: kind}, kinds) do
     if kind in kinds, do: :ok, else: {:error, :wrong_purpose}

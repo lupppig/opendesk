@@ -21,9 +21,17 @@ export type RtSocketLike = {
 };
 export type SocketFactory = (url: string, params: () => Record<string, string>) => RtSocketLike;
 
+// The token goes in Sec-WebSocket-Protocol (authToken, read at every connect), never the
+// URL, where the customer site's proxies and logs would keep it.
 export const phoenixFactory: SocketFactory = (url, params) =>
   new Socket(url, {
-    params,
+    params: () => {
+      const { token: _token, ...rest } = params();
+      return rest;
+    },
+    // phoenix.js reads authToken through closure(), so a function gives each connect the
+    // current token; its types only say string.
+    authToken: (() => params().token ?? "") as unknown as string,
     reconnectAfterMs: (tries: number) => [1000, 2000, 5000, 10000][tries - 1] ?? 15000,
   }) as unknown as RtSocketLike;
 

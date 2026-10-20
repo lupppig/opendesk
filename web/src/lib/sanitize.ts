@@ -67,9 +67,11 @@ function ensureHook() {
   if (hooked) return;
   hooked = true;
   DOMPurify.addHook("afterSanitizeElements", (node) => {
-    if (pass?.blockRemote && node instanceof Element && node.tagName === "STYLE") {
-      node.textContent = holdBackCSS((node.textContent ?? "").replace(/@import[^;]*;?/gi, ""), pass);
-    }
+    if (!(node instanceof Element) || node.tagName !== "STYLE") return;
+    const css = node.textContent ?? "";
+    // As with style attributes: stored CSS has no escapes, so a sheet with one is dropped.
+    if (css.includes("\\")) node.textContent = "";
+    else if (pass?.blockRemote) node.textContent = holdBackCSS(css.replace(/@import[^;]*;?/gi, ""), pass);
   });
   DOMPurify.addHook("afterSanitizeAttributes", (node) => {
     if (!pass?.keepClasses && node.hasAttribute("class")) {

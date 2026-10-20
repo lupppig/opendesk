@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"github.com/useopendesk/opendesk/internal/netsafe"
 	"net"
 	"net/http"
 	"net/netip"
@@ -32,32 +33,9 @@ type netGuard struct {
 	rootCAs *x509.CertPool
 }
 
-var blockedPrefixes = func() []netip.Prefix {
-	var out []netip.Prefix
-	for _, s := range []string{
-		"0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16", "172.16.0.0/12",
-		"192.0.0.0/24", "192.0.2.0/24", "192.168.0.0/16", "198.18.0.0/15", "198.51.100.0/24", "203.0.113.0/24",
-		"224.0.0.0/4", "240.0.0.0/4", "255.255.255.255/32",
-		"::/128", "::1/128", "64:ff9b::/96", "64:ff9b:1::/48", "100::/64", "2001:db8::/32", "fc00::/7", "fe80::/10", "ff00::/8",
-	} {
-		out = append(out, netip.MustParsePrefix(s))
-	}
-	return out
-}()
-
-// publicAddr reports whether ip is a public unicast address.
-func publicAddr(ip netip.Addr) bool {
-	ip = ip.Unmap()
-	if !ip.IsValid() || ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() || ip.IsMulticast() {
-		return false
-	}
-	for _, p := range blockedPrefixes {
-		if p.Contains(ip) {
-			return false
-		}
-	}
-	return true
-}
+// publicAddr reports whether ip is a public unicast address: the one list netsafe keeps
+// for every outbound connection.
+func publicAddr(ip netip.Addr) bool { return netsafe.IsPublicIP(ip) }
 
 func (g *netGuard) control(_, address string, _ syscall.RawConn) error {
 	if g.allowPrivate {

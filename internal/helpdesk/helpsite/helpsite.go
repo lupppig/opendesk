@@ -147,6 +147,10 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) bool {
 			}
 			return false
 		}
+		// A turned-off help center is not served on its own domain either.
+		if !hc.Enabled {
+			return false
+		}
 		s.serveSite(w, r, hc, "https://"+host, r.URL.Path, s.clientIP(r))
 		return true
 	}

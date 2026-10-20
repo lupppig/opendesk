@@ -2,6 +2,7 @@
 // that records console errors and failed API calls, mail links read from the
 // API's log mailer output, and small assertion helpers.
 
+import { createHmac } from "node:crypto";
 import fs from "node:fs";
 import { chromium } from "playwright";
 
@@ -58,8 +59,14 @@ export async function newPage(label = "page") {
   return { ctx, page, problems };
 }
 
+/** Undoes quoted-printable (soft breaks, =XX) in a raw message that uses it, so links read as sent. */
+function qpDecode(raw) {
+  if (!/Content-Transfer-Encoding:\s*quoted-printable/i.test(raw)) return raw;
+  return raw.replace(/=\r?\n/g, "").replace(/=([0-9A-F]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+}
+
 /**
- * The newest link to `path` (like "/verify" or "/csat/") in mail sent to `to`:
+ * The newest link to `path` (like "/verify" or "/csat#t=") in mail sent to `to`:
  * from the SMTP sink file (E2E_MAIL_SINK, see smtp-sink.mjs) when set, else
  * from the API's log mailer output (E2E_API_LOG).
  */
@@ -73,7 +80,7 @@ export async function mailLink(path, to, timeoutMs = 10_000) {
       : fs.readFileSync(cfg.apiLog, "utf8").split("\n").filter((l) => l.includes("mail (log driver)")).map((l) => ({ to: l, body: l }));
     for (const m of mails.reverse()) {
       if (to && !m.to.includes(to)) continue;
-      const found = [...m.body.matchAll(re)];
+      const found = [...qpDecode(m.body).matchAll(re)];
       if (found.length) return found[found.length - 1][0].replace(/&amp;/g, "&");
     }
     if (Date.now() > deadline) throw new Error(`no ${path} mail for ${to ?? "anyone"}`);
@@ -99,9 +106,12 @@ export async function api(method, path, { token, workspace, body, headers = {} }
 }
 
 export async function inboundEmail(to, raw) {
+  // Signed like the Cloudflare Email Worker: HMAC-SHA256 over "<t>.<to>.<envelope from>." and the message.
+  const t = Math.floor(Date.now() / 1000);
+  const mac = createHmac("sha256", cfg.inboundSecret).update(`${t}.${to}..`).update(raw).digest("hex");
   const res = await fetch(`${cfg.api}/v1/inbound/email?to=${encodeURIComponent(to)}`, {
     method: "POST",
-    headers: { "OD-Inbound-Secret": cfg.inboundSecret, "Content-Type": "message/rfc822" },
+    headers: { "OD-Inbound-Signature": `t=${t},v1=${mac}`, "Content-Type": "message/rfc822" },
     body: raw,
   });
   if (res.status !== 202) throw new Error(`inbound -> ${res.status} ${await res.text()}`);

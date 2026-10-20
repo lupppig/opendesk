@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/url"
 	"os"
 	"regexp"
@@ -51,6 +52,11 @@ type Config struct {
 	// LogLevel is the least severe level logged (LOG_LEVEL): info in production,
 	// debug in development.
 	LogLevel slog.Level
+	// SecurityContact and SecurityPolicy fill /.well-known/security.txt (RFC 9116):
+	// SECURITY_CONTACT (mailto: or https:) and SECURITY_POLICY_URL. On opendesk Cloud
+	// (billing on) they default to opendesk's; without a contact the file is not served.
+	SecurityContact string
+	SecurityPolicy  string
 	// UpdateCheck looks for new opendesk releases on GitHub (UPDATE_CHECK, default on) and
 	// tells the instance admins. Builds that are not a release never look.
 	UpdateCheck bool
@@ -76,9 +82,12 @@ type Config struct {
 	SMTPPassword string
 	SMTPTLS      string // tls | starttls | none
 	SESRegion    string
+	// MailLogBodies: the log driver prints message bodies, links included (MAIL_LOG_BODIES,
+	// default on outside production only).
+	MailLogBodies bool
 
 	InboundDomain   string // forwarding addresses live here, e.g. in.opendesk.sh
-	InboundSecret   string // shared secret for POST /v1/inbound/email
+	InboundSecret   string // signs POST /v1/inbound/email (OD-Inbound-Signature)
 	InboundSMTPAddr string // optional built-in SMTP receiver, e.g. :2525
 	// InboundAuthservIDs are the authserv-ids whose Authentication-Results on inbound mail
 	// are believed (INBOUND_AUTHSERV_ID, comma-separated), e.g. mx.cloudflare.net.
@@ -319,6 +328,21 @@ func (c *Config) AIEnabled() bool { return c.AIProvider != "none" && c.AIProvide
 
 func (c *Config) IsProduction() bool { return c.Env == "production" }
 
+// isLocalURL reports whether raw is an http(s) URL on this machine.
+func isLocalURL(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && isLoopbackHost(u.Hostname())
+}
+
+// isLoopbackHost reports whether h names this machine.
+func isLoopbackHost(h string) bool {
+	if h == "localhost" || strings.HasSuffix(h, ".localhost") {
+		return true
+	}
+	ip := net.ParseIP(h)
+	return ip != nil && ip.IsLoopback()
+}
+
 // NotifyEmail paces notification emails per person and per instance.
 type NotifyEmail struct {
 	// Pacing names the defaults: strict (opendesk Cloud: billing on) or relaxed.
@@ -505,6 +529,15 @@ func Load() (*Config, error) {
 		TypesafeAPIURL:    strings.TrimRight(env("TYPESAFE_API_URL", "https://api.typesafe.ai"), "/"),
 		TypesafeModel:     env("TYPESAFE_MODEL", ""),
 	}
+	// Without OPENDESK_ENV, only an instance on this machine alone (APP_URL and API_URL on
+	// localhost) runs as development: anything reachable from elsewhere is production,
+	// with every production check, guard and default.
+	if os.Getenv("OPENDESK_ENV") == "" && !(isLocalURL(c.APIURL) && isLocalURL(c.AppURL)) {
+		c.Env = "production"
+	}
+	if c.Env != "production" && c.Env != "development" {
+		return nil, errors.New("OPENDESK_ENV must be development or production")
+	}
 	markup, err := strconv.ParseFloat(env("AI_USAGE_MARKUP", env("AI_CREDIT_MARKUP", "1.5")), 64)
 	if err != nil || markup < 1 || markup > 100 {
 		return nil, fmt.Errorf("AI_USAGE_MARKUP must be a number from 1 to 100")
@@ -617,7 +650,17 @@ func Load() (*Config, error) {
 	c.StripePriceCollab = env("STRIPE_PRICE_COLLAB", "")
 	c.StripePriceCollabYear = env("STRIPE_PRICE_COLLAB_YEARLY", "")
 	c.NATSStoreDir = env("NATS_STORE_DIR", c.DataDir+"/nats")
+	c.MailLogBodies = envBool("MAIL_LOG_BODIES", !c.IsProduction())
+	if c.MailLogBodies && c.IsProduction() {
+		return nil, errors.New("MAIL_LOG_BODIES is for development: its links (resets, invitations) must not land in a production log")
+	}
+	if c.MailDriver == "smtp" && c.SMTPTLS == "none" && c.SMTPUsername != "" && c.IsProduction() && !isLoopbackHost(c.SMTPHost) {
+		return nil, errors.New("SMTP_TLS=none with SMTP_USERNAME would send the password in clear text: use starttls or tls")
+	}
 	c.CookieSecure = envBool("COOKIE_SECURE", strings.HasPrefix(c.APIURL, "https://"))
+	if !c.CookieSecure && strings.HasPrefix(c.APIURL, "https://") && c.IsProduction() {
+		return nil, errors.New("COOKIE_SECURE=false is refused when API_URL is https: session cookies must be Secure")
+	}
 	// The binary serves the panel at <APP_URL>/admin; a development API pairs with the
 	// panel's dev server.
 	adminURL := c.AppURL + "/admin"
@@ -625,6 +668,16 @@ func Load() (*Config, error) {
 		adminURL = "http://localhost:5174"
 	}
 	c.AdminURL = strings.TrimRight(env("ADMIN_URL", adminURL), "/")
+	c.SecurityContact, c.SecurityPolicy = env("SECURITY_CONTACT", ""), env("SECURITY_POLICY_URL", "")
+	if c.SecurityContact == "" && c.BillingEnabled() {
+		c.SecurityContact, c.SecurityPolicy = "mailto:team@opendesk.sh", "https://docs.opendesk.sh/security/disclosure/"
+	}
+	if c.SecurityContact != "" && !strings.HasPrefix(c.SecurityContact, "mailto:") && !strings.HasPrefix(c.SecurityContact, "https://") {
+		return nil, errors.New("SECURITY_CONTACT must be a mailto: or https:// address")
+	}
+	if c.SecurityPolicy != "" && !strings.HasPrefix(c.SecurityPolicy, "https://") {
+		return nil, errors.New("SECURITY_POLICY_URL must be an https:// address")
+	}
 	c.LogLevel = slog.LevelInfo
 	if !c.IsProduction() {
 		c.LogLevel = slog.LevelDebug
@@ -657,8 +710,14 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("OPENDESK_ROLE must be all, api or worker, got %q", c.Role)
 	}
 
+	// The development secrets below are public: only an instance that is development and
+	// reachable on this machine alone (APP_URL and API_URL on localhost) may use them.
+	devSecrets := !c.IsProduction() && isLocalURL(c.APIURL) && isLocalURL(c.AppURL)
 	secret := os.Getenv("AUTH_SECRET")
-	if secret == "" && !c.IsProduction() {
+	if secret == "" && !c.IsProduction() && !devSecrets {
+		return nil, errors.New("AUTH_SECRET is required unless APP_URL and API_URL are on localhost")
+	}
+	if secret == "" && devSecrets {
 		secret = "development-only-auth-secret-change-me-0000"
 	}
 	if len(secret) < MinAuthSecretLength {
@@ -671,8 +730,8 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	if key == nil {
-		if c.IsProduction() {
-			return nil, errors.New("CREDENTIALS_KEY is required in production (32 bytes, hex or base64)")
+		if !devSecrets {
+			return nil, errors.New("CREDENTIALS_KEY is required (32 bytes, hex or base64) unless APP_URL and API_URL are on localhost")
 		}
 		key = []byte("development-only-credentials-key")
 	}

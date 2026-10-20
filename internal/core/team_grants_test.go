@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strings"
@@ -41,7 +40,7 @@ func newGrantFixture(t *testing.T, names ...string) *grantFixture {
 	var oid uuid.UUID
 	f.scalar(`SELECT id FROM users WHERE email = $1`, &oid, ownerEmail)
 	f.ids["owner"] = oid
-	recv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	recv := httptest.NewServer(echoChallenges(nil))
 	t.Cleanup(recv.Close)
 	f.recv = recv.URL
 	f.exec(`INSERT INTO teams (id, workspace_id, name, private) VALUES ($1, $2, 'Security', true)`, f.team, f.wid)

@@ -63,6 +63,8 @@ type Options struct {
 	Password string
 	TLS      string // tls | starttls | none
 	Region   string
+	// LogBodies: the log driver prints bodies, links included.
+	LogBodies bool
 }
 
 func New(ctx context.Context, o Options, log *slog.Logger) (Mailer, error) {
@@ -71,7 +73,7 @@ func New(ctx context.Context, o Options, log *slog.Logger) (Mailer, error) {
 	}
 	switch o.Driver {
 	case "", "log":
-		return &logMailer{log: log}, nil
+		return &logMailer{log: log, bodies: o.LogBodies}, nil
 	case "smtp":
 		if o.Host == "" {
 			return nil, errors.New("SMTP_HOST is required for MAIL_DRIVER=smtp")
@@ -112,11 +114,19 @@ func (r reserved) Send(ctx context.Context, m Mail) error {
 	return r.Mailer.Send(ctx, m)
 }
 
-type logMailer struct{ log *slog.Logger }
+type logMailer struct {
+	log    *slog.Logger
+	bodies bool
+}
 
-// Send logs the mail in development. The body is logged because it is the only way to
-// click a verification link locally; never use this driver in production.
+// Send logs the mail instead of sending it. The body, whose links carry single-use
+// tokens, is logged only with LogBodies (development: the only way to click a
+// verification link locally).
 func (l *logMailer) Send(_ context.Context, m Mail) error {
+	if !l.bodies {
+		l.log.Warn("mail not sent: MAIL_DRIVER is log; set smtp or ses to deliver platform mail", "subject", m.Subject)
+		return nil
+	}
 	l.log.Info("mail (log driver)", "to", m.To, "subject", m.Subject, "text", m.Text)
 	return nil
 }

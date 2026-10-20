@@ -38,6 +38,17 @@ module.exports = {
   directories: { output: "release", buildResources: "build" },
   files: ["dist/**", "!dist/**/*.map", "package.json"],
   asar: true,
+  // Hardening of the shipped Electron binary: no running it as Node, no NODE_OPTIONS or
+  // --inspect, cookies (refresh tokens) encrypted at rest with the OS keychain, and app
+  // code only from the integrity-checked app.asar.
+  electronFuses: {
+    runAsNode: false,
+    enableCookieEncryption: true,
+    enableNodeOptionsEnvironmentVariable: false,
+    enableNodeCliInspectArguments: false,
+    enableEmbeddedAsarIntegrityValidation: true,
+    onlyLoadAppFromAsar: true,
+  },
   electronLanguages: ["en", "en-US", "en-GB"],
   protocols: [{ name: "opendesk", schemes: ["opendesk"] }],
   artifactName: "opendesk-${version}-${os}-${arch}.${ext}",

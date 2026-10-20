@@ -120,16 +120,17 @@ func canManage(p *auth.Principal, shared bool) error {
 	return nil
 }
 
+// publishView announces a view to who can see it: a personal view to its owner alone.
 func publishView(ctx context.Context, tx pgx.Tx, wid uuid.UUID, typ string, v View, data any) error {
-	var topics []string
 	if v.owner != nil {
-		topics = []string{events.UserTopic(*v.owner)}
+		_, err := events.Publish(ctx, tx, events.Event{WorkspaceID: wid, Type: typ, Users: []uuid.UUID{*v.owner}, Data: data})
+		return err
 	}
 	scope, err := privateTeam(ctx, tx, wid, v.TeamID)
 	if err != nil {
 		return err
 	}
-	_, err = events.Publish(ctx, tx, events.Event{WorkspaceID: wid, Type: typ, Topics: topics, TeamID: scope, Data: data})
+	_, err = events.Publish(ctx, tx, events.Event{WorkspaceID: wid, Type: typ, TeamID: scope, Data: data})
 	return err
 }
 

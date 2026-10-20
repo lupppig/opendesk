@@ -179,7 +179,7 @@ interface AIModel {
 | GET | `/v1/ai/models` | viewer | $0 | → `{data: AIModel[], default, fast}` ("Models" above; on the workspace's own key, its provider's models) |
 | PATCH | `/v1/ai/settings` | admin | $0 | `Partial<AISettings>` → `AISettings` |
 | POST | `/v1/tickets/{id}/ai/draft` | agent | $0.03 | `{instructions?: string, tone?: string}` → `{body_html, body_text, sources: KBSource[]}`; uses the thread, contact, saved replies and the top KB matches |
-| POST | `/v1/tickets/{id}/ai/summary` | viewer | $0.01 | `{}` → `{summary: string, key_points: string[], sentiment: Sentiment, updated_at}`; stored on the ticket (`custom.ai_summary`) and published as `ticket.updated` |
+| POST | `/v1/tickets/{id}/ai/summary` | agent | $0.01 | `{}` → `{summary: string, key_points: string[], sentiment: Sentiment, updated_at}`; stored on the ticket (`custom.ai_summary`) and published as `ticket.updated` |
 | POST | `/v1/tickets/{id}/ai/ask` | viewer | $0.02 | `{question: string}` → `{answer_html, sources: KBSource[]}` (copilot) |
 | POST | `/v1/tickets/{id}/ai/triage` | agent | $0.01 | `{apply: boolean}` → `Triage`; `apply` sets tags/priority/severity with `automation`-style activities attributed to `ai` |
 | DELETE | `/v1/tickets/{id}/ai/suggestions/{field}` | agent | $0 | → 204; dismisses Ollie's suggestion for `field` (`priority`, `severity`, `labels`, `team`, `spam`). Accepting is setting the field (PATCH the ticket), which removes the suggestion |

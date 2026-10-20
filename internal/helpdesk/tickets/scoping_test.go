@@ -153,6 +153,14 @@ func TestReplyAddressEnforced(t *testing.T) {
 	if errCode(t, r) != "reply_address_forbidden" {
 		t.Fatalf("code %s", r.Body)
 	}
+	// Nor does reading its signature through the template values.
+	e.Do("GET", "/v1/tickets/"+tk.ID.String()+"/variables?mailbox_id="+mbPriv.String(), ws.Agent.As(ws), nil).Want(t, 404)
+	e.Do("GET", "/v1/tickets/"+tk.ID.String()+"/variables?mailbox_id="+mbPriv.String(), ws.Admin.As(ws), nil).Want(t, 200)
+	// Naming the ticket's current address does not get around it.
+	r = e.Do("POST", msgs, ws.Agent.As(ws), map[string]any{"kind": "reply", "body_html": "<p>hi</p>", "mailbox_id": mbPriv.String()}).Want(t, 403)
+	if errCode(t, r) != "reply_address_forbidden" {
+		t.Fatalf("named address: %s", r.Body)
+	}
 	e.Do("POST", msgs, ws.Agent.As(ws), map[string]any{"kind": "note", "body_html": "<p>note</p>"}).Want(t, 201)
 	e.Do("POST", msgs, ws.Agent.As(ws), map[string]any{"kind": "reply", "body_html": "<p>hi</p>", "mailbox_id": mbOpen.String()}).Want(t, 201)
 	if got := getTicket(t, e, ws, tk.ID); got.MailboxID == nil || *got.MailboxID != mbOpen {

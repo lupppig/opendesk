@@ -20,6 +20,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hdtest"
 	"github.com/useopendesk/opendesk/internal/helpdesk/widget"
+	"github.com/useopendesk/opendesk/internal/ids"
 )
 
 type session struct {
@@ -98,6 +99,13 @@ func TestSessionCreateResumeAndToken(t *testing.T) {
 	if o.VisitorToken == s.VisitorToken || o.Contact.ID == s.Contact.ID {
 		t.Fatal("cross-workspace resume")
 	}
+	// Ending the session stops its token at once; an idle one ends after 90 days.
+	e.Do("GET", "/v1/widget/conversations", hdtest.Auth{Visitor: r.VisitorToken}, nil).Want(t, 200)
+	e.Do("DELETE", "/v1/widget/session", hdtest.Auth{Visitor: r.VisitorToken}, nil).Want(t, 204)
+	e.Do("GET", "/v1/widget/conversations", hdtest.Auth{Visitor: r.VisitorToken}, nil).Want(t, 401)
+	idle := start(t, e, map[string]any{"key": ws.WidgetKey})
+	e.Exec(`UPDATE widget_sessions SET last_seen_at = now() - interval '91 days' WHERE token_hash = $1`, crypto.HashToken(idle.VisitorToken))
+	e.Do("GET", "/v1/widget/conversations", hdtest.Auth{Visitor: idle.VisitorToken}, nil).Want(t, 401)
 	// Unknown token starts fresh.
 	f := start(t, e, map[string]any{"key": ws.WidgetKey, "visitor_token": "od_vis_unknown"})
 	if f.VisitorToken == "od_vis_unknown" || f.Contact.ID == s.Contact.ID {
@@ -133,6 +141,18 @@ func TestSessionHMAC(t *testing.T) {
 	if s3.Contact.ID == s.Contact.ID || s3.VisitorToken == s.VisitorToken {
 		t.Fatal(s3)
 	}
+	// The verified session is not resumed by someone not signed in: they start anonymous.
+	anon := start(t, e, map[string]any{"key": ws.WidgetKey, "visitor_token": s.VisitorToken})
+	if anon.Contact.ID == s.Contact.ID || anon.VisitorToken == s.VisitorToken {
+		t.Fatal("verified session resumed without user_hash")
+	}
+	// Resuming with the hash keeps it.
+	if r := start(t, e, map[string]any{"key": ws.WidgetKey, "visitor_token": s.VisitorToken, "user_id": "user-42", "user_hash": good}); r.VisitorToken != s.VisitorToken {
+		t.Fatal("verified resume")
+	}
+	// A verified session ends 30 days after it started.
+	e.Exec(`UPDATE widget_sessions SET created_at = now() - interval '31 days' WHERE token_hash = $1`, crypto.HashToken(s.VisitorToken))
+	e.Do("GET", "/v1/widget/conversations", hdtest.Auth{Visitor: s.VisitorToken}, nil).Want(t, 401)
 	// No secret configured: nothing verifies.
 	ws2 := e.NewWorkspace()
 	e.Do("POST", "/v1/widget/session", hdtest.Auth{}, map[string]any{"key": ws2.WidgetKey, "user_id": "user-42", "user_hash": good}).Want(t, 401)
@@ -498,16 +518,24 @@ func TestAgentAttachments(t *testing.T) {
 		t.Fatal(keyPath)
 	}
 
-	// Members of the owning workspace (any role) and keys with tickets:read.
-	r := e.Do("GET", "/v1/attachments/"+img.ID.String(), ws.Viewer.As(ws), nil).Want(t, 200)
+	// An upload not sent yet is its uploader's alone: other members and keys see nothing.
+	r := e.Do("GET", "/v1/attachments/"+img.ID.String(), ws.Agent.As(ws), nil).Want(t, 200)
 	if !bytes.Equal(r.Body, pngBytes()) || r.Header.Get("X-Content-Type-Options") != "nosniff" ||
 		!strings.HasPrefix(r.Header.Get("Content-Disposition"), "inline;") || r.Header.Get("Content-Type") != "image/png" {
 		t.Fatal(r.Header)
 	}
-	r = e.Do("GET", "/v1/attachments/"+doc.ID.String(), hdtest.Auth{Bearer: key}, nil).Want(t, 200)
+	r = e.Do("GET", "/v1/attachments/"+doc.ID.String(), ws.Agent.As(ws), nil).Want(t, 200)
 	if !strings.HasPrefix(r.Header.Get("Content-Disposition"), "attachment;") || !strings.Contains(r.Header.Get("Content-Security-Policy"), "sandbox") {
 		t.Fatal(r.Header)
 	}
+	e.Do("GET", "/v1/attachments/"+img.ID.String(), ws.Viewer.As(ws), nil).Want(t, 404)
+	e.Do("GET", "/v1/attachments/"+doc.ID.String(), hdtest.Auth{Bearer: key}, nil).Want(t, 404)
+	// Once sent on a ticket, members (any role) and keys with tickets:read who see the
+	// ticket read it.
+	tk := createTicketForAttachments(t, e, ws, img.ID, doc.ID)
+	_ = tk
+	e.Do("GET", "/v1/attachments/"+img.ID.String(), ws.Viewer.As(ws), nil).Want(t, 200)
+	e.Do("GET", "/v1/attachments/"+doc.ID.String(), hdtest.Auth{Bearer: key}, nil).Want(t, 200)
 	e.Do("GET", "/v1/attachments/"+img.ID.String(), hdtest.Auth{Bearer: e.APIKey(ws, auth.ScopeContactsRead)}, nil).Want(t, 404)
 	// Another workspace's credentials see nothing, even with their own valid membership.
 	e.Do("GET", "/v1/attachments/"+img.ID.String(), other.Owner.As(other), nil).Want(t, 404)
@@ -667,4 +695,16 @@ func TestSeenRefreshesSession(t *testing.T) {
 	}
 	other := start(t, e, map[string]any{"key": ws.WidgetKey, "email": "other@example.com"})
 	e.Do("POST", path+"/seen", hdtest.Auth{Visitor: other.VisitorToken}, nil).Want(t, 404)
+}
+
+// createTicketForAttachments puts the uploads on a note of a new ticket.
+func createTicketForAttachments(t *testing.T, e *hdtest.Env, ws hdtest.WS, files ...uuid.UUID) uuid.UUID {
+	t.Helper()
+	tid, mid := ids.New(), ids.New()
+	e.Exec(`INSERT INTO tickets (id, workspace_id, number, subject, channel, brand_id, last_message_at)
+		VALUES ($1, $2, (SELECT COALESCE(max(number), 0) + 1 FROM tickets WHERE workspace_id = $2), 'Files', 'api', $3, now())`, tid, ws.ID, ws.BrandID)
+	e.Exec(`INSERT INTO messages (id, workspace_id, ticket_id, kind, direction, author_type, body_html)
+		VALUES ($1, $2, $3, 'note', 'outbound', 'user', '<p>files</p>')`, mid, ws.ID, tid)
+	e.Exec(`UPDATE attachments SET message_id = $2 WHERE id = ANY($1)`, files, mid)
+	return tid
 }

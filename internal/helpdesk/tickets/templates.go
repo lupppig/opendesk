@@ -9,6 +9,7 @@ import (
 
 	"github.com/useopendesk/opendesk/internal/auth"
 	"github.com/useopendesk/opendesk/internal/deps"
+	"github.com/useopendesk/opendesk/internal/domain"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
 	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/templates"
@@ -48,6 +49,14 @@ func registerTemplates(d *deps.Deps, api huma.API) {
 				}
 				if err := hd.CheckRef(ctx, d.DB.Pool, p.WorkspaceID, "mailbox", mb); err != nil {
 					return nil, err
+				}
+				// A private team's address, and its signature, are for that team's members.
+				ok, err := domain.CanSendFrom(ctx, d.DB.Pool, p, mb)
+				if err != nil {
+					return nil, httpx.Wrap(err)
+				}
+				if !ok {
+					return nil, httpx.NotFound("Mailbox")
 				}
 				ref.MailboxID = &mb
 			}

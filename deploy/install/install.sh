@@ -479,7 +479,55 @@ resolve_version() {
     [ -n "$VERSION" ] || die "Could not read the newest release from GitHub." \
         "Pass the version you want:  --version v1.0.0" \
         "Releases: https://github.com/$REPO/releases"
+    # "Newest" never means older than the last unsigned release: an older one is
+    # installed only when asked for by name.
+    if release_before "$VERSION" "$SIGNED_AFTER"; then
+        die "GitHub names $VERSION as the newest release, which is older than $SIGNED_AFTER." \
+            "Nothing was changed. To install it anyway: --version $VERSION"
+    fi
     return 0
+}
+
+# release_before A B: release A is older than release B.
+release_before() {
+    awk -v a="${1#v}" -v b="${2#v}" 'BEGIN {
+        sub(/-.*/, "", a); split(a, x, "."); split(b, y, ".")
+        for (i = 1; i <= 3; i++) { if (x[i] + 0 < y[i] + 0) exit 0; if (x[i] + 0 > y[i] + 0) exit 1 }
+        exit 1
+    }'
+}
+
+# ── Release signature ──────────────────────────────────────────────────────
+# Every release after v0.2.0 signs its SHA256SUMS (ECDSA P-256, SHA-256) with the
+# release key, whose public half is below (deploy/install/release-signing.pub).
+# A file is trusted only through a checksum in a SHA256SUMS whose signature holds,
+# so the files, the installer and the image digests (images.json) are all signed.
+# OPENDESK_RELEASE_PUBKEY_FILE points at another public key (tests, forks).
+SIGNED_AFTER=v0.2.0
+RELEASE_PUBKEY='-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEkUCqvrYPMrlFxwBgXxvM7Yg0WNNP
+VzSEruZx1ipyROXv/c6tffohZCetfIyWH/GGeLkrhbWRxyEjM5NENSuuPA==
+-----END PUBLIC KEY-----'
+
+# sums_signed VERSION: whether that release must carry a signature.
+sums_signed() {
+    awk -v a="${1#v}" -v b="${SIGNED_AFTER#v}" 'BEGIN {
+        sub(/-.*/, "", a); split(a, x, "."); split(b, y, ".")
+        for (i = 1; i <= 3; i++) { if (x[i] + 0 > y[i] + 0) exit 0; if (x[i] + 0 < y[i] + 0) exit 1 }
+        exit 1
+    }'
+}
+
+# verify_sums FILE SIGNATURE: the release key signed FILE. Returns 1 when it did not, or
+# when openssl, which checks it, is missing.
+verify_sums() {
+    command -v openssl >/dev/null 2>&1 || return 1
+    _pub=${OPENDESK_RELEASE_PUBKEY_FILE:-}
+    if [ -z "$_pub" ]; then
+        _pub="$1.pub"
+        printf '%s\n' "$RELEASE_PUBKEY" >"$_pub"
+    fi
+    openssl dgst -sha256 -verify "$_pub" -signature "$2" "$1" >/dev/null 2>&1
 }
 
 sha256_of() {
@@ -495,15 +543,51 @@ fetch_assets() {
     info "Fetching the $VERSION release files"
     curl -fsSL "$_base/SHA256SUMS" -o "$TMP/SHA256SUMS" ||
         die "Could not download $_base/SHA256SUMS." "Is $VERSION a published release?"
+    if sums_signed "$VERSION"; then
+        command -v openssl >/dev/null 2>&1 ||
+            die "openssl is needed to check the release signature." "Install openssl (e.g. apt install openssl) and run this again."
+        curl -fsSL "$_base/SHA256SUMS.sig" -o "$TMP/SHA256SUMS.sig" ||
+            die "Could not download $_base/SHA256SUMS.sig." "Release $VERSION must be signed; nothing was changed."
+        verify_sums "$TMP/SHA256SUMS" "$TMP/SHA256SUMS.sig" ||
+            die "The signature of release $VERSION does not hold." \
+                "Nothing was changed. Do not install it; report it at https://github.com/$REPO/security/advisories/new"
+        ok "Release $VERSION is signed by the opendesk release key"
+    fi
     for _f in docker-compose.yml "$EXTERNAL_COMPOSE" Caddyfile env.template opendesk-ctl; do
-        curl -fsSL "$_base/$_f" -o "$TMP/$_f" || die "Could not download $_base/$_f"
-        _want=$(awk -v f="$_f" '$2 == f || $2 == "*" f { print $1 }' "$TMP/SHA256SUMS")
-        [ -n "$_want" ] || die "$_f is not listed in the release's SHA256SUMS."
-        [ "$(sha256_of "$TMP/$_f")" = "$_want" ] ||
-            die "$_f does not match the checksum release $VERSION published." \
-                "Nothing was changed. Try again; if it repeats, open an issue at https://github.com/$REPO/issues"
+        fetch_verified "$_base" "$_f"
     done
     ok "Release files verified against SHA256SUMS"
+    # A release names the digests of its images (images.json, itself in SHA256SUMS):
+    # the install pins them, so a tag moved on the registry is never what runs.
+    IMAGE_PIN=""
+    REALTIME_PIN=""
+    _has_images=0
+    awk '$2 == "images.json" || $2 == "*images.json" { found = 1 } END { exit !found }' "$TMP/SHA256SUMS" && _has_images=1
+    if [ "$_has_images" = 0 ] && sums_signed "$VERSION"; then
+        die "Release $VERSION names no image digests (images.json)." "Nothing was changed. A signed release always does."
+    fi
+    if [ "$_has_images" = 1 ]; then
+        fetch_verified "$_base" images.json
+        _app=$(sed -n 's/.*"opendesk": *"\(sha256:[0-9a-f]\{64\}\)".*/\1/p' "$TMP/images.json")
+        _gw=$(sed -n 's/.*"realtime": *"\(sha256:[0-9a-f]\{64\}\)".*/\1/p' "$TMP/images.json")
+        if [ -z "$_app" ] || [ -z "$_gw" ]; then
+            die "The release's images.json does not name both image digests."
+        fi
+        IMAGE_PIN="@$_app"
+        REALTIME_PIN="@$_gw"
+        ok "Images pinned to the digests release $VERSION published"
+    fi
+}
+
+# fetch_verified downloads one release file into $TMP and stops the install unless it
+# matches its SHA256SUMS entry.
+fetch_verified() {
+    curl -fsSL "$1/$2" -o "$TMP/$2" || die "Could not download $1/$2"
+    _want=$(awk -v f="$2" '$2 == f || $2 == "*" f { print $1 }' "$TMP/SHA256SUMS")
+    [ -n "$_want" ] || die "$2 is not listed in the release's SHA256SUMS."
+    [ "$(sha256_of "$TMP/$2")" = "$_want" ] ||
+        die "$2 does not match the checksum release $VERSION published." \
+            "Nothing was changed. Try again; if it repeats, open an issue at https://github.com/$REPO/issues"
 }
 
 # ── Rendering ──────────────────────────────────────────────────────────────
@@ -551,6 +635,8 @@ proxy_ports() {
 owned_values() {
     cat <<EOF
 OPENDESK_VERSION=$VERSION
+OPENDESK_IMAGE_PIN=$IMAGE_PIN
+REALTIME_IMAGE_PIN=$REALTIME_PIN
 OPENDESK_DOMAIN=$DOMAIN
 OPENDESK_URL=$URL
 OPENDESK_GATEWAY_URL=$GW

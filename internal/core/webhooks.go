@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"regexp"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -35,6 +37,10 @@ const (
 	webhookMaxAttempts  = 10
 	webhookResponseKeep = 2048
 	webhookTestEvent    = "webhook.test"
+	// webhookVerifyEvent carries the challenge that proves a URL's owner wants its events.
+	webhookVerifyEvent = "webhook.verification"
+	// webhookVerifyTTL is how long a challenge's code can be entered by hand.
+	webhookVerifyTTL = 24 * time.Hour
 )
 
 type CoreWebhook struct {
@@ -43,6 +49,8 @@ type CoreWebhook struct {
 	Description string    `json:"description"`
 	Events      []string  `json:"events"`
 	Enabled     bool      `json:"enabled"`
+	// Verified: the URL answered the ownership challenge; until then it receives no events.
+	Verified bool `json:"verified" doc:"The URL answered its verification challenge (by echoing it, or the code was entered); until then no events are sent"`
 	// PrivateTeamIDs are the private teams whose events this webhook receives
 	// (contracts/teams.md "Visibility").
 	PrivateTeamIDs []uuid.UUID `json:"private_team_ids"`
@@ -67,14 +75,14 @@ type CoreWebhookDelivery struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
-var webhookSelect = `SELECT id, url, description, events, enabled, created_at, ` +
+var webhookSelect = `SELECT id, url, description, events, enabled, verified_at IS NOT NULL, created_at, ` +
 	grantedTeamsSQL("webhooks.private_team_ids", "webhooks.workspace_id") + `, ` +
 	teamGrantsSQL("webhooks.private_team_ids", "webhooks.workspace_id", grantWebhook, "webhooks.id") + ` FROM webhooks`
 
 func scanWebhook(r pgx.Row) (CoreWebhook, error) {
 	var w CoreWebhook
 	var grants []byte
-	if err := r.Scan(&w.ID, &w.URL, &w.Description, &w.Events, &w.Enabled, &w.CreatedAt, &w.PrivateTeamIDs, &grants); err != nil {
+	if err := r.Scan(&w.ID, &w.URL, &w.Description, &w.Events, &w.Enabled, &w.Verified, &w.CreatedAt, &w.PrivateTeamIDs, &grants); err != nil {
 		return w, err
 	}
 	if w.PrivateTeamIDs == nil {
@@ -153,6 +161,7 @@ func (s *svc) validateWebhookURL(ctx context.Context, raw string) (string, error
 
 func (s *svc) registerWebhooks(api huma.API) {
 	tags := []string{"Webhooks"}
+	s.webhookVerifyRoute(api, tags)
 
 	register(s, api, huma.Operation{OperationID: "list-webhooks", Method: http.MethodGet, Path: "/v1/webhooks",
 		Summary: "List webhooks", Tags: tags},
@@ -263,13 +272,17 @@ func (s *svc) registerWebhooks(api huma.API) {
 				if w, err = loadWebhook(ctx, tx, p.WorkspaceID, id); err != nil {
 					return err
 				}
-				if _, err := events.Publish(ctx, tx, events.Event{WorkspaceID: p.WorkspaceID, Type: "webhook.created", Data: map[string]any{"webhook": w}}); err != nil {
+				if _, err := events.Publish(ctx, tx, events.Event{WorkspaceID: p.WorkspaceID, Type: "webhook.created", Admins: true, Data: map[string]any{"webhook": w}}); err != nil {
 					return err
 				}
 				return audit.Log(ctx, tx, p, p.WorkspaceID, "webhook.created", "webhook", &id,
 					map[string]any{"url": u, "events": evs, "private_team_ids": uuidStrings(teams)})
 			})
 			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			// The URL proves it wants these events before any is sent (CASA 7.1.2).
+			if w, err = s.challengeWebhook(ctx, p.WorkspaceID, w.ID); err != nil {
 				return nil, httpx.Wrap(err)
 			}
 			distinct := p.WorkspaceID.String()
@@ -322,6 +335,7 @@ func (s *svc) registerWebhooks(api huma.API) {
 				}
 			}
 			var w CoreWebhook
+			moved := false
 			err = s.tx(ctx, func(tx pgx.Tx) error {
 				var current, curEvents []string
 				var curURL string
@@ -359,6 +373,13 @@ func (s *svc) registerWebhooks(api huma.API) {
 					updated_at = now() WHERE id = $1 AND workspace_id = $2`, id, p.WorkspaceID, u, desc, evs, in.Body.Enabled, teams); err != nil {
 					return err
 				}
+				// A new address proves it wants these events again.
+				if u != nil && *u != curURL {
+					moved = true
+					if _, err := tx.Exec(ctx, `UPDATE webhooks SET verified_at = NULL, verify_code_hash = NULL WHERE id = $1`, id); err != nil {
+						return err
+					}
+				}
 				if in.Body.PrivateTeamIDs != nil {
 					if err := saveGrants(ctx, tx, p, grantWebhook, id, teams); err != nil {
 						return err
@@ -367,7 +388,7 @@ func (s *svc) registerWebhooks(api huma.API) {
 				if w, err = loadWebhook(ctx, tx, p.WorkspaceID, id); err != nil {
 					return err
 				}
-				if _, err := events.Publish(ctx, tx, events.Event{WorkspaceID: p.WorkspaceID, Type: "webhook.updated", Data: map[string]any{"webhook": w}}); err != nil {
+				if _, err := events.Publish(ctx, tx, events.Event{WorkspaceID: p.WorkspaceID, Type: "webhook.updated", Admins: true, Data: map[string]any{"webhook": w}}); err != nil {
 					return err
 				}
 				return audit.Log(ctx, tx, p, p.WorkspaceID, "webhook.updated", "webhook", &id,
@@ -375,6 +396,11 @@ func (s *svc) registerWebhooks(api huma.API) {
 			})
 			if err != nil {
 				return nil, httpx.Wrap(err)
+			}
+			if moved {
+				if w, err = s.challengeWebhook(ctx, p.WorkspaceID, id); err != nil {
+					return nil, httpx.Wrap(err)
+				}
 			}
 			return &struct{ Body CoreWebhook }{w}, nil
 		})
@@ -401,7 +427,7 @@ func (s *svc) registerWebhooks(api huma.API) {
 				if err != nil {
 					return err
 				}
-				if _, err := events.Publish(ctx, tx, events.Event{WorkspaceID: p.WorkspaceID, Type: "webhook.deleted", Data: map[string]any{"webhook_id": id}}); err != nil {
+				if _, err := events.Publish(ctx, tx, events.Event{WorkspaceID: p.WorkspaceID, Type: "webhook.deleted", Admins: true, Data: map[string]any{"webhook_id": id}}); err != nil {
 					return err
 				}
 				return audit.Log(ctx, tx, p, p.WorkspaceID, "webhook.deleted", "webhook", &id, map[string]any{"url": u})
@@ -480,8 +506,12 @@ func (s *svc) registerWebhooks(api huma.API) {
 			}
 			var del CoreWebhookDelivery
 			err = s.tx(ctx, func(tx pgx.Tx) error {
-				if _, err := loadWebhook(ctx, tx, p.WorkspaceID, id); err != nil {
+				hook, err := loadWebhook(ctx, tx, p.WorkspaceID, id)
+				if err != nil {
 					return err
+				}
+				if !hook.Verified {
+					return errWebhookUnverified()
 				}
 				data, _ := json.Marshal(map[string]any{"webhook_id": id, "message": "This is a test event from opendesk."})
 				pl := webhookPayload{ID: ids.New(), Seq: 0, WorkspaceID: p.WorkspaceID, Type: webhookTestEvent,
@@ -499,6 +529,143 @@ func (s *svc) registerWebhooks(api huma.API) {
 			}
 			return &struct{ Body CoreWebhookDelivery }{del}, nil
 		})
+}
+
+func errWebhookUnverified() *httpx.Error {
+	return httpx.E(409, "webhook_unverified", "Verify the webhook first: its address has not answered the verification challenge.")
+}
+
+// webhookVerifyRoute registers POST /v1/webhooks/{id}/verify.
+func (s *svc) webhookVerifyRoute(api huma.API, tags []string) {
+	register(s, api, huma.Operation{OperationID: "verify-webhook", Method: http.MethodPost, Path: "/v1/webhooks/{id}/verify",
+		Summary: "Verify a webhook's address", Tags: tags,
+		Description: "With code: the code the address received in its webhook.verification event, which verifies it. " +
+			"Without: sends a new challenge, verifying it at once when the address echoes the challenge."},
+		func(ctx context.Context, in *struct {
+			ID   string `path:"id"`
+			Body *struct {
+				Code string `json:"code,omitempty" maxLength:"64"`
+			}
+		}) (*struct{ Body CoreWebhook }, error) {
+			p, err := auth.RequireWorkspace(ctx, auth.RoleAdmin, auth.ScopeSettingsWrite)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			id, err := parseID(in.ID, "Webhook")
+			if err != nil {
+				return nil, err
+			}
+			if err := s.limit("webhook:verify:"+id.String(), 20, time.Hour); err != nil {
+				return nil, err
+			}
+			code := ""
+			if in.Body != nil {
+				code = strings.TrimSpace(in.Body.Code)
+			}
+			var w CoreWebhook
+			if code == "" {
+				w, err = s.challengeWebhook(ctx, p.WorkspaceID, id)
+			} else {
+				w, err = s.enterWebhookCode(ctx, p, id, code)
+			}
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			return &struct{ Body CoreWebhook }{w}, nil
+		})
+}
+
+// challengeWebhook sends an unverified webhook a webhook.verification event with a new
+// code (CASA 7.1.2) and marks it verified when the address echoes the code: the body is
+// the code, or JSON with "challenge" set to it. Otherwise an admin enters the code the
+// address received. A verified webhook is returned as it is.
+func (s *svc) challengeWebhook(ctx context.Context, wid, id uuid.UUID) (CoreWebhook, error) {
+	var url string
+	var sealed []byte
+	var verified bool
+	err := s.d.DB.Pool.QueryRow(ctx, `SELECT url, secret_enc, verified_at IS NOT NULL FROM webhooks WHERE workspace_id = $1 AND id = $2`,
+		wid, id).Scan(&url, &sealed, &verified)
+	if db.IsNotFound(err) {
+		return CoreWebhook{}, httpx.NotFound("Webhook")
+	}
+	if err != nil {
+		return CoreWebhook{}, err
+	}
+	if !verified {
+		code := "whv_" + crypto.RandomString(20)
+		if _, err := s.d.DB.Pool.Exec(ctx, `UPDATE webhooks SET verify_code_hash = $3, verify_sent_at = now() WHERE workspace_id = $1 AND id = $2`,
+			wid, id, crypto.HashToken(code)); err != nil {
+			return CoreWebhook{}, err
+		}
+		secret, err := s.d.Box.Open(sealed)
+		if err != nil {
+			return CoreWebhook{}, err
+		}
+		data, _ := json.Marshal(map[string]any{"webhook_id": id, "challenge": code,
+			"message": "opendesk is checking that this address wants this workspace's webhooks. Answer 2xx with the challenge as the body, or enter it in opendesk."})
+		eventID := ids.New()
+		body, _ := json.Marshal(webhookPayload{ID: eventID, WorkspaceID: wid, Type: webhookVerifyEvent,
+			Visibility: events.VisibilityAgents, Data: data, OccurredAt: time.Now().UTC()})
+		status, resp, _, sendErr := s.sendWebhook(ctx, url, secret, eventID, webhookVerifyEvent, body)
+		if sendErr == nil && status >= 200 && status < 300 && echoesChallenge(resp, code) {
+			if _, err := s.d.DB.Pool.Exec(ctx, `UPDATE webhooks SET verified_at = now(), verify_code_hash = NULL WHERE workspace_id = $1 AND id = $2`,
+				wid, id); err != nil {
+				return CoreWebhook{}, err
+			}
+		}
+	}
+	return loadWebhook(ctx, s.d.DB.Pool, wid, id)
+}
+
+// echoesChallenge reports a response that returns the challenge: as the whole body, or
+// as the "challenge" member of a JSON object.
+func echoesChallenge(body, code string) bool {
+	body = strings.TrimSpace(body)
+	if crypto.EqualHex(hexOf(body), hexOf(code)) {
+		return true
+	}
+	var v struct {
+		Challenge string `json:"challenge"`
+	}
+	return json.Unmarshal([]byte(body), &v) == nil && v.Challenge != "" && crypto.EqualHex(hexOf(v.Challenge), hexOf(code))
+}
+
+func hexOf(s string) string { return hex.EncodeToString([]byte(s)) }
+
+// enterWebhookCode verifies a webhook with the code its address received.
+func (s *svc) enterWebhookCode(ctx context.Context, p *auth.Principal, id uuid.UUID, code string) (CoreWebhook, error) {
+	var w CoreWebhook
+	err := s.tx(ctx, func(tx pgx.Tx) error {
+		var hash []byte
+		var sent *time.Time
+		var verified bool
+		err := tx.QueryRow(ctx, `SELECT verify_code_hash, verify_sent_at, verified_at IS NOT NULL FROM webhooks
+			WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, p.WorkspaceID, id).Scan(&hash, &sent, &verified)
+		if db.IsNotFound(err) {
+			return httpx.NotFound("Webhook")
+		}
+		if err != nil {
+			return err
+		}
+		if !verified {
+			if hash == nil || sent == nil || time.Since(*sent) > webhookVerifyTTL ||
+				!crypto.EqualHex(hex.EncodeToString(hash), hex.EncodeToString(crypto.HashToken(code))) {
+				return httpx.E(422, "invalid_code", "That code does not match the last challenge sent to this address. Send a new one and try again.")
+			}
+			if _, err := tx.Exec(ctx, `UPDATE webhooks SET verified_at = now(), verify_code_hash = NULL WHERE id = $1`, id); err != nil {
+				return err
+			}
+			if err := audit.Log(ctx, tx, p, p.WorkspaceID, "webhook.verified", "webhook", &id, nil); err != nil {
+				return err
+			}
+		}
+		if w, err = loadWebhook(ctx, tx, p.WorkspaceID, id); err != nil {
+			return err
+		}
+		_, err = events.Publish(ctx, tx, events.Event{WorkspaceID: p.WorkspaceID, Type: "webhook.updated", Admins: true, Data: map[string]any{"webhook": w}})
+		return err
+	})
+	return w, err
 }
 
 func cleanDescription(s string) string {
@@ -558,7 +725,8 @@ func (w *dispatchWorker) Work(ctx context.Context, job *river.Job[jobs.WebhookDi
 			return nil
 		}
 		pl.OccurredAt = pl.OccurredAt.UTC()
-		rows, err := tx.Query(ctx, `SELECT id, events, private_team_ids FROM webhooks WHERE workspace_id = $1 AND enabled`, a.WorkspaceID)
+		// Only addresses that answered their verification challenge receive events.
+		rows, err := tx.Query(ctx, `SELECT id, events, private_team_ids FROM webhooks WHERE workspace_id = $1 AND enabled AND verified_at IS NOT NULL`, a.WorkspaceID)
 		if err != nil {
 			return err
 		}
@@ -610,11 +778,11 @@ func (w *deliverWorker) Work(ctx context.Context, job *river.Job[jobs.WebhookDel
 	var wid, hookID uuid.UUID
 	var url, status, eventType string
 	var eventID uuid.UUID
-	var enabled bool
+	var enabled, verified bool
 	var sealed, body []byte
 	err := s.d.DB.Pool.QueryRow(ctx, `SELECT d.workspace_id, d.webhook_id, d.status, d.event_id, d.event_type, d.payload,
-		h.url, h.enabled, h.secret_enc FROM webhook_deliveries d JOIN webhooks h ON h.id = d.webhook_id AND h.workspace_id = d.workspace_id
-		WHERE d.id = $1`, job.Args.DeliveryID).Scan(&wid, &hookID, &status, &eventID, &eventType, &body, &url, &enabled, &sealed)
+		h.url, h.enabled, h.verified_at IS NOT NULL, h.secret_enc FROM webhook_deliveries d JOIN webhooks h ON h.id = d.webhook_id AND h.workspace_id = d.workspace_id
+		WHERE d.id = $1`, job.Args.DeliveryID).Scan(&wid, &hookID, &status, &eventID, &eventType, &body, &url, &enabled, &verified, &sealed)
 	if db.IsNotFound(err) {
 		return nil // webhook or workspace deleted
 	}
@@ -623,6 +791,11 @@ func (w *deliverWorker) Work(ctx context.Context, job *river.Job[jobs.WebhookDel
 	}
 	if status != "pending" {
 		return nil
+	}
+	if !verified {
+		// The address changed since this was queued and has not answered its challenge yet.
+		_, err := s.d.DB.Pool.Exec(ctx, `UPDATE webhook_deliveries SET status = 'failed', last_error = 'webhook not verified' WHERE id = $1`, job.Args.DeliveryID)
+		return err
 	}
 	if !enabled && eventType != webhookTestEvent {
 		_, err := s.d.DB.Pool.Exec(ctx, `UPDATE webhook_deliveries SET status = 'failed', last_error = 'webhook disabled' WHERE id = $1`, job.Args.DeliveryID)

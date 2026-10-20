@@ -1,9 +1,9 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowUpRight, ChevronDown, Clock, CornerDownRight, Hash, Import as ImportIcon, Inbox, Lock, Mail, Route, Star, Users } from "lucide-react";
 import { forwardRef, useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { Priority, Severity, Ticket, TicketStatus } from "@/lib/api/types";
-import { q } from "@/lib/queries";
+import { q, qk } from "@/lib/queries";
 import { fullDate, minutes, relLong, shortDate } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { tone } from "@/lib/tones";
@@ -14,6 +14,7 @@ import { TagChip } from "@/components/ui/badge";
 import { CopyButton } from "@/components/ui/copy-button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { ContactCard } from "@/components/contacts/ContactCard";
+import { api } from "@/lib/api/endpoints";
 import { OlliePanel } from "@/components/ai/ticket/OlliePanel";
 import { ChannelIcon, channelLabel, PriorityIcon, priorityOrder, SeverityChip, severityHint, severityLabel, severityOrder, slaState, StatusIcon, statusOrder } from "../bits";
 import { aiDecisions } from "@/lib/decisions";
@@ -131,7 +132,7 @@ function pageLabel(url: string) {
   }
 }
 
-export type PropPicker = "status" | "priority" | "severity" | "assignee" | "team" | null;
+export type PropPicker = "status" | "priority" | "severity" | "assignee" | "team" | "contact" | null;
 
 const unassignedIcon = <span className="size-4 rounded-xs border border-dashed border-line-strong" />;
 
@@ -150,6 +151,19 @@ export function TicketProperties({
   const update = useUpdateTicket();
   const role = useRole();
   const canEdit = atLeast(role, "agent");
+  const qc = useQueryClient();
+  const [contactQuery, setContactQuery] = useState("");
+  const contactResults = useQuery({
+    queryKey: qk.contactPicker(contactQuery),
+    queryFn: () => api.contacts.search({ q: contactQuery.trim() || undefined, limit: 12 }),
+    enabled: picker === "contact",
+  });
+  const contactItems = (contactResults.data?.data ?? []).map((c) => ({
+    value: c.id,
+    label: c.name || c.email || tr("contact.unnamed"),
+    keywords: c.email ? [c.email] : undefined,
+    icon: <Avatar name={c.name || c.email || "?"} src={c.avatar_url} size="xs" />,
+  }));
   const { data: members } = useQuery(q.members());
   const ctx = useTeamsCtx();
   const display = useDisplay();
@@ -386,13 +400,45 @@ export function TicketProperties({
         </section>
       )}
 
-      {t.contact && (
-        <section className="border-b border-line-soft">
-          <div className="px-4 py-3.5">
-            <ContactCard contactId={t.contact.id} compact excludeTicketId={t.id} />
+      <section className="border-b border-line-soft">
+        <div className="px-4 py-3.5">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h3 className="label-caps">{tr("props.contact")}</h3>
+            {/* A live chat stays with the visitor who started it. */}
+            {t.channel !== "chat" && <Picker
+              open={picker === "contact"}
+              onOpenChange={(open) => {
+                onPicker(open ? "contact" : null);
+                if (!open) setContactQuery("");
+              }}
+              value={t.contact?.id ?? null}
+              items={contactItems}
+              width={280}
+              placeholder={tr("props.searchContacts")}
+              emptyText={contactResults.isFetching ? tr("props.searchingContacts") : contactQuery.trim() ? tr("props.noContactsFound") : tr("props.searchContacts")}
+              onQueryChange={setContactQuery}
+              onSelect={(id) => {
+                // The card shows the picked contact at once, before the server answers.
+                const picked = contactResults.data?.data.find((c) => c.id === id);
+                if (picked && !qc.getQueryData(qk.contact(id))) qc.setQueryData(qk.contact(id), picked);
+                patch({ contact_id: id });
+              }}
+              trigger={
+                <button
+                  type="button"
+                  disabled={!canEdit}
+                  className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-[12px] text-fg-3 outline-none transition-colors hover:bg-hover hover:text-fg focus-visible:shadow-[0_0_0_2px_var(--focus)] disabled:pointer-events-none disabled:opacity-50"
+                >
+                  <Users className="size-3.5" />
+                  {tr("props.changeContact")}
+                  <ChevronDown className="size-3 text-fg-4" />
+                </button>
+              }
+            />}
           </div>
-        </section>
-      )}
+          {t.contact ? <ContactCard contactId={t.contact.id} compact excludeTicketId={t.id} /> : <p className="text-xs text-fg-4">{tr("props.noContact")}</p>}
+        </div>
+      </section>
 
       <section className="flex flex-col gap-1.5 px-4 py-3.5 text-[12px]">
         <h3 className="label-caps mb-1">{tr("props.details")}</h3>

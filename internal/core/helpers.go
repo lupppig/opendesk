@@ -5,6 +5,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/notifyprefs"
 	"net/http"
 	"net/mail"
+	"slices"
 	"strings"
 	"time"
 
@@ -81,7 +82,9 @@ func (s *svc) readReqInfo(r *http.Request) reqInfo {
 	case strings.HasPrefix(od, "desktop/") || strings.Contains(r.UserAgent(), desktopUA):
 		ri.Client = "desktop"
 	}
-	if !ri.Native {
+	// Refresh cookies count only from the app's own pages: a request a page on another
+	// origin makes carries its Origin, and its cookies are ignored (ASVS 4.2.2).
+	if origin := r.Header.Get("Origin"); !ri.Native && (origin == "" || slices.Contains(s.d.Cfg.CORSOrigins, origin)) {
 		ri.Cookies = readRefreshCookies(r)
 	}
 	return ri
@@ -175,6 +178,15 @@ func parseID(s, what string) (uuid.UUID, error) {
 // limit applies a rate limit and answers 429 when exceeded.
 func (s *svc) limit(key string, n int, per time.Duration) error {
 	if !s.d.Limiter.Allow(key, n, per) {
+		return httpx.RateLimited()
+	}
+	return nil
+}
+
+// limitShared throttles sign-in attempts (per account or per address), counted across
+// every API process and restart (ASVS 2.2.1).
+func (s *svc) limitShared(ctx context.Context, key string, n int, per time.Duration) error {
+	if !s.d.Limiter.Shared(ctx, key, n, per) {
 		return httpx.RateLimited()
 	}
 	return nil

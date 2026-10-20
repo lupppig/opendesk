@@ -42,7 +42,7 @@ func BuildTool(ctx context.Context, cfg *config.Config, log *slog.Logger) (*deps
 		return fail(err)
 	}
 	m, err := mailer.New(ctx, mailer.Options{Driver: cfg.MailDriver, From: cfg.MailFrom, Host: cfg.SMTPHost, Port: cfg.SMTPPort,
-		Username: cfg.SMTPUsername, Password: cfg.SMTPPassword, TLS: cfg.SMTPTLS, Region: cfg.SESRegion}, log)
+		Username: cfg.SMTPUsername, Password: cfg.SMTPPassword, TLS: cfg.SMTPTLS, Region: cfg.SESRegion, LogBodies: cfg.MailLogBodies}, log)
 	if err != nil {
 		return fail(err)
 	}

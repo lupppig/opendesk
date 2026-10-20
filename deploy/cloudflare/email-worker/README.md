@@ -6,7 +6,7 @@ this worker, which POSTs the raw message to the API:
 
 ```
 POST https://api.opendesk.sh/v1/inbound/email?to=<recipient>
-OD-Inbound-Secret: <INBOUND_SECRET>
+OD-Inbound-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256 keyed with INBOUND_SECRET>
 OD-Envelope-From: <envelope sender>
 Content-Type: message/rfc822
 ```

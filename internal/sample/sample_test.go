@@ -134,7 +134,12 @@ func (e *env) newWorkspace(t *testing.T, name string) *workspace {
 	if _, err := e.d.DB.Pool.Exec(ctx, `INSERT INTO users (id, email, name, email_verified_at) VALUES ($1, $2, 'Olivia Owner', now())`, w.owner, email); err != nil {
 		t.Fatal(err)
 	}
-	tok, _, err := e.d.Tokens.Sign(auth.Claims{Purpose: auth.PurposeAccess, SessionID: ids.New().String()}, w.owner.String(), time.Hour)
+	sid := ids.New()
+	if _, err := e.d.DB.Pool.Exec(ctx, `INSERT INTO sessions (id, user_id, refresh_hash, expires_at) VALUES ($1, $2, $3, now() + interval '1 day')`,
+		sid, w.owner, []byte(sid.String())); err != nil {
+		t.Fatal(err)
+	}
+	tok, _, err := e.d.Tokens.Sign(auth.Claims{Purpose: auth.PurposeAccess, SessionID: sid.String()}, w.owner.String(), time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}

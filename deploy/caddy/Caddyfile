@@ -65,15 +65,22 @@
 
 	log {
 		output stdout
-		# Never log query strings: realtime tokens travel in ?token=.
+		# Never log credentials or one-time values: realtime tokens travel in
+		# Sec-WebSocket-Protocol, and links carry tokens, codes and signatures.
 		format filter {
 			wrap json
 			fields {
 				request>uri query {
 					delete token
+					delete code
+					delete state
+					delete sig
+					delete exp
 				}
 				request>headers>Authorization delete
 				request>headers>Cookie delete
+				request>headers>Sec-Websocket-Protocol delete
+				resp_headers>Set-Cookie delete
 			}
 		}
 	}
@@ -101,9 +108,15 @@ https:// {
 			fields {
 				request>uri query {
 					delete token
+					delete code
+					delete state
+					delete sig
+					delete exp
 				}
 				request>headers>Authorization delete
 				request>headers>Cookie delete
+				request>headers>Sec-Websocket-Protocol delete
+				resp_headers>Set-Cookie delete
 			}
 		}
 	}

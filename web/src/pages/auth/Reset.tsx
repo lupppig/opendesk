@@ -16,7 +16,10 @@ const route = getRouteApi("/auth/reset");
 
 const schema = z
   .object({
-    password: z.string().min(12, "Use at least 12 characters.").max(128, "Use at most 128 characters."),
+    password: z
+      .string()
+      .refine((s) => [...s].length >= 12, "Use at least 12 characters.")
+      .refine((s) => [...s].length <= 128, "Use at most 128 characters."),
     confirm: z.string(),
   })
   .refine((v) => v.password === v.confirm, { message: "The passwords don't match.", path: ["confirm"] });
@@ -76,7 +79,7 @@ export default function Reset() {
         <AuthField label="New password">
           {(id) => (
             <div className="flex flex-col gap-2">
-              <PasswordInput id={id} autoFocus autoComplete="new-password" maxLength={128} invalid={!!errors.password} {...register("password")} />
+              <PasswordInput id={id} autoFocus autoComplete="new-password" invalid={!!errors.password} {...register("password")} />
               {errors.password ? <FieldError message={errors.password.message} /> : <StrengthMeter password={password} />}
             </div>
           )}
@@ -84,7 +87,7 @@ export default function Reset() {
         <AuthField label="Confirm password">
           {(id) => (
             <div className="flex flex-col gap-1.5">
-              <PasswordInput id={id} autoComplete="new-password" maxLength={128} invalid={!!errors.confirm} {...register("confirm")} />
+              <PasswordInput id={id} autoComplete="new-password" invalid={!!errors.confirm} {...register("confirm")} />
               <FieldError message={errors.confirm?.message} />
             </div>
           )}

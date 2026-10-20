@@ -225,7 +225,7 @@ func (s *Service) startRun(ctx context.Context, p *auth.Principal, in AgentTestR
 			map[string]any{"tests": len(testIDs), "draft": in.Settings != nil}); err != nil {
 			return err
 		}
-		if _, err := events.Publish(ctx, tx, events.Event{WorkspaceID: wid, Type: "ai_agent_test_run.created", Data: map[string]any{"run": run}}); err != nil {
+		if _, err := events.Publish(ctx, tx, events.Event{WorkspaceID: wid, Type: "ai_agent_test_run.created", Admins: true, Data: map[string]any{"run": run}}); err != nil {
 			return err
 		}
 		_, err = s.d.Jobs.InsertTx(ctx, tx, jobs.AIAgentTestRunArgs{WorkspaceID: wid, RunID: id}, &river.InsertOpts{MaxAttempts: 1})
@@ -332,7 +332,7 @@ func loadResult(ctx context.Context, q db.Querier, wid, runID, testID uuid.UUID)
 
 func publishRun(ctx context.Context, tx pgx.Tx, wid uuid.UUID, run AgentTestRun) error {
 	run.Results = nil
-	_, err := events.Publish(ctx, tx, events.Event{WorkspaceID: wid, Type: "ai_agent_test_run.updated", Data: map[string]any{"run": run}})
+	_, err := events.Publish(ctx, tx, events.Event{WorkspaceID: wid, Type: "ai_agent_test_run.updated", Admins: true, Data: map[string]any{"run": run}})
 	return err
 }
 
@@ -509,7 +509,7 @@ func (s *Service) saveOutcome(ctx context.Context, wid, runID, testID uuid.UUID,
 		if err != nil {
 			return err
 		}
-		if _, err := events.Publish(ctx, tx, events.Event{WorkspaceID: wid, Type: "ai_agent_test_result.updated", Data: map[string]any{"result": res}}); err != nil {
+		if _, err := events.Publish(ctx, tx, events.Event{WorkspaceID: wid, Type: "ai_agent_test_result.updated", Admins: true, Data: map[string]any{"result": res}}); err != nil {
 			return err
 		}
 		run, err := loadRun(ctx, tx, wid, runID)

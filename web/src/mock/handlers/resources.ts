@@ -363,10 +363,10 @@ export function registerResources() {
     return paginate(ctx, ctx.ws.mailboxes, 100);
   });
   get("/v1/mailboxes/connect-options", () => connectOptions("in.opendesk.sh"));
-  get("/v1/mailboxes/detect", (ctx) => {
-    const email = (ctx.query.get("email") ?? "").trim().toLowerCase();
+  post("/v1/mailboxes/detect", (ctx) => {
+    const email = String(ctx.body.email ?? "").trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw invalid("Enter a valid email address");
-    return detect(email);
+    return respond(200, detect(email));
   });
   get("/v1/mailboxes/:id", (ctx) => {
     const m = findMailbox(ctx);
@@ -551,12 +551,12 @@ export function registerResources() {
     }
     throw notFound("Survey");
   };
-  get("/v1/public/csat/:token", (ctx) => {
-    const { ws, c, t } = findCsat(ctx.params.token);
-    return { score: c.score, comment: c.comment ?? "", workspace_name: ws.workspace.name, brand_color: ws.workspace.settings.brand_color ?? "", ticket: { number: t.number, subject: t.subject }, locale: ws.workspace.settings.locale ?? "" };
+  post("/v1/public/csat/survey", (ctx) => {
+    const { ws, c, t } = findCsat(String(ctx.body.token ?? ""));
+    return respond(200, { score: c.score, comment: c.comment ?? "", workspace_name: ws.workspace.name, brand_color: ws.workspace.settings.brand_color ?? "", ticket: { number: t.number, subject: t.subject }, locale: ws.workspace.settings.locale ?? "" });
   });
-  post("/v1/public/csat/:token", (ctx) => {
-    const { ws, c, t } = findCsat(ctx.params.token);
+  post("/v1/public/csat/rating", (ctx) => {
+    const { ws, c, t } = findCsat(String(ctx.body.token ?? ""));
     const score = ctx.body.score;
     if (typeof score !== "number" || score < 1 || score > 5) throw invalid("score must be between 1 and 5");
     c.score = score;

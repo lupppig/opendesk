@@ -177,7 +177,7 @@ function useSummary(ticket: Ticket, run: Run) {
   return { stored: readSummary(ticket), busy, summarize };
 }
 
-function SummaryView({ s, busy, onRefresh }: { s: AISummary; busy: boolean; onRefresh: () => void }) {
+function SummaryView({ s, busy, onRefresh }: { s: AISummary; busy: boolean; onRefresh?: () => void }) {
   const { t } = useTranslation("aiTicket");
   const reduce = useReducedMotion();
   return (
@@ -206,11 +206,13 @@ function SummaryView({ s, busy, onRefresh }: { s: AISummary; busy: boolean; onRe
         <Tooltip content={fullDate(s.updated_at)}>
           <span className="min-w-0 flex-1 truncate">{t("summary.updated", { when: relLong(s.updated_at) })}</span>
         </Tooltip>
-        <AiTooltip feature="summarize" label={t("summary.refreshHint")}>
-          <button type="button" onClick={onRefresh} disabled={busy} className={cn(textBtn, "-mr-1.5 font-normal text-fg-4 hover:text-fg")}>
-            {t("summary.refresh")}
-          </button>
-        </AiTooltip>
+        {onRefresh && (
+          <AiTooltip feature="summarize" label={t("summary.refreshHint")}>
+            <button type="button" onClick={onRefresh} disabled={busy} className={cn(textBtn, "-mr-1.5 font-normal text-fg-4 hover:text-fg")}>
+              {t("summary.refresh")}
+            </button>
+          </AiTooltip>
+        )}
       </div>
     </div>
   );
@@ -740,7 +742,8 @@ function Ollie({ t: ticket, aiOn, agent }: { t: Ticket; aiOn: boolean; agent: bo
 
   const rows = agent ? sugg.rows : [];
   const status = voice.working ?? voice.note ?? (rows.length ? t("ollie.waiting", { count: rows.length }) : t("ollie.idle"));
-  const canSummarize = aiOn && !summary.stored && !summary.busy;
+  // A summary is stored on the ticket, so making one is an agent's write.
+  const canSummarize = aiOn && agent && !summary.stored && !summary.busy;
   const canSuggest = aiOn && agent && !rows.length && !sugg.busy;
 
   return (
@@ -796,7 +799,7 @@ function Ollie({ t: ticket, aiOn, agent }: { t: Ticket; aiOn: boolean; agent: bo
                 )}
                 {aiOn && summary.stored && (
                   <Piece key="summary">
-                    <SummaryView s={summary.stored} busy={summary.busy} onRefresh={() => void summary.summarize()} />
+                    <SummaryView s={summary.stored} busy={summary.busy} onRefresh={agent ? () => void summary.summarize() : undefined} />
                   </Piece>
                 )}
                 {aiOn && !summary.stored && summary.busy && (
