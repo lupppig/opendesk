@@ -1,10 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Hash, KeyRound, Link2, MessagesSquare, Plus, RefreshCw, Sparkles, StickyNote, Trash2 } from "lucide-react";
+import { AtSign, Hash, KeyRound, Link2, MessagesSquare, Plus, RefreshCw, Sparkles, StickyNote, Trash2 } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AppMark } from "@/components/appmark";
 import { Section, SettingsPage } from "@/components/layout";
-import { ListSkeleton, StatePill } from "@/components/settings2/bits";
+import { type ItemState, ListSkeleton, StatePill } from "@/components/settings2/bits";
 import { SettingsEmpty } from "@/components/settings2/SettingsEmpty";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm";
@@ -36,7 +36,24 @@ function useProviderCopy() {
     setup: (p: SupportChannelProvider) => (knownProvider(p.key) ? t(`supportChannels.provider.${p.key}.setup`) : p.description),
     field: (f: SupportChannelProvider["fields"][number]) => (knownField(f.name) ? t(`supportChannels.field.${f.name}`) : f.label),
     help: (p: SupportChannelProvider, f: SupportChannelProvider["fields"][number]) => (knownProvider(p.key) ? undefined : f.help),
+    noChannels: (key: string) => (knownProvider(key) ? t(`supportChannels.provider.${key}.noChannels`) : t("supportChannels.destination.none")),
   };
+}
+
+// One state for a connection: a refused subscription first, then its last check.
+type StateKey = "supportChannels.status.error" | `supportChannels.health.${SupportChannelConnection["health_status"]}`;
+function connectionState(c: SupportChannelConnection): { state: ItemState; key: StateKey } {
+  if (c.status === "error") return { state: "failing", key: "supportChannels.status.error" };
+  switch (c.health_status) {
+    case "healthy":
+      return { state: "active", key: "supportChannels.health.healthy" };
+    case "action_required":
+      return { state: "pending", key: "supportChannels.health.action_required" };
+    case "error":
+      return { state: "failing", key: "supportChannels.health.error" };
+    default:
+      return { state: "disabled", key: "supportChannels.health.unknown" };
+  }
 }
 
 export default function SupportChannels() {
@@ -82,7 +99,8 @@ export default function SupportChannels() {
     mutationFn: api.supportChannels.test,
     onSuccess: (row) => {
       upsertInList(qc, qk.supportChannelConnections, row);
-      toast.success(t("supportChannels.health.tested"));
+      if (row.status !== "error" && row.health_status === "healthy") toast.success(t("supportChannels.health.tested"));
+      else toast.info(t("supportChannels.health.testedAttention"));
     },
     onError: (e) => toast.error(e, t("supportChannels.health.testError")),
   });
@@ -111,6 +129,7 @@ export default function SupportChannels() {
             tips={[
               { label: t("supportChannels.empty.tipThreads"), icon: <MessagesSquare /> },
               { label: t("supportChannels.empty.tipOllie"), icon: <Sparkles /> },
+              { label: t("supportChannels.empty.tipCreate"), icon: <AtSign /> },
             ]}
             className="min-h-[300px]"
           />
@@ -119,9 +138,10 @@ export default function SupportChannels() {
             {connections.map((connection) => {
               const provider = providers?.find((p) => p.key === connection.provider);
               const routes = destinations?.filter((d) => d.connection_id === connection.id) ?? [];
-              const failing = connection.status === "error";
-              const health = connection.health_status ?? "unknown";
-              const healthState = health === "healthy" ? "active" : health === "error" ? "failing" : health === "action_required" ? "pending" : "disabled";
+              const state = connectionState(connection);
+              const healthy = state.state === "active";
+              const manual = provider ? !provider.configures : true;
+              const account = [connection.external_account_handle, connection.external_account_name].filter(Boolean).join(" · ") || connection.external_account_id;
               return (
                 <div key={connection.id} className="px-4 py-3.5">
                   <div className="flex items-start gap-3">
@@ -130,16 +150,25 @@ export default function SupportChannels() {
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-[13px] font-medium">{connection.name}</span>
                         <span className="text-[12px] text-fg-3">{provider?.name ?? connection.provider}</span>
-                        <StatePill state={failing ? "failing" : "active"}>{t(failing ? "supportChannels.status.error" : "supportChannels.status.connected")}</StatePill>
-                        <StatePill state={healthState}>{t(`supportChannels.health.${health}`)}</StatePill>
+                        <StatePill state={state.state}>{t(state.key)}</StatePill>
                       </div>
-                      <p className="mt-0.5 text-[12px] text-fg-3">{connection.external_account_name || connection.external_account_id}</p>
-                      {connection.last_error && <p className="mt-1 text-[12px] text-danger-fg">{connection.last_error}</p>}
-                      {connection.health_detail && <p className="mt-1 text-[12px] text-fg-3">{connection.health_detail}</p>}
-                      <div className="mt-2 max-w-[620px]">
-                        <p className="mb-1 text-[11.5px] text-fg-4">{t("supportChannels.connections.webhook")}</p>
-                        <CopyField value={connection.webhook_url} />
-                      </div>
+                      <p className="mt-0.5 text-[12px] text-fg-3">{account}</p>
+                      {connection.last_error ? (
+                        <p className="mt-1 text-[12px] text-danger-fg">{connection.last_error}</p>
+                      ) : (
+                        !healthy && connection.health_detail && <p className="mt-1 text-[12px] text-fg-2">{connection.health_detail}</p>
+                      )}
+                      {manual && admin && (
+                        <SetupSteps provider={connection.provider} webhookUrl={connection.webhook_url} done={healthy} />
+                      )}
+                      {!routes.length && admin && (
+                        <p className="mt-2 text-[12px] text-fg-3">
+                          {t("supportChannels.noDestinations")}{" "}
+                          <Button variant="link" size="xs" className="text-[12px]" onClick={() => setRouting(connection.id)}>
+                            {t("supportChannels.addFirstDestination")}
+                          </Button>
+                        </p>
+                      )}
                       {!!routes.length && (
                         <div className="mt-2 flex flex-wrap gap-1.5">
                           {routes.map((route) => {
@@ -233,7 +262,7 @@ export default function SupportChannels() {
         </div>
       </Section>
 
-      {connecting && <ConnectDialog provider={connecting} onClose={() => setConnecting(null)} />}
+      {connecting && <ConnectDialog provider={connecting} onClose={() => setConnecting(null)} onConnected={(row) => setRouting(row.id)} />}
       {rotating && (
         <RotateDialog
           connection={rotating}
@@ -241,7 +270,13 @@ export default function SupportChannels() {
           onClose={() => setRotating(null)}
         />
       )}
-      {routing && <DestinationDialog connectionId={routing} onClose={() => setRouting(null)} />}
+      {routing && (
+        <DestinationDialog
+          connectionId={routing}
+          provider={connections?.find((c) => c.id === routing)?.provider ?? ""}
+          onClose={() => setRouting(null)}
+        />
+      )}
       <Dialog
         open={!!link}
         onOpenChange={(open) => !open && setLink(null)}
@@ -259,7 +294,45 @@ export default function SupportChannels() {
   );
 }
 
-function ConnectDialog({ provider, onClose }: { provider: SupportChannelProvider; onClose: () => void }) {
+// Where a provider can't be set up by opendesk (Slack), the steps an admin takes
+// there, with the address to paste. Folded away once the provider has called in.
+function SetupSteps({ provider, webhookUrl, done }: { provider: string; webhookUrl: string; done: boolean }) {
+  const { t } = useTranslation("settingsChannels");
+  const [open, setOpen] = useState(!done);
+  // Only Slack needs steps of its own; any other provider without a Configurer gets the generic one.
+  const steps: unknown = provider === "slack" ? t("supportChannels.provider.slack.steps", { returnObjects: true }) : null;
+  const list = Array.isArray(steps) ? (steps as string[]) : [t("supportChannels.setup.generic")];
+  if (!open)
+    return (
+      <Button variant="link" size="xs" className="mt-1.5 text-[12px] text-fg-3" onClick={() => setOpen(true)}>
+        {t("supportChannels.setup.show")}
+      </Button>
+    );
+  return (
+    <div className="mt-2.5 max-w-[620px] rounded-lg border border-line-soft bg-sunken px-3 py-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[12px] font-medium">{t("supportChannels.setup.title")}</p>
+        {done && (
+          <Button variant="link" size="xs" className="text-[12px] text-fg-3" onClick={() => setOpen(false)}>
+            {t("supportChannels.setup.hide")}
+          </Button>
+        )}
+      </div>
+      <div className="mt-2">
+        <p className="mb-1 text-[11.5px] text-fg-4">{t("supportChannels.connections.webhook")}</p>
+        <CopyField value={webhookUrl} />
+      </div>
+      <ol className="mt-2.5 flex list-decimal flex-col gap-1 pl-4 text-[12px] leading-[18px] text-fg-2 marker:text-fg-4">
+        {list.map((step) => (
+          <li key={step}>{step}</li>
+        ))}
+      </ol>
+      {!done && <p className="mt-2 text-[11.5px] text-fg-3">{t("supportChannels.setup.waiting")}</p>}
+    </div>
+  );
+}
+
+function ConnectDialog({ provider, onClose, onConnected }: { provider: SupportChannelProvider; onClose: () => void; onConnected: (row: SupportChannelConnection) => void }) {
   const { t } = useTranslation("settingsChannels");
   const copy = useProviderCopy();
   const qc = useQueryClient();
@@ -273,6 +346,7 @@ function ConnectDialog({ provider, onClose }: { provider: SupportChannelProvider
       upsertInList(qc, qk.supportChannelConnections, row, { prepend: true });
       toast.success(t("supportChannels.connect.connected", { name: provider.name }));
       onClose();
+      onConnected(row);
     },
     onError: (e) => setError(errorMessage(e, t("supportChannels.connect.error", { name: provider.name }))),
   });
@@ -283,6 +357,8 @@ function ConnectDialog({ provider, onClose }: { provider: SupportChannelProvider
     onSuccess: (result) => {
       setAccounts(result.data);
       setError("");
+      // A bot in one server has nothing to choose.
+      if (result.data.length === 1) for (const field of discoveredFields) setCredentials((old) => ({ ...old, [field.name]: result.data[0].id }));
     },
     onError: (e) => setError(errorMessage(e, t("supportChannels.connect.discoveryError", { name: provider.name }))),
   });
@@ -421,8 +497,9 @@ function RotateDialog({ connection, provider, onClose }: { connection: SupportCh
   );
 }
 
-function DestinationDialog({ connectionId, onClose }: { connectionId: string; onClose: () => void }) {
+function DestinationDialog({ connectionId, provider, onClose }: { connectionId: string; provider: string; onClose: () => void }) {
   const { t } = useTranslation("settingsChannels");
+  const copy = useProviderCopy();
   const qc = useQueryClient();
   const notesId = useId();
   const { data: teams } = useQuery(q.teams());
@@ -431,6 +508,8 @@ function DestinationDialog({ connectionId, onClose }: { connectionId: string; on
   const [team, setTeam] = useState("all");
   const [channelId, setChannelId] = useState("");
   const [includeNotes, setIncludeNotes] = useState(false);
+  // When the bot can't list channels (missing scopes, an older bot), its id still works.
+  const [manual, setManual] = useState(false);
   const [error, setError] = useState("");
   const options = useMemo(() => {
     const used = new Set((destinations ?? []).filter((d) => d.connection_id === connectionId).map((d) => d.team_id ?? "all"));
@@ -445,12 +524,14 @@ function DestinationDialog({ connectionId, onClose }: { connectionId: string; on
     .filter((item) => !usedChannels.has(item.id))
     .map((item) => ({ value: item.id, label: item.name ? `#${item.name}` : item.id }));
   const selectedChannel = available.data?.find((item) => item.id === channelId && !usedChannels.has(item.id));
+  const manualId = channelId.trim();
+  const channelReady = manual ? !!manualId && !usedChannels.has(manualId) : !!selectedChannel;
   const create = useMutation({
     mutationFn: () =>
       api.supportChannels.addDestination({
         connection_id: connectionId,
         team_id: selected === "all" ? undefined : selected,
-        external_channel_id: channelId.trim(),
+        external_channel_id: manual ? manualId : channelId.trim(),
         external_channel_name: selectedChannel?.name,
         include_notes: includeNotes,
       }),
@@ -470,7 +551,7 @@ function DestinationDialog({ connectionId, onClose }: { connectionId: string; on
       footer={
         <>
           <Button onClick={onClose}>{t("supportChannels.destination.cancel")}</Button>
-          <Button variant="primary" disabled={!selected || !selectedChannel} loading={create.isPending} onClick={() => create.mutate()}>
+          <Button variant="primary" disabled={!selected || !channelReady} loading={create.isPending} onClick={() => create.mutate()}>
             {t("supportChannels.destination.submit")}
           </Button>
         </>
@@ -480,28 +561,45 @@ function DestinationDialog({ connectionId, onClose }: { connectionId: string; on
         <Field label={t("supportChannels.destination.team")}>
           {({ id }) => <Select id={id} value={selected} onChange={setTeam} options={options} placeholder={t("supportChannels.destination.teamPlaceholder")} />}
         </Field>
-        <Field label={t("supportChannels.destination.channel")} hint={t("supportChannels.destination.channelHint")}>
-          {({ id }) => (
-            <div className="flex gap-2">
-              <Select
-                id={id}
-                value={channelOptions.some((x) => x.value === channelId) ? channelId : undefined}
-                onChange={setChannelId}
-                options={channelOptions}
-                placeholder={available.isLoading ? t("supportChannels.destination.loading") : t("supportChannels.destination.channelPlaceholder")}
-              />
-              <Button
-                square
-                icon={<RefreshCw />}
-                aria-label={t("supportChannels.destination.refresh")}
-                loading={available.isFetching}
-                onClick={() => available.refetch()}
-              />
-            </div>
-          )}
-        </Field>
-        {!available.isLoading && !available.isError && !channelOptions.length && <p className="text-[12px] text-fg-3">{t("supportChannels.destination.none")}</p>}
-        {available.isError && <p className="text-[12px] text-danger-fg">{errorMessage(available.error, t("supportChannels.destination.loadError"))}</p>}
+        {manual ? (
+          <Field label={t("supportChannels.destination.channelId")} hint={t("supportChannels.destination.channelIdHint")}>
+            {(props) => <TextInput {...props} value={channelId} autoComplete="off" spellCheck={false} onChange={(e) => setChannelId(e.target.value)} />}
+          </Field>
+        ) : (
+          <Field label={t("supportChannels.destination.channel")} hint={t("supportChannels.destination.channelHint")}>
+            {({ id }) => (
+              <div className="flex gap-2">
+                <Select
+                  id={id}
+                  value={channelOptions.some((x) => x.value === channelId) ? channelId : undefined}
+                  onChange={setChannelId}
+                  options={channelOptions}
+                  placeholder={available.isLoading ? t("supportChannels.destination.loading") : t("supportChannels.destination.channelPlaceholder")}
+                />
+                <Button
+                  square
+                  icon={<RefreshCw />}
+                  aria-label={t("supportChannels.destination.refresh")}
+                  loading={available.isFetching}
+                  onClick={() => available.refetch()}
+                />
+              </div>
+            )}
+          </Field>
+        )}
+        {!manual && !available.isLoading && !available.isError && !channelOptions.length && <p className="text-[12px] leading-[17px] text-fg-3">{copy.noChannels(provider)}</p>}
+        {!manual && available.isError && <p className="text-[12px] text-danger-fg">{errorMessage(available.error, t("supportChannels.destination.loadError"))}</p>}
+        <Button
+          variant="link"
+          size="xs"
+          className="-mt-2 self-start text-[12px] text-fg-3"
+          onClick={() => {
+            setManual(!manual);
+            setChannelId("");
+          }}
+        >
+          {manual ? t("supportChannels.destination.pickFromList") : t("supportChannels.destination.enterId")}
+        </Button>
         <div className="flex items-start justify-between gap-4">
           <label htmlFor={notesId} className="min-w-0">
             <span className="block text-[13px] font-medium">{t("supportChannels.destination.notes")}</span>

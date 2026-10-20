@@ -542,14 +542,15 @@
     },
     "connections": {
       "title": "Connections",
-      "description": "Bot credentials are stored encrypted. opendesk configures provider webhooks and commands where the provider allows it.",
+      "description": "Bot credentials are stored encrypted. opendesk sets up Discord and Telegram for you; Slack needs a few steps in its own settings.",
       "webhook": "Events address"
     },
     "empty": {
       "title": "No support channels yet",
       "body": "Connect a bot, then choose where each team's email tickets appear.",
       "tipThreads": "Each ticket gets its own thread",
-      "tipOllie": "Ask Ollie about a ticket in its thread"
+      "tipOllie": "Ask Ollie about a ticket in its thread",
+      "tipCreate": "Mention the bot in a channel to create a ticket"
     },
     "status": {
       "connected": "Connected",
@@ -557,12 +558,13 @@
     },
     "health": {
       "unknown": "Not tested",
-      "healthy": "Healthy",
+      "healthy": "Connected",
       "action_required": "Finish setup",
       "error": "Check failed",
       "test": "Test connection",
-      "tested": "Connection checked.",
-      "testError": "Couldn't test the connection."
+      "tested": "The connection works.",
+      "testError": "Couldn't test the connection.",
+      "testedAttention": "Checked. The connection still needs attention."
     },
     "rotate": {
       "label": "Rotate credentials for {{name}}",
@@ -596,15 +598,24 @@
     "provider": {
       "slack": {
         "description": "Mirror email tickets into Slack threads and work them by talking to Ollie.",
-        "setup": "Create a Slack app with chat:write, app_mentions:read, channels:read and groups:read. Slack requires you to verify the Events API and /opendesk URLs after connecting."
+        "setup": "Create a Slack app with the chat:write, app_mentions:read, channels:read and groups:read bot scopes, install it, then paste its bot token and signing secret. After connecting, opendesk shows the two settings to finish in Slack.",
+        "steps": [
+          "In your Slack app, open Event Subscriptions, turn it on and paste the address above as the Request URL.",
+          "Under Subscribe to bot events, add app_mention and save.",
+          "Open Slash Commands, create /opendesk and use the same address as its Request URL.",
+          "Invite the bot to each channel you route tickets to: /invite @your-bot."
+        ],
+        "noChannels": "The bot isn't in any channel yet. Invite it with /invite @your-bot in Slack, then refresh."
       },
       "discord": {
         "description": "Mirror email tickets into Discord threads and work them by talking to Ollie.",
-        "setup": "Create a Discord bot, turn on its Message Content intent and copy its token and public key. opendesk finds its servers and registers the interactions endpoint and commands."
+        "setup": "Create a Discord bot, turn on its Message Content intent and copy its token and public key. opendesk finds its servers and registers the interactions endpoint and commands.",
+        "noChannels": "No text channels found. Give the bot access to a text channel in this server, then refresh."
       },
       "telegram": {
         "description": "Mirror email tickets into Telegram forum topics and work them by talking to Ollie.",
-        "setup": "Create a bot with BotFather and paste its token. opendesk creates the webhook secret. Then make the bot an admin of a forum group and turn off its privacy mode."
+        "setup": "Create a bot with BotFather, turn off its privacy mode (/setprivacy) and paste its token. opendesk sets up the webhook. Then make the bot an admin of a forum group.",
+        "noChannels": "No forum groups yet. Make the bot an admin of a group with topics turned on, or send a message in a group it's already in, then refresh."
       }
     },
     "field": {
@@ -634,11 +645,11 @@
       "teamPlaceholder": "Choose a team",
       "allTeams": "All public teams",
       "channel": "Provider channel",
-      "channelHint": "Channels the connected bot can access.",
+      "channelHint": "Channels the bot can post in.",
       "channelPlaceholder": "Choose a channel",
       "loading": "Loading channels",
       "refresh": "Refresh channels",
-      "none": "No channels found. For Telegram, add the bot as an administrator to a forum group or send it a topic message, then refresh.",
+      "none": "No channels found. Give the bot access to a channel, then refresh.",
       "loadError": "Couldn't load channels from the provider.",
       "displayName": "Display name",
       "displayNamePlaceholder": "support",
@@ -647,7 +658,20 @@
       "submit": "Add destination",
       "cancel": "Cancel",
       "added": "Destination added.",
-      "error": "Couldn't add the destination."
+      "error": "Couldn't add the destination.",
+      "enterId": "Enter a channel ID instead",
+      "pickFromList": "Choose from the list instead",
+      "channelId": "Channel ID",
+      "channelIdHint": "The provider's ID for the channel, such as C0123ABCD in Slack or -1001234567890 in Telegram."
+    },
+    "noDestinations": "Tickets aren't going anywhere yet.",
+    "addFirstDestination": "Add a destination",
+    "setup": {
+      "title": "Finish setting up the app",
+      "show": "Show setup steps",
+      "hide": "Hide",
+      "generic": "Enter this address in the provider's settings as the address it sends events to.",
+      "waiting": "This changes to Connected once the provider sends its first event. Mention the bot in a channel to send one."
     }
   }
 }

@@ -7,6 +7,7 @@ const providers: SupportChannelProvider[] = [
     key: "slack",
     name: "Slack",
     description: "Mirror email tickets into Slack threads and work them by talking to Ollie.",
+    configures: false,
     fields: [
       { name: "bot_token", label: "Bot token", secret: true },
       { name: "signing_secret", label: "Signing secret", secret: true },
@@ -16,6 +17,7 @@ const providers: SupportChannelProvider[] = [
     key: "discord",
     name: "Discord",
     description: "Mirror email tickets into Discord threads and work them by talking to Ollie.",
+    configures: true,
     fields: [
       { name: "bot_token", label: "Bot token", secret: true },
       { name: "public_key", label: "Interactions public key", secret: true },
@@ -26,6 +28,7 @@ const providers: SupportChannelProvider[] = [
     key: "telegram",
     name: "Telegram",
     description: "Mirror email tickets into Telegram forum topics and work them by talking to Ollie.",
+    configures: true,
     fields: [
       { name: "bot_token", label: "Bot token", secret: true },
       { name: "webhook_secret", label: "Webhook secret", secret: true, generated: true },
@@ -34,6 +37,25 @@ const providers: SupportChannelProvider[] = [
 ];
 
 const connections: SupportChannelConnection[] = [];
+
+// What each demo bot can see: Slack and Discord list channels, while a new
+// Telegram bot hears of its groups only once it is added to one.
+const discovered: Record<string, { id: string; name: string; kind: string; available: boolean }[]> = {
+  slack: [
+    { id: "C07SUPPORT", name: "support", kind: "channel", available: true },
+    { id: "C07BILLING", name: "billing", kind: "channel", available: true },
+  ],
+  discord: [
+    { id: "1290000000000000001", name: "support", kind: "text", available: true },
+    { id: "1290000000000000002", name: "escalations", kind: "text", available: true },
+  ],
+  telegram: [],
+};
+
+const health = (provider: string) =>
+  provider === "slack"
+    ? { health_status: "action_required" as const, health_detail: "Credentials work. Verify the Events API and /opendesk request URLs in Slack." }
+    : { health_status: "healthy" as const, health_detail: provider === "discord" ? "Discord's interactions endpoint and commands are configured." : "Telegram's webhook is configured and accepting updates." };
 const destinations: SupportChannelDestination[] = [];
 
 export function registerSupportChannels() {
@@ -43,7 +65,7 @@ export function registerSupportChannels() {
   post("/v1/support-channels/providers/:provider/accounts", (ctx) => {
     if (ctx.params.provider !== "discord") throw invalid("This provider does not have selectable accounts.");
     if (!String((ctx.body.credentials as Record<string, string> | undefined)?.bot_token ?? "").trim()) throw invalid("Couldn't load accounts from the provider.");
-    return { data: [{ id: "demo-discord-guild", name: "Demo Discord server" }] };
+    return { data: [{ id: "1289000000000000000", name: "Margin community" }] };
   });
   post("/v1/support-channels/connections", (ctx) => {
     const provider = providers.find((p) => p.key === ctx.body.provider);
@@ -55,12 +77,12 @@ export function registerSupportChannels() {
       id,
       provider: provider.key,
       name: String(ctx.body.name ?? "").trim() || `Demo ${provider.name}`,
-      external_account_id: `demo-${provider.key}`,
-      external_account_name: `Demo ${provider.name}`,
+      external_account_id: provider.key === "discord" ? String(credentials.guild_id) : `demo-${provider.key}`,
+      external_account_name: provider.key === "telegram" ? "Margin support" : provider.key === "discord" ? "Margin community" : "Margin",
+      external_account_handle: provider.key === "telegram" ? "@margin_support_bot" : "",
       status: "connected",
       last_error: "",
-      health_status: provider.key === "slack" ? "action_required" : "healthy",
-      health_detail: provider.key === "slack" ? "Verify the Events API and /opendesk request URLs in Slack." : "Provider setup is healthy.",
+      ...health(provider.key),
       health_checked_at: nowIso(),
       webhook_url: `${location.origin}/v1/support-channels/hooks/${provider.key}/${id}`,
       created_at: nowIso(),
@@ -72,21 +94,19 @@ export function registerSupportChannels() {
     const row = connections.find((x) => x.id === ctx.params.id);
     if (!row) throw notFound("Support channel");
     row.name = String(ctx.body.name ?? "").trim() || row.name;
-    row.health_status = row.provider === "slack" ? "action_required" : "healthy";
-    row.health_checked_at = nowIso();
+    Object.assign(row, health(row.provider), { health_checked_at: nowIso() });
     return row;
   });
   post("/v1/support-channels/connections/:id/test", (ctx) => {
     const row = connections.find((x) => x.id === ctx.params.id);
     if (!row) throw notFound("Support channel");
-    row.health_status = row.provider === "slack" ? "action_required" : "healthy";
-    row.health_checked_at = nowIso();
+    Object.assign(row, health(row.provider), { health_checked_at: nowIso() });
     return row;
   });
   get("/v1/support-channels/connections/:id/destinations", (ctx) => {
     const row = connections.find((x) => x.id === ctx.params.id);
     if (!row) throw notFound("Support channel");
-    return { data: [{ id: `demo-${row.provider}-channel`, name: "support", kind: "channel", available: true }] };
+    return { data: discovered[row.provider] ?? [] };
   });
   del("/v1/support-channels/connections/:id", (ctx) => {
     const i = connections.findIndex((x) => x.id === ctx.params.id);
