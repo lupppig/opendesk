@@ -141,7 +141,9 @@ export default function SupportChannels() {
               const state = connectionState(connection);
               const healthy = state.state === "active";
               const manual = provider ? !provider.configures : true;
-              const account = [connection.external_account_handle, connection.external_account_name].filter(Boolean).join(" · ") || connection.external_account_id;
+              // The account line adds what the name doesn't already say.
+              const accountName = connection.external_account_name !== connection.name ? connection.external_account_name : "";
+              const account = [connection.external_account_handle, accountName].filter(Boolean).join(" · ");
               return (
                 <div key={connection.id} className="px-4 py-3.5">
                   <div className="flex items-start gap-3">
@@ -152,7 +154,7 @@ export default function SupportChannels() {
                         <span className="text-[12px] text-fg-3">{provider?.name ?? connection.provider}</span>
                         <StatePill state={state.state}>{t(state.key)}</StatePill>
                       </div>
-                      <p className="mt-0.5 text-[12px] text-fg-3">{account}</p>
+                      {account && <p className="mt-0.5 text-[12px] text-fg-3">{account}</p>}
                       {connection.last_error ? (
                         <p className="mt-1 text-[12px] text-danger-fg">{connection.last_error}</p>
                       ) : (
@@ -595,7 +597,7 @@ function DestinationDialog({ connectionId, provider, onClose }: { connectionId: 
         <Button
           variant="link"
           size="xs"
-          className="-mt-2 self-start text-[12px] text-fg-3"
+          className="-mt-2 self-start px-0 text-[12px] text-fg-3"
           onClick={() => {
             setManual(!manual);
             setChannelId("");
