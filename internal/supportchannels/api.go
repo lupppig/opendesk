@@ -282,7 +282,7 @@ func (s *Service) register(api huma.API, r chi.Router) {
 			ID string `path:"id"`
 		}) (*struct {
 			Body struct {
-				Data []channel.Destination `json:"data"`
+				Data []AvailableDestination `json:"data"`
 			}
 		}, error) {
 			p, err := auth.RequireWorkspace(ctx, auth.RoleViewer, auth.ScopeSettingsRead)
@@ -310,12 +310,14 @@ func (s *Service) register(api huma.API, r chi.Router) {
 			}
 			out := &struct {
 				Body struct {
-					Data []channel.Destination `json:"data"`
+					Data []AvailableDestination `json:"data"`
 				}
 			}{}
-			out.Body.Data = items
-			if out.Body.Data == nil {
-				out.Body.Data = []channel.Destination{}
+			out.Body.Data = make([]AvailableDestination, 0, len(items))
+			for _, item := range items {
+				out.Body.Data = append(out.Body.Data, AvailableDestination{
+					ID: item.ID, Name: item.Name, Kind: item.Kind, Available: item.Available,
+				})
 			}
 			return out, nil
 		})

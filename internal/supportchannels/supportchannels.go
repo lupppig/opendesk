@@ -87,3 +87,12 @@ type destination struct {
 	IncludeNotes        bool       `json:"include_notes"`
 	CreatedAt           time.Time  `json:"created_at"`
 }
+
+// AvailableDestination is a provider location discovered during onboarding.
+// It is deliberately distinct from destination, which is a persisted team route.
+type AvailableDestination struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Kind      string `json:"kind,omitempty"`
+	Available bool   `json:"available"`
+}
