@@ -37,7 +37,7 @@ defmodule Realtime.MixProject do
     [
       {:phoenix, "~> 1.8"},
       {:phoenix_pubsub, "~> 2.1"},
-      {:bandit, "~> 1.13.1"},
+      {:bandit, "~> 1.13 and >= 1.13.1"},
       {:jason, "~> 1.4"},
       {:jose, "~> 1.11"},
       {:gnat, "~> 1.9"},
