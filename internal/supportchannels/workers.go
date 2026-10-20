@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 
+	"github.com/useopendesk/opendesk/internal/audit"
 	"github.com/useopendesk/opendesk/internal/auth"
 	"github.com/useopendesk/opendesk/internal/crypto"
 	"github.com/useopendesk/opendesk/internal/db"
@@ -332,14 +333,48 @@ func (s *Service) processInbound(ctx context.Context, a jobs.SupportChannelInbou
 
 func (s *Service) linkIdentity(ctx context.Context, c connection, in channel.Inbound) error {
 	code := strings.ToUpper(strings.TrimSpace(in.Text))
+	if code == "" || in.ExternalUserID == "" {
+		return pgx.ErrNoRows
+	}
 	return s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
 		var wid, uid uuid.UUID
 		err := tx.QueryRow(ctx, `DELETE FROM support_channel_link_codes WHERE code_hash=$1 AND workspace_id=$2 AND expires_at>now() RETURNING workspace_id,user_id`, crypto.HashToken(code), c.WorkspaceID).Scan(&wid, &uid)
 		if err != nil {
 			return err
 		}
-		_, err = tx.Exec(ctx, `INSERT INTO support_channel_identities(id,workspace_id,connection_id,external_user_id,user_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT(connection_id,external_user_id) DO UPDATE SET user_id=EXCLUDED.user_id,created_at=now()`, ids.New(), wid, c.ID, in.ExternalUserID, uid)
-		return err
+		// One external account per person per connection, and one person per external
+		// account: whatever this link replaces is unlinked, and audited as such.
+		rows, err := tx.Query(ctx, `DELETE FROM support_channel_identities WHERE connection_id=$1 AND (user_id=$2 OR external_user_id=$3) RETURNING user_id,external_user_id`, c.ID, uid, in.ExternalUserID)
+		if err != nil {
+			return err
+		}
+		type identity struct {
+			UserID   uuid.UUID
+			External string
+		}
+		replaced, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (identity, error) {
+			var x identity
+			return x, r.Scan(&x.UserID, &x.External)
+		})
+		if err != nil {
+			return err
+		}
+		// The person whose code was used acted; the audit entries name them.
+		actor := &auth.Principal{Kind: auth.KindUser, UserID: uid, WorkspaceID: wid}
+		for _, old := range replaced {
+			if old.UserID == uid && old.External == in.ExternalUserID {
+				continue
+			}
+			if err := audit.Log(ctx, tx, actor, wid, "support_channel.identity_unlinked", "support_channel", &c.ID,
+				map[string]any{"provider": c.Provider, "external_user_id": old.External, "user_id": old.UserID}); err != nil {
+				return err
+			}
+		}
+		if _, err = tx.Exec(ctx, `INSERT INTO support_channel_identities(id,workspace_id,connection_id,external_user_id,user_id) VALUES($1,$2,$3,$4,$5)`, ids.New(), wid, c.ID, in.ExternalUserID, uid); err != nil {
+			return err
+		}
+		return audit.Log(ctx, tx, actor, wid, "support_channel.identity_linked", "support_channel", &c.ID,
+			map[string]any{"provider": c.Provider, "external_user_id": in.ExternalUserID})
 	})
 }
 func (s *Service) externalPrincipal(ctx context.Context, c connection, external string) (*auth.Principal, error) {

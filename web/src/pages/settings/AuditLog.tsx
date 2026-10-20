@@ -144,6 +144,12 @@ const verbs: Record<string, string> = {
   "collab.account_disconnected": "disconnected a mail account",
   "collab.thread_shared": "shared a conversation",
   "collab.thread_assigned": "assigned a conversation",
+  "support_channel.connected": "connected a support channel",
+  "support_channel.disconnected": "disconnected a support channel",
+  "support_channel.destination_created": "added a support channel destination",
+  "support_channel.destination_deleted": "removed a support channel destination",
+  "support_channel.identity_linked": "linked a chat account",
+  "support_channel.identity_unlinked": "unlinked a chat account",
 };
 
 function str(v: unknown): string | null {
