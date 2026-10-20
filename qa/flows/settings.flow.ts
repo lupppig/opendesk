@@ -1,3 +1,4 @@
+import type { Page } from "@playwright/test";
 import { expect, test } from "../lib/proof.ts";
 
 test("let visitors send voice messages from a chat widget", async ({ page, proof }) => {
@@ -23,8 +24,17 @@ test("let visitors send voice messages from a chat widget", async ({ page, proof
   await proof.shot("voice-length", { caption: "The longest voice message set to 90 seconds" });
 });
 
-test("connect Discord, pick its server and route a channel in one go", async ({ page, proof }) => {
+// Ollie's nudge about unowned tickets would sit over the page header.
+async function openSupportChannels(page: Page, proof: { open: (path: string) => Promise<unknown> }) {
   await proof.open("/settings/support-channels");
+  await page
+    .getByRole("button", { name: "Not now" })
+    .click({ timeout: 3_000 })
+    .catch(() => {});
+}
+
+test("connect Discord, pick its server and route a channel in one go", async ({ page, proof }) => {
+  await openSupportChannels(page, proof);
   await expect(page.getByRole("heading", { name: "Support channels", exact: true })).toBeVisible();
   await expect(page.getByText("No support channels yet")).toBeVisible();
   await proof.chapter("Support channels", "Connect a bot and choose where tickets appear");
@@ -54,7 +64,7 @@ test("connect Discord, pick its server and route a channel in one go", async ({ 
 });
 
 test("finish Slack's setup and route Telegram by channel ID", async ({ page, proof }) => {
-  await proof.open("/settings/support-channels");
+  await openSupportChannels(page, proof);
   await expect(page.getByText("No support channels yet")).toBeVisible();
   await proof.chapter("Slack", "The steps opendesk can't take for you, with the address to paste");
   await page.getByRole("button", { name: "Slack" }).click();

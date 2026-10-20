@@ -76,7 +76,7 @@ export function registerSupportChannels() {
     const row: SupportChannelConnection = {
       id,
       provider: provider.key,
-      name: String(ctx.body.name ?? "").trim() || `Demo ${provider.name}`,
+      name: "",
       external_account_id: provider.key === "discord" ? String(credentials.guild_id) : `demo-${provider.key}`,
       external_account_name: provider.key === "telegram" ? "Margin support" : provider.key === "discord" ? "Margin community" : "Margin",
       external_account_handle: provider.key === "telegram" ? "@margin_support_bot" : "",
@@ -87,6 +87,8 @@ export function registerSupportChannels() {
       webhook_url: `${location.origin}/v1/support-channels/hooks/${provider.key}/${id}`,
       created_at: nowIso(),
     };
+    // Like the API, an unnamed connection takes its account's name.
+    row.name = String(ctx.body.name ?? "").trim() || row.external_account_name;
     connections.unshift(row);
     return row;
   });

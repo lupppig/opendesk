@@ -156,7 +156,10 @@ export default function SupportChannels() {
                       {connection.last_error ? (
                         <p className="mt-1 text-[12px] text-danger-fg">{connection.last_error}</p>
                       ) : (
-                        !healthy && connection.health_detail && <p className="mt-1 text-[12px] text-fg-2">{connection.health_detail}</p>
+                        // The setup steps say what Slack's "finish setup" detail would.
+                        !healthy &&
+                        connection.health_detail &&
+                        !(manual && connection.health_status === "action_required") && <p className="mt-1 text-[12px] text-fg-2">{connection.health_detail}</p>
                       )}
                       {manual && admin && (
                         <SetupSteps provider={connection.provider} webhookUrl={connection.webhook_url} done={healthy} />
@@ -164,7 +167,7 @@ export default function SupportChannels() {
                       {!routes.length && admin && (
                         <p className="mt-2 text-[12px] text-fg-3">
                           {t("supportChannels.noDestinations")}{" "}
-                          <Button variant="link" size="xs" className="text-[12px]" onClick={() => setRouting(connection.id)}>
+                          <Button variant="link" size="xs" className="px-0 text-[12px]" onClick={() => setRouting(connection.id)}>
                             {t("supportChannels.addFirstDestination")}
                           </Button>
                         </p>
@@ -304,7 +307,7 @@ function SetupSteps({ provider, webhookUrl, done }: { provider: string; webhookU
   const list = Array.isArray(steps) ? (steps as string[]) : [t("supportChannels.setup.generic")];
   if (!open)
     return (
-      <Button variant="link" size="xs" className="mt-1.5 text-[12px] text-fg-3" onClick={() => setOpen(true)}>
+      <Button variant="link" size="xs" className="px-0 mt-1.5 text-[12px] text-fg-3" onClick={() => setOpen(true)}>
         {t("supportChannels.setup.show")}
       </Button>
     );
@@ -313,7 +316,7 @@ function SetupSteps({ provider, webhookUrl, done }: { provider: string; webhookU
       <div className="flex items-center justify-between gap-2">
         <p className="text-[12px] font-medium">{t("supportChannels.setup.title")}</p>
         {done && (
-          <Button variant="link" size="xs" className="text-[12px] text-fg-3" onClick={() => setOpen(false)}>
+          <Button variant="link" size="xs" className="px-0 text-[12px] text-fg-3" onClick={() => setOpen(false)}>
             {t("supportChannels.setup.hide")}
           </Button>
         )}
