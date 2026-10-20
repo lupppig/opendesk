@@ -79,7 +79,7 @@ func (s *Service) register(api huma.API, r chi.Router) {
 				Credentials map[string]string `json:"credentials"`
 			}
 		}) (*struct{ Body connection }, error) {
-			p, err := auth.RequireWorkspace(ctx, auth.RoleAdmin, auth.ScopeSettingsWrite)
+			p, err := requireAdminUser(ctx)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
@@ -131,7 +131,7 @@ func (s *Service) register(api huma.API, r chi.Router) {
 		func(ctx context.Context, in *struct {
 			ID string `path:"id"`
 		}) (*struct{}, error) {
-			p, err := auth.RequireWorkspace(ctx, auth.RoleAdmin, auth.ScopeSettingsWrite)
+			p, err := requireAdminUser(ctx)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
@@ -204,7 +204,7 @@ func (s *Service) register(api huma.API, r chi.Router) {
 				ExternalChannelName string `json:"external_channel_name,omitempty" maxLength:"100"`
 			}
 		}) (*struct{ Body destination }, error) {
-			p, e := auth.RequireWorkspace(ctx, auth.RoleAdmin, auth.ScopeSettingsWrite)
+			p, e := requireAdminUser(ctx)
 			if e != nil {
 				return nil, httpx.Wrap(e)
 			}
@@ -266,7 +266,7 @@ func (s *Service) register(api huma.API, r chi.Router) {
 		func(ctx context.Context, in *struct {
 			ID string `path:"id"`
 		}) (*struct{}, error) {
-			p, err := auth.RequireWorkspace(ctx, auth.RoleAdmin, auth.ScopeSettingsWrite)
+			p, err := requireAdminUser(ctx)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
@@ -303,7 +303,7 @@ func (s *Service) register(api huma.API, r chi.Router) {
 				ExpiresAt time.Time `json:"expires_at"`
 			}
 		}, error) {
-			p, e := auth.RequireWorkspace(ctx, auth.RoleAgent, auth.ScopeTicketsWrite)
+			p, e := requireUser(ctx, auth.RoleAgent, "")
 			if e != nil {
 				return nil, httpx.Wrap(e)
 			}
@@ -330,6 +330,26 @@ func (s *Service) register(api huma.API, r chi.Router) {
 		})
 
 	r.Post("/v1/support-channels/hooks/{provider}/{id}", s.webhook)
+}
+
+// requireAdminUser admits a workspace admin signed in as a person. Connecting a
+// bot account, routing tickets to external chats and linking identities hand
+// ticket access to another service, so API keys can't manage them.
+func requireAdminUser(ctx context.Context) (*auth.Principal, error) {
+	return requireUser(ctx, auth.RoleAdmin, auth.ScopeSettingsWrite)
+}
+
+// requireUser admits a person with at least role. scope bounds an AI client's
+// OAuth grant; "" refuses grants as well as API keys.
+func requireUser(ctx context.Context, role auth.Role, scope string) (*auth.Principal, error) {
+	p, err := auth.RequireWorkspace(ctx, role, scope)
+	if err != nil {
+		return nil, httpx.Wrap(err)
+	}
+	if p.Kind != auth.KindUser {
+		return nil, httpx.Forbidden()
+	}
+	return p, nil
 }
 
 func cleanCredentials(d channel.Descriptor, input map[string]string) map[string]string {
