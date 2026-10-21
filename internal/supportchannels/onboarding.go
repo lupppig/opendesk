@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/useopendesk/opendesk/internal/displayname"
+	"github.com/useopendesk/opendesk/internal/events"
 	"github.com/useopendesk/opendesk/internal/supportchannels/channel"
 )
 
@@ -69,7 +70,8 @@ func (s *Service) refreshAccount(ctx context.Context, c connection, account chan
 	if account.Name == c.ExternalAccountName && account.Handle == c.ExternalAccountHandle {
 		return c
 	}
-	if _, err := s.d.DB.Pool.Exec(ctx, `UPDATE support_channel_connections SET external_account_name=$2,external_account_handle=$3 WHERE id=$1`, c.ID, account.Name, account.Handle); err != nil {
+	if _, err := s.d.DB.Pool.Exec(ctx, `UPDATE support_channel_connections SET external_account_name=$3,external_account_handle=$4 WHERE workspace_id=$1 AND id=$2`,
+		c.WorkspaceID, c.ID, account.Name, account.Handle); err != nil {
 		s.d.Log.Warn("support channel account", "connection_id", c.ID, "err", err)
 		return c
 	}
@@ -93,14 +95,38 @@ func (s *Service) foreignWebhook(ctx context.Context, c connection, url string) 
 	return ok
 }
 
+// markWebhookHealthy records that a signed webhook arrived, and tells the workspace's
+// admins when that changes the connection's health.
 func (s *Service) markWebhookHealthy(ctx context.Context, c connection) {
 	if c.HealthStatus == "healthy" {
 		return
 	}
-	_, err := s.d.DB.Pool.Exec(ctx, `UPDATE support_channel_connections SET health_status='healthy',health_detail='A signed webhook was received.',health_checked_at=now() WHERE id=$1 AND health_status<>'healthy'`, c.ID)
+	err := s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
+		var at time.Time
+		err := tx.QueryRow(ctx, `UPDATE support_channel_connections SET health_status='healthy',health_detail=$3,health_checked_at=now()
+			WHERE workspace_id=$1 AND id=$2 AND health_status<>'healthy' RETURNING health_checked_at`, c.WorkspaceID, c.ID, webhookHealthy).Scan(&at)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		c.HealthStatus, c.HealthDetail, c.HealthCheckedAt = "healthy", webhookHealthy, &at
+		return s.publishConnection(ctx, tx, c)
+	})
 	if err != nil {
 		s.d.Log.Warn("support channel webhook health", "connection_id", c.ID, "err", err)
 	}
+}
+
+const webhookHealthy = "A signed webhook was received."
+
+// publishConnection tells the workspace's admins a connection changed.
+func (s *Service) publishConnection(ctx context.Context, tx pgx.Tx, c connection) error {
+	c.CredentialsEnc = nil
+	_, err := events.Publish(ctx, tx, events.Event{WorkspaceID: c.WorkspaceID, Type: "support_channel_connection.updated",
+		Data: map[string]any{"support_channel_connection": c}})
+	return err
 }
 
 func (s *Service) storeHealth(ctx context.Context, c connection, health channel.Health) connection {
@@ -108,12 +134,20 @@ func (s *Service) storeHealth(ctx context.Context, c connection, health channel.
 		health = channel.Health{Status: "error", Detail: healthFailure}
 	}
 	now := time.Now().UTC()
-	if _, err := s.d.DB.Pool.Exec(ctx, `UPDATE support_channel_connections SET health_status=$2,health_detail=$3,health_checked_at=$4 WHERE id=$1`, c.ID, health.Status, health.Detail, now); err != nil {
+	next := c
+	next.HealthStatus, next.HealthDetail, next.HealthCheckedAt = health.Status, health.Detail, &now
+	err := s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `UPDATE support_channel_connections SET health_status=$3,health_detail=$4,health_checked_at=$5 WHERE workspace_id=$1 AND id=$2`,
+			c.WorkspaceID, c.ID, health.Status, health.Detail, now); err != nil {
+			return err
+		}
+		return s.publishConnection(ctx, tx, next)
+	})
+	if err != nil {
 		s.d.Log.Warn("support channel health status", "connection_id", c.ID, "err", err)
 		return c
 	}
-	c.HealthStatus, c.HealthDetail, c.HealthCheckedAt = health.Status, health.Detail, &now
-	return c
+	return next
 }
 
 func (s *Service) discoverDestinations(ctx context.Context, c connection, credentials map[string]string) ([]channel.Destination, error) {

@@ -147,12 +147,39 @@ func (a Adapter) Configure(ctx context.Context, c *http.Client, cr map[string]st
 			return err
 		}
 	}
+	// Only missing commands are registered: a command of the same name is left as it
+	// is, and each registration counts against Discord's daily limit.
+	missing, err := a.missingCommands(ctx, c, cr, app.ID)
+	if err != nil {
+		return err
+	}
 	for _, command := range commands {
+		if !missing[command["name"].(string)] {
+			continue
+		}
 		if err := a.call(ctx, c, cr["bot_token"], http.MethodPost, "/applications/"+app.ID+"/guilds/"+cr["guild_id"]+"/commands", command, nil); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// missingCommands are the names of opendesk's commands the server does not have.
+func (a Adapter) missingCommands(ctx context.Context, c *http.Client, cr map[string]string, appID string) (map[string]bool, error) {
+	var registered []struct {
+		Name string `json:"name"`
+	}
+	if err := a.call(ctx, c, cr["bot_token"], http.MethodGet, "/applications/"+appID+"/guilds/"+cr["guild_id"]+"/commands", nil, &registered); err != nil {
+		return nil, err
+	}
+	missing := map[string]bool{}
+	for _, command := range commands {
+		missing[command["name"].(string)] = true
+	}
+	for _, command := range registered {
+		delete(missing, command.Name)
+	}
+	return missing, nil
 }
 
 func (a Adapter) Health(ctx context.Context, c *http.Client, cr map[string]string, setup channel.Setup) (channel.Health, error) {
@@ -166,20 +193,11 @@ func (a Adapter) Health(ctx context.Context, c *http.Client, cr map[string]strin
 		}
 		return channel.Health{Status: "action_required", Detail: "Discord's interactions endpoint points somewhere else. Test the connection to repair it."}, nil
 	}
-	var registered []struct {
-		Name string `json:"name"`
-	}
-	if err := a.call(ctx, c, cr["bot_token"], http.MethodGet, "/applications/"+app.ID+"/guilds/"+cr["guild_id"]+"/commands", nil, &registered); err != nil {
+	missing, err := a.missingCommands(ctx, c, cr, app.ID)
+	if err != nil {
 		return channel.Health{}, err
 	}
-	want := map[string]bool{}
-	for _, command := range commands {
-		want[command["name"].(string)] = true
-	}
-	for _, command := range registered {
-		delete(want, command.Name)
-	}
-	if len(want) > 0 {
+	if len(missing) > 0 {
 		return channel.Health{Status: "action_required", Detail: "Some opendesk commands are missing. Test the connection to register them."}, nil
 	}
 	return channel.Health{Status: "healthy", Detail: "Discord's interactions endpoint and commands are configured."}, nil

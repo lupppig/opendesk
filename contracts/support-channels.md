@@ -153,7 +153,7 @@ of the typed actions below; generated text is never executed as a command.
 | `assign` / `assign_self` | assigns the linked agent |
 | `status <open|pending|on_hold|solved|closed>` | changes status |
 | `priority <low|normal|high|urgent>` | changes priority |
-| Ollie `create_ticket {subject,description?}` | creates a new ticket through the normal ticket service |
+| Ollie `create_ticket {subject,description?}` | creates a new ticket through the normal ticket service (channel `api`); Ollie answers with its number and link. It gets no thread, since version 1 mirrors email tickets only |
 
 Natural-language ticket creation, customer replies and closing a ticket wait for an explicit `confirm`
 or `cancel` response and expire after ten minutes. Drafting a reply does not send it.
@@ -203,8 +203,11 @@ available." `/opendesk link <code>` needs no number.
 - **Discord:** bot token and interactions public key. opendesk lists the servers where the
   bot is installed, then lists text channels in the selected server. Install the bot with
   thread/message access and enable the privileged Message Content intent. opendesk sets
-  the Interactions Endpoint URL and upserts the commands above plus
-  `/ask` through Discord's API. Worker processes maintain one leased Gateway connection per Discord connection,
+  the Interactions Endpoint URL and registers the commands above plus
+  `/ask` through Discord's API. The endpoint is one per Discord application: an endpoint
+  that is not another opendesk connection's is replaced, so a bot that also serves another
+  backend needs a bot of its own for opendesk. Only missing commands are registered; a
+  command of the same name already on the server is left as it is. Worker processes maintain one leased Gateway connection per Discord connection,
   so multiple workers do not handle the same message. A dropped connection resumes its
   session where Discord allows it; otherwise the worker reconnects with exponential
   backoff and jitter, from five seconds up to five minutes. Close codes that mean the
@@ -243,6 +246,8 @@ available." `/opendesk link <code>` needs no number.
   subjects and message text cannot notify an external channel or fetch arbitrary links.
 
 Events: `support_channel_connection.created {support_channel_connection}`,
+`support_channel_connection.updated {support_channel_connection}` (rotated credentials, a
+renamed account, a new health state from a test or the first signed webhook),
 `support_channel_connection.deleted {support_channel_connection_id}`,
 `support_channel_destination.created {support_channel_destination}` and
 `support_channel_destination.deleted {support_channel_destination_id}`.

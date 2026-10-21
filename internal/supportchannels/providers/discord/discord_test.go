@@ -18,7 +18,9 @@ import (
 func TestConfigureAndHealth(t *testing.T) {
 	webhook := "https://example.test/hooks/discord/1"
 	configured := false
-	registered := map[string]bool{}
+	// The server already has a "status" command of its own: it stays as it is.
+	registered := map[string]bool{"status": true}
+	posts := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/applications/@me" && r.Method == http.MethodGet:
@@ -38,6 +40,7 @@ func TestConfigureAndHealth(t *testing.T) {
 				t.Fatal(err)
 			}
 			registered[body.Name] = true
+			posts++
 			w.WriteHeader(http.StatusCreated)
 			_, _ = w.Write([]byte(`{}`))
 		case strings.HasSuffix(r.URL.Path, "/commands") && r.Method == http.MethodGet:
@@ -60,9 +63,16 @@ func TestConfigureAndHealth(t *testing.T) {
 	if !configured || len(registered) != len(commands) {
 		t.Fatalf("configured=%v commands=%v", configured, registered)
 	}
+	if posts != len(commands)-1 {
+		t.Fatalf("registered %d commands, want only the %d missing", posts, len(commands)-1)
+	}
 	health, err := a.Health(context.Background(), server.Client(), credentials, setup)
 	if err != nil || health.Status != "healthy" {
 		t.Fatalf("health: %+v, %v", health, err)
+	}
+	// Configuring again registers nothing.
+	if err := a.Configure(context.Background(), server.Client(), credentials, setup); err != nil || posts != len(commands)-1 {
+		t.Fatalf("configured again: %d posts, %v", posts, err)
 	}
 }
 
