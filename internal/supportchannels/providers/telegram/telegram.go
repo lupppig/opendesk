@@ -219,20 +219,23 @@ func (Adapter) Parse(_ http.Header, body []byte) (channel.WebhookResult, error) 
 	}
 	if x.CallbackQuery != nil {
 		q := x.CallbackQuery
-		cmd := strings.TrimPrefix(q.Data, "opendesk:")
+		cmd, ok := strings.CutPrefix(q.Data, "opendesk:")
 		value := ""
-		if before, after, ok := strings.Cut(cmd, ":"); ok {
+		if before, after, found := strings.Cut(cmd, ":"); found {
 			cmd, value = before, after
+		}
+		if !ok || !controls[cmd] {
+			// Not one of opendesk's controls: answer it so the button stops loading.
+			ack, _ := json.Marshal(map[string]any{"method": "answerCallbackQuery", "callback_query_id": q.ID})
+			return channel.WebhookResult{Status: http.StatusOK, ContentType: "application/json", Body: ack}, nil
 		}
 		text := value
 		if cmd == "confirm" || cmd == "cancel" {
-			text, cmd = cmd, "chat"
+			text = cmd
 		}
-		ack, _ := json.Marshal(map[string]any{"method": "answerCallbackQuery", "callback_query_id": q.ID})
-		return channel.WebhookResult{
-			Events: []channel.Inbound{{EventID: q.ID, ExternalChannelID: strconv.FormatInt(q.Message.Chat.ID, 10), ExternalThreadID: strconv.FormatInt(q.Message.MessageThreadID, 10), ExternalUserID: strconv.FormatInt(q.From.ID, 10), Command: cmd, Text: text, Value: value, SourceMessageID: strconv.FormatInt(q.Message.MessageID, 10)}},
-			Status: http.StatusOK, ContentType: "application/json", Body: ack,
-		}, nil
+		// The worker answers the callback query (Respond), so an error can reach
+		// the person who pressed the button alone.
+		return channel.WebhookResult{Control: true, Events: []channel.Inbound{{EventID: q.ID, ExternalChannelID: strconv.FormatInt(q.Message.Chat.ID, 10), ExternalThreadID: strconv.FormatInt(q.Message.MessageThreadID, 10), ExternalUserID: strconv.FormatInt(q.From.ID, 10), Command: cmd, Text: text, Value: value, SourceMessageID: strconv.FormatInt(q.Message.MessageID, 10), Respond: q.ID}}}, nil
 	}
 	if x.Message == nil {
 		return channel.WebhookResult{}, nil
@@ -271,6 +274,9 @@ func (Adapter) Parse(_ http.Header, body []byte) (channel.WebhookResult, error) 
 	}
 	return channel.WebhookResult{Events: []channel.Inbound{{EventID: strconv.FormatInt(x.UpdateID, 10), ExternalChannelID: strconv.FormatInt(x.Message.Chat.ID, 10), ExternalThreadID: strconv.FormatInt(x.Message.MessageThreadID, 10), ExternalUserID: strconv.FormatInt(x.Message.From.ID, 10), Command: cmd, Text: text, Value: text, Mention: mention}}, Destinations: []channel.Destination{discovery}}, nil
 }
+
+// controls are the callback commands opendesk's own keyboards send.
+var controls = map[string]bool{"assign_self": true, "status": true, "priority": true, "confirm": true, "cancel": true}
 
 func explicitCommand(s string) bool {
 	switch s {
@@ -321,7 +327,16 @@ func (a Adapter) Update(ctx context.Context, c *http.Client, cr map[string]strin
 	payload := ticketPayload(cr["channel_id"], "", t)
 	payload["message_id"] = messageID
 	delete(payload, "message_thread_id")
-	return a.call(ctx, c, cr, "editMessageText", payload, nil)
+	return a.edit(ctx, c, cr, "editMessageText", payload)
+}
+
+// edit treats Telegram's refusal to apply an edit that changes nothing as done.
+func (a Adapter) edit(ctx context.Context, c *http.Client, cr map[string]string, method string, payload map[string]any) error {
+	err := a.call(ctx, c, cr, method, payload, nil)
+	if err != nil && strings.Contains(err.Error(), "message is not modified") {
+		return nil
+	}
+	return err
 }
 
 func (a Adapter) PostInteractive(ctx context.Context, c *http.Client, cr map[string]string, thread string, message channel.Message) (channel.MessageRef, error) {
@@ -334,12 +349,26 @@ func (a Adapter) PostInteractive(ctx context.Context, c *http.Client, cr map[str
 	return channel.MessageRef{ID: strconv.FormatInt(out.MessageID, 10)}, err
 }
 
-func (a Adapter) UpdateInteractive(ctx context.Context, c *http.Client, cr map[string]string, messageID string, message channel.Message) error {
-	id, _ := strconv.ParseInt(messageID, 10, 64)
-	payload := interactivePayload(cr["channel_id"], 0, message)
-	payload["message_id"] = id
-	delete(payload, "message_thread_id")
-	return a.call(ctx, c, cr, "editMessageText", payload, nil)
+func (a Adapter) ClearActions(ctx context.Context, c *http.Client, cr map[string]string, in channel.Inbound) error {
+	id, err := strconv.ParseInt(in.SourceMessageID, 10, 64)
+	if err != nil {
+		return nil
+	}
+	return a.edit(ctx, c, cr, "editMessageReplyMarkup", map[string]any{
+		"chat_id": cr["channel_id"], "message_id": id, "reply_markup": map[string]any{"inline_keyboard": []any{}},
+	})
+}
+
+// Respond answers the callback query, with text shown to its sender alone.
+func (a Adapter) Respond(ctx context.Context, c *http.Client, cr map[string]string, handle, text string) error {
+	input := map[string]any{"callback_query_id": handle}
+	if text != "" {
+		if r := []rune(text); len(r) > 200 {
+			text = string(r[:199]) + "…"
+		}
+		input["text"] = text
+	}
+	return a.call(ctx, c, cr, "answerCallbackQuery", input, nil)
 }
 
 func ticketPayload(chatID, thread string, t channel.Ticket) map[string]any {
@@ -373,8 +402,6 @@ func interactivePayload(chatID string, thread int64, message channel.Message) ma
 			buttons = append(buttons, callbackButton(action.Label, action.Command, action.Value))
 		}
 		payload["reply_markup"] = map[string]any{"inline_keyboard": []any{buttons}}
-	} else {
-		payload["reply_markup"] = map[string]any{"inline_keyboard": []any{}}
 	}
 	return payload
 }

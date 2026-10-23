@@ -150,8 +150,36 @@ func TestParseComponentInteraction(t *testing.T) {
 		t.Fatalf("parse: %+v, %v", result, err)
 	}
 	event := result.Events[0]
-	if event.Command != "priority" || event.Value != "urgent" || event.SourceMessageID != "M1" || string(result.Body) != `{"type":6}` {
+	if event.Command != "priority" || event.Value != "urgent" || event.SourceMessageID != "M1" || string(result.Body) != `{"type":6}` || !result.Control {
 		t.Fatalf("component: %+v body=%s", event, result.Body)
+	}
+
+	body = []byte(`{"id":"I4","application_id":"A1","token":"tok","guild_id":"G1","channel_id":"TH1","type":3,"member":{"user":{"id":"U1"}},"data":{"custom_id":"opendesk:confirm:n0nce"},"message":{"id":"M2"}}`)
+	result, _ = (Adapter{}).Parse(http.Header{}, body)
+	if len(result.Events) != 1 || result.Events[0].Command != "confirm" || result.Events[0].Value != "n0nce" || result.Events[0].Respond != "A1/tok" {
+		t.Fatalf("confirm: %+v", result.Events)
+	}
+
+	body = []byte(`{"id":"I5","guild_id":"G1","channel_id":"TH1","type":3,"member":{"user":{"id":"U1"}},"data":{"custom_id":"other:thing"},"message":{"id":"M2"}}`)
+	result, _ = (Adapter{}).Parse(http.Header{}, body)
+	if len(result.Events) != 0 || string(result.Body) != `{"type":6}` {
+		t.Fatalf("unknown component: %+v", result)
+	}
+}
+
+func TestEditsInArchivedThreadsAreSkipped(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"code":50083,"message":"Thread is archived"}`))
+	}))
+	defer server.Close()
+	a := Adapter{BaseURL: server.URL}
+	credentials := map[string]string{"bot_token": "token", "channel_id": "TH1"}
+	if err := a.Update(context.Background(), server.Client(), credentials, "M1", channel.Ticket{Number: 1}); err != nil {
+		t.Fatalf("card: %v", err)
+	}
+	if err := a.ClearActions(context.Background(), server.Client(), credentials, channel.Inbound{SourceMessageID: "M2"}); err != nil {
+		t.Fatalf("clear: %v", err)
 	}
 }
 

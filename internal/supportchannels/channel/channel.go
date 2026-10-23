@@ -108,7 +108,7 @@ type Inbound struct {
 	ExternalChannelID string
 	ExternalThreadID  string
 	ExternalUserID    string
-	Command           string // chat | link | reply | note | assign_self | status | priority
+	Command           string // chat | link | reply | note | assign_self | status | priority | confirm | cancel
 	Text              string
 	Value             string
 	// Directed is true when the provider says the message explicitly addressed
@@ -123,9 +123,19 @@ type Inbound struct {
 	// inside its thread (a Slack slash command). The engine resolves it to the
 	// ticket's mirrored thread on the same connection.
 	TicketNumber int64 `json:",omitempty"`
-	// SourceMessageID is the provider message which held an interactive control.
-	// It lets the engine remove confirm/cancel buttons after they are consumed.
+	// SourceMessageID is the provider message which held the native control that
+	// sent this action. It is set only for controls (buttons and selects), so the
+	// engine can tell a card action from a typed command and remove consumed
+	// Confirm and Cancel buttons. A confirm or cancel carries its preview's nonce
+	// as Value.
 	SourceMessageID string `json:",omitempty"`
+	// SourceText is the provider's copy of that message's text, for providers
+	// whose edits must restate it to remove the controls (Slack).
+	SourceText string `json:",omitempty"`
+	// Respond is an opaque provider handle for answering the sender privately
+	// (Slack's response_url, Discord's interaction, Telegram's callback query),
+	// used by a Responder.
+	Respond string `json:",omitempty"`
 }
 
 // WebhookResult separates provider protocol acknowledgements from normalized
@@ -134,9 +144,12 @@ type Inbound struct {
 type WebhookResult struct {
 	Events       []Inbound
 	Destinations []Destination
-	Status       int
-	ContentType  string
-	Body         []byte
+	// Control reports a callback from one of opendesk's native controls, which
+	// proves the provider's interactivity setting reaches opendesk.
+	Control     bool
+	Status      int
+	ContentType string
+	Body        []byte
 }
 
 type Adapter interface {
@@ -151,9 +164,18 @@ type Adapter interface {
 
 // InteractiveAdapter is implemented by providers with native buttons or
 // selects. The base Adapter remains text-compatible for future providers.
+// ClearActions removes the controls from a message the bot posted and keeps
+// its text; it is given the Inbound that a control on that message sent.
 type InteractiveAdapter interface {
 	PostInteractive(context.Context, *http.Client, map[string]string, string, Message) (MessageRef, error)
-	UpdateInteractive(context.Context, *http.Client, map[string]string, string, Message) error
+	ClearActions(context.Context, *http.Client, map[string]string, Inbound) error
+}
+
+// Responder answers the person behind an Inbound privately, through its
+// Respond handle. Respond with empty text only acknowledges the action, for
+// providers that wait for an answer (Telegram's callback queries).
+type Responder interface {
+	Respond(context.Context, *http.Client, map[string]string, string, string) error
 }
 
 // Discoverer is an optional capability for providers which expose destinations

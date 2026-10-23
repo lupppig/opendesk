@@ -56,7 +56,9 @@ func RegisterWorkers(d *deps.Deps, w *river.Workers) {
 }
 func Periodic(*deps.Deps) []*river.PeriodicJob { return nil }
 func Background(ctx context.Context, d *deps.Deps) {
-	For(d).runSubscribers(ctx)
+	s := For(d)
+	go s.reconfigurePending(ctx)
+	s.runSubscribers(ctx)
 }
 
 type connection struct {

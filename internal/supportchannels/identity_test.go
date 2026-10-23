@@ -89,8 +89,8 @@ func TestHealthChangesAreAnnounced(t *testing.T) {
 	if status != "action_required" || c.HealthStatus != "action_required" || updates() != 1 {
 		t.Fatalf("stored %q, connection %+v, updates %d", status, c, updates())
 	}
-	s.markWebhookHealthy(e.Ctx, c)
-	s.markWebhookHealthy(e.Ctx, c) // a second webhook changes nothing
+	s.markWebhookHealthy(e.Ctx, c, false)
+	s.markWebhookHealthy(e.Ctx, c, false) // a second webhook changes nothing
 	e.Scalar(`SELECT health_status FROM support_channel_connections WHERE id = $1`, &status, c.ID)
 	if status != "healthy" || updates() != 2 {
 		t.Fatalf("after webhooks %q, updates %d", status, updates())

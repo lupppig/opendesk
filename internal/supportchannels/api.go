@@ -675,7 +675,7 @@ func (s *Service) webhook(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	s.markWebhookHealthy(r.Context(), c)
+	s.markWebhookHealthy(r.Context(), c, result.Control)
 	if result.ContentType != "" {
 		w.Header().Set("Content-Type", result.ContentType)
 	}

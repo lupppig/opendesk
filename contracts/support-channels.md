@@ -81,10 +81,19 @@ type Adapter interface {
 
 Adapters with native controls also implement `InteractiveAdapter`. The engine gives it a
 provider-neutral message and actions; the adapter renders Block Kit, Discord components or
-a Telegram inline keyboard and returns the provider message id so consumed previews can be
-edited. Action payloads carry only a validated command and value. The engine derives the
-ticket from the stored thread, reloads the linked member and checks ticket visibility before
-every mutation.
+a Telegram inline keyboard (`PostInteractive`) and removes a message's controls while keeping
+its text (`ClearActions`). Parsing accepts only opendesk's own controls (`assign_self`,
+`status`, `priority`, `confirm`, `cancel`); any other callback, such as the card's "Open in
+opendesk" link (`opendesk:open`), is acknowledged without a command. A control's `Inbound`
+names the message it sat on (`SourceMessageID`), which is how the engine tells a card action
+from a typed command. Action payloads carry only a validated command and value. The engine
+derives the ticket from the stored thread, reloads the linked member and checks ticket
+visibility before every mutation. Adapters that can answer one person privately implement
+`Responder` with the `Inbound.Respond` handle: Slack's `response_url` (ephemeral, only to
+`hooks.slack.com`), a Discord interaction's ephemeral follow-up, Telegram's
+`answerCallbackQuery`. Errors and notices such as "link your account" go that way when the
+action came with a handle, and into the thread otherwise. Every Telegram callback is answered
+by the worker once the action ran.
 
 A provider that delivers chat over a long-lived connection also implements
 `Subscriber`: `Subscribe(ctx, client, credentials, Stream) error` runs one subscription,
@@ -137,14 +146,19 @@ none for a batch without ticket events. For each matching destination:
    and thread together.
 3. The adapter creates or updates the ticket root and posts text-only message activity.
 4. The delivery is marked complete. Provider failures set the connection to `error` and
-   River retries; the next successful delivery clears the error.
+   River retries; the next successful delivery clears the error. A card that can't be edited
+   is retried without touching the connection's status. An edit that changes nothing
+   (Telegram's "message is not modified") or lands in an archived Discord thread counts as done.
 
 The root is an editable ticket card showing the ticket number, subject, customer, assignee,
 status, priority and opendesk URL. It offers Assign to me, status and priority controls. A
 per-thread rendering lease and event sequence keep an older delivery from overwriting a newer
-card. When a thread is first created, opendesk posts the five most recent public messages in
-chronological order (and notes only when `include_notes` is on). The thread records the event
-snapshot represented by that history so delayed message jobs do not post it again.
+card. When a thread is first created, opendesk posts the five most recent public messages from
+before the event that created it, in chronological order (and notes only when `include_notes`
+is on). Messages from the last 15 seconds before that event, including the event's own
+message, are left out: their own deliveries are still to come and post them in full. The
+thread records the event (`history_event_seq`) and the ids of the messages the history holds,
+so an earlier message event that runs late posts only a message the history left out.
 Messages identify customer replies, agent replies and, where the destination includes
 them, internal notes. Stored HTML is never sent to a provider; adapters receive bounded
 plain text.
@@ -167,12 +181,18 @@ of the typed actions below; generated text is never executed as a command.
 | `priority <low|normal|high|urgent>` | changes priority |
 | Ollie `create_ticket {subject,description?}` | creates a new ticket through the normal ticket service (channel `api`); Ollie answers with its number and link. It gets no thread, since version 1 mirrors email tickets only |
 
-Natural-language ticket creation, customer replies and closing a ticket wait for an explicit `confirm`
-or `cancel` response and expire after ten minutes. This includes explicit reply commands. The
-preview is a native provider message with Confirm and Cancel controls; typing the words remains
-a fallback. Consuming a preview edits away its controls. Drafting a reply does not send it.
-Notes, self-assignment, status and priority changes can run immediately after the model
-emits their validated schema. A pending action and the ticket mutation are consumed in
+Natural-language ticket creation, customer replies and closing a ticket, when Ollie proposes
+them, wait for an explicit `confirm` or `cancel` response and expire after ten minutes. So does
+closing from the ticket card. A typed command (`reply`, `status closed`, ...) is deliberate and
+runs at once. The preview is a native provider message with Confirm and Cancel controls bound
+to that pending action by a random nonce; typing the words remains a fallback. While one
+change waits, another preview is refused. Buttons are answered without the model: the
+matching nonce applies or discards the change and removes the preview's controls, and the
+answer is posted in the thread. A button whose change is gone (stale, already used, expired)
+says so privately and loses its controls; one whose change waits for someone else says so and
+keeps them. A card change answers with the card's own edit, not a message. Drafting a reply
+does not send it. Notes, self-assignment, status and priority changes can run immediately
+after the model emits their validated schema. A pending action and the ticket mutation are consumed in
 one transaction, so two confirmation events cannot apply it twice. A change Ollie makes
 runs with the linked agent's role and checks and is attributed to Ollie on their behalf
 (`auth.Principal.Assistant`: activity actor `ai` with the agent as `user_id`, as for the
@@ -213,7 +233,10 @@ available." `/opendesk link <code>` needs no number.
   `channels:read` and `groups:read`, then invite the bot to each selectable channel.
   Slack does not let a bot token change its own app configuration, so the health state is
   `action_required` and tells an admin to point Event Subscriptions, Interactivity & Shortcuts
-  and the `/opendesk` slash command at `webhook_url`, then test them in Slack.
+  and the `/opendesk` slash command at `webhook_url`, then test them in Slack. Apps connected
+  before the ticket controls existed lack Interactivity: they return to `action_required`
+  with the setup steps until a signed callback from one of the controls arrives
+  (`WebhookResult.Control`); other callbacks don't clear that step.
 - **Discord:** bot token and interactions public key. opendesk lists the servers where the
   bot is installed, then lists text channels in the selected server. Install the bot with
   thread/message access and enable the privileged Message Content intent. opendesk sets
@@ -230,7 +253,9 @@ available." `/opendesk link <code>` needs no number.
   for the admin, instead of retrying. A successful session sets it back to `connected`.
 - **Telegram:** bot token. opendesk generates and seals the webhook secret, calls
   `setWebhook` with `webhook_url`, and subscribes to `message` and `my_chat_member`.
-  It also subscribes to `callback_query` for the ticket and confirmation controls.
+  It also subscribes to `callback_query` for the ticket and confirmation controls. Connections
+  made before that are marked (`reconfigure`) and set up again once by a worker at boot,
+  retried hourly while the provider refuses.
   Add the bot as an administrator to a forum-enabled group; that signed membership update
   makes the group selectable without entering its id. Disable privacy mode with BotFather
   so the bot receives ordinary topic messages.
@@ -257,8 +282,14 @@ available." `/opendesk link <code>` needs no number.
   chat text; they never call the model or ticket services.
 - Every inbound action resolved to a ticket receives a monotonic sequence from that ticket's
   database lane in the same transaction that persists the signed provider event. A worker may
-  process only the head sequence. Its renewable lease survives slow Ollie turns, while a failed
-  command is retried before any later Slack, Discord or Telegram command for that ticket.
+  process only the head: the first earlier command that is unprocessed, still stored and under
+  ten minutes old. The lane moves past any other (a connection's deleted events, a job River
+  discarded), so nothing stalls a ticket for longer than that; a command it moved past still
+  runs if River retries it, without ordering. A command waiting for the head, or for its
+  sender's conversation lease, snoozes without spending a River attempt. The head's lease
+  outlasts the job's timeout, and a failed command is retried before any later Slack, Discord
+  or Telegram command for that ticket. Every path that doesn't ask for a retry finishes the
+  event, including one whose provider is no longer registered.
 - Provider API clients have a 15-second timeout and do not follow redirects. Their URLs
   are adapter constants, never user input.
 - Provider posts suppress link previews and mass mentions, so customer-controlled

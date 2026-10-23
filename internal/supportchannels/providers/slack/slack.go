@@ -146,69 +146,12 @@ func (Adapter) Parse(h http.Header, body []byte) (channel.WebhookResult, error) 
 			return channel.WebhookResult{}, err
 		}
 		if payload := v.Get("payload"); payload != "" {
-			var x struct {
-				TriggerID string `json:"trigger_id"`
-				Team      struct {
-					ID string `json:"id"`
-				} `json:"team"`
-				User struct {
-					ID string `json:"id"`
-				} `json:"user"`
-				Channel struct {
-					ID string `json:"id"`
-				} `json:"channel"`
-				Message struct {
-					TS       string `json:"ts"`
-					ThreadTS string `json:"thread_ts"`
-				} `json:"message"`
-				Container struct {
-					MessageTS string `json:"message_ts"`
-					ThreadTS  string `json:"thread_ts"`
-				} `json:"container"`
-				Actions []struct {
-					ActionID string `json:"action_id"`
-					Value    string `json:"value"`
-					Selected *struct {
-						Value string `json:"value"`
-					} `json:"selected_option"`
-				} `json:"actions"`
-			}
-			if err := json.Unmarshal([]byte(payload), &x); err != nil {
-				return channel.WebhookResult{}, err
-			}
-			if len(x.Actions) == 0 {
-				return channel.WebhookResult{}, nil
-			}
-			action := x.Actions[0]
-			cmd := strings.TrimPrefix(action.ActionID, "opendesk:")
-			value := action.Value
-			if action.Selected != nil {
-				value = action.Selected.Value
-			}
-			text := value
-			if cmd == "confirm" || cmd == "cancel" {
-				text, cmd = cmd, "chat"
-			}
-			thread := x.Container.ThreadTS
-			if thread == "" {
-				thread = x.Message.ThreadTS
-			}
-			if thread == "" {
-				thread = x.Container.MessageTS
-			}
-			if thread == "" {
-				thread = x.Message.TS
-			}
-			return channel.WebhookResult{Events: []channel.Inbound{{
-				EventID: x.TriggerID, AccountID: x.Team.ID, ExternalChannelID: x.Channel.ID,
-				ExternalThreadID: thread, ExternalUserID: x.User.ID, Command: cmd, Text: text,
-				Value: value, SourceMessageID: x.Container.MessageTS,
-			}}}, nil
+			return parseInteraction(payload)
 		}
 		// Slash commands never carry a thread, so they name the ticket by number,
 		// like `/opendesk 123 status solved`.
 		number, cmd, text := parseSlash(v.Get("text"))
-		return channel.WebhookResult{Events: []channel.Inbound{{EventID: v.Get("trigger_id"), AccountID: v.Get("team_id"), ExternalChannelID: v.Get("channel_id"), ExternalUserID: v.Get("user_id"), Command: cmd, Text: text, Value: text, TicketNumber: number}}}, nil
+		return channel.WebhookResult{Events: []channel.Inbound{{EventID: v.Get("trigger_id"), AccountID: v.Get("team_id"), ExternalChannelID: v.Get("channel_id"), ExternalUserID: v.Get("user_id"), Command: cmd, Text: text, Value: text, TicketNumber: number, Respond: v.Get("response_url")}}}, nil
 	}
 	var x struct {
 		Type      string `json:"type"`
@@ -248,6 +191,83 @@ func (Adapter) Parse(h http.Header, body []byte) (channel.WebhookResult, error) 
 		return channel.WebhookResult{}, nil
 	}
 	return channel.WebhookResult{Events: []channel.Inbound{{EventID: x.EventID + ":" + x.Event.TS, AccountID: x.TeamID, ExternalChannelID: x.Event.Channel, ExternalThreadID: x.Event.ThreadTS, ExternalUserID: x.Event.User, Command: cmd, Text: text, Value: text, Directed: x.Event.Type == "app_mention"}}}, nil
+}
+
+// controls are the action ids opendesk's own blocks send. Any other action,
+// including the "Open in opendesk" link button, is acknowledged and ignored.
+var controls = map[string]bool{"assign_self": true, "status": true, "priority": true, "confirm": true, "cancel": true}
+
+// parseInteraction reads a block_actions payload from a ticket card or a
+// confirmation preview.
+func parseInteraction(payload string) (channel.WebhookResult, error) {
+	var x struct {
+		Type        string `json:"type"`
+		TriggerID   string `json:"trigger_id"`
+		ResponseURL string `json:"response_url"`
+		Team        struct {
+			ID string `json:"id"`
+		} `json:"team"`
+		User struct {
+			ID string `json:"id"`
+		} `json:"user"`
+		Channel struct {
+			ID string `json:"id"`
+		} `json:"channel"`
+		Message struct {
+			TS       string `json:"ts"`
+			ThreadTS string `json:"thread_ts"`
+			Text     string `json:"text"`
+		} `json:"message"`
+		Container struct {
+			MessageTS string `json:"message_ts"`
+			ThreadTS  string `json:"thread_ts"`
+		} `json:"container"`
+		Actions []struct {
+			ActionID string `json:"action_id"`
+			Value    string `json:"value"`
+			Selected *struct {
+				Value string `json:"value"`
+			} `json:"selected_option"`
+		} `json:"actions"`
+	}
+	if err := json.Unmarshal([]byte(payload), &x); err != nil {
+		return channel.WebhookResult{}, err
+	}
+	if x.Type != "block_actions" || len(x.Actions) == 0 {
+		return channel.WebhookResult{}, nil
+	}
+	action := x.Actions[0]
+	cmd, ok := strings.CutPrefix(action.ActionID, "opendesk:")
+	if !ok || !controls[cmd] {
+		return channel.WebhookResult{Control: ok}, nil
+	}
+	value := action.Value
+	if action.Selected != nil {
+		value = action.Selected.Value
+	}
+	text := value
+	if cmd == "confirm" || cmd == "cancel" {
+		text = cmd
+	}
+	thread := x.Container.ThreadTS
+	if thread == "" {
+		thread = x.Message.ThreadTS
+	}
+	if thread == "" {
+		thread = x.Container.MessageTS
+	}
+	if thread == "" {
+		thread = x.Message.TS
+	}
+	source := x.Container.MessageTS
+	if source == "" {
+		source = x.Message.TS
+	}
+	return channel.WebhookResult{Control: true, Events: []channel.Inbound{{
+		EventID: x.TriggerID, AccountID: x.Team.ID, ExternalChannelID: x.Channel.ID,
+		ExternalThreadID: thread, ExternalUserID: x.User.ID, Command: cmd, Text: text,
+		Value: value, SourceMessageID: source, SourceText: x.Message.Text, Respond: x.ResponseURL,
+	}}}, nil
 }
 
 func parseCommand(s string) (string, string) {
@@ -329,13 +349,57 @@ func (a Adapter) PostInteractive(ctx context.Context, c *http.Client, cr map[str
 	var out struct {
 		TS string `json:"ts"`
 	}
-	payload := interactivePayload(cr["channel_id"], "", thread, message)
+	payload := interactivePayload(cr["channel_id"], thread, message)
 	err := a.call(ctx, c, cr["bot_token"], "chat.postMessage", payload, &out)
 	return channel.MessageRef{ID: out.TS}, err
 }
 
-func (a Adapter) UpdateInteractive(ctx context.Context, c *http.Client, cr map[string]string, messageID string, message channel.Message) error {
-	return a.call(ctx, c, cr["bot_token"], "chat.update", interactivePayload(cr["channel_id"], messageID, "", message), nil)
+// ClearActions restates the message's own text without its buttons. The text
+// is Slack's stored copy of what opendesk posted, already escaped.
+func (a Adapter) ClearActions(ctx context.Context, c *http.Client, cr map[string]string, in channel.Inbound) error {
+	if in.SourceMessageID == "" || strings.TrimSpace(in.SourceText) == "" {
+		return nil
+	}
+	return a.call(ctx, c, cr["bot_token"], "chat.update", map[string]any{
+		"channel": cr["channel_id"], "ts": in.SourceMessageID, "text": in.SourceText,
+		"blocks": []any{map[string]any{"type": "section", "text": map[string]string{"type": "mrkdwn", "text": in.SourceText}}},
+	}, nil)
+}
+
+// Respond posts an ephemeral answer through the interaction's response_url,
+// which only Slack's own hooks host may be.
+func (a Adapter) Respond(ctx context.Context, c *http.Client, _ map[string]string, handle, text string) error {
+	if text == "" {
+		return nil
+	}
+	if !a.responseURL(handle) {
+		return errors.New("slack response_url is not a Slack hook")
+	}
+	b, _ := json.Marshal(map[string]any{"response_type": "ephemeral", "replace_original": false, "text": slackText(text)})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, handle, bytes.NewReader(b))
+	if err != nil {
+		return errors.New("slack response_url is invalid")
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.Do(req)
+	if err != nil {
+		// The URL is a credential for this interaction; keep it out of the error.
+		return errors.New("slack response_url: request failed")
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
+	if resp.StatusCode/100 != 2 {
+		return fmt.Errorf("slack response_url: status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func (a Adapter) responseURL(raw string) bool {
+	if a.BaseURL != "" {
+		return strings.HasPrefix(raw, strings.TrimRight(a.BaseURL, "/")+"/")
+	}
+	u, err := url.Parse(raw)
+	return err == nil && u.Scheme == "https" && u.Host == "hooks.slack.com" && u.User == nil
 }
 
 func ticketPayload(channelID, root string, t channel.Ticket) map[string]any {
@@ -353,7 +417,7 @@ func ticketPayload(channelID, root string, t channel.Ticket) map[string]any {
 				map[string]any{"type": "button", "text": map[string]string{"type": "plain_text", "text": "Assign to me"}, "action_id": "opendesk:assign_self"},
 				selectElement("Status", "opendesk:status", []string{"open", "pending", "on_hold", "solved", "closed"}),
 				selectElement("Priority", "opendesk:priority", []string{"low", "normal", "high", "urgent"}),
-				map[string]any{"type": "button", "text": map[string]string{"type": "plain_text", "text": "Open in opendesk"}, "url": t.URL},
+				map[string]any{"type": "button", "text": map[string]string{"type": "plain_text", "text": "Open in opendesk"}, "url": t.URL, "action_id": "opendesk:open"},
 			}},
 		},
 	}
@@ -371,11 +435,8 @@ func selectElement(label, actionID string, values []string) map[string]any {
 	return map[string]any{"type": "static_select", "placeholder": map[string]string{"type": "plain_text", "text": label}, "action_id": actionID, "options": options}
 }
 
-func interactivePayload(channelID, messageID, thread string, message channel.Message) map[string]any {
+func interactivePayload(channelID, thread string, message channel.Message) map[string]any {
 	payload := map[string]any{"channel": channelID, "text": slackText(message.Text), "unfurl_links": false, "unfurl_media": false}
-	if messageID != "" {
-		payload["ts"] = messageID
-	}
 	if thread != "" {
 		payload["thread_ts"] = thread
 	}

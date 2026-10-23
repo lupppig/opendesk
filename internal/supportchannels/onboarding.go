@@ -54,7 +54,7 @@ func (s *Service) reconcileConnection(ctx context.Context, c connection, credent
 		// Providers without an automatic configuration API cannot query their
 		// inbound URL. Once a signed callback has proved it, a credential test
 		// must not downgrade that evidence to action_required.
-		if _, configurable := a.(channel.Configurer); !configurable && health.Status == "action_required" && c.HealthStatus == "healthy" {
+		if _, configurable := a.(channel.Configurer); !configurable && health.Status == "action_required" && (c.HealthStatus == "healthy" || c.HealthDetail == awaitingControls) {
 			return c
 		}
 		return s.storeHealth(ctx, c, health)
@@ -63,6 +63,56 @@ func (s *Service) reconcileConnection(ctx context.Context, c connection, credent
 }
 
 const inUse = "This bot already serves another opendesk connection. Disconnect that one, or use a separate bot for each account, then test again."
+
+// reconfigurePending sets up again, once, the connections a release marked
+// (reconfigure), such as Telegram webhooks made before the ticket controls,
+// which must now also deliver callback queries. A setup that fails on the
+// provider's side is tried again hourly.
+func (s *Service) reconfigurePending(ctx context.Context) {
+	for s.reconfigureMarked(ctx) > 0 {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Hour):
+		}
+	}
+}
+
+// reconfigureMarked reconciles every marked connection and returns how many
+// are left to try again.
+func (s *Service) reconfigureMarked(ctx context.Context) int {
+	rows, err := s.d.DB.Pool.Query(ctx, `SELECT id FROM support_channel_connections WHERE reconfigure`)
+	if err != nil {
+		s.d.Log.Warn("support channel reconfigure", "err", err)
+		return 1
+	}
+	marked, err := pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
+	if err != nil {
+		s.d.Log.Warn("support channel reconfigure", "err", err)
+		return 1
+	}
+	left := 0
+	for _, id := range marked {
+		// Claimed first, so one worker of several sets each connection up.
+		tag, err := s.d.DB.Pool.Exec(ctx, `UPDATE support_channel_connections SET reconfigure=false WHERE id=$1 AND reconfigure`, id)
+		if err != nil || tag.RowsAffected() == 0 {
+			continue
+		}
+		c, err := s.loadConnection(ctx, id)
+		if err != nil {
+			continue
+		}
+		credentials, err := s.credentials(c)
+		if err != nil {
+			continue
+		}
+		if c = s.reconcileConnection(ctx, c, credentials); c.HealthDetail == healthFailure {
+			_, _ = s.d.DB.Pool.Exec(ctx, `UPDATE support_channel_connections SET reconfigure=true WHERE id=$1`, id)
+			left++
+		}
+	}
+	return left
+}
 
 // refreshAccount keeps the stored account name and handle current: a bot can be
 // renamed, and connections made before handles were kept get theirs.
@@ -96,9 +146,11 @@ func (s *Service) foreignWebhook(ctx context.Context, c connection, url string) 
 }
 
 // markWebhookHealthy records that a signed webhook arrived, and tells the workspace's
-// admins when that changes the connection's health.
-func (s *Service) markWebhookHealthy(ctx context.Context, c connection) {
-	if c.HealthStatus == "healthy" {
+// admins when that changes the connection's health. A connection that waits on
+// its provider's interactivity setting (awaitingControls) needs a callback from
+// one of opendesk's controls.
+func (s *Service) markWebhookHealthy(ctx context.Context, c connection, control bool) {
+	if c.HealthStatus == "healthy" || c.HealthDetail == awaitingControls && !control {
 		return
 	}
 	err := s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
@@ -120,6 +172,11 @@ func (s *Service) markWebhookHealthy(ctx context.Context, c connection) {
 }
 
 const webhookHealthy = "A signed webhook was received."
+
+// awaitingControls is the setup state of a Slack app connected before the
+// ticket controls (migration 000660): Slack's interactivity can't be set
+// through its API, so the setup steps show until a control's callback arrives.
+const awaitingControls = "Turn on Interactivity & Shortcuts in Slack with the same request URL, then use a button on a ticket card."
 
 // publishConnection tells the workspace's admins a connection changed.
 func (s *Service) publishConnection(ctx context.Context, tx pgx.Tx, c connection) error {

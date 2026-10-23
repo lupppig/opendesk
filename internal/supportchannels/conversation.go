@@ -3,6 +3,7 @@ package supportchannels
 import (
 	"bytes"
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/useopendesk/opendesk/internal/ai"
 	"github.com/useopendesk/opendesk/internal/auth"
+	"github.com/useopendesk/opendesk/internal/crypto"
 	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/domain"
 	"github.com/useopendesk/opendesk/internal/helpdesk/tickets"
@@ -46,6 +48,8 @@ type conversationAction struct {
 	Subject     string `json:"subject,omitempty"`
 	Description string `json:"description,omitempty"`
 	Direct      bool   `json:"direct,omitempty"`
+	// Nonce binds a preview's Confirm and Cancel controls to this action alone.
+	Nonce string `json:"nonce,omitempty"`
 }
 
 type conversationTarget struct {
@@ -81,26 +85,12 @@ func (s *Service) converseWithTarget(ctx context.Context, p *auth.Principal, con
 		}
 		return plainChannelMessage("What would you like me to do with this ticket?"), nil
 	}
-	if state.Pending != nil && state.PendingExpires != nil && time.Now().Before(*state.PendingExpires) {
-		switch confirmation(input) {
-		case "confirm":
-			action := *state.Pending
-			state.Pending, state.PendingExpires = nil, nil
-			answer, err := s.applyAndSaveConversation(ctx, p, connectionID, processingID, target, in, action, state, true)
-			if errors.Is(err, errPendingActionGone) {
-				return plainChannelMessage("There isn't a change waiting for confirmation."), nil
-			}
-			return answer, err
-		case "cancel":
-			answer := "Cancelled. I didn't change the ticket."
-			if state.Pending.Command == "create_ticket" {
-				answer = "Cancelled. I didn't create the ticket."
-			}
-			state.Pending, state.PendingExpires = nil, nil
-			state.Turns = appendTurns(state.Turns, input, answer)
-			return plainChannelMessage(answer), s.saveConversation(ctx, p.WorkspaceID, connectionID, processingID, in, state)
+	if pendingLive(state) {
+		switch verb := confirmation(input); verb {
+		case "confirm", "cancel":
+			return s.settle(ctx, p, connectionID, processingID, target, in, state, verb)
 		default:
-			return confirmationChannelMessage("I still have a change waiting. Reply `confirm` to apply it or `cancel` to discard it."), nil
+			return stillWaiting(state.Pending.Nonce), nil
 		}
 	}
 	state.Pending, state.PendingExpires = nil, nil
@@ -118,6 +108,7 @@ func (s *Service) converseWithTarget(ctx context.Context, p *auth.Principal, con
 	}
 	if action != nil {
 		if needsConfirmation(*action) {
+			action.Nonce = newNonce()
 			now := time.Now().Add(pendingActionTTL)
 			state.Pending, state.PendingExpires = action, &now
 			answer = actionConfirmation(*action)
@@ -132,44 +123,113 @@ func (s *Service) converseWithTarget(ctx context.Context, p *auth.Principal, con
 	state.Turns = appendTurns(state.Turns, input, answer)
 	message := plainChannelMessage(answer)
 	if state.Pending != nil {
-		message = confirmationChannelMessage(answer)
+		message = confirmationChannelMessage(answer, state.Pending.Nonce)
 	}
 	return message, s.saveConversation(ctx, p.WorkspaceID, connectionID, processingID, in, state)
 }
 
-// previewExplicit gives consequential text commands the same durable preview
-// and one-time confirmation path as Ollie's typed actions.
-func (s *Service) previewExplicit(ctx context.Context, p *auth.Principal, connectionID, ticketID uuid.UUID, in channel.Inbound) (channel.Message, error) {
+func pendingLive(state conversationState) bool {
+	return state.Pending != nil && state.PendingExpires != nil && time.Now().Before(*state.PendingExpires)
+}
+
+func stillWaiting(nonce string) channel.Message {
+	return confirmationChannelMessage("I still have a change waiting. Reply `confirm` to apply it or `cancel` to discard it.", nonce)
+}
+
+// settle applies or discards the pending action, in one transaction with
+// consuming it, so two confirmations cannot apply it twice.
+func (s *Service) settle(ctx context.Context, p *auth.Principal, connectionID, processingID uuid.UUID, target conversationTarget, in channel.Inbound, state conversationState, verb string) (channel.Message, error) {
+	action := *state.Pending
+	state.Pending, state.PendingExpires = nil, nil
+	in.Text = verb
+	if verb == "confirm" {
+		answer, err := s.applyAndSaveConversation(ctx, p, connectionID, processingID, target, in, action, state, true)
+		if errors.Is(err, errPendingActionGone) {
+			return plainChannelMessage(nothingWaiting), nil
+		}
+		return answer, err
+	}
+	answer := "Cancelled. I didn't change the ticket."
+	if action.Command == "create_ticket" {
+		answer = "Cancelled. I didn't create the ticket."
+	}
+	state.Turns = appendTurns(state.Turns, verb, answer)
+	return plainChannelMessage(answer), s.saveConversation(ctx, p.WorkspaceID, connectionID, processingID, in, state)
+}
+
+const nothingWaiting = "There isn't a change waiting for confirmation."
+
+// pendingAnswer is what a Confirm or Cancel control did.
+type pendingAnswer int
+
+const (
+	pendingSettled  pendingAnswer = iota // applied or discarded; the answer is posted in the thread
+	pendingGone                          // nothing with that nonce waits; its buttons are removed
+	pendingNotYours                      // the change waits for someone else; their buttons stay
+)
+
+// settleControl answers a Confirm or Cancel button without the model. The
+// button's value is its preview's nonce, so a stale or someone else's preview
+// cannot apply the change that waits now.
+func (s *Service) settleControl(ctx context.Context, p *auth.Principal, connectionID uuid.UUID, target conversationTarget, in channel.Inbound) (channel.Message, pendingAnswer, error) {
 	processingID := uuid.New()
 	state, err := s.claimConversation(ctx, p.WorkspaceID, connectionID, processingID, in)
 	if err != nil {
-		return channel.Message{}, err
+		return channel.Message{}, pendingGone, err
 	}
 	defer s.releaseConversation(connectionID, processingID, in)
-	action := conversationAction{Command: in.Command, Text: strings.TrimSpace(in.Text), Value: strings.TrimSpace(in.Value), Direct: true}
-	if action.Command == "reply" && action.Text == "" {
-		return channel.Message{}, httpx.Validation("Message text is required.")
+	nonce := strings.TrimSpace(in.Value)
+	if !pendingLive(state) || nonce == "" || subtle.ConstantTimeCompare([]byte(state.Pending.Nonce), []byte(nonce)) != 1 {
+		var other bool
+		if nonce != "" {
+			if err := s.d.DB.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM support_channel_conversations
+				WHERE connection_id=$1 AND external_channel_id=$2 AND external_thread_id=$3 AND external_user_id<>$4
+				AND pending_action->>'nonce'=$5 AND pending_expires_at>now())`,
+				connectionID, in.ExternalChannelID, in.ExternalThreadID, in.ExternalUserID, nonce).Scan(&other); err != nil {
+				return channel.Message{}, pendingGone, err
+			}
+		}
+		if other {
+			return plainChannelMessage("Only the person who asked for this change can confirm or cancel it."), pendingNotYours, nil
+		}
+		return plainChannelMessage("That change isn't waiting for confirmation anymore."), pendingGone, nil
 	}
-	if action.Command == "status" && action.Value != domain.StatusClosed {
-		return channel.Message{}, httpx.Validation("Only closing a ticket needs a preview.")
-	}
-	now := time.Now().Add(pendingActionTTL)
-	state.Pending, state.PendingExpires = &action, &now
-	answer := actionConfirmation(action)
-	state.Turns = appendTurns(state.Turns, in.Text, answer)
-	if err := s.saveConversation(ctx, p.WorkspaceID, connectionID, processingID, in, state); err != nil {
-		return channel.Message{}, err
-	}
-	_ = ticketID // the conversation key is the mapped ticket thread; visibility was checked by the caller.
-	return confirmationChannelMessage(answer), nil
+	message, err := s.settle(ctx, p, connectionID, processingID, target, in, state, in.Command)
+	return message, pendingSettled, err
 }
+
+// previewClose asks for confirmation before a ticket card closes the ticket.
+// It refuses while another change waits, as Ollie does. ok is false when it
+// refused; the message then says why.
+func (s *Service) previewClose(ctx context.Context, p *auth.Principal, connectionID uuid.UUID, in channel.Inbound) (channel.Message, bool, error) {
+	processingID := uuid.New()
+	state, err := s.claimConversation(ctx, p.WorkspaceID, connectionID, processingID, in)
+	if err != nil {
+		return channel.Message{}, false, err
+	}
+	defer s.releaseConversation(connectionID, processingID, in)
+	if pendingLive(state) {
+		return plainChannelMessage("Another change is waiting for your confirmation. Confirm or cancel it first."), false, nil
+	}
+	action := conversationAction{Command: "status", Value: domain.StatusClosed, Direct: true, Nonce: newNonce()}
+	expires := time.Now().Add(pendingActionTTL)
+	state.Pending, state.PendingExpires = &action, &expires
+	answer := actionConfirmation(action)
+	state.Turns = appendTurns(state.Turns, "close the ticket", answer)
+	if err := s.saveConversation(ctx, p.WorkspaceID, connectionID, processingID, in, state); err != nil {
+		return channel.Message{}, false, err
+	}
+	return confirmationChannelMessage(answer, action.Nonce), true, nil
+}
+
+func newNonce() string { return crypto.RandomToken(12) }
 
 func plainChannelMessage(text string) channel.Message { return channel.Message{Text: clip(text, 3500)} }
 
-func confirmationChannelMessage(text string) channel.Message {
+func confirmationChannelMessage(text, nonce string) channel.Message {
 	return channel.Message{Text: clip(text, 3500), Actions: []channel.Action{
-		{Command: "confirm", Label: "Confirm", Style: "primary"},
-		{Command: "cancel", Label: "Cancel", Style: "danger"},
+		{Command: "confirm", Value: nonce, Label: "Confirm", Style: "primary"},
+		{Command: "cancel", Value: nonce, Label: "Cancel", Style: "danger"},
 	}}
 }
 

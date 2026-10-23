@@ -117,8 +117,44 @@ func TestParseCallbackQuery(t *testing.T) {
 		t.Fatalf("parse: %+v, %v", result, err)
 	}
 	event := result.Events[0]
-	if event.Command != "status" || event.Value != "on_hold" || event.ExternalThreadID != "22" || event.SourceMessageID != "8" || !strings.Contains(string(result.Body), "answerCallbackQuery") {
+	// The worker answers the callback, so an error reaches the person who pressed.
+	if event.Command != "status" || event.Value != "on_hold" || event.ExternalThreadID != "22" || event.SourceMessageID != "8" || event.Respond != "Q1" || len(result.Body) != 0 || !result.Control {
 		t.Fatalf("callback: %+v body=%s", event, result.Body)
+	}
+
+	body = []byte(`{"update_id":15,"callback_query":{"id":"Q2","from":{"id":9},"data":"opendesk:confirm:n0nce","message":{"message_id":9,"message_thread_id":22,"chat":{"id":-10}}}}`)
+	result, _ = (Adapter{}).Parse(http.Header{}, body)
+	if len(result.Events) != 1 || result.Events[0].Command != "confirm" || result.Events[0].Value != "n0nce" {
+		t.Fatalf("confirm: %+v", result.Events)
+	}
+
+	body = []byte(`{"update_id":16,"callback_query":{"id":"Q3","from":{"id":9},"data":"opendesk:delete","message":{"message_id":9,"message_thread_id":22,"chat":{"id":-10}}}}`)
+	result, _ = (Adapter{}).Parse(http.Header{}, body)
+	if len(result.Events) != 0 || !strings.Contains(string(result.Body), "answerCallbackQuery") {
+		t.Fatalf("unknown control: %+v", result)
+	}
+}
+
+func TestEditsThatChangeNothingSucceed(t *testing.T) {
+	var methods []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		methods = append(methods, r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:])
+		_, _ = w.Write([]byte(`{"ok":false,"error_code":400,"description":"Bad Request: message is not modified: specified new message content and reply markup are exactly the same"}`))
+	}))
+	defer server.Close()
+	a := Adapter{BaseURL: server.URL}
+	credentials := map[string]string{"bot_token": "token", "channel_id": "-10"}
+	if err := a.Update(context.Background(), server.Client(), credentials, "8", channel.Ticket{Number: 1}); err != nil {
+		t.Fatalf("card: %v", err)
+	}
+	if err := a.ClearActions(context.Background(), server.Client(), credentials, channel.Inbound{SourceMessageID: "9"}); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	if err := a.Post(context.Background(), server.Client(), credentials, "22", "hi"); err == nil {
+		t.Fatal("a refused post succeeded")
+	}
+	if strings.Join(methods, ",") != "editMessageText,editMessageReplyMarkup,sendMessage" {
+		t.Fatalf("methods: %v", methods)
 	}
 }
 
