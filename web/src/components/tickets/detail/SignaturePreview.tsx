@@ -1,14 +1,15 @@
 import { HoverCard as HC } from "radix-ui";
 import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { SignatureView } from "@/components/editor/signature";
 import { floatingPanel } from "@/components/ui/popover";
-import { sanitizeHtml } from "@/lib/sanitize";
 import { cn } from "@/lib/cn";
 import { signatureText } from "./composerTemplates";
 
 /**
  * The signature a reply carries, as one line in the "Replying as" bar. Hover or
- * focus shows it in full; a click keeps it open until Escape or a click away.
+ * focus shows it in full, as the customer gets it (its layout, styles and sized
+ * images kept); a click keeps it open until Escape or a click away.
  */
 export function SignaturePreview({ html }: { html: string }) {
   const { t } = useTranslation("inbox");
@@ -60,11 +61,11 @@ export function SignaturePreview({ html }: { html: string }) {
             if (trigger.current?.contains(e.target as Node)) return e.preventDefault();
             close();
           }}
-          className={cn(floatingPanel, "w-[340px] max-w-[calc(100vw-16px)] origin-[var(--radix-hover-card-content-transform-origin)] motion-reduce:animate-none")}
+          className={cn(floatingPanel, "w-[400px] max-w-[calc(100vw-16px)] origin-[var(--radix-hover-card-content-transform-origin)] motion-reduce:animate-none")}
         >
           <div className="label-caps px-3 pb-1 pt-2.5">{t("composer.signature")}</div>
           <div className="max-h-[260px] overflow-y-auto px-3 pb-3">
-            <div className="prose-od ph-no-capture text-[12.5px]" data-ph-mask dangerouslySetInnerHTML={{ __html: sanitizeHtml(html) }} />
+            <SignatureView html={html} className="ph-no-capture text-[12.5px]" />
           </div>
         </HC.Content>
       </HC.Portal>

@@ -147,7 +147,15 @@ const Row = forwardRef<HTMLDivElement, ThreadRowProps>(function ThreadRow(
     </Tooltip>
   );
 
-  const pills = labels.slice(0, compact ? 2 : 3).map((l) => <LabelPill key={l.id} name={l.name} color={l.color} />);
+  // Written to one of the account's aliases: which one.
+  const alias = t.to_address ? (
+    <Tooltip key="alias" content={tr("list.toAlias", { email: t.to_address })}>
+      <span className="mono inline-flex h-[18px] max-w-[180px] shrink-0 items-center truncate rounded-sm bg-tone-blue-soft px-1.5 text-[10.5px] text-tone-blue" data-ph-mask>
+        {t.to_address}
+      </span>
+    </Tooltip>
+  ) : null;
+  const pills = [alias, ...labels.slice(0, compact ? 2 : 3).map((l) => <LabelPill key={l.id} name={l.name} color={l.color} />)];
 
   const end = (
     <span className={cn("relative flex shrink-0 items-center justify-end", compact ? "h-4 min-w-[52px]" : "h-6 min-w-[72px]")}>

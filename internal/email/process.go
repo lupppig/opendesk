@@ -268,7 +268,12 @@ func (s *service) processInbound(ctx context.Context, wid, inboundID uuid.UUID) 
 			if subject = strings.Join(strings.Fields(subject), " "); subject == "" {
 				subject = "(no subject)"
 			}
-			route, err := routing.Resolve(ctx, tx, routing.Input{WorkspaceID: wid, Channel: domain.ChannelEmail, BrandID: m.BrandID,
+			// An alias with a brand of its own gives its new tickets that brand.
+			brand, err := domain.ResolveBrand(ctx, tx, wid, m.aliasSettings(receivedAt).BrandID, &m.ID, nil)
+			if err != nil {
+				return err
+			}
+			route, err := routing.Resolve(ctx, tx, routing.Input{WorkspaceID: wid, Channel: domain.ChannelEmail, BrandID: brand,
 				MailboxID: &m.ID, ReceivedAt: receivedAt, FromEmail: sender, Subject: subject, Body: body.text, ContactID: &contactID})
 			if err != nil {
 				return err
@@ -276,7 +281,7 @@ func (s *service) processInbound(ctx context.Context, wid, inboundID uuid.UUID) 
 			// Replies go out from the address the ticket arrived at.
 			ticket, err = domain.CreateTicket(ctx, tx, domain.NewTicket{WorkspaceID: wid, Subject: subject, Channel: domain.ChannelEmail,
 				MailboxID: &m.ID, ContactID: &contactID, TeamID: route.TeamID, Routed: route.Routed, Custom: custom,
-				BrandID: &m.BrandID, OriginMailboxID: &m.ID, ReceivedAt: receivedAt})
+				BrandID: &brand, OriginMailboxID: &m.ID, ReceivedAt: receivedAt})
 			if err != nil {
 				return err
 			}

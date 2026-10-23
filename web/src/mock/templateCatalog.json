@@ -210,6 +210,9 @@
       "example": "{{ ticket.created_date | date: \"%A, %b %e\" }}"
     }
   ],
+  "kind_groups": {
+    "collab_signature": ["agent", "mailbox", "workspace", "date"]
+  },
   "slots": [
     {
       "key": "content",

@@ -18,20 +18,21 @@ import { toast } from "@/components/ui/toast";
 import { Tooltip } from "@/components/ui/tooltip";
 import { api } from "@/lib/api/endpoints";
 import { errorMessage } from "@/lib/api/client";
-import type { MailAccount, MailSettingSync } from "@/lib/api/types";
+import type { MailAccount, MailIdentitySync } from "@/lib/api/types";
 import { storeAccount } from "@/lib/collab/hooks";
 import { outOfOfficeBody, outOfOfficeForm, outOfOfficeProblem, type OutOfOfficeForm } from "@/lib/collab/outOfOffice";
 import { cn } from "@/lib/cn";
 import { relLong } from "@/lib/format";
 
-const syncIcon: Record<MailSettingSync, ReactNode> = {
+const syncIcon: Record<MailIdentitySync, ReactNode> = {
   two_way: <ArrowLeftRight />,
   read_only: <ArrowDownToLine />,
+  pull: <ArrowDownToLine />,
   none: <Info />,
 };
 
 /** One plain line on how a setting syncs, with what can be done about it. */
-export function SyncLine({ sync, children, actions, className }: { sync: MailSettingSync; children: ReactNode; actions?: ReactNode; className?: string }) {
+export function SyncLine({ sync, children, actions, className }: { sync: MailIdentitySync; children: ReactNode; actions?: ReactNode; className?: string }) {
   return (
     <div className={cn("flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12px] leading-[18px] text-fg-3", className)}>
       <span className="flex min-w-0 flex-1 items-start gap-1.5">

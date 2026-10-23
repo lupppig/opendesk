@@ -493,11 +493,12 @@ func (h *handler) delete(ctx context.Context, tx pgx.Tx, p *auth.Principal, id u
 		return httpx.E(http.StatusConflict, "default_brand", "The default brand cannot be deleted. Make another brand the default first.")
 	}
 	var inUse bool
-	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM mailboxes WHERE workspace_id = $1 AND brand_id = $2)`, wid, id).Scan(&inUse); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM mailboxes m WHERE m.workspace_id = $1 AND (m.brand_id = $2
+		OR EXISTS (SELECT 1 FROM jsonb_each(m.alias_settings) a WHERE a.value ->> 'brand_id' = $2::text)))`, wid, id).Scan(&inUse); err != nil {
 		return err
 	}
 	if inUse {
-		return httpx.E(http.StatusConflict, "brand_in_use", "Move or remove this brand's addresses first.")
+		return httpx.E(http.StatusConflict, "brand_in_use", "Move or remove this brand's addresses and aliases first.")
 	}
 	def, err := DefaultID(ctx, tx, wid)
 	if err != nil {

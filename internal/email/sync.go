@@ -75,7 +75,7 @@ type candidate struct {
 
 // syncMailbox runs one pass over INBOX. Failures are recorded on the mailbox (with a
 // safe message and backoff) rather than retried by River; the periodic job tries again.
-func (s *service) syncMailbox(ctx context.Context, id uuid.UUID) error {
+func (s *service) syncMailbox(ctx context.Context, id uuid.UUID) (err error) {
 	m, err := scanMailbox(s.d.DB.Pool.QueryRow(ctx, `SELECT `+mailboxColumns+` FROM mailboxes WHERE id = $1`, id))
 	if err != nil {
 		if db.IsNotFound(err) {
@@ -86,6 +86,11 @@ func (s *service) syncMailbox(ctx context.Context, id uuid.UUID) error {
 	if m.Status == "disabled" || !m.polled() {
 		return nil
 	}
+	defer func() {
+		if err == nil {
+			s.refreshSendAs(ctx, m)
+		}
+	}()
 	if m.readsAPI() {
 		return s.syncAPI(ctx, m)
 	}

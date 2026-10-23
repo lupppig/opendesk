@@ -21,7 +21,7 @@ type Pending = {
   summary: string;
   token: string;
   step: AssistantStep;
-  /** A connected tool's change, run on approval instead of a ticket patch. */
+  /** A change outside the tickets (a connected tool, an API write), run on approval instead of a ticket patch. */
   external?: () => Partial<AssistantStep> & { text: string };
 };
 type Sess = AssistantSession & { wid: string; items: TranscriptItem[]; pending: Pending | null };
@@ -107,6 +107,8 @@ async function agent(ctx: Ctx, s: Sess, text: string, ticketId: string | undefin
   const tools = await connectedTools(ctx, s, lower, current, emit, item, id);
   if (tools) return tools;
 
+  if (/\bsignature\b/.test(lower)) return signature(ctx, s, text, emit, item, id);
+
   if (/\b(who should|assign|take this|take it)\b/.test(lower) && current) {
     await step(emit, { id: id(), tool: "get_ticket", label: "Reading the ticket", status: "running" }, () => ({ label: "Read the ticket", summary: `#${current.number}`, refs: [ref(current)] }), item);
     const team = teammates(ws);
@@ -174,6 +176,47 @@ async function agent(ctx: Ctx, s: Sess, text: string, ticketId: string | undefin
   await step(emit, { id: id(), tool: "search_tickets", label: "Searching tickets", status: "running" }, () => ({ label: "Searched tickets", summary: `Found ${urgent.length} tickets`, refs: urgent.map(ref) }), item);
   await say(emit, item, urgent.length ? `These need a look first:\n\n${urgent.map((t) => `- ${line(t)}`).join("\n")}\n\nWant me to find owners for the unassigned ones?` : "Nothing urgent right now. The queue is in good shape.");
   return "complete";
+}
+
+/** "Set this as our signature": found through the API, proposed on the addresses, applied on approval. */
+async function signature(ctx: Ctx, s: Sess, text: string, emit: Emit, item: TranscriptItem, id: () => string) {
+  const ws = ctx.ws;
+  const start = text.indexOf("<");
+  const end = text.lastIndexOf(">");
+  const html = start >= 0 && end > start ? text.slice(start, end + 1) : text;
+  await step(emit, { id: id(), tool: "find_api", label: "Looking up how to do it", status: "running" }, () => ({ label: "Looked up how to do it", summary: "3 operations" }), item);
+  const box = ws.mailboxes.find((m) => m.status !== "error") ?? ws.mailboxes[0];
+  await step(emit, { id: id(), tool: "api_get", label: "Reading", status: "running" }, () => ({ label: "Read", summary: "List mailboxes" }), item);
+  if (!box) {
+    await say(emit, item, "There is no address to put a signature on yet. Connect one in **Settings, Mailboxes** first.");
+    return "complete";
+  }
+  await say(
+    emit,
+    item,
+    `A signature for everyone goes on the address, so every reply from **${box.email}** carries it. The placeholders like \`{%user.fullName%}\` are another tool's, so I switched them to opendesk's, such as \`{{ agent.name }}\`.`,
+  );
+  const value = html.replace(/\{%\s*user\.fullName\s*%\}/g, "{{ agent.name }}").replace(/\{%\s*user\.jobTitle[^%]*%\}/g, "{{ agent.title }}").replace(/\{%\s*mailbox\.email\s*%\}/g, "{{ mailbox.email }}");
+  const pid = uuid();
+  const st: AssistantStep = { id: id(), tool: "api_change", label: "Update a mailbox", status: "awaiting_approval", action_id: pid };
+  await emit("tool", st);
+  item.steps.push(st);
+  const preview: Preview = { title: "Update a mailbox", summary: box.name || box.email, changes: [{ field: "signature_html", from: box.signature_html || "", to: value }] };
+  s.pending = {
+    id: pid,
+    callId: st.id,
+    ticketIds: [],
+    patch: {},
+    summary: "",
+    token: uuid(),
+    step: st,
+    external: () => {
+      box.signature_html = value;
+      return { label: "Made the change", summary: "Update a mailbox", text: `Done. Replies from **${box.email}** now end with the new signature.` };
+    },
+  };
+  await emit("approval", approvalOf(s.pending, preview));
+  return "awaiting_approval";
 }
 
 const productWords: Record<string, RegExp> = {

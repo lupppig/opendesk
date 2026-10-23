@@ -381,6 +381,16 @@ and activities:
   `add_note`, `draft_reply` (sent only on approval; `external: true`), `create_kb_draft`
   (saved as a draft), `create_view` (personal); admin: `create_automation_draft` (saved
   disabled). Tools the user's role cannot use are not offered to the model.
+- the rest of the app (viewer+): `find_api` searches the documented operations (BM25 over summaries, paths, tags
+  and field names, with everyday synonyms; the best two in full, the rest one line each; `"METHOD /path"` returns
+  that one in full), `api_get` reads one (`fields` keeps only the named fields, of each item for a list), and
+  `api_change` proposes one POST, PUT, PATCH or DELETE (a write, `preview.changes` = each body field, `from` = the
+  value the same path reads now). The system prompt names the API's areas. Out of reach: `/v1/admin`, `/v1/auth`,
+  `/v1/assistant`, public, visitor, device and server routes; writes to credentials, sessions, devices, API keys,
+  billing, the AI provider, imports, owner-only operations (deleting the workspace or the account, transfer, widget
+  secrets) and ticket messages (`draft_reply` and `add_note` instead). A body with a credential-named field
+  (secret, token, password, API key) is refused, and such values are `[hidden]` in every answer the model reads.
+  Writes that reach someone outside (invitations, Collab mail, test sends) set `preview.external`.
 - connected (agent+): the workspace's integrations' MCP tools, named `<slug>__<tool>`
   (`contracts/integrations.md`). Server-marked read-only tools are reads; every other one
   is a write with `preview.system` set.

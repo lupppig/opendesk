@@ -3,55 +3,25 @@
 // Shared by the add-mailbox wizard and the mailbox page.
 
 import { Lock } from "lucide-react";
-import { useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { ChipEditor } from "@/components/agent/ChipEditor";
 import { BrandPick, Note, TeamPick, useBrands, useTeams } from "@/components/settings2/teams";
-import { TextInput } from "@/components/ui/input";
+import { FromFormatField, FromPreviewLine } from "@/components/templates/FromFormatField";
+import { fillFromName as fillFormat, fromNameProblem as formatProblem, HELPDESK_FROM_VARS } from "@/lib/fromname";
 import { useUser } from "@/lib/session";
 
-export const FROM_VARS = ["{agent}", "{agent_first}", "{team}", "{brand}", "{mailbox}"] as const;
 export const DEFAULT_FROM = "{agent} at {mailbox}";
-const FROM_MAX = 80;
 const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 type Vars = { agent: string; team: string; brand: string; mailbox: string };
 
-/**
- * The From name for a format. Without an author (auto-replies, automations,
- * CSAT) the agent variable and the words up to the next variable are dropped,
- * a format left with no variable falls back to {mailbox}, and separators left
- * at either end are trimmed.
- */
+/** The From name for a format (lib/fromname), with or without an author. */
 export function fillFromName(format: string, v: Vars, withAgent: boolean): string {
-  const parts = (format || DEFAULT_FROM).split(/(\{(?:agent|agent_first|team|brand|mailbox)\})/).filter((p) => p !== "");
-  let kept = parts;
-  if (!withAgent) {
-    kept = [];
-    for (let i = 0; i < parts.length; i++) {
-      if (parts[i] === "{agent}" || parts[i] === "{agent_first}") {
-        if (i + 1 < parts.length && !parts[i + 1].startsWith("{")) i++;
-        continue;
-      }
-      kept.push(parts[i]);
-    }
-    if (!kept.some((p) => p.startsWith("{"))) kept = ["{mailbox}"];
-  }
-  const first = v.agent.split(/\s+/)[0] ?? v.agent;
-  const out = kept
-    .map((p) =>
-      p === "{agent}" ? v.agent : p === "{agent_first}" ? first : p === "{team}" ? v.team || v.brand : p === "{brand}" ? v.brand : p === "{mailbox}" ? v.mailbox : p,
-    )
-    .join("");
-  return out.replace(/^[\s\-–|·:,/]+|[\s\-–|·:,/]+$/g, "").replace(/\s+/g, " ");
+  return fillFormat(format || DEFAULT_FROM, { ...v, agent: withAgent ? v.agent : "" }, HELPDESK_FROM_VARS);
 }
 
 export function fromNameProblem(format: string): "long" | "chars" | "variable" | null {
-  if (format.length > FROM_MAX) return "long";
-  if (/[<>"]/.test(format)) return "chars";
-  const vars = format.match(/\{[^}]*\}/g) ?? [];
-  if (vars.some((x) => !(FROM_VARS as readonly string[]).includes(x))) return "variable";
-  return null;
+  return formatProblem(format, HELPDESK_FROM_VARS);
 }
 
 /** The From name format with variable chips and a live preview, with and without an author. */
@@ -74,68 +44,16 @@ export function FromNameField({
   const me = useUser();
   const { teams } = useTeams();
   const { brands, defaultBrand } = useBrands();
-  const ref = useRef<HTMLInputElement>(null);
   const brand = brands.find((b) => b.id === brandId) ?? defaultBrand;
   const vars: Vars = { agent: me.name || "Maya Chen", team: teams.find((x) => x.id === teamId)?.name ?? "", brand: brand?.name ?? "", mailbox: mailboxName || t("addressing.previewMailbox") };
-  const problem = fromNameProblem(value);
-  const insert = (v: string) => {
-    const el = ref.current;
-    const at = el?.selectionStart ?? value.length;
-    const end = el?.selectionEnd ?? at;
-    const next = value.slice(0, at) + v + value.slice(end);
-    onChange(next);
-    requestAnimationFrame(() => {
-      el?.focus();
-      el?.setSelectionRange(at + v.length, at + v.length);
-    });
-  };
   const addr = email || "support@example.com";
   return (
-    <div className="flex flex-col gap-2">
-      <TextInput
-        ref={ref}
-        aria-label={t("addressing.fromName")}
-        value={value}
-        maxLength={FROM_MAX + 10}
-        invalid={!!problem}
-        placeholder={DEFAULT_FROM}
-        onChange={(e) => onChange(e.target.value)}
-      />
-      <div className="flex flex-wrap items-center gap-1.5">
-        {FROM_VARS.map((v) => (
-          <button
-            key={v}
-            type="button"
-            onClick={() => insert(v)}
-            className="mono inline-flex h-[22px] items-center rounded-sm border border-line bg-sunken px-1.5 text-[11px] text-fg-2 transition-colors hover:border-line-strong hover:text-fg"
-            title={t(`addressing.vars.${v.slice(1, -1) as "agent"}`)}
-          >
-            {v}
-          </button>
-        ))}
+    <FromFormatField value={value} onChange={onChange} vars={HELPDESK_FROM_VARS} varTitle={(v) => t(`addressing.vars.${v as "agent"}`)} ariaLabel={t("addressing.fromName")} placeholder={DEFAULT_FROM}>
+      <div className="flex flex-col gap-1 rounded-md border border-line bg-sunken/60 px-3 py-2">
+        <FromPreviewLine label={t("addressing.previewReply")} name={fillFromName(value, vars, true)} email={addr} />
+        <FromPreviewLine label={t("addressing.previewAuto")} name={fillFromName(value, vars, false)} email={addr} />
       </div>
-      {problem ? (
-        <p role="alert" className="text-[12px] text-danger-fg">
-          {t(`addressing.fromErrors.${problem}`, { max: FROM_MAX })}
-        </p>
-      ) : (
-        <div className="flex flex-col gap-1 rounded-md border border-line bg-sunken/60 px-3 py-2">
-          <PreviewLine label={t("addressing.previewReply")} name={fillFromName(value, vars, true)} email={addr} />
-          <PreviewLine label={t("addressing.previewAuto")} name={fillFromName(value, vars, false)} email={addr} />
-        </div>
-      )}
-    </div>
-  );
-}
-
-function PreviewLine({ label, name, email }: { label: string; name: string; email: string }) {
-  return (
-    <div className="flex min-w-0 items-baseline gap-2 text-[12px]">
-      <span className="w-[92px] shrink-0 text-fg-4">{label}</span>
-      <span className="min-w-0 truncate">
-        <span className="font-medium text-fg">{name}</span> <span className="mono text-[11.5px] text-fg-3">&lt;{email}&gt;</span>
-      </span>
-    </div>
+    </FromFormatField>
   );
 }
 

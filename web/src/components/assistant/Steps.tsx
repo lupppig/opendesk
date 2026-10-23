@@ -127,18 +127,31 @@ export function StepRow({ step }: { step: AssistantStep }) {
   );
 }
 
+/** A value this long (a signature, a template) is shown as a block, not a pill. */
+const LONG_VALUE = 80;
+
 function ChangeRow({ field, from, to }: { field: string; from: string; to: string }) {
+  if (from.length > LONG_VALUE || to.length > LONG_VALUE || from.includes("\n") || to.includes("\n")) {
+    const box = "mono max-h-32 overflow-y-auto whitespace-pre-wrap rounded-[5px] px-1.5 py-1 text-[11px] leading-4 wrap-anywhere";
+    return (
+      <div className="flex flex-col gap-1 border-t border-line-soft px-3 py-1.5 first:border-t-0">
+        <span className="truncate text-[11.5px] text-fg-3">{field}</span>
+        {from && <div className={cn(box, "line-through decoration-1", tone.red.soft, tone.red.text)}>{from}</div>}
+        <div className={cn(box, tone.green.soft, tone.green.text)}>{to}</div>
+      </div>
+    );
+  }
   return (
-    <div className="grid grid-cols-[88px_1fr] items-baseline gap-2 border-t border-line-soft px-3 py-1.5 first:border-t-0">
+    <div className="grid grid-cols-[88px_minmax(0,1fr)] items-baseline gap-2 border-t border-line-soft px-3 py-1.5 first:border-t-0">
       <span className="truncate text-[11.5px] text-fg-3">{field}</span>
-      <span className="flex min-w-0 flex-wrap items-center gap-1.5 text-[12px]">
+      <span className="flex min-w-0 flex-wrap items-center gap-1.5 text-[12px] wrap-anywhere">
         {from && (
           <>
-            <span className={cn("rounded-[4px] px-1 line-through decoration-1", tone.red.soft, tone.red.text)}>{from}</span>
+            <span className={cn("min-w-0 rounded-[4px] px-1 line-through decoration-1", tone.red.soft, tone.red.text)}>{from}</span>
             <ArrowRight className="size-3 shrink-0 text-fg-4" aria-hidden />
           </>
         )}
-        <span className={cn("rounded-[4px] px-1 font-medium", tone.green.soft, tone.green.text)}>{to}</span>
+        <span className={cn("min-w-0 rounded-[4px] px-1 font-medium", tone.green.soft, tone.green.text)}>{to}</span>
       </span>
     </div>
   );
@@ -158,14 +171,14 @@ export function ApprovalCard({ approval, busy, onDecide }: { approval: Approval;
       initial={reduce ? false : { opacity: 0, y: 6, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ type: "spring", stiffness: 420, damping: 32 }}
-      className="overflow-hidden rounded-xl border border-[color-mix(in_srgb,var(--tone-amber-solid)_40%,var(--line))] bg-surface shadow-[0_10px_30px_-18px_rgb(0_0_0/0.35)]"
+      className="shrink-0 overflow-hidden rounded-xl border border-[color-mix(in_srgb,var(--tone-amber-solid)_40%,var(--line))] bg-surface shadow-[0_10px_30px_-18px_rgb(0_0_0/0.35)]"
       data-approval={approval.action_id}
     >
       <div className="flex items-start gap-2.5 px-3 pb-2 pt-3">
         <OllieMark size={20} state="attention" />
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-semibold text-fg">{p.title}</p>
-          {p.summary && <p className="mt-0.5 line-clamp-2 text-[12px] text-fg-3">{p.summary}</p>}
+          <p className="text-[13px] font-semibold text-fg wrap-anywhere">{p.title}</p>
+          {p.summary && <p className="mt-0.5 line-clamp-2 text-[12px] text-fg-3 wrap-anywhere">{p.summary}</p>}
         </div>
         {p.external && (
           <span className={cn("inline-flex h-5 shrink-0 items-center gap-1 rounded-[5px] px-1.5 text-[11px] font-medium", tone.amber.chip)}>

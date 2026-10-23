@@ -85,6 +85,7 @@ type listThreadsInput struct {
 	AccountID string `query:"account_id" doc:"Only this account's conversations"`
 	FolderID  string `query:"folder_id" doc:"Only this folder's conversations; replaces box"`
 	Q         string `query:"q" maxLength:"200" doc:"Matches subject, participants, snippet and body text"`
+	To        string `query:"to" maxLength:"254" doc:"Only conversations with this address on them (one of the person's addresses)"`
 	httpx.ListParams
 }
 
@@ -193,6 +194,9 @@ func (s *service) registerThreadRoutes(api huma.API) {
 			}
 			if q := strings.TrimSpace(in.Q); q != "" {
 				where = append(where, `(t.search @@ websearch_to_tsquery('simple', `+arg(q)+`) OR t.subject ILIKE `+arg("%"+escapeLike(q)+"%")+`)`)
+			}
+			if to := strings.ToLower(strings.TrimSpace(in.To)); to != "" {
+				where = append(where, arg(to)+` = ANY(t.addresses)`)
 			}
 			if in.Cursor != "" {
 				where = append(where, `(t.last_message_at, t.id) < (`+arg(cur.T)+`, `+arg(cur.I)+`)`)
@@ -540,9 +544,17 @@ func (s *service) threadDetail(ctx context.Context, q db.Querier, p *auth.Princi
 	if name == "" {
 		name = a.Email
 	}
+	idents, err := accountIdentities(ctx, q, a)
+	if err != nil {
+		return out, err
+	}
+	account := ThreadAccount{ID: a.ID, Email: a.Email, Name: name, DisplayName: a.DisplayName, Color: a.Color, Provider: a.Provider,
+		SignatureHTML: a.SignatureHTML}
+	if account.Identities, account.DefaultFrom, err = identitiesOut(ctx, s.fillerFor(q, p.WorkspaceID, p.UserID), a, idents); err != nil {
+		return out, err
+	}
 	return MailThreadDetail{Thread: threads[0], Messages: messages, Comments: comments, Shares: shares, CanAct: canAct(p),
-		Account: ThreadAccount{ID: a.ID, Email: a.Email, Name: name, DisplayName: a.DisplayName, Color: a.Color, Provider: a.Provider,
-			SignatureHTML: a.SignatureHTML}}, nil
+		Account: account}, nil
 }
 
 func (s *service) detailResponse(ctx context.Context, p *auth.Principal, id uuid.UUID) (*detailBody, error) {

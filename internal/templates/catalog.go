@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"slices"
 	"strings"
 )
 
@@ -34,7 +35,16 @@ const (
 	KindCSAT              = "csat"
 	KindSubject           = "subject"
 	KindHistoryHeader     = "history_header"
+	// KindCollabSignature is a Collab account's or address's signature: mail a member writes
+	// from their own or a shared account, with no ticket, customer, team or brand.
+	KindCollabSignature = "collab_signature"
 )
+
+// KindGroups are the variable groups of the kinds that take only some (every other kind
+// takes every variable).
+var KindGroups = map[string][]string{
+	KindCollabSignature: {"agent", "mailbox", "workspace", "date"},
+}
 
 // Variables is the built-in list. Custom fields add contact.fields.<key>,
 // company.fields.<key> and ticket.fields.<key>.
@@ -108,6 +118,25 @@ var HistoryVariables = []Variable{
 	{"message.date", "message", "Date", "When it was written.", "Sat, 17 Oct 2026 at 14:03", false, false},
 }
 
+// groupOf is each built-in variable's group.
+var groupOf = func() map[string]string {
+	m := map[string]string{}
+	for _, v := range Variables {
+		m[v.Key] = v.Group
+	}
+	return m
+}()
+
+// takes reports whether a template of kind may read the variable key.
+func takes(kind, key string) bool {
+	groups, limited := KindGroups[kind]
+	if !limited {
+		return true
+	}
+	g, ok := groupOf[key]
+	return ok && slices.Contains(groups, g)
+}
+
 var builtin = func() map[string]bool {
 	m := map[string]bool{}
 	for _, v := range Variables {
@@ -173,7 +202,10 @@ func Check(src, kind string, fields map[string]bool) []Problem {
 			out = append(out, Problem{Message: "{{ " + k + " }} belongs in " + slotHome(k) + ".", Token: "{{ " + k + " }}"})
 		case k == "agent.signature" && kind == KindPersonalSignature:
 			out = append(out, Problem{Message: "A personal signature cannot include itself.", Token: "{{ agent.signature }}"})
-		case builtin[k]:
+		case builtin[k] && takes(kind, k):
+		case builtin[k], KindGroups[kind] != nil && isFieldKey(k):
+			out = append(out, Problem{Message: "{{ " + k + " }} has nothing to read here: mail from an account has no ticket, customer, team or brand." +
+				didYouMean(k, candidates(kind, nil)), Token: "{{ " + k + " }}"})
 		default:
 			if _, _, ok := IsField(k); ok && (fields == nil || fields[k]) {
 				continue
@@ -211,10 +243,20 @@ func slotHome(k string) string {
 func candidates(kind string, fields map[string]bool) []string {
 	out := slotsFor(kind)
 	for _, v := range Variables {
-		out = append(out, v.Key)
+		if takes(kind, v.Key) {
+			out = append(out, v.Key)
+		}
+	}
+	if _, limited := KindGroups[kind]; limited {
+		return out
 	}
 	for k := range fields {
 		out = append(out, k)
 	}
 	return out
+}
+
+func isFieldKey(k string) bool {
+	_, _, ok := IsField(k)
+	return ok
 }

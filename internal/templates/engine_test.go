@@ -92,6 +92,28 @@ func TestCheck(t *testing.T) {
 	if p := Check("{{ survey }}", KindCSAT, nil); len(p) != 0 {
 		t.Fatalf("csat: %+v", p)
 	}
+	ok := "{{ agent.name }}, {{ agent.title }}{% if agent.phone %} {{ agent.phone }}{% endif %} {{ agent.signature }} {{ mailbox.name }} {{ mailbox.email }} {{ workspace.name }} {{ date.today }}"
+	if p := Check(ok, KindCollabSignature, nil); len(p) != 0 {
+		t.Fatalf("collab signature: %+v", p)
+	}
+	for _, src := range []string{"{{ ticket.subject }}", "{{ contact.first_name }}", "{{ team.name }}", "{{ brand.name }}", "{{ contact.fields.plan }}"} {
+		if p := Check(src, KindCollabSignature, nil); len(p) != 1 || !strings.Contains(p[0].Message, "nothing to read here") {
+			t.Fatalf("collab signature %s: %+v", src, p)
+		}
+	}
+	if p := Check("{{ agent.nmae }}", KindCollabSignature, nil); len(p) != 1 || !strings.Contains(p[0].Message, "agent.name") {
+		t.Fatalf("collab did you mean: %+v", p)
+	}
+}
+
+func TestSetMailbox(t *testing.T) {
+	c := &Context{Values: &Values{Text: map[string]string{"agent.name": "Maya Chen"}, HTML: map[string]string{}, Known: Known},
+		PersonalSignature: "<p>{{ agent.name }} for {{ mailbox.name }}</p>"}
+	c.SetMailbox("Maya Chen at Margin {{ x }}", "support@margin.test")
+	got := c.Fill("<p>{{ mailbox.email }}</p>{{ agent.signature }}")
+	if !strings.Contains(got, "support@margin.test") || !strings.Contains(got, "Maya Chen for Maya Chen at Margin") || strings.Contains(got, "{{ x }}") {
+		t.Fatalf("filled %q", got)
+	}
 }
 
 func TestSanitizeDesignKeepsTags(t *testing.T) {

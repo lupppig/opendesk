@@ -20,6 +20,20 @@ export function needsHtml(html: string): boolean {
   return /<(table|td|tr|div|font|center|span)\b|\sstyle=|<img\b[^>]*\s(width|height)=/i.test(html);
 }
 
+/** What in html the visual editor would lose, in plain words (needsHtml's reasons). */
+export function htmlReasons(html: string): string[] {
+  const out: string[] = [];
+  if (/<(table|td|tr)\b/i.test(html)) out.push("a table layout");
+  if (/\sstyle=/i.test(html)) out.push("inline styles");
+  if (/<img\b[^>]*\s(width|height)=/i.test(html)) out.push("sized images");
+  if (!out.length && /<(div|font|center|span)\b/i.test(html)) out.push("lines and fonts set in HTML");
+  return out;
+}
+
+function list(parts: string[]): string {
+  return parts.length < 2 ? (parts[0] ?? "") : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+}
+
 export type TemplateEditorHandle = { insert: (text: string) => void; focus: () => void };
 
 export type TemplateEditorProps = {
@@ -39,15 +53,21 @@ export type TemplateEditorProps = {
   framed?: boolean;
   className?: string;
   problems?: TemplateProblem[];
+  /** Template tags: the picker, "{{" suggestions and tags as pills. Off for HTML that is not filled (a mail account's signature). */
+  variables?: boolean;
+  onModeChange?: (mode: "visual" | "html") => void;
 };
 
 export const TemplateEditor = forwardRef<TemplateEditorHandle, TemplateEditorProps>(function TemplateEditor(
-  { value, onChange, kind, ariaLabel, placeholder, html: allowHtml, htmlOnly, toolbar = "compact", minHeight = 96, disabled, framed = true, className, problems },
+  { value, onChange, kind, ariaLabel, placeholder, html: allowHtml, htmlOnly, toolbar = "compact", minHeight = 96, disabled, framed = true, className, problems, variables = true, onModeChange },
   ref,
 ) {
   const confirm = useConfirm();
   const catalog = useCatalog(kind);
   const [mode, setMode] = useState<"visual" | "html">(() => (htmlOnly || (allowHtml && needsHtml(value)) ? "html" : "visual"));
+  const onModeChangeRef = useRef(onModeChange);
+  onModeChangeRef.current = onModeChange;
+  useEffect(() => onModeChangeRef.current?.(mode), [mode]);
   const rich = useRef<RichEditorHandle>(null);
   const area = useRef<HTMLTextAreaElement>(null);
   const knownRef = useRef<Set<string> | null>(null);
@@ -139,7 +159,9 @@ export const TemplateEditor = forwardRef<TemplateEditorHandle, TemplateEditorPro
     setMode(next);
   };
 
-  const picker = <VariablePicker kind={kind} onPick={(k) => insert(tagFor(k))} onInsert={insertWithSelection} />;
+  const picker = variables && <VariablePicker kind={kind} onPick={(k) => insert(tagFor(k))} onInsert={insertWithSelection} />;
+  // Why it is HTML: what the visual editor would remove.
+  const reasons = mode === "html" && !htmlOnly && allowHtml ? htmlReasons(value) : [];
   const modeToggle = allowHtml && !htmlOnly && (
     <Segmented
       size="xs"
@@ -171,7 +193,7 @@ export const TemplateEditor = forwardRef<TemplateEditorHandle, TemplateEditorPro
             ariaLabel={ariaLabel}
             editable={!disabled}
             toolbar={toolbar}
-            extensions={extensions}
+            extensions={variables ? extensions : undefined}
             contentClassName="min-h-[var(--tpl-min)]"
             toolbarEnd={
               <>
@@ -182,6 +204,11 @@ export const TemplateEditor = forwardRef<TemplateEditorHandle, TemplateEditorPro
           />
         ) : (
           <>
+            {reasons.length > 0 && (
+              <p className="border-b border-line-soft px-3 py-2 text-[12px] leading-[17px] text-fg-3">
+                {/signature/.test(kind) ? "This signature" : "This template"} uses {list(reasons)}, which the visual editor would remove, so it opens as HTML.
+              </p>
+            )}
             <Textarea
               ref={area}
               value={value}
@@ -204,8 +231,8 @@ export const TemplateEditor = forwardRef<TemplateEditorHandle, TemplateEditorPro
         )}
       </div>
       {problems && problems.length > 0 && <Problems problems={problems} />}
-      {!disabled && <TemplateHint />}
-      {mode === "visual" && <VarSuggestPopup />}
+      {!disabled && variables && <TemplateHint />}
+      {mode === "visual" && variables && <VarSuggestPopup />}
     </div>
   );
 });

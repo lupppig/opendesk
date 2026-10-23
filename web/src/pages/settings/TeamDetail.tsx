@@ -15,8 +15,7 @@ import { templateProblems } from "@/components/settings2/MemberProfileFields";
 import { MotionList, MotionRow } from "@/components/settings2/motion";
 import { Note, PrivatePill, TeamDot, teamItems, useMyTeamRole } from "@/components/settings2/teams";
 import { UnsavedGuard } from "@/components/settings2/UnsavedGuard";
-import { EmailPreview } from "@/components/templates/EmailPreview";
-import { TemplateEditor } from "@/components/templates/TemplateEditor";
+import { SignatureEditor } from "@/components/templates/SignatureEditor";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm";
@@ -263,22 +262,22 @@ function TeamEditor({ team }: { team: Team }) {
         <AssignSection value={draft.assign_mode} disabled={!canEdit} onChange={(m) => set("assign_mode", m)} />
 
         <Section title={t("signature.title")} description={t("signature.hint", { tag: "{{ agent.signature }}" })}>
-          <div className="flex flex-col gap-3 py-3.5">
-            <TemplateEditor
-              kind="signature"
-              html
-              value={draft.signature_html}
-              onChange={(v) => {
-                set("signature_html", v);
-                setSaveProblems([]);
-              }}
-              placeholder={t("signature.placeholder")}
-              ariaLabel={t("signature.title")}
-              disabled={!canEdit}
-              problems={previewProblems.length ? previewProblems : saveProblems}
-            />
-            <EmailPreview collapsible defaultOpen={false} height={420} title={t("signature.preview")} body={previewBody} onProblems={onProblems} />
-          </div>
+          <SignatureEditor
+            className="py-3.5"
+            kind="signature"
+            value={draft.signature_html}
+            onChange={(v) => {
+              set("signature_html", v);
+              setSaveProblems([]);
+            }}
+            placeholder={t("signature.placeholder")}
+            ariaLabel={t("signature.title")}
+            disabled={!canEdit}
+            problems={previewProblems.length ? previewProblems : saveProblems}
+            previewTitle={t("signature.preview")}
+            previewBody={previewBody}
+            onProblems={onProblems}
+          />
         </Section>
 
         <Section

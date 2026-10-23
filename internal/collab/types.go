@@ -119,6 +119,41 @@ type MailAccount struct {
 	DisplayNameSync   string       `json:"display_name_sync" enum:"two_way,read_only,none"`
 	OutOfOffice       *OutOfOffice `json:"out_of_office"`
 	OutOfOfficeSync   string       `json:"out_of_office_sync" enum:"two_way,read_only,none"`
+
+	// Identities are the addresses it sends from, its own first (contracts/collab.md "Addresses").
+	Identities []MailIdentity `json:"identities"`
+	// DefaultFrom is the address new mail goes out from.
+	DefaultFrom string `json:"default_from"`
+}
+
+// MailIdentity is an address an account sends from: its own (primary, whose From name and
+// signature are the account's) or another one (Gmail's send-as addresses, aliases added by
+// hand for Microsoft and IMAP).
+type MailIdentity struct {
+	ID            *uuid.UUID `json:"id" doc:"null for the account's own address"`
+	Email         string     `json:"email"`
+	DisplayName   string     `json:"display_name" doc:"The From name; empty uses the account's"`
+	SignatureHTML string     `json:"signature_html"`
+	ReplyTo       string     `json:"reply_to" doc:"Replies go here when set"`
+	Primary       bool       `json:"primary"`
+	Default       bool       `json:"default" doc:"New mail goes out from it"`
+	Source        string     `json:"source" enum:"account,provider,manual"`
+	Verification  string     `json:"verification" enum:"accepted,pending"`
+	CanSend       bool       `json:"can_send"`
+	// How its From name and signature sync with the provider: the primary's as the
+	// account's own; Gmail's other addresses pull (Gmail's changes come in, edits stay in
+	// opendesk); hand-added ones none.
+	SignatureSync     string     `json:"signature_sync" enum:"two_way,read_only,pull,none"`
+	DisplayNameSync   string     `json:"display_name_sync" enum:"two_way,read_only,pull,none"`
+	SignatureSyncedAt *time.Time `json:"signature_synced_at"`
+	// A From name or signature with variables is kept in opendesk: never written to Gmail,
+	// and Gmail's changes do not replace it ("Get from Gmail" does).
+	DisplayNameLocal bool `json:"display_name_local" doc:"The From name has variables, so Gmail keeps its own"`
+	SignatureLocal   bool `json:"signature_local" doc:"The signature has variables, so Gmail keeps its own"`
+	// FromName and FilledSignatureHTML are the From name and the signature filled for the
+	// caller, as the composer shows them (contracts/collab.md "Addresses").
+	FromName            string  `json:"from_name" doc:"The From name (its own, else the account's) filled for the caller"`
+	FilledSignatureHTML *string `json:"filled_signature_html" doc:"The signature filled for the caller; null when it has no variables"`
 }
 
 // OutOfOffice is an account's automatic reply as its provider keeps it (Gmail's vacation
@@ -165,6 +200,9 @@ type MailThread struct {
 	Shared         bool             `json:"shared"`
 	Assignees      []domain.UserRef `json:"assignees"`
 	CommentCount   int              `json:"comment_count"`
+	// ToAddress is the account's address other than its own the conversation was written
+	// to or sent from (an alias), newest first; null when none.
+	ToAddress *string `json:"to_address"`
 }
 
 type MailMessage struct {
@@ -192,6 +230,9 @@ type MailMessage struct {
 	DraftID *uuid.UUID `json:"draft_id"`
 	// InReplyToID is the message of the conversation this one answers (its In-Reply-To), when stored.
 	InReplyToID *uuid.UUID `json:"in_reply_to_id"`
+	// OwnAddress is the account's address (its own or another) the message was sent from
+	// or written to; null when none.
+	OwnAddress *string `json:"own_address"`
 }
 
 type MailAttachment struct {
@@ -223,6 +264,9 @@ type ThreadAccount struct {
 	Color         string    `json:"color"`
 	Provider      string    `json:"provider"`
 	SignatureHTML string    `json:"signature_html"`
+	// Identities are the addresses it sends from, its own first; DefaultFrom new mail's.
+	Identities  []MailIdentity `json:"identities"`
+	DefaultFrom string         `json:"default_from"`
 }
 
 type MailThreadDetail struct {

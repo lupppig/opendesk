@@ -30,6 +30,7 @@ import { checkLimit } from "./billing";
 import { authRefusedCause, connectOptions, detect, imapOff, mockApiSyncOn, mockImapOn, mockOAuthEnabled, mockSystemSendOn, receivingOf, refusal, sendingOf, syncReceiving, systemSendOff } from "./mailhost";
 import { assign, crud } from "./crud";
 import { checkBotId } from "./bots";
+import { checkSendAs, normalizeAliases, writeAliasSettings } from "../aliases";
 
 function contactOut(ws: WsData, c: Contact): Contact {
   c.ticket_count = ws.tickets.filter((t) => t.contact?.id === c.id && !ws.deletedTickets.has(t.id)).length;
@@ -360,6 +361,7 @@ export function registerResources() {
   // Mailboxes.
   get("/v1/mailboxes", (ctx) => {
     syncReceiving(ctx.ws.mailboxes);
+    ctx.ws.mailboxes.forEach(normalizeAliases);
     return paginate(ctx, ctx.ws.mailboxes, 100);
   });
   get("/v1/mailboxes/connect-options", () => connectOptions("in.opendesk.sh"));
@@ -372,6 +374,7 @@ export function registerResources() {
     const m = findMailbox(ctx);
     m.receiving = receivingOf(m);
     m.sending = sendingOf(m);
+    normalizeAliases(m);
     return m;
   });
   post("/v1/mailboxes", (ctx) => {
@@ -431,6 +434,12 @@ export function registerResources() {
     ctx.ws.mailboxes = ctx.ws.mailboxes.filter((x) => x !== m);
     publish(ctx.ws, "mailbox.deleted", { mailbox_id: m.id });
     return respond(204);
+  });
+  post("/v1/mailboxes/:id/send-as/check", (ctx) => {
+    const m = findMailbox(ctx);
+    checkSendAs(m, nowIso());
+    publish(ctx.ws, "mailbox.updated", { mailbox: m });
+    return respond(200, m);
   });
   post("/v1/mailboxes/:id/test", (ctx) => {
     const m = findMailbox(ctx);
@@ -848,6 +857,9 @@ function writeAddressing(ctx: Ctx, m: Mailbox) {
     }
     m.alias_teams = next;
   }
+  normalizeAliases(m);
+  if ("alias_settings" in b) writeAliasSettings(ctx.ws, m, b.alias_settings);
+  normalizeAliases(m);
   if ("from_name_format" in b) {
     const f = typeof b.from_name_format === "string" ? b.from_name_format.replace(/\s+/g, " ").trim() : "";
     if (f.length > 80) throw invalid("Keep the from name under 80 characters");

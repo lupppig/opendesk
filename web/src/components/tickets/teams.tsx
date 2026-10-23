@@ -20,6 +20,7 @@ import { isTone, tone } from "@/lib/tones";
 import { floatingPanel } from "@/components/ui/popover";
 import { pickerSearch } from "@/components/ui/picker";
 import { Button } from "@/components/ui/button";
+import { fillFromName as fillFormat, HELPDESK_FROM_VARS } from "@/lib/fromname";
 import { useAssistantName } from "./ollie";
 
 // ─── Context ───────────────────────────────────────────────────────────────
@@ -162,50 +163,61 @@ export function firstName(name: string) {
 
 /**
  * The From name customers see (contracts/teams.md "Reply address"): the address's
- * format with {agent} {agent_first} {team} {brand} {mailbox} filled in. Without an
- * author the agent variable and the words up to the next variable are dropped.
+ * format with {agent} {agent_first} {team} {brand} {mailbox} filled in (lib/fromname).
+ * Without an author the agent variable and the words up to the next variable are dropped.
  */
 export function fillFromName(format: string, v: { agent?: string | null; team?: string | null; brand?: string | null; mailbox: string }) {
-  const f = format.trim() || "{agent} at {mailbox}";
-  const vars = {
-    agent: v.agent ?? "",
-    agent_first: v.agent ? firstName(v.agent) : "",
-    team: v.team || v.brand || "",
-    brand: v.brand ?? "",
-    mailbox: v.mailbox,
-  } as Record<string, string>;
-  if (!/\{(team|brand|mailbox|agent|agent_first)\}/.test(f)) return v.mailbox;
-  let out = f;
-  if (!v.agent) {
-    out = out.replace(/\{agent(_first)?\}[^{]*/g, "");
-    if (!/\{(team|brand|mailbox)\}/.test(out)) return v.mailbox;
-  }
-  out = out.replace(/\{(agent_first|agent|team|brand|mailbox)\}/g, (_, k: string) => vars[k] ?? "");
-  return out.replace(/\s+/g, " ").trim() || v.mailbox;
+  return fillFormat(format.trim() || "{agent} at {mailbox}", { agent: v.agent ?? "", team: v.team ?? "", brand: v.brand ?? "", mailbox: v.mailbox }, HELPDESK_FROM_VARS);
 }
 
-/** The address replies go out as: the alias the customer wrote to when it belongs to the reply mailbox. */
-export function sendingAddress(m: Mailbox, t: Pick<Ticket, "received_at" | "origin_mailbox_id">) {
+/** The alias of the reply mailbox the customer wrote to, or null. */
+export function ticketAlias(m: Mailbox, t: Pick<Ticket, "received_at">): string | null {
   const r = t.received_at?.toLowerCase();
-  if (r && m.aliases?.some((a) => a.toLowerCase() === r)) return t.received_at;
-  return m.email;
+  return r && m.aliases?.some((a) => a.toLowerCase() === r) ? r : null;
 }
 
-/** The From line of a reply: `{from name} <address>`. */
+/**
+ * Whether mail as an alias goes out From it (contracts/teams.md "Aliases"): always over SMTP,
+ * through Gmail for a verified send-as address, through Microsoft unless it refused the alias.
+ */
+export function sendsAsAlias(m: Mailbox, alias: string): boolean {
+  const st = m.alias_settings?.[alias]?.send_as ?? "unknown";
+  if (m.outbound_kind === "smtp") return true;
+  if (m.outbound_kind === "google") return st === "verified";
+  if (m.outbound_kind === "microsoft") return st !== "unverified";
+  return false;
+}
+
+/** The address a ticket's replies answer as: the alias the customer wrote to when it belongs to the reply mailbox. */
+export function sendingAddress(m: Mailbox, t: Pick<Ticket, "received_at" | "origin_mailbox_id">) {
+  return ticketAlias(m, t) ?? m.email;
+}
+
+/**
+ * The From line of a reply: `{from name} <address>`, with the alias's own name. When the
+ * provider does not send as the alias, the reply goes From the mailbox and answers to the alias.
+ */
 export function fromLine(ctx: TeamsCtx, t: Ticket, m: Mailbox, agent: string | null) {
+  const alias = ticketAlias(m, t);
   const name = fillFromName(m.from_name_format, {
     agent,
     team: ctx.team(t.team_id)?.name ?? null,
     brand: ctx.brand(t.brand_id ?? m.brand_id)?.name ?? null,
-    mailbox: m.display_name || m.name,
+    mailbox: (alias && m.alias_settings?.[alias]?.display_name) || m.display_name || m.name,
   });
-  return { name, email: sendingAddress(m, t) };
+  if (alias && !sendsAsAlias(m, alias)) return { name, email: m.email, replyTo: alias };
+  return { name, email: alias ?? m.email, replyTo: null as string | null };
+}
+
+/** Whether the address belongs to the brand: its own, or one of its aliases has it. */
+export function addressOfBrand(m: Mailbox, brandId: string) {
+  return m.brand_id === brandId || Object.values(m.alias_settings ?? {}).some((s) => s.brand_id === brandId);
 }
 
 /** Addresses a reply on this ticket may go out from: its brand's, minus private teams' the caller isn't on. */
 export function replyAddresses(ctx: TeamsCtx, t: Pick<Ticket, "brand_id">): Mailbox[] {
   const all = ctx.mailboxes.filter((m) => m.status !== "disabled" && ctx.canSendFrom(m));
-  const own = t.brand_id ? all.filter((m) => m.brand_id === t.brand_id) : all;
+  const own = t.brand_id ? all.filter((m) => addressOfBrand(m, t.brand_id!)) : all;
   return own.length ? own : all;
 }
 

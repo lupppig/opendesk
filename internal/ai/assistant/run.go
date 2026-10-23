@@ -329,7 +329,7 @@ func (s *Service) system(ctx context.Context, p *auth.Principal) []ai.Block {
 	var userName, wsName string
 	_ = s.d.DB.Pool.QueryRow(ctx, `SELECT u.name, w.name FROM users u, workspaces w WHERE u.id = $1 AND w.id = $2`, p.UserID, p.WorkspaceID).
 		Scan(&userName, &wsName)
-	return []ai.Block{{Text: systemPrompt(), Cache: true}, {Text: sessionPrompt(p, userName, wsName, time.Now())}}
+	return []ai.Block{{Text: systemPrompt(s.catalog()), Cache: true}, {Text: sessionPrompt(p, userName, wsName, time.Now())}}
 }
 
 func chatTurns(ts []turn) []ai.ChatTurn {

@@ -246,6 +246,7 @@ func TestGoogleOAuthConnect(t *testing.T) {
 	}
 	p := w.s.providers[KindGoogle]
 	p.tokenURL, p.userinfoURL = f.srv.URL+"/token", f.srv.URL+"/userinfo"
+	w.s.gmailBase = f.srv.URL // the send-as list, read after connecting (best effort)
 	srv := w.api(w.admin)
 
 	u, cookie := startOAuth(t, srv.URL, "google", map[string]any{"name": "Gmail support", "receive": "sync"})

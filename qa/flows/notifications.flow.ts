@@ -44,3 +44,54 @@ test("choose who hears about new unassigned tickets", async ({ page, proof }) =>
   await proof.chapter("Notifications", "Each person still decides where it reaches them");
   await proof.shot("preferences", { caption: "New tickets: phone and desktop on, email off by default" });
 });
+
+test("the app asks to allow notifications, so new tickets reach you in the background", async ({ page, proof }) => {
+  // The browser's own prompt: not asked yet, then allowed when the person agrees.
+  await page.addInitScript(() => {
+    let state: NotificationPermission = "default";
+    Object.defineProperty(Notification, "permission", { get: () => state });
+    Notification.requestPermission = async () => (state = "granted");
+  });
+  await proof.open("/inbox/unassigned");
+  const strip = page.getByRole("status").filter({ hasText: "Get told about new tickets and replies." });
+  await expect(strip).toBeVisible();
+  await expect(page.getByRole("listbox", { name: "Tickets" }).getByRole("option").first()).toBeVisible();
+  await proof.chapter("Allow notifications", "Until then, new tickets and replies only show under the bell");
+  await proof.dwell();
+  await proof.shot("ask", { caption: "A strip above the inbox asks to allow notifications" });
+
+  await strip.getByRole("button", { name: "Allow notifications" }).click();
+  await expect(strip).toBeHidden();
+  await proof.dwell();
+  await proof.shot("allowed", { caption: "Allowed: the strip goes away and notifications reach this browser" });
+});
+
+test("new tickets are emailed by default, and replies on unassigned tickets reach the team", async ({ page, proof }) => {
+  await page.addInitScript(() => localStorage.setItem("od-ollie-tips", JSON.stringify({ paused: Number.MAX_SAFE_INTEGER })));
+  await proof.open("/settings/notifications");
+  const row = page.getByText("New tickets nobody is assigned to. Who gets them is set in Assignment");
+  await expect(row).toBeVisible();
+  await expect(page.getByText("On tickets assigned to you, and on tickets nobody has yet")).toBeVisible();
+  await row.scrollIntoViewIfNeeded();
+  await proof.chapter("Notification settings", "New tickets now reach you by email, phone and desktop unless you turn them off");
+  await proof.dwell();
+  await proof.shot("defaults", { caption: "New tickets and customer replies, with email on by default" });
+});
+
+test("each address shows when mail last arrived, and warns when it goes quiet", async ({ page, proof }) => {
+  await page.addInitScript(() => localStorage.setItem("od-ollie-tips", JSON.stringify({ paused: Number.MAX_SAFE_INTEGER })));
+  await proof.open("/settings/mailboxes");
+  await expect(page.getByText("Last mail", { exact: true })).toBeVisible();
+  await expect(page.getByText("billing@margin.app")).toBeVisible();
+  await proof.chapter("Mailboxes", "When mail last arrived at each address");
+  await proof.dwell();
+  await proof.shot("list", { caption: "The Last mail column; Billing, quiet for 11 days, in amber" });
+
+  await page.getByText("billing@margin.app").click();
+  const warning = page.getByRole("status").filter({ hasText: "No mail for 11 days" });
+  await expect(warning).toBeVisible();
+  await expect(page.getByText("Last mail received")).toBeVisible();
+  await proof.chapter("A quiet address", "What to check when forwarded mail stops arriving");
+  await proof.dwell();
+  await proof.shot("quiet", { caption: "Billing's page: no mail for 11 days, and what to check" });
+});

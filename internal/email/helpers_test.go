@@ -124,6 +124,8 @@ func newWorld(t *testing.T) *world {
 	d := testDeps(t)
 	ctx := context.Background()
 	w := &world{t: t, ctx: ctx, d: d, s: newService(d), wid: ids.New(), uid: ids.New()}
+	// No test reaches Google: a test that talks to Gmail points it at its fake.
+	w.s.gmailBase = "http://127.0.0.1:1"
 	slug := "acme-" + crypto.RandomString(6)
 	mustExec(t, d, `INSERT INTO workspaces (id, name, slug, widget_key) VALUES ($1, 'Acme', $2, $3)`, w.wid, slug, "wk_"+crypto.RandomString(12))
 	w.brand = ids.New()

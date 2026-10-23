@@ -12,12 +12,14 @@ import { toast } from "@/components/ui/toast";
 import { SummaryStrip } from "@/components/settings2/bits";
 import { MotionList, MotionRow } from "@/components/settings2/motion";
 import { connectionLabel, MailboxIcon, MailboxStatus, notReceiving, notSending } from "@/components/mailboxes/kinds";
+import { quietFor } from "@/components/mailboxes/quiet";
 import { useMailboxActions } from "@/components/mailboxes/useMailboxActions";
 import type { Mailbox } from "@/lib/api/types";
 import { relLong } from "@/lib/format";
 import { q } from "@/lib/queries";
 import { atLeast, useRole } from "@/lib/session";
 import { cn } from "@/lib/cn";
+import { tone } from "@/lib/tones";
 import { PlanLimitHint, showLimit } from "@/components/billing/PlanLimit";
 import { useLimit } from "@/components/billing/hooks";
 
@@ -169,9 +171,7 @@ export default function Mailboxes() {
                     <div className={COLS.status}>
                       <MailboxStatus mailbox={m} />
                     </div>
-                    <span className={cn(COLS.synced, "mono whitespace-nowrap text-[11px] text-fg-4")}>
-                      {m.inbound_kind === "forwarding" ? t("list.instant") : m.last_synced_at ? relLong(m.last_synced_at) : t("list.never")}
-                    </span>
+                    <LastMail mailbox={m} />
                     <Menu>
                       <MenuTrigger asChild>
                         <Button size="sm" variant="ghost" square aria-label={t("list.actionsFor", { email: m.email })} onClick={(e) => e.stopPropagation()}>
@@ -218,5 +218,16 @@ function MailboxSkeleton() {
         </div>
       ))}
     </div>
+  );
+}
+
+/** When mail last came in, amber once the address has gone quiet. */
+function LastMail({ mailbox: m }: { mailbox: Mailbox }) {
+  const { t } = useTranslation("settingsChannels");
+  const quiet = quietFor(m);
+  return (
+    <span className={cn(COLS.synced, "mono whitespace-nowrap text-[11px]", quiet ? tone.amber.text : "text-fg-4")} title={quiet && !quiet.never ? t("list.quiet", { count: quiet.days }) : undefined}>
+      {m.last_received_at ? relLong(m.last_received_at) : t("list.noMail")}
+    </span>
   );
 }

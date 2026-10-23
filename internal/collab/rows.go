@@ -181,15 +181,17 @@ type threadRow struct {
 	Starred        bool
 	HasAttachments bool
 	FolderIDs      []uuid.UUID
+	// Addresses are every address on its messages, lower case, newest first.
+	Addresses []string
 }
 
 const threadColumns = `id, workspace_id, account_id, remote_id, subject, snippet, participants, last_message_at, message_count,
-	unread, starred, has_attachments, folder_ids`
+	unread, starred, has_attachments, folder_ids, addresses`
 
 func scanThread(row pgx.Row) (*threadRow, error) {
 	var t threadRow
 	if err := row.Scan(&t.ID, &t.WorkspaceID, &t.AccountID, &t.RemoteID, &t.Subject, &t.Snippet, &t.Participants, &t.LastMessageAt,
-		&t.MessageCount, &t.Unread, &t.Starred, &t.HasAttachments, &t.FolderIDs); err != nil {
+		&t.MessageCount, &t.Unread, &t.Starred, &t.HasAttachments, &t.FolderIDs, &t.Addresses); err != nil {
 		return nil, err
 	}
 	if t.Participants == nil {
@@ -197,6 +199,9 @@ func scanThread(row pgx.Row) (*threadRow, error) {
 	}
 	if t.FolderIDs == nil {
 		t.FolderIDs = []uuid.UUID{}
+	}
+	if t.Addresses == nil {
+		t.Addresses = []string{}
 	}
 	return &t, nil
 }
@@ -241,19 +246,21 @@ type messageRow struct {
 	Location    json.RawMessage
 	SentBy      *uuid.UUID
 	FolderIDs   []uuid.UUID
+	// DeliveredTo is where it was delivered (Delivered-To, X-Original-To), lower case.
+	DeliveredTo []string
 }
 
 // messageColumns reads a message with its folders (alias m).
 const messageColumns = `m.id, m.workspace_id, m.account_id, m.thread_id, m.remote_id, m.message_id, m.in_reply_to, m.refs,
 	m.from_addr, m.to_addrs, m.cc_addrs, m.bcc_addrs, m.reply_to, m.subject, m.snippet, m.body_html, m.body_text, m.sent_at,
 	m.unread, m.starred, m.draft, m.attachments, m.raw_key, m.location, m.sent_by,
-	ARRAY(SELECT folder_id FROM collab_message_folders mf WHERE mf.message_id = m.id)`
+	ARRAY(SELECT folder_id FROM collab_message_folders mf WHERE mf.message_id = m.id), m.delivered_to`
 
 func scanMessage(row pgx.Row) (*messageRow, error) {
 	var m messageRow
 	if err := row.Scan(&m.ID, &m.WorkspaceID, &m.AccountID, &m.ThreadID, &m.RemoteID, &m.MessageID, &m.InReplyTo, &m.Refs,
 		&m.From, &m.To, &m.Cc, &m.Bcc, &m.ReplyTo, &m.Subject, &m.Snippet, &m.BodyHTML, &m.BodyText, &m.SentAt,
-		&m.Unread, &m.Starred, &m.Draft, &m.Attachments, &m.RawKey, &m.Location, &m.SentBy, &m.FolderIDs); err != nil {
+		&m.Unread, &m.Starred, &m.Draft, &m.Attachments, &m.RawKey, &m.Location, &m.SentBy, &m.FolderIDs, &m.DeliveredTo); err != nil {
 		return nil, err
 	}
 	for _, list := range []*[]Address{&m.To, &m.Cc, &m.Bcc, &m.ReplyTo} {
@@ -269,6 +276,9 @@ func scanMessage(row pgx.Row) (*messageRow, error) {
 	}
 	if m.Refs == nil {
 		m.Refs = []string{}
+	}
+	if m.DeliveredTo == nil {
+		m.DeliveredTo = []string{}
 	}
 	return &m, nil
 }

@@ -28,6 +28,9 @@ export default defineConfig({
     colorScheme: "light",
     locale: "en-US",
     timezoneId: "UTC",
+    // Notifications count as allowed, so the strip asking for them stays out of other flows'
+    // stills (a flow that shows it stands in for the browser's prompt).
+    permissions: ["notifications"],
     actionTimeout: 15_000,
     // The first page load compiles the app on the dev server.
     navigationTimeout: 90_000,

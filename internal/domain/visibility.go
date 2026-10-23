@@ -139,6 +139,32 @@ func TeamReplyMailbox(ctx context.Context, q db.Querier, wid, brandID, teamID uu
 	return &id, nil
 }
 
+// MailboxInBrand reports whether the workspace's mailbox is an address of brand: the
+// brand is its own, or one of its aliases has it (contracts/teams.md "Aliases").
+func MailboxInBrand(ctx context.Context, q db.Querier, wid, brandID, mailboxID uuid.UUID) (bool, error) {
+	var ok bool
+	err := q.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM mailboxes m WHERE m.workspace_id = $1 AND m.id = $2
+		AND (m.brand_id = $3 OR EXISTS (SELECT 1 FROM jsonb_each(m.alias_settings) a
+			WHERE a.value ->> 'brand_id' = $3::text AND a.key = ANY(m.aliases))))`, wid, mailboxID, brandID).Scan(&ok)
+	return ok, err
+}
+
+// AddressBrand is the brand of the alias receivedAt names, when the mailbox has that
+// alias with a brand of the workspace; nil otherwise (the mailbox's brand applies).
+func AddressBrand(ctx context.Context, q db.Querier, wid, mailboxID uuid.UUID, receivedAt string) (*uuid.UUID, error) {
+	var id uuid.UUID
+	err := q.QueryRow(ctx, `SELECT b.id FROM mailboxes m JOIN brands b ON b.workspace_id = m.workspace_id
+		AND b.id::text = m.alias_settings -> lower($3::text) ->> 'brand_id'
+		WHERE m.workspace_id = $1 AND m.id = $2 AND lower($3::text) = ANY(m.aliases)`, wid, mailboxID, receivedAt).Scan(&id)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &id, nil
+}
+
 // BrandMailboxFor is the brand's default address for a ticket of team (nil: none): its
 // oldest active address that is not another private team's, as only that team's members
 // send from it (contracts/teams.md "Reply address").

@@ -102,6 +102,8 @@ export function applyCollabEvent(qc: QueryClient, type: string, data: Record<str
     const id = typeof data.account_id === "string" ? data.account_id : null;
     void qc.invalidateQueries({ queryKey: qk.mailAccounts });
     void qc.invalidateQueries({ queryKey: qk.collabStatus });
+    // An open conversation carries its account's addresses and signatures (the reply's From): they follow.
+    void qc.invalidateQueries({ queryKey: ["collab", "thread"], predicate: (query) => !id || (query.state.data as MailThreadDetail | undefined)?.account.id === id });
     pendingFolders.add(id);
     if (!listTimer) listTimer = setTimeout(() => flush(qc), 200);
     return true;

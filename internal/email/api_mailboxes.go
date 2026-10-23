@@ -36,24 +36,25 @@ type mailboxBody struct {
 
 type createMailboxInput struct {
 	Body struct {
-		Name             string               `json:"name" minLength:"1" maxLength:"64"`
-		Email            string               `json:"email" maxLength:"254"`
-		DisplayName      string               `json:"display_name,omitempty" maxLength:"64"`
-		InboundKind      string               `json:"inbound_kind" enum:"forwarding,imap,google,microsoft"`
-		OutboundKind     string               `json:"outbound_kind" enum:"smtp,google,microsoft,system"`
-		Config           MailboxConfig        `json:"config,omitempty"`
-		Password         string               `json:"password,omitempty" maxLength:"1024" doc:"IMAP password (write-only)"`
-		SMTPPassword     string               `json:"smtp_password,omitempty" maxLength:"1024" doc:"SMTP password when it differs from the IMAP one (write-only)"`
-		TeamID           *uuid.UUID           `json:"team_id,omitempty"`
-		SignatureHTML    string               `json:"signature_html,omitempty"`
-		AutoReplyEnabled bool                 `json:"auto_reply_enabled,omitempty"`
-		AutoReplySubject string               `json:"auto_reply_subject,omitempty" maxLength:"200"`
-		AutoReplyHTML    string               `json:"auto_reply_html,omitempty"`
-		BrandID          *uuid.UUID           `json:"brand_id,omitempty" doc:"The brand the address belongs to; default: the default brand"`
-		Aliases          []string             `json:"aliases,omitempty" maxItems:"20" doc:"Other addresses that deliver into this mailbox"`
-		AliasTeams       map[string]uuid.UUID `json:"alias_teams,omitempty" doc:"An alias to the team its new tickets go to, instead of team_id"`
-		FromNameFormat   string               `json:"from_name_format,omitempty" maxLength:"200" doc:"{agent}, {agent_first}, {team}, {brand}, {mailbox}; default \"{agent} at {mailbox}\""`
-		Verify           bool                 `json:"verify,omitempty" doc:"Sign in to the IMAP and SMTP servers first; a refusal is 422 mailbox_connection_failed and nothing is saved"`
+		Name             string                        `json:"name" minLength:"1" maxLength:"64"`
+		Email            string                        `json:"email" maxLength:"254"`
+		DisplayName      string                        `json:"display_name,omitempty" maxLength:"64"`
+		InboundKind      string                        `json:"inbound_kind" enum:"forwarding,imap,google,microsoft"`
+		OutboundKind     string                        `json:"outbound_kind" enum:"smtp,google,microsoft,system"`
+		Config           MailboxConfig                 `json:"config,omitempty"`
+		Password         string                        `json:"password,omitempty" maxLength:"1024" doc:"IMAP password (write-only)"`
+		SMTPPassword     string                        `json:"smtp_password,omitempty" maxLength:"1024" doc:"SMTP password when it differs from the IMAP one (write-only)"`
+		TeamID           *uuid.UUID                    `json:"team_id,omitempty"`
+		SignatureHTML    string                        `json:"signature_html,omitempty"`
+		AutoReplyEnabled bool                          `json:"auto_reply_enabled,omitempty"`
+		AutoReplySubject string                        `json:"auto_reply_subject,omitempty" maxLength:"200"`
+		AutoReplyHTML    string                        `json:"auto_reply_html,omitempty"`
+		BrandID          *uuid.UUID                    `json:"brand_id,omitempty" doc:"The brand the address belongs to; default: the default brand"`
+		Aliases          []string                      `json:"aliases,omitempty" maxItems:"20" doc:"Other addresses that deliver into this mailbox"`
+		AliasTeams       map[string]uuid.UUID          `json:"alias_teams,omitempty" doc:"An alias to the team its new tickets go to, instead of team_id"`
+		AliasSettings    map[string]aliasSettingsInput `json:"alias_settings,omitempty" doc:"Each alias's From name, signature and brand"`
+		FromNameFormat   string                        `json:"from_name_format,omitempty" maxLength:"200" doc:"{agent}, {agent_first}, {team}, {brand}, {mailbox}; default \"{agent} at {mailbox}\""`
+		Verify           bool                          `json:"verify,omitempty" doc:"Sign in to the IMAP and SMTP servers first; a refusal is 422 mailbox_connection_failed and nothing is saved"`
 	}
 }
 
@@ -101,10 +102,11 @@ type updateMailboxInput struct {
 		AIAnswersMode         *string `json:"ai_answers_mode,omitempty" enum:"draft,send" doc:"draft: a suggested reply a teammate sends; send: Ollie replies"`
 		AIAnswersOutsideHours *bool   `json:"ai_answers_outside_hours,omitempty" doc:"Only outside business hours (while business hours are on)"`
 		// Addresses and brands (contracts/teams.md).
-		BrandID        *string               `json:"brand_id,omitempty" doc:"Move the address to another brand of the workspace"`
-		Aliases        *[]string             `json:"aliases,omitempty" maxItems:"20" doc:"Replaces the aliases"`
-		AliasTeams     *map[string]uuid.UUID `json:"alias_teams,omitempty" doc:"Replaces them: an alias to the team its new tickets go to. Removing an alias drops its entry"`
-		FromNameFormat *string               `json:"from_name_format,omitempty" maxLength:"200" doc:"\"\" resets to \"{agent} at {mailbox}\""`
+		BrandID        *string                        `json:"brand_id,omitempty" doc:"Move the address to another brand of the workspace"`
+		Aliases        *[]string                      `json:"aliases,omitempty" maxItems:"20" doc:"Replaces the aliases"`
+		AliasTeams     *map[string]uuid.UUID          `json:"alias_teams,omitempty" doc:"Replaces them: an alias to the team its new tickets go to. Removing an alias drops its entry"`
+		AliasSettings  *map[string]aliasSettingsInput `json:"alias_settings,omitempty" doc:"Replaces each alias's From name, signature and brand (an alias left out has none of its own); signature_html and send_as left out are kept. Removing an alias drops its entry"`
+		FromNameFormat *string                        `json:"from_name_format,omitempty" maxLength:"200" doc:"\"\" resets to \"{agent} at {mailbox}\""`
 		// Website contact forms whose authenticated mail is from the visitor in Reply-To.
 		TrustedFormSenders *[]string `json:"trusted_form_senders,omitempty" maxItems:"50" doc:"Replaces the list: email addresses or @domain entries"`
 		Verify             bool      `json:"verify,omitempty" doc:"When the IMAP or SMTP settings, a password or the way replies are sent change, sign in to the changed servers first; a refusal is 422 mailbox_connection_failed and nothing is saved"`
@@ -128,6 +130,7 @@ func parseID(s string) (uuid.UUID, error) {
 
 func (s *service) registerMailboxRoutes(api huma.API) {
 	tags := []string{"Mailboxes"}
+	s.registerSendAsRoutes(api)
 
 	huma.Register(api, huma.Operation{OperationID: "list-mailboxes", Method: http.MethodGet, Path: "/v1/mailboxes",
 		Summary: "List mailboxes", Tags: tags},
@@ -224,6 +227,7 @@ func (s *service) registerMailboxRoutes(api huma.API) {
 			m.Config.OAuthEmail, m.Config.OAuthGrant, m.Config.OAuthClient = "", "", ""
 			m.SignatureHTML, m.AutoReplyEnabled, m.AutoReplySubject, m.AutoReplyHTML = b.SignatureHTML, b.AutoReplyEnabled, b.AutoReplySubject, b.AutoReplyHTML
 			m.Aliases, m.FromNameFormat, m.AliasTeams = b.Aliases, b.FromNameFormat, b.AliasTeams
+			m.AliasSettings, _ = mergeAliasSettings(nil, b.AliasSettings)
 			if b.BrandID != nil {
 				m.BrandID = *b.BrandID
 			}
@@ -247,6 +251,9 @@ func (s *service) registerMailboxRoutes(api huma.API) {
 					return err
 				}
 				if err := checkAddressing(ctx, tx, m); err != nil {
+					return err
+				}
+				if err := checkAliasBrands(ctx, tx, m); err != nil {
 					return err
 				}
 				if err := s.d.Plan.CheckMailbox(ctx, tx, p.WorkspaceID); err != nil {
@@ -307,7 +314,18 @@ func (s *service) registerMailboxRoutes(api huma.API) {
 					return err
 				}
 				prevInbound, prevOutbound := m.InboundKind, m.OutboundKind
+				prevAliasSettings := m.AliasSettings
 				changes, resetSync := applyPatch(m, &creds, in)
+				if in.Body.AliasSettings != nil {
+					merged, claimed := mergeAliasSettings(m.AliasSettings, *in.Body.AliasSettings)
+					if len(claimed) > 0 && m.readsSendAs() {
+						return httpx.Validation("Gmail's own send-as list decides which aliases this mailbox sends as. Add the address in Gmail, then check again.")
+					}
+					m.AliasSettings = merged
+				}
+				if !sameAliasSettings(prevAliasSettings, m.AliasSettings) {
+					changes = append(changes, "alias_settings")
+				}
 				if in.Body.Config.turnsTidyOn() && !m.readsAPI() {
 					return httpx.Validation("Gmail and Outlook options are only for a mailbox that reads its inbox through Google or Microsoft.")
 				}
@@ -346,6 +364,10 @@ func (s *service) registerMailboxRoutes(api huma.API) {
 				if err := checkAddressing(ctx, tx, m); err != nil {
 					return err
 				}
+				if err := checkAliasBrands(ctx, tx, m); err != nil {
+					return err
+				}
+				applySendAsList(m)
 				if m.AIAnswers && contains(changes, "ai_answers") {
 					if err := s.checkAIOn(ctx, tx, p.WorkspaceID); err != nil {
 						return err
@@ -368,13 +390,13 @@ func (s *service) registerMailboxRoutes(api huma.API) {
 					api_sync_state = CASE WHEN $16 THEN '{}'::jsonb ELSE api_sync_state END,
 					ai_answers = $17, ai_answers_mode = $18, ai_answers_outside_hours = $19,
 					brand_id = $20, aliases = $21, from_name_format = $22, trusted_form_senders = $23, bot_id = $24,
-					alias_teams = $26,
+					alias_teams = $26, alias_settings = $27,
 					updated_at = now() WHERE workspace_id = $1 AND id = $2`,
 					p.WorkspaceID, id, m.Name, m.Email, m.DisplayName, m.OutboundKind, m.Config, sealed, m.TeamID,
 					m.SignatureHTML, m.AutoReplyEnabled, m.AutoReplySubject, m.AutoReplyHTML, m.Status,
 					reactivate || resetSync || contains(changes, "credentials"), resetSync,
 					m.AIAnswers, m.AIAnswersMode, m.AIAnswersOutsideHours, m.BrandID, m.Aliases, m.FromNameFormat, m.TrustedFormSenders, m.BotID,
-					m.InboundKind, m.AliasTeams)
+					m.InboundKind, m.AliasTeams, m.AliasSettings)
 				if err != nil {
 					return err
 				}
@@ -390,6 +412,9 @@ func (s *service) registerMailboxRoutes(api huma.API) {
 				}
 				if contains(changes, "alias_teams") {
 					data["alias_teams"] = m.AliasTeams
+				}
+				if contains(changes, "alias_settings") {
+					data["alias_settings"] = aliasAudit(m)
 				}
 				if contains(changes, "trusted_form_senders") {
 					data["trusted_form_senders"] = m.TrustedFormSenders
@@ -658,6 +683,9 @@ func (s *service) insertMailbox(ctx context.Context, tx pgx.Tx, m *mailboxRow, s
 	if m.AliasTeams == nil {
 		m.AliasTeams = map[string]uuid.UUID{}
 	}
+	if m.AliasSettings == nil {
+		m.AliasSettings = map[string]AliasSettings{}
+	}
 	if m.FromNameFormat == "" {
 		m.FromNameFormat = defaultFromNameFormat
 	}
@@ -669,11 +697,11 @@ func (s *service) insertMailbox(ctx context.Context, tx pgx.Tx, m *mailboxRow, s
 		}
 		_, err = tx.Exec(ctx, `INSERT INTO mailboxes (id, workspace_id, name, email, display_name, inbound_kind, forwarding_token,
 			outbound_kind, config, credentials_enc, team_id, signature_html, auto_reply_enabled, auto_reply_subject, auto_reply_html, status,
-			brand_id, aliases, from_name_format, alias_teams)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+			brand_id, aliases, from_name_format, alias_teams, alias_settings)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
 			m.ID, m.WorkspaceID, m.Name, m.Email, m.DisplayName, m.InboundKind, m.ForwardingToken, m.OutboundKind, m.Config,
 			sealed, m.TeamID, m.SignatureHTML, m.AutoReplyEnabled, m.AutoReplySubject, m.AutoReplyHTML, m.Status,
-			m.BrandID, m.Aliases, m.FromNameFormat, m.AliasTeams)
+			m.BrandID, m.Aliases, m.FromNameFormat, m.AliasTeams, m.AliasSettings)
 		if err == nil {
 			_, err = tx.Exec(ctx, `RELEASE SAVEPOINT mbx_insert`)
 			return err
@@ -809,6 +837,10 @@ func applyPatch(m *mailboxRow, creds *credentials, in *updateMailboxInput) (chan
 			changes = append(changes, "alias_teams")
 		}
 	}
+	if b.Aliases != nil {
+		// A removed alias takes its settings with it.
+		keepAliasSettings(m)
+	}
 	if b.TrustedFormSenders != nil && !sameAliases(*b.TrustedFormSenders, m.TrustedFormSenders) {
 		m.TrustedFormSenders = *b.TrustedFormSenders
 		changes = append(changes, "trusted_form_senders")
@@ -879,6 +911,8 @@ func applyPatch(m *mailboxRow, creds *credentials, in *updateMailboxInput) (chan
 			credsChanged = true
 		}
 		m.Config.OAuthEmail, m.Config.OAuthGrant, m.Config.OAuthClient = "", "", ""
+		// Nor what that provider said about sending as each alias.
+		m.AliasSettings = forgetProviderSendAs(m.AliasSettings)
 	} else if prevProvider != "" && m.Config.OAuthGrant == "" {
 		m.Config.OAuthGrant = GrantSync // stored before grants were recorded
 	}
@@ -945,6 +979,9 @@ func (s *service) validateMailbox(m *mailboxRow, creds credentials) error {
 		return err
 	}
 	if m.AliasTeams, err = cleanAliasTeams(m.AliasTeams, m.Aliases); err != nil {
+		return err
+	}
+	if err := cleanAliasSettings(m); err != nil {
 		return err
 	}
 	if m.FromNameFormat, err = cleanFromNameFormat(m.FromNameFormat); err != nil {

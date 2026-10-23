@@ -64,9 +64,8 @@ var (
 // Types is the catalogue, in the order the settings page lists it.
 var Types = []Type{
 	{Type: "assigned", Group: GroupTickets, Defaults: everywhere},
-	// A new ticket nobody is assigned to (contracts/api.md "Assignment"). Its email is off
-	// until the member turns it on; then it is paced like any other.
-	{Type: "new_ticket", Group: GroupTickets, Defaults: Channels{Email: false, Push: true, Desktop: true}},
+	// A new ticket nobody is assigned to (contracts/api.md "Assignment"), paced like any other.
+	{Type: "new_ticket", Group: GroupTickets, Defaults: everywhere},
 	{Type: "mentioned", Group: GroupTickets, Defaults: everywhere},
 	{Type: "customer_replied", Group: GroupTickets, Defaults: everywhere},
 	// Someone outside the team answered a third-party thread on a ticket assigned to you.

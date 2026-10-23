@@ -472,7 +472,8 @@
     "addRecipient": "Add who to write to",
     "sideSent": "Sent to {{to}}. You're replying to the customer again.",
     "sideSentAndMarked": "Sent to {{to}} and marked {{status}}",
-    "threadFailed": "Couldn't send the side conversation message"
+    "threadFailed": "Couldn't send the side conversation message",
+    "repliesTo": "answers to {{address}}"
   },
   "sharedDraft": {
     "label": "Shared draft",

@@ -4,7 +4,7 @@
 // (templateCatalog.json), so the demo offers what the server does. Filling is a small
 // stand-in for the server's engine: variables with filters, if/else blocks and the slots.
 
-import type { EmailLayoutOptions, EmailTemplate, TemplateCatalog, TemplatePreview, TemplateProblem, Ticket } from "@/lib/api/types";
+import type { EmailLayoutOptions, EmailTemplate, Mailbox, TemplateCatalog, TemplatePreview, TemplateProblem, Ticket } from "@/lib/api/types";
 import { db, me, type WsData } from "../db";
 import { profileOf } from "../profiles";
 import { publish } from "../gateway";
@@ -69,7 +69,10 @@ const known = new Set(defaults.variables.map((v) => v.key));
 const SLOTS = new Set(["content", "signature", "history", "survey"]);
 
 /** The values a template sees: the ticket (or sample data), its brand and team, and the person writing. */
-function valuesFor(ws: WsData, opts: { ticket?: Ticket; brandId?: string; teamId?: string }): { text: Record<string, string>; html: Record<string, string> } {
+function valuesFor(
+  ws: WsData,
+  opts: { ticket?: Ticket; brandId?: string; teamId?: string; mailboxId?: string; alias?: string },
+): { text: Record<string, string>; html: Record<string, string> } {
   const t = opts.ticket;
   const brand = brandOf(ws, opts.brandId ?? t?.brand_id);
   const team = ws.teams.find((x) => x.id === (opts.teamId ?? t?.team_id));
@@ -78,7 +81,10 @@ function valuesFor(ws: WsData, opts: { ticket?: Ticket; brandId?: string; teamId
   const prof = profileOf(ws, user.id);
   const [first, ...rest] = (contact?.name ?? "Jane Cooper").split(" ");
   const [aFirst, ...aRest] = user.name.split(" ");
-  const mailbox = ws.mailboxes.find((m) => m.brand_id === brand.id) ?? ws.mailboxes[0];
+  const mailbox =
+    ws.mailboxes.find((m) => m.id === (opts.mailboxId ?? t?.mailbox_id)) ?? ws.mailboxes.find((m) => m.brand_id === brand.id) ?? ws.mailboxes[0];
+  // Mail to an alias reads the alias's own name (contracts/teams.md "Aliases").
+  const alias = mailboxAlias(mailbox, opts.alias ?? t?.received_at);
   const text: Record<string, string> = {
     "contact.name": contact?.name ?? "Jane Cooper",
     "contact.first_name": first,
@@ -104,13 +110,28 @@ function valuesFor(ws: WsData, opts: { ticket?: Ticket; brandId?: string; teamId
     "brand.color": brand.color,
     "brand.logo_url": brand.images.logo ?? "",
     "brand.help_center_url": `https://help.example.com/${brand.slug}`,
-    "mailbox.name": mailbox?.display_name || mailbox?.name || brand.name,
-    "mailbox.email": mailbox?.email ?? "support@example.com",
+    "mailbox.name": (alias && mailbox?.alias_settings?.[alias]?.display_name) || mailbox?.display_name || mailbox?.name || brand.name,
+    "mailbox.email": alias ?? mailbox?.email ?? "support@example.com",
     "workspace.name": ws.workspace.name,
     "date.today": new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }),
   };
   const html: Record<string, string> = { "agent.signature": fill(prof.signature_html, { text, html: {} }) };
   return { text, html };
+}
+
+/** addr when it is one of the mailbox's aliases. */
+function mailboxAlias(m: Mailbox | undefined, addr: string | undefined): string | null {
+  const a = addr?.trim().toLowerCase();
+  return m && a && m.aliases.includes(a) ? a : null;
+}
+
+/** The signature an email carries: the alias's, else the team's, else the address's, else the author's own. */
+function signatureFor(ws: WsData, t: Ticket, mailboxId: string | undefined, vals: { text: Record<string, string>; html: Record<string, string> }) {
+  const m = ws.mailboxes.find((x) => x.id === (mailboxId ?? t.mailbox_id));
+  const alias = mailboxAlias(m, t.received_at);
+  const team = ws.teams.find((x) => x.id === t.team_id);
+  const src = [alias ? m?.alias_settings?.[alias]?.signature_html : "", team?.signature_html, m?.signature_html].find((x) => x?.trim());
+  return src ? fill(src, vals) : vals.html["agent.signature"];
 }
 
 function applyFilters(value: string, filters: string[]): string {
@@ -230,8 +251,11 @@ const textOf = (h: string) =>
 function preview(ws: WsData, b: Record<string, unknown>): TemplatePreview {
   const kind = String(b.kind ?? "");
   const ticket = typeof b.ticket_id === "string" ? ws.tickets.find((x) => x.id === b.ticket_id) : undefined;
-  const brand = brandOf(ws, typeof b.brand_id === "string" ? b.brand_id : ticket?.brand_id);
-  const vals = valuesFor(ws, { ticket, brandId: brand.id, teamId: typeof b.team_id === "string" ? b.team_id : undefined });
+  const mailboxId = typeof b.mailbox_id === "string" && b.mailbox_id ? b.mailbox_id : undefined;
+  const alias = mailboxAlias(ws.mailboxes.find((m) => m.id === mailboxId), typeof b.alias === "string" ? b.alias : undefined) ?? undefined;
+  const aliasBrand = alias ? ws.mailboxes.find((m) => m.id === mailboxId)?.alias_settings?.[alias]?.brand_id : undefined;
+  const brand = brandOf(ws, typeof b.brand_id === "string" ? b.brand_id : (aliasBrand ?? ticket?.brand_id));
+  const vals = valuesFor(ws, { ticket, brandId: brand.id, teamId: typeof b.team_id === "string" ? b.team_id : undefined, mailboxId, alias });
   const layout = templateOut(ws, brand.id, "layout");
   const csat = templateOut(ws, brand.id, "csat");
   let o = layout.options;
@@ -285,12 +309,39 @@ function preview(ws: WsData, b: Record<string, unknown>): TemplatePreview {
   return { subject: textOf(subject), html, text: [textOf(content), signature ? `-- \n${textOf(signature)}` : "", textOf(footer)].filter(Boolean).join("\n\n") + "\n", problems: probs };
 }
 
+/** The groups a kind reads when it takes only some (a Collab signature: the sender, the address, the workspace and the date). */
+const KIND_GROUPS = (defaults as TemplateCatalog).kind_groups ?? {};
+const groupOf = new Map(defaults.variables.map((v) => [v.key, v.group]));
+
+/**
+ * A Collab signature filled for the person writing (contracts/collab.md "Addresses"):
+ * agent.* is you, mailbox.* the address and its From name, and nothing of a ticket.
+ */
+export function fillForSender(ws: WsData, src: string, mailbox: { name: string; email: string }): string {
+  const vals = valuesFor(ws, {});
+  vals.text["mailbox.name"] = mailbox.name;
+  vals.text["mailbox.email"] = mailbox.email;
+  vals.html["agent.signature"] = fill(profileOf(ws, me().id).signature_html, { text: vals.text, html: {} });
+  return fill(src, vals);
+}
+
+/** What is wrong with a Collab signature: unknown variables, and ones it has nothing to read for. */
+export function collabSignatureProblems(src: string): TemplateProblem[] {
+  const out = problems(src, "signature");
+  const groups = KIND_GROUPS.collab_signature ?? [];
+  for (const m of src.matchAll(/\{\{\s*([\w.]+)[^}]*\}\}/g)) {
+    const g = groupOf.get(m[1]) ?? (m[1].includes(".fields.") ? "contact" : undefined);
+    if (g && !groups.includes(g)) out.push({ message: `{{ ${m[1]} }} has nothing to read here: mail from an account has no ticket, customer, team or brand.`, token: m[0] });
+  }
+  return out;
+}
+
 export function registerTemplates() {
   get("/v1/templates/variables", (ctx) => {
     const fields = ctx.ws.customFields
       .filter((f) => !f.archived)
       .map((f) => ({ key: `${f.entity}.fields.${f.key}`, group: f.entity, label: f.name, description: f.description || "A custom field.", example: "", html: false, list: f.type === "multi_select" }));
-    return { variables: [...defaults.variables, ...fields], slots: defaults.slots, filters: defaults.filters, tags: defaults.tags };
+    return { variables: [...defaults.variables, ...fields], slots: defaults.slots, filters: defaults.filters, tags: defaults.tags, kind_groups: KIND_GROUPS };
   });
 
   post("/v1/templates/preview", (ctx) => preview(ctx.ws, ctx.body));
@@ -335,8 +386,9 @@ export function registerTemplates() {
   get("/v1/tickets/:id/variables", (ctx) => {
     const t = ctx.ws.tickets.find((x) => x.id === ctx.params.id || String(x.number) === ctx.params.id);
     if (!t) throw notFound("Ticket");
-    const vals = valuesFor(ctx.ws, { ticket: t });
-    return { values: vals.text, signature_html: vals.html["agent.signature"] };
+    const mailboxId = ctx.query.get("mailbox_id") || undefined;
+    const vals = valuesFor(ctx.ws, { ticket: t, mailboxId });
+    return { values: vals.text, signature_html: signatureFor(ctx.ws, t, mailboxId, vals) };
   });
 
   post("/v1/tickets/:id/render", (ctx) => {

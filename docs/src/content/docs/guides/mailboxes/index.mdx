@@ -183,21 +183,55 @@ The **Mailboxes** page lists every address with how it connects and whether it i
 
 </Legend>
 
+The **Last mail** column shows when mail last arrived at each address. It turns amber when an address has had no mail for a week, which usually means its forwarding stopped or its connection broke. Open the mailbox to see what to check.
+
 ## Choose how replies look
 
-Open a mailbox from the list to change how it works. The **Sending** section sets where new tickets go and what customers see.
+Open a mailbox from the list to change how it works. The **Name and addresses** section sets where new tickets go and what customers see.
 
-<Screenshot src="/guides/mailboxes/sending" alt="A mailbox's Sending settings: the team for new tickets ringed as 1, the From name with its preview ringed as 2, and the aliases ringed as 3" />
+<Screenshot src="/guides/mailboxes/sending" alt="A mailbox's Name and addresses settings: the team for new tickets ringed as 1, and the From name with its preview ringed as 2" />
 
 <Legend>
 
 1. **New tickets to this address go to** a team. [Routing](/guides/routing/) rules can still send a ticket elsewhere.
 2. **From name**: what customers see as the sender. Click a variable to add it: `{agent}`, `{agent_first}`, `{team}`, `{brand}` or `{mailbox}`. The mailbox's **sender name**, just above, fills `{mailbox}`. The preview shows a reply and an auto-reply as customers will see them.
-3. **Aliases**: up to 20 other addresses that deliver into this mailbox, like `help@`. Replies go out as the address the customer wrote to. Give an alias its own team when it belongs to another project or group: new tickets written to it go to that team instead of the mailbox's. A mailbox of a private team sends every alias to that team.
-
-Every email in a ticket shows the address it was written to, and the inbox's **Address** filter lists each alias on its own, so you can see only the tickets written to `sales@`, for example.
 
 </Legend>
+
+Other addresses that deliver into the mailbox, like `help@`, have a section of their own, described in [Aliases](#aliases) below.
+
+## Aliases
+
+An alias is another address that delivers into a mailbox, like `help@` or the `hello@` of a side project. Each alias works like a mailbox of its own, so one inbox can answer for several projects without another workspace. Aliases are free on every plan and never count as mailboxes.
+
+Open an alias in the mailbox's **Aliases** section to give it:
+
+- **A sender name**: what `{mailbox}` reads in the From name, and `{{ mailbox.name }}` in templates, for mail to the alias.
+- **A team**: new tickets written to it go to that team instead of the mailbox's. A mailbox of a private team sends every alias to that team.
+- **A brand**, once the workspace has a second one: new tickets written to it take that brand's email design, help center links, logo and satisfaction survey.
+- **A signature**: mail to the alias carries it before the team's and the mailbox's. It takes the same variables as the mailbox's, and its preview fills them as a reply to the alias. See [Signatures](/guides/email-templates/#signatures).
+
+<Screenshot src="/guides/mailboxes/aliases" alt="A mailbox's Aliases section: the list of aliases with 3 of 20 used ringed as 1, Gmail's other send-as addresses with Check again and Add ringed as 2, the open alias hello@lumen.studio with its sender name, team, brand and how replies go out ringed as 3, and its signature editor with a preview ringed as 4" />
+
+<Legend>
+
+1. **Aliases**: type an address and click **Add**. Up to 20 per mailbox.
+2. **From Gmail**: the account's other send-as addresses, when the mailbox reads its Gmail inbox. Click **Add** to take one in.
+3. **An alias, opened**: its sender name, the team and brand for new tickets written to it, and how its replies go out.
+4. **Signature**: the alias's own, with a preview of a reply to it. Empty uses the team's or the mailbox's.
+
+</Legend>
+
+**How replies go out.** Replies to a ticket written to an alias go out as that alias wherever the mailbox can send as it, and otherwise from the mailbox's own address with the alias as the reply-to address, so the customer's answer still comes back to the alias. Each alias says which applies:
+
+- **SMTP** sends from the alias.
+- **Google** sends from an alias that Gmail lists as one of the account's send-as addresses. When the mailbox reads its inbox, opendesk reads that list when you connect, about once a day, and when you click **Check again**. A mailbox connected to send only can't read the list: add the address in Gmail first (**Settings > Accounts > Send mail as**), then turn on **Gmail can send as this address**.
+- **Microsoft** sends from the alias where your Microsoft 365 tenant allows it. When Microsoft refuses, that reply goes out from the mailbox's address with the alias as the reply-to address, the alias is marked, and later replies go that way. Click **Try again** once the tenant allows it.
+- **Sending through opendesk** sends from opendesk's address with the alias as the reply-to address.
+
+**From Gmail.** When the mailbox reads its Gmail inbox, the Aliases section lists the account's other send-as addresses. Click **Add** to receive and answer an address's mail here; nothing is added on its own.
+
+**Working an alias as its own inbox.** Click **Open its tickets** on an alias to see only the tickets written to it. Every email in a ticket shows the address it was written to, and the inbox's **Address** filter lists each alias under its mailbox.
 
 Further down, every mailbox has its own signature and an optional auto-reply.
 
@@ -205,7 +239,7 @@ Further down, every mailbox has its own signature and an optional auto-reply.
 
 <Legend>
 
-1. **Signature**: added below every email sent from this mailbox, unless the ticket's team has its own signature.
+1. **Signature**: added below every email sent from this mailbox, unless the alias the customer wrote to or the ticket's team has its own signature.
 2. **Auto-reply**: sent once when a customer opens a new ticket by email, with your subject and message. It is marked as automatic, so other autoresponders ignore it.
 
 </Legend>

@@ -503,9 +503,11 @@ export const api = {
     update: (b: Partial<T.WidgetSettings>) => http.patch<T.WidgetSettings>("/v1/widget/settings", b),
   },
   mailboxes: {
-    ...crud<T.Mailbox, Partial<CreateMailboxBody> & Partial<Pick<T.Mailbox, "signature_html" | "auto_reply_enabled" | "auto_reply_subject" | "auto_reply_html" | "status" | "ai_answers" | "ai_answers_mode" | "ai_answers_outside_hours" | "trusted_form_senders">> & { bot_id?: string | null }>("/v1/mailboxes"),
+    ...crud<T.Mailbox, Partial<CreateMailboxBody> & Partial<Pick<T.Mailbox, "signature_html" | "auto_reply_enabled" | "auto_reply_subject" | "auto_reply_html" | "status" | "ai_answers" | "ai_answers_mode" | "ai_answers_outside_hours" | "trusted_form_senders">> & { bot_id?: string | null; alias_settings?: Record<string, T.AliasSettingsInput> }>("/v1/mailboxes"),
     create: (b: CreateMailboxBody) => http.create<T.Mailbox>("/v1/mailboxes", b),
     test: (id: string) => http.post<T.MailboxTest>(`/v1/mailboxes/${id}/test`),
+    /** Reads Gmail's send-as list again (422 send_as_unreadable for a send-only connection). */
+    checkSendAs: (id: string) => http.post<T.Mailbox>(`/v1/mailboxes/${id}/send-as/check`),
     /**
      * receive: forwarding (the default) connects to send only; sync also receives over
      * IMAP, which is 422 imap_off on an instance with IMAP receiving off; api reads the
@@ -631,8 +633,18 @@ export const api = {
       sync: (id: string) => http.post<void>(`/v1/collab/accounts/${id}/sync`),
       /** Gmail only: replaces the signature with Gmail's now. */
       pullSignature: (id: string) => http.post<T.MailAccount>(`/v1/collab/accounts/${id}/signature/pull`),
+      pullDisplayName: (id: string) => http.post<T.MailAccount>(`/v1/collab/accounts/${id}/display-name/pull`),
       /** Written to the provider first: 502 provider_error, nothing saved, when it refuses. */
       setOutOfOffice: (id: string, b: T.MailOutOfOffice) => http.put<T.MailAccount>(`/v1/collab/accounts/${id}/out-of-office`, b),
+      /** Addresses it sends from (contracts/collab.md "Addresses"): hand-added ones for Microsoft and IMAP. */
+      addIdentity: (id: string, b: CollabIdentityBody & { email: string }) => http.post<T.MailAccount>(`/v1/collab/accounts/${id}/identities`, b),
+      updateIdentity: (id: string, identityId: string, b: CollabIdentityBody) => http.patch<T.MailAccount>(`/v1/collab/accounts/${id}/identities/${identityId}`, b),
+      pullIdentitySignature: (id: string, identityId: string) => http.post<T.MailAccount>(`/v1/collab/accounts/${id}/identities/${identityId}/signature/pull`),
+      pullIdentityDisplayName: (id: string, identityId: string) => http.post<T.MailAccount>(`/v1/collab/accounts/${id}/identities/${identityId}/display-name/pull`),
+      previewIdentity: (id: string, b: T.MailIdentityPreviewBody) => http.post<T.MailIdentityPreview>(`/v1/collab/accounts/${id}/identities/preview`, b),
+      removeIdentity: (id: string, identityId: string) => http.del<T.MailAccount>(`/v1/collab/accounts/${id}/identities/${identityId}`),
+      /** Microsoft: the account's other addresses, when Microsoft shares them. */
+      identitySuggestions: (id: string) => http.get<{ addresses: string[] }>(`/v1/collab/accounts/${id}/identities/suggestions`),
       folders: (id: string) => http.get<T.MailFolder[] | T.Page<T.MailFolder>>(`/v1/collab/accounts/${id}/folders`),
       /** kind label on Microsoft makes an Outlook category; color is a tone, labels only. */
       createFolder: (id: string, b: { name: string; parent_id?: string; kind?: "folder" | "label"; color?: string }) => http.create<T.MailFolder>(`/v1/collab/accounts/${id}/folders`, b),
@@ -660,6 +672,8 @@ export const api = {
     counts: () => http.get<T.MailCounts>("/v1/collab/counts"),
     /** Sent through the provider within the request (502 send_failed, nothing stored). */
     send: (b: CollabSendBody) => http.create<T.MailMessage>("/v1/collab/messages", b),
+    /** Read from the message's source at the provider (502 provider_error). */
+    messageDetails: (id: string) => http.get<T.MailMessageDetails>(`/v1/collab/messages/${id}/details`),
     /** Drafts, kept at the provider (contracts/collab.md "Drafts"). */
     drafts: {
       create: (b: CollabSendBody) => http.create<T.MailMessage>("/v1/collab/drafts", b),
@@ -706,6 +720,8 @@ export type CollabThreadQuery = {
   /** Replaces box. */
   folder_id?: string;
   q?: string;
+  /** Only conversations with this address on them (one of the person's addresses). */
+  to?: string;
   limit?: number;
   cursor?: string | null;
 };
@@ -746,6 +762,16 @@ export type CollabAccountPatch = {
   visibility?: "private" | "shared";
   shared_with?: T.MailAudience;
   imap?: Partial<T.MailImapSettings> & { password?: string; smtp_password?: string };
+  /** The address new mail goes out from. */
+  default_from?: string;
+};
+
+export type CollabIdentityBody = {
+  /** Empty uses the account's From name. */
+  display_name?: string;
+  signature_html?: string;
+  /** Hand-added addresses only. */
+  reply_to?: string;
 };
 
 export type CollabDraftBody = {
@@ -757,6 +783,8 @@ export type CollabDraftBody = {
   attachment_ids?: string[];
   /** The draft's own files to keep (MailAttachment ids); left out keeps them all. */
   keep_attachments?: string[];
+  /** One of the account's usable addresses; left out keeps the draft's. */
+  from_email?: string;
 };
 
 export type CollabSendBody = {
@@ -772,4 +800,6 @@ export type CollabSendBody = {
   /** POST /v1/attachments uploads of the caller. */
   attachment_ids?: string[];
   forward_attachments?: boolean;
+  /** One of the account's usable addresses; left out: a reply goes from the address it answers, new mail from the default. */
+  from_email?: string;
 };

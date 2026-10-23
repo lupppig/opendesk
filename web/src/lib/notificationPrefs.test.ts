@@ -84,8 +84,8 @@ describe("applyPreferencesPatch", () => {
 });
 
 describe("new_ticket", () => {
-  it("is a ticket notification right after assigned, pushed and on the desktop but not emailed until turned on", () => {
-    expect(NOTIFICATION_DEFAULTS.new_ticket).toEqual({ group: "tickets", defaults: { email: false, push: true, desktop: true } });
+  it("is a ticket notification right after assigned, emailed, pushed and on the desktop", () => {
+    expect(NOTIFICATION_DEFAULTS.new_ticket).toEqual({ group: "tickets", defaults: { email: true, push: true, desktop: true } });
     expect(NOTIFICATION_ORDER.indexOf("new_ticket")).toBe(NOTIFICATION_ORDER.indexOf("assigned") + 1);
     expect(URGENT_TYPES.has("new_ticket")).toBe(false);
     expect(wantsDesktop(undefined, "new_ticket", NOW)).toBe(true);

@@ -53,7 +53,12 @@ Internal notes are kept exactly as written. Only what goes to the customer is fi
 Every email to a customer carries one signature. opendesk picks it in this order:
 
 <Steps>
-<Step title="The ticket team's signature">
+<Step title="The alias's signature">
+
+When the customer wrote to an [alias](/guides/mailboxes/#aliases) that has a signature of its own, every email on the ticket carries it.
+
+</Step>
+<Step title="Else, the ticket team's signature">
 
 When the ticket's [team](/guides/teams-and-roles/#signature) has a signature, every email on its tickets carries it.
 
@@ -70,7 +75,7 @@ When neither has one, the personal signature of the person who sent the reply, f
 </Step>
 </Steps>
 
-A team or address signature can place each person's personal signature inside it with `{{ agent.signature }}`. That way the company part stays the same for everyone and each agent keeps their own lines. A personal signature cannot contain `{{ agent.signature }}` itself.
+An alias, team or address signature can place each person's personal signature inside it with `{{ agent.signature }}`. That way the company part stays the same for everyone and each agent keeps their own lines. A personal signature cannot contain `{{ agent.signature }}` itself.
 
 Here is a team signature that wraps each agent's lines (or their name and title when they have not written any), shows a phone number only when the agent has one, and links the help center when the brand has one:
 

@@ -227,13 +227,12 @@ func startThread(ctx context.Context, tx pgx.Tx, d *deps.Deps, p *auth.Principal
 		if err != nil {
 			return threadCreated{}, err
 		}
-		var mbBrand uuid.UUID
-		err = tx.QueryRow(ctx, `SELECT brand_id FROM mailboxes WHERE workspace_id = $1 AND id = $2`, wid, id).Scan(&mbBrand)
-		if db.IsNotFound(err) || err == nil && mbBrand != brand {
-			return threadCreated{}, httpx.Validation("mailbox_id is not an address of this ticket's brand")
-		}
+		ok, err := mailboxInBrand(ctx, tx, wid, brand, &id)
 		if err != nil {
 			return threadCreated{}, err
+		}
+		if !ok {
+			return threadCreated{}, httpx.Validation("mailbox_id is not an address of this ticket's brand")
 		}
 		from = &id
 	} else if from == nil {

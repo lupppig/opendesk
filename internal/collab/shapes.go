@@ -99,6 +99,11 @@ func (s *service) accountsOut(ctx context.Context, q db.Querier, p *auth.Princip
 	if err != nil {
 		return nil, err
 	}
+	identities, err := loadIdentities(ctx, q, p.WorkspaceID, accountIDs)
+	if err != nil {
+		return nil, err
+	}
+	fill := s.fillerFor(q, p.WorkspaceID, p.UserID)
 	for _, a := range list {
 		m := MailAccount{ID: a.ID, Provider: a.Provider, Email: a.Email, Name: a.Name, DisplayName: a.DisplayName, Color: a.Color,
 			Owner: refOf(refs, a.OwnerID), Visibility: a.Visibility, SharedWith: Audience{TeamIDs: []uuid.UUID{}, UserIDs: []uuid.UUID{}},
@@ -108,6 +113,9 @@ func (s *service) accountsOut(ctx context.Context, q db.Querier, p *auth.Princip
 			m.Name = a.Email
 		}
 		applySettings(&m, a)
+		if m.Identities, m.DefaultFrom, err = identitiesOut(ctx, fill, a, identities[a.ID]); err != nil {
+			return nil, err
+		}
 		if a.Visibility == VisibilityShared {
 			id := a.ID
 			if m.SharedWith, err = loadAudience(ctx, q, p.WorkspaceID, &id, nil); err != nil {
@@ -207,6 +215,10 @@ func threadsOut(ctx context.Context, q db.Querier, list []*threadRow) ([]MailThr
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	aliases, err := accountAliases(ctx, q, list)
+	if err != nil {
+		return nil, err
+	}
 	for _, t := range list {
 		m := MailThread{ID: t.ID, AccountID: t.AccountID, Subject: t.Subject, Snippet: t.Snippet, Participants: t.Participants,
 			LastMessageAt: t.LastMessageAt, MessageCount: t.MessageCount, Unread: t.Unread, Starred: t.Starred,
@@ -215,9 +227,39 @@ func threadsOut(ctx context.Context, q db.Querier, list []*threadRow) ([]MailThr
 		if m.Assignees == nil {
 			m.Assignees = []domain.UserRef{}
 		}
+		for _, addr := range t.Addresses {
+			if slices.Contains(aliases[t.AccountID], addr) {
+				m.ToAddress = &addr
+				break
+			}
+		}
 		out = append(out, m)
 	}
 	return out, nil
+}
+
+// accountAliases is the addresses besides their own of the conversations' accounts.
+func accountAliases(ctx context.Context, q db.Querier, list []*threadRow) (map[uuid.UUID][]string, error) {
+	var accountIDs []uuid.UUID
+	for _, t := range list {
+		accountIDs = appendNew(accountIDs, t.AccountID)
+	}
+	rows, err := q.Query(ctx, `SELECT account_id, email FROM collab_identities WHERE workspace_id = $1 AND account_id = ANY($2)`,
+		list[0].WorkspaceID, accountIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[uuid.UUID][]string{}
+	for rows.Next() {
+		var id uuid.UUID
+		var addr string
+		if err := rows.Scan(&id, &addr); err != nil {
+			return nil, err
+		}
+		out[id] = append(out[id], addr)
+	}
+	return out, rows.Err()
 }
 
 // messagesOut converts a conversation's messages with signed attachment links.
@@ -236,6 +278,11 @@ func (s *service) messagesOut(ctx context.Context, q db.Querier, a *accountRow, 
 	if err != nil {
 		return nil, err
 	}
+	idents, err := accountIdentities(ctx, q, a)
+	if err != nil {
+		return nil, err
+	}
+	own := ownAddresses(a, idents)
 	out := make([]MailMessage, 0, len(list))
 	for _, m := range list {
 		mm := s.messageOut(a, m, refOf(refs, m.SentBy))
@@ -245,6 +292,9 @@ func (s *service) messagesOut(ctx context.Context, q db.Querier, a *accountRow, 
 		}
 		if id, ok := replied[m.ThreadID][bare(m.InReplyTo)]; ok && id != m.ID {
 			mm.InReplyToID = &id
+		}
+		if addr := ownAddressOf(m, own); addr != "" {
+			mm.OwnAddress = &addr
 		}
 		out = append(out, mm)
 	}

@@ -168,6 +168,10 @@ func httpFailure(label string, status int, body []byte) error {
 		return &providerError{msg: msg, status: status, permanent: true, notFound: true}
 	case status == http.StatusForbidden && has("insufficientPermissions", "ACCESS_TOKEN_SCOPE_INSUFFICIENT", "ErrorAccessDenied", "authError"):
 		return errReconnect
+	case has("ErrorSendAsDenied"):
+		// Exchange sends from an alias only where the organization allows it (SendFromAlias).
+		return &providerError{msg: label + " refused to send from this address. Its organization has to allow sending from aliases, " +
+			"or the address is not one of the account's (ErrorSendAsDenied).", status: status, permanent: true}
 	}
 	return &providerError{msg: msg, status: status, permanent: status >= 400 && status < 500}
 }

@@ -396,12 +396,12 @@ func (p *pass) insert(ctx context.Context, tx pgx.Tx, in *newMessage) (uuid.UUID
 	var inserted uuid.UUID
 	err = tx.QueryRow(ctx, `INSERT INTO collab_messages (id, workspace_id, account_id, thread_id, remote_id, message_id, in_reply_to, refs,
 		from_addr, to_addrs, cc_addrs, bcc_addrs, reply_to, subject, snippet, body_html, body_text, sent_at, unread, starred, draft,
-		attachments, raw_key, location, sent_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
+		attachments, raw_key, location, sent_by, delivered_to)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
 		ON CONFLICT (account_id, remote_id) DO NOTHING RETURNING id`,
 		id, wid, p.a.ID, threadID, in.RemoteID, msgID, inReplyTo, refs, from, addressList(pm, "To"), addressList(pm, "Cc"),
 		addressList(pm, "Bcc"), addressList(pm, "Reply-To"), truncateRunes(pm.Subject, 998), cleanLine(text, 200), bodyHTML, text,
-		sentAt, in.State.Unread, in.State.Starred, in.State.Draft, atts, rawKey, locationOrEmpty(in.State.Location), in.SentBy).Scan(&inserted)
+		sentAt, in.State.Unread, in.State.Starred, in.State.Draft, atts, rawKey, locationOrEmpty(in.State.Location), in.SentBy, deliveredTo(pm)).Scan(&inserted)
 	if db.IsNotFound(err) {
 		// Stored meanwhile (a sync and a send racing): keep that row.
 		if rawKey != "" {
@@ -481,9 +481,14 @@ func recomputeThreads(ctx context.Context, tx pgx.Tx, a *accountRow, threadIDs [
 	if len(threadIDs) == 0 {
 		return nil
 	}
+	idents, err := accountIdentities(ctx, tx, a)
+	if err != nil {
+		return err
+	}
+	own := ownAddresses(a, idents)
 	rows, err := tx.Query(ctx, `SELECT m.thread_id, m.subject, m.snippet, m.from_addr, m.to_addrs, m.cc_addrs, m.sent_at, m.unread, m.starred,
 		EXISTS (SELECT 1 FROM jsonb_array_elements(m.attachments) e WHERE NOT COALESCE((e->>'inline')::boolean, false)),
-		left(m.body_text, 4000), ARRAY(SELECT folder_id FROM collab_message_folders mf WHERE mf.message_id = m.id)
+		left(m.body_text, 4000), ARRAY(SELECT folder_id FROM collab_message_folders mf WHERE mf.message_id = m.id), m.delivered_to
 		FROM collab_messages m WHERE m.account_id = $1 AND m.thread_id = ANY($2) ORDER BY m.thread_id, m.sent_at, m.id`, a.ID, threadIDs)
 	if err != nil {
 		return err
@@ -495,12 +500,13 @@ func recomputeThreads(ctx context.Context, tx pgx.Tx, a *accountRow, threadIDs [
 		sentAt                 time.Time
 		unread, starred, files bool
 		folders                []uuid.UUID
+		delivered              []string
 	}
 	byThread := map[uuid.UUID][]msg{}
 	for rows.Next() {
 		var tid uuid.UUID
 		var m msg
-		if err := rows.Scan(&tid, &m.subject, &m.snippet, &m.from, &m.to, &m.cc, &m.sentAt, &m.unread, &m.starred, &m.files, &m.text, &m.folders); err != nil {
+		if err := rows.Scan(&tid, &m.subject, &m.snippet, &m.from, &m.to, &m.cc, &m.sentAt, &m.unread, &m.starred, &m.files, &m.text, &m.folders, &m.delivered); err != nil {
 			rows.Close()
 			return err
 		}
@@ -528,6 +534,7 @@ func recomputeThreads(ctx context.Context, tx pgx.Tx, a *accountRow, threadIDs [
 		var unread, starred, files bool
 		folders := []uuid.UUID{}
 		var people []Address
+		addresses := []string{}
 		var search strings.Builder
 		for i := len(list) - 1; i >= 0; i-- {
 			m := list[i]
@@ -540,8 +547,13 @@ func recomputeThreads(ctx context.Context, tx pgx.Tx, a *accountRow, threadIDs [
 			people = append(people, m.from)
 			people = append(people, m.to...)
 			people = append(people, m.cc...)
+			for _, x := range append(append(append([]Address{m.from}, m.to...), m.cc...), addressesOf(m.delivered)...) {
+				if e := strings.ToLower(strings.TrimSpace(x.Email)); e != "" && !slices.Contains(addresses, e) && len(addresses) < maxThreadAddresses {
+					addresses = append(addresses, e)
+				}
+			}
 		}
-		participants := participantList(people, a.Email)
+		participants := participantList(people, own)
 		search.WriteString(subject)
 		for _, p := range participants {
 			search.WriteString(" " + p.Name + " " + p.Email)
@@ -558,8 +570,8 @@ func recomputeThreads(ctx context.Context, tx pgx.Tx, a *accountRow, threadIDs [
 		}
 		if _, err := tx.Exec(ctx, `UPDATE collab_threads SET subject = $2, snippet = $3, participants = $4, last_message_at = $5,
 			message_count = $6, unread = $7, starred = $8, has_attachments = $9, folder_ids = $10,
-			search = to_tsvector('simple', $11), updated_at = now() WHERE id = $1`,
-			tid, subject, newest.snippet, participants, newest.sentAt, len(list), unread, starred, files, folders, doc); err != nil {
+			search = to_tsvector('simple', $11), addresses = $12, updated_at = now() WHERE id = $1`,
+			tid, subject, newest.snippet, participants, newest.sentAt, len(list), unread, starred, files, folders, doc, addresses); err != nil {
 			return err
 		}
 	}
@@ -572,9 +584,21 @@ func recomputeThreads(ctx context.Context, tx pgx.Tx, a *accountRow, threadIDs [
 	return nil
 }
 
+// maxThreadAddresses bounds the addresses a conversation keeps for its filter.
+const maxThreadAddresses = 100
+
+func addressesOf(list []string) []Address {
+	out := make([]Address, 0, len(list))
+	for _, e := range list {
+		out = append(out, Address{Email: e})
+	}
+	return out
+}
+
 // participantList is who a conversation is between, newest first (people is in that
-// order), each address once, at most 10, with the account's own address last.
-func participantList(people []Address, own string) []Address {
+// order), each address once, at most 10, with one of the account's own addresses (own:
+// its own and its aliases) last.
+func participantList(people []Address, own []string) []Address {
 	others := []Address{}
 	var self *Address
 	seen := map[string]bool{}
@@ -584,9 +608,11 @@ func participantList(people []Address, own string) []Address {
 			continue
 		}
 		seen[addr] = true
-		if strings.EqualFold(addr, own) {
-			cp := p
-			self = &cp
+		if slices.Contains(own, addr) {
+			if self == nil {
+				cp := p
+				self = &cp
+			}
 			continue
 		}
 		others = append(others, p)

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -30,6 +31,9 @@ const (
 	SyncTwoWay   = "two_way"   // read from the provider, and changes in opendesk are made there
 	SyncReadOnly = "read_only" // read from the provider; opendesk cannot change it there
 	SyncNone     = "none"      // lives in opendesk only (or, for the automatic reply, not available)
+	// SyncPull: read from the provider when it changes there; a change in opendesk is kept
+	// in opendesk (Gmail's other send-as addresses, which Gmail lets apps read but not change).
+	SyncPull = "pull"
 )
 
 // settingsInterval is how often the sync reads an account's settings.
@@ -50,6 +54,12 @@ type settingsState struct {
 	// OutOfOffice is the automatic reply as last read from (or written to) the provider.
 	OutOfOffice     *OutOfOffice `json:"out_of_office,omitempty"`
 	OutOfOfficeHash string       `json:"out_of_office_hash,omitempty"`
+	// DefaultFrom is the address new mail goes out from ("" = the account's own), and
+	// DefaultHash the hash of Gmail's default send-as address as last seen (identities.go).
+	DefaultFrom string `json:"default_from,omitempty"`
+	DefaultHash string `json:"default_hash,omitempty"`
+	// ReplyTo is the reply-to address Gmail keeps for the account's own address.
+	ReplyTo string `json:"reply_to,omitempty"`
 }
 
 func (a *accountRow) settings() settingsState {
@@ -133,6 +143,11 @@ type remoteSettings struct {
 	displayName *string // Gmail's sendAs name, or Microsoft's profile name
 	ooo         *OutOfOffice
 	oooHash     string
+	// Gmail's send-as list: its other addresses (nil when not read), its default address
+	// and the account address's reply-to.
+	identities  *[]gmailSendAs
+	defaultFrom *string
+	replyTo     *string
 }
 
 // syncSettings reads the account's settings when due, as part of its sync: on the first
@@ -157,13 +172,23 @@ func (s *service) syncSettings(ctx context.Context, prov Provider) {
 		s.log.Info("collab settings sync failed", "account_id", a.ID, "workspace_id", a.WorkspaceID, "reason", safeError(err))
 	}
 	err = s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
+		now := time.Now().UTC()
 		changed, err := s.withSettings(ctx, tx, a.ID, func(row *accountRow, st *settingsState) bool {
-			now := time.Now().UTC()
 			st.CheckedAt = &now
 			return applyRemote(row, st, remote, now)
 		})
-		if err != nil || !changed {
+		if err != nil {
 			return err
+		}
+		if remote.identities != nil {
+			more, err := s.applyGmailIdentities(ctx, tx, a, *remote.identities, now)
+			if err != nil {
+				return err
+			}
+			changed = changed || more
+		}
+		if !changed {
+			return nil
 		}
 		return s.publishAccounts(ctx, tx, a.WorkspaceID, a.ID, nil)
 	})
@@ -179,8 +204,9 @@ func applyRemote(a *accountRow, st *settingsState, r remoteSettings, now time.Ti
 	if r.signature != nil {
 		if h := settingHash(*r.signature); h != st.SignatureHash {
 			sig := email.SanitizeSettingsHTML(*r.signature)
-			// The first read keeps a signature written in opendesk when the provider has none.
-			if st.SignatureHash != "" || sig != "" || a.SignatureHTML == "" {
+			// The first read keeps a signature written in opendesk when the provider has none,
+			// and one with variables stays as the person wrote it (personal.go).
+			if (st.SignatureHash != "" || sig != "" || a.SignatureHTML == "") && !signatureTemplated(a.SignatureHTML) {
 				a.SignatureHTML = sig
 			}
 			st.SignatureHash, st.SignatureSyncedAt, changed = h, &now, true
@@ -191,8 +217,9 @@ func applyRemote(a *accountRow, st *settingsState, r remoteSettings, now time.Ti
 		switch a.Provider {
 		case ProviderGoogle:
 			if h := settingHash(*r.displayName); h != st.DisplayNameHash {
-				// Gmail leaves the name empty to use the Google account's own.
-				if name != "" {
+				// Gmail leaves the name empty to use the Google account's own; a name with
+				// variables stays as the person wrote it.
+				if name != "" && !nameTemplated(a.DisplayName) {
 					a.DisplayName = name
 				}
 				st.DisplayNameHash, changed = h, true
@@ -201,6 +228,20 @@ func applyRemote(a *accountRow, st *settingsState, r remoteSettings, now time.Ti
 			if !st.DisplayNameEdited && name != "" && name != a.DisplayName {
 				a.DisplayName, changed = name, true
 			}
+		}
+	}
+	if r.defaultFrom != nil {
+		if h := settingHash(strings.ToLower(*r.defaultFrom)); h != st.DefaultHash {
+			st.DefaultFrom = ""
+			if !strings.EqualFold(*r.defaultFrom, a.Email) {
+				st.DefaultFrom = cleanAddress(*r.defaultFrom)
+			}
+			st.DefaultHash, changed = h, true
+		}
+	}
+	if r.replyTo != nil {
+		if rt := cleanAddress(*r.replyTo); rt != st.ReplyTo {
+			st.ReplyTo, changed = rt, true
 		}
 	}
 	if r.ooo != nil && r.oooHash != st.OutOfOfficeHash {

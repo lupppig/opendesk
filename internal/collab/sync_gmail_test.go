@@ -623,7 +623,7 @@ func TestParticipantsAndFolders(t *testing.T) {
 	for i := 0; i < 12; i++ {
 		people = append(people, Address{Email: fmt.Sprintf("p%d@x.test", i)})
 	}
-	got := participantList(people, own)
+	got := participantList(people, []string{own})
 	if len(got) != 10 || got[9].Email != own || got[0].Email != "a@x.test" {
 		t.Fatalf("participants: %+v", got)
 	}

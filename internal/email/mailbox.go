@@ -61,6 +61,62 @@ const (
 	SyncStartNew    = "new"
 )
 
+// Whether mail as an alias goes out From the alias itself (AliasSettings.SendAs):
+// verified when the provider lists it as a verified send-as address or an admin said the
+// provider sends as it; unverified when the provider does not list it or refused it; unknown
+// until either happens.
+const (
+	SendAsVerified   = "verified"
+	SendAsUnverified = "unverified"
+	SendAsUnknown    = "unknown"
+)
+
+// Who decided an alias's send_as (AliasSettings.SendAsBy): the provider (Gmail's send-as
+// list, or a refusal) or an admin; "" while unknown.
+const (
+	SendAsByProvider = "provider"
+	SendAsByAdmin    = "admin"
+)
+
+// AliasSettings make an alias its own identity (contracts/teams.md "Aliases"): mail written
+// to it is answered with its From name, signature and brand, From the alias where the
+// provider sends as it.
+type AliasSettings struct {
+	DisplayName   string     `json:"display_name" doc:"The From name's {mailbox} and {{ mailbox.name }} for mail to this alias; \"\" = the mailbox's"`
+	SignatureHTML string     `json:"signature_html" doc:"The signature of mail to this alias, before the team's and the address's; \"\" = none of its own"`
+	BrandID       *uuid.UUID `json:"brand_id" doc:"The brand new tickets written to this alias take; null = the mailbox's"`
+	SendAs        string     `json:"send_as" enum:"verified,unverified,unknown" doc:"Whether replies go out From the alias (verified) or From the mailbox address with the alias as Reply-To"`
+	SendAsBy      string     `json:"send_as_by" doc:"provider, admin, or \"\" while unknown"`
+}
+
+// isZero reports settings that say nothing beyond the defaults.
+func (a AliasSettings) isZero() bool {
+	return a.DisplayName == "" && a.SignatureHTML == "" && a.BrandID == nil && (a.SendAs == "" || a.SendAs == SendAsUnknown)
+}
+
+// ProviderSendAs is what the Google connection says about sending as other addresses.
+type ProviderSendAs struct {
+	// Readable is true when the connection may read Gmail's send-as list (a sync or api
+	// grant); a send-only grant cannot.
+	Readable  bool            `json:"readable"`
+	CheckedAt *time.Time      `json:"checked_at"`
+	Addresses []SendAsAddress `json:"addresses" doc:"Gmail's send-as addresses of the connected account, other than its own"`
+}
+
+// SendAsAddress is one of Gmail's send-as addresses.
+type SendAsAddress struct {
+	Email       string `json:"email"`
+	DisplayName string `json:"display_name"`
+	Verified    bool   `json:"verified"`
+}
+
+// storedSendAs is mailboxes.provider_send_as: Gmail's list as last read for account.
+type storedSendAs struct {
+	Account   string          `json:"account"`
+	CheckedAt time.Time       `json:"checked_at"`
+	Addresses []SendAsAddress `json:"addresses"`
+}
+
 // TLS modes for IMAP and SMTP.
 const (
 	TLSImplicit = "tls"
@@ -139,6 +195,10 @@ type Mailbox struct {
 	Aliases []string `json:"aliases"`
 	// AliasTeams are the aliases whose new tickets go to a team of their own instead of TeamID.
 	AliasTeams map[string]uuid.UUID `json:"alias_teams" doc:"An alias to the team its new tickets go to, instead of team_id"`
+	// AliasSettings are each alias's own identity; every alias has an entry.
+	AliasSettings map[string]AliasSettings `json:"alias_settings" doc:"Each alias's From name, signature, brand and whether replies go out From it"`
+	// ProviderSendAs is Gmail's send-as list for a Google mailbox; admins only, null otherwise.
+	ProviderSendAs *ProviderSendAs `json:"provider_send_as"`
 	// FromNameFormat is the From name of its emails: {agent}, {agent_first}, {team}, {brand}, {mailbox}.
 	FromNameFormat string `json:"from_name_format"`
 	// TrustedFormSenders are the website contact forms whose authenticated mail is from the
@@ -159,7 +219,9 @@ type Mailbox struct {
 	Status       string     `json:"status" enum:"active,error,disabled"`
 	LastError    string     `json:"last_error"`
 	LastSyncedAt *time.Time `json:"last_synced_at"`
-	CreatedAt    time.Time  `json:"created_at"`
+	// LastReceivedAt is when mail last arrived, by any route; nil before the first.
+	LastReceivedAt *time.Time `json:"last_received_at"`
+	CreatedAt      time.Time  `json:"created_at"`
 }
 
 // mailboxRow is the stored mailbox, including fields the API never returns.
@@ -171,6 +233,8 @@ type mailboxRow struct {
 	UIDValidity     int64
 	LastUID         int64
 	SyncFailures    int
+	// sendAs is Gmail's send-as list as last read, nil before.
+	sendAs *storedSendAs
 }
 
 // credentials is the sealed secret blob in mailboxes.credentials_enc.
@@ -199,7 +263,8 @@ const mailboxColumns = `id, workspace_id, name, email, display_name, inbound_kin
 	config, credentials_enc, team_id, signature_html, auto_reply_enabled, auto_reply_subject, auto_reply_html,
 	status, last_error, last_synced_at, imap_uid_validity, imap_last_uid, sync_failures, created_at,
 	ai_answers, ai_answers_mode, ai_answers_outside_hours, brand_id, aliases, from_name_format,
-	EXISTS (SELECT 1 FROM teams pt WHERE pt.id = mailboxes.team_id AND pt.private), trusted_form_senders, bot_id, alias_teams`
+	EXISTS (SELECT 1 FROM teams pt WHERE pt.id = mailboxes.team_id AND pt.private), trusted_form_senders, bot_id, alias_teams,
+	last_received_at, alias_settings, provider_send_as`
 
 func scanMailbox(row pgx.Row) (*mailboxRow, error) {
 	var m mailboxRow
@@ -207,7 +272,8 @@ func scanMailbox(row pgx.Row) (*mailboxRow, error) {
 		&m.OutboundKind, &m.Config, &m.CredentialsEnc, &m.TeamID, &m.SignatureHTML, &m.AutoReplyEnabled,
 		&m.AutoReplySubject, &m.AutoReplyHTML, &m.Status, &m.LastError, &m.LastSyncedAt, &m.UIDValidity, &m.LastUID,
 		&m.SyncFailures, &m.CreatedAt, &m.AIAnswers, &m.AIAnswersMode, &m.AIAnswersOutsideHours, &m.BrandID, &m.Aliases,
-		&m.FromNameFormat, &m.Private, &m.TrustedFormSenders, &m.BotID, &m.AliasTeams)
+		&m.FromNameFormat, &m.Private, &m.TrustedFormSenders, &m.BotID, &m.AliasTeams, &m.LastReceivedAt,
+		&m.AliasSettings, &m.sendAs)
 	if err != nil {
 		return nil, err
 	}
@@ -219,6 +285,9 @@ func scanMailbox(row pgx.Row) (*mailboxRow, error) {
 	}
 	if m.AliasTeams == nil {
 		m.AliasTeams = map[string]uuid.UUID{}
+	}
+	if m.AliasSettings == nil {
+		m.AliasSettings = map[string]AliasSettings{}
 	}
 	return &m, nil
 }
@@ -326,6 +395,57 @@ func (m *mailboxRow) displayName() string {
 	return m.Name
 }
 
+// aliasSettings are the settings of one of the mailbox's aliases (zero for "" or another address).
+func (m *mailboxRow) aliasSettings(alias string) AliasSettings {
+	if alias = m.alias(alias); alias == "" {
+		return AliasSettings{}
+	}
+	return m.AliasSettings[alias]
+}
+
+// nameFor is what {mailbox} reads for mail as alias: the alias's display name, else the
+// mailbox's.
+func (m *mailboxRow) nameFor(alias string) string {
+	if d := strings.TrimSpace(m.aliasSettings(alias).DisplayName); d != "" {
+		return d
+	}
+	return m.displayName()
+}
+
+// sendsAs reports whether mail as alias goes out From the alias itself: always over SMTP;
+// through Gmail only for a verified send-as address (Gmail would put the account's own
+// address in its place); through Microsoft unless Microsoft refused it (a refusal falls
+// back to the mailbox address, deliverAs); never through the platform sender.
+func (m *mailboxRow) sendsAs(alias string) bool {
+	if m.alias(alias) == "" {
+		return false
+	}
+	switch m.OutboundKind {
+	case OutboundSMTP:
+		return true
+	case KindGoogle:
+		return m.aliasSettings(alias).SendAs == SendAsVerified
+	case KindMicrosoft:
+		return m.aliasSettings(alias).SendAs != SendAsUnverified
+	}
+	return false
+}
+
+// readsSendAs reports a connection that may read Gmail's send-as list: a Google sync grant
+// (https://mail.google.com/) or api grant (gmail.modify). A send grant (gmail.send) cannot.
+func (m *mailboxRow) readsSendAs() bool {
+	return m.oauthProvider() == KindGoogle && m.Config.OAuthEmail != "" && (m.Config.OAuthGrant == GrantSync || m.Config.OAuthGrant == GrantAPI)
+}
+
+// sendAsList is Gmail's list as last read for the connected account, nil when it was not
+// read or belongs to another account.
+func (m *mailboxRow) sendAsList() *storedSendAs {
+	if m.sendAs == nil || !strings.EqualFold(m.sendAs.Account, m.Config.OAuthEmail) || !m.readsSendAs() {
+		return nil
+	}
+	return m.sendAs
+}
+
 func (s *service) forwardingAddress(token string) string {
 	return token + "@" + s.inboundDomain()
 }
@@ -349,6 +469,31 @@ func (s *service) api(m *mailboxRow, withConfig bool, a access) Mailbox {
 	}
 	if out.Config.OAuthGrant == "" && m.oauthProvider() != "" {
 		out.Config.OAuthGrant = GrantSync
+	}
+	out.AliasSettings = make(map[string]AliasSettings, len(m.Aliases))
+	for _, a := range m.Aliases {
+		st := m.AliasSettings[a]
+		if st.SendAs == "" {
+			st.SendAs = SendAsUnknown
+		}
+		if st.SendAs == SendAsUnknown {
+			st.SendAsBy = ""
+		}
+		out.AliasSettings[a] = st
+	}
+	out.ProviderSendAs = nil
+	if withConfig && m.oauthProvider() == KindGoogle {
+		ps := &ProviderSendAs{Readable: m.readsSendAs(), Addresses: []SendAsAddress{}}
+		if l := m.sendAsList(); l != nil {
+			at := l.CheckedAt
+			ps.CheckedAt = &at
+			for _, a := range l.Addresses {
+				if !strings.EqualFold(a.Email, m.Email) && !strings.EqualFold(a.Email, m.Config.OAuthEmail) {
+					ps.Addresses = append(ps.Addresses, a)
+				}
+			}
+		}
+		out.ProviderSendAs = ps
 	}
 	if !withConfig {
 		out.Config = MailboxConfig{}

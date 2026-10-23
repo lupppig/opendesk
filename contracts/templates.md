@@ -59,7 +59,10 @@ Text: `default`, `upcase`, `downcase`, `capitalize`, `titlecase`, `strip`, `trun
 
 `GET /v1/templates/variables` lists them, with the workspace's custom fields, so clients never
 keep their own list. Every template takes every variable; a value that does not apply is empty
-(use `default` or `{% if %}`).
+(use `default` or `{% if %}`). The one exception is a Collab signature (`collab_signature`, a mail
+account's or address's, contracts/collab.md "Who sends"): mail from an account has no ticket,
+customer, team or brand, so it takes the `agent`, `mailbox`, `workspace` and `date` groups only
+(`kind_groups`), and a save that uses another is refused; editors offer only those.
 
 | group | variables |
 | --- | --- |
@@ -76,7 +79,8 @@ keep their own list. Every template takes every variable; a value that does not 
 - `agent.*` is the reply's author: the person sending it, the AI agent's bot name for Ollie's
   replies (no title or phone), and empty for automations, auto-replies and CSAT emails.
 - `team.name` reads the brand when the ticket has no team (as before). `mailbox.email` is the
-  alias when replies go out as one; `mailbox.name` is the address's `display_name`, else `name`.
+  alias when replies go out as one; `mailbox.name` is the alias's `display_name` for mail as an
+  alias that has one (contracts/teams.md "Aliases"), else the address's `display_name`, else `name`.
 - `ticket.status` and `ticket.priority` read as words ("On hold", "Urgent"); `ticket.created_date`
   and `date.today` are dates like "18 October 2026" in the workspace's timezone.
 - Custom fields read as shown: a select's label, a multi select a list of its labels, a checkbox
@@ -92,9 +96,10 @@ type TemplateVariable = {
 type TemplateFilter = { name: string; group: "text" | "list" | "number" | "date"; args: string; description: string; example: string };
 type TemplateTag = { name: string; syntax: string; description: string };
 type TemplateSlot = { key: "content" | "signature" | "history" | "survey"; label: string; description: string; required_in: TemplateKind[] };
-type TemplateKind = "reply" | "signature" | "personal_signature" | "auto_reply" | "layout" | "csat" | "subject";
+type TemplateKind = "reply" | "signature" | "personal_signature" | "auto_reply" | "layout" | "csat" | "subject" | "collab_signature";
 // GET /v1/templates/variables (viewer+)
-type TemplateCatalog = { variables: TemplateVariable[]; slots: TemplateSlot[]; filters: TemplateFilter[]; tags: TemplateTag[] };
+type TemplateCatalog = { variables: TemplateVariable[]; slots: TemplateSlot[]; filters: TemplateFilter[]; tags: TemplateTag[];
+  kind_groups: Partial<Record<TemplateKind, TemplateVariable["group"][]>> };  // the groups of kinds that take only some
 ```
 
 ## Where templates are filled
@@ -106,6 +111,7 @@ type TemplateCatalog = { variables: TemplateVariable[]; slots: TemplateSlot[]; f
 | third-party thread messages (contracts/api.md "Threads") | the message is created, and saved replies when inserted (`render` with `thread`) | without a ticket: the customer's and the ticket's variables stay empty |
 | automation `send_reply` | the action runs | no agent |
 | team, address and personal signatures | each email is sent | |
+| Collab account and address signatures | for the member writing: in the accounts response (`filled_signature_html`) and the composer | stored as written; `agent.*` is the writer, `mailbox.*` the address and its filled From name |
 | mailbox auto-reply (subject and body) | it is sent | no agent |
 | CSAT email (subject and body) | it is sent | per brand, below |
 | email layout | each email is sent | per brand, below |
@@ -114,10 +120,16 @@ Internal notes are never filled (a thread's messages, stored as notes, go out as
 
 ## Signatures
 
-Which signature an email carries: the ticket team's `signature_html`, else the sending address's,
-else the author's personal signature. Team and address signatures can place the personal one with
+Which signature an email carries: for mail as an alias (a ticket written to it), the alias's
+`signature_html` (contracts/teams.md "Aliases"); else the ticket team's `signature_html`, else the
+sending address's, else the author's personal signature. Alias, team and address signatures can place the personal one with
 `{{ agent.signature }}`, so a company signature can wrap each person's own lines. Signatures take
 every variable; the personal signature cannot contain `{{ agent.signature }}`.
+
+Every signature is edited in one editor: a designed one (tables, inline styles, sized images) opens
+as HTML, its tags kept as typed, and is never simplified unless the person chooses to; a save sends
+it only when it changed. Wherever the app shows a signature (the reply composer's preview, the
+editors' previews) it shows it as recipients get it, its layout and image sizes kept.
 
 Each member has a profile per workspace that feeds `agent.*`:
 

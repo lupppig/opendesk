@@ -38,6 +38,8 @@
     "emptyTitle": "No mailboxes yet",
     "emptyBody": "Forward your support address from any provider, then choose how replies are sent.",
     "never": "Never synced",
+    "noMail": "No mail yet",
+    "quiet": "Quiet for {{count}} days",
     "instant": "Instant",
     "syncedAgo": "Synced {{when}}",
     "actionsFor": "Actions for {{email}}",
@@ -53,7 +55,7 @@
     "colConnection": "Connection",
     "colTeam": "Team",
     "colStatus": "Status",
-    "colSynced": "Last sync",
+    "colSynced": "Last mail",
     "emptyTips": {
       "forward": "Forwarding works with any provider",
       "team": "Each mailbox can route to a team"
@@ -134,6 +136,14 @@
     "lastSynced": "Last synced",
     "never": "Never",
     "forwardingInstant": "Forwarded mail arrives as soon as it is sent.",
+    "lastReceived": "Last mail received",
+    "lastReceivedHint": "Mail that arrived at this address by any route, including mail that did not become a ticket.",
+    "noMail": "No mail yet",
+    "quietNeverTitle": "No mail has arrived yet",
+    "quietTitle_one": "No mail for {{count}} day",
+    "quietTitle_other": "No mail for {{count}} days",
+    "quietForwarding": "If customers write to {{email}}, check that it still forwards to the address below, then send a test from another address.",
+    "quietConnected": "If customers write to {{email}}, test the connection and reconnect if access was revoked.",
     "account": "Account",
     "accountHint": "Connected with {{provider}}. Reconnect if access was revoked or the password changed.",
     "accountHintNoImap": "Connected with {{provider}}. Reconnecting connects it to send only, and its mail then arrives by forwarding.",
@@ -673,6 +683,50 @@
       "hide": "Hide",
       "generic": "Enter this address in the provider's settings as the address it sends events to.",
       "waiting": "This changes to Connected once the provider sends its first event. Mention the bot in a channel to send one."
+    }
+  },
+  "aliases": {
+    "title": "Aliases",
+    "hint": "Other addresses that deliver into this mailbox, like help@ or a side project's hello@. Each works like a mailbox of its own, with its own sender name, signature, team and brand. Aliases are free on every plan and don't count as mailboxes. Up to 20.",
+    "identities": "Each alias",
+    "edit": "Edit {{alias}}",
+    "badgeSelf": "Sends as itself",
+    "badgeVia": "Replies from {{email}}",
+    "openTickets": "Open its tickets",
+    "senderName": "Sender name",
+    "senderNameHint": "What {mailbox} reads in the From name. Empty uses the mailbox's.",
+    "team": "New tickets go to",
+    "brand": "Brand",
+    "brandHint": "New tickets to this alias take this brand's emails, help center and survey.",
+    "signature": "Signature",
+    "signatureLabel": "Signature for {{alias}}",
+    "signaturePlaceholder": "Empty uses the team's or the mailbox's signature",
+    "signatureHint": "Mail to this alias carries it, before the team's and the mailbox's.",
+    "sendAs": {
+      "label": "Replies",
+      "smtp": "Go out from this address.",
+      "system": "Go out from {{sender}} and answer to this address.",
+      "gmailVerified": "Go out from this address. Gmail lists it as one it can send as.",
+      "gmailUnverified": "Go out from {{email}} and answer to this address. Gmail doesn't list it as one it can send as.",
+      "gmailClaimed": "Go out from this address, since Gmail can send as it.",
+      "replyTo": "Go out from {{email}} and answer to this address.",
+      "gmailClaim": "Gmail can send as this address",
+      "gmailHow": "Add it in Gmail first: Settings > Accounts > Send mail as. Then turn this on.",
+      "microsoft": "Go out from this address where Microsoft allows it, else from {{email}}.",
+      "microsoftRefused": "Microsoft refused to send as this address, so they go out from {{email}} and answer to it.",
+      "tryAgain": "Try again"
+    },
+    "gmail": {
+      "title": "From Gmail",
+      "hint": "Other addresses {{account}} can send as in Gmail. Add one to receive and answer its mail here.",
+      "checkedAt": "Checked {{when}}.",
+      "check": "Check again",
+      "checked": "Checked Gmail's send-as addresses",
+      "add": "Add",
+      "addLabel": "Add {{email}} as an alias",
+      "pending": "Waiting for confirmation in Gmail",
+      "none": "Gmail lists no other addresses.",
+      "sendOnly": "Google doesn't share this account's other send-as addresses with a send-only connection. Add them above by hand."
     }
   }
 }

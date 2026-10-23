@@ -36,6 +36,7 @@ type draftContent struct {
 	// KeepAttachments are the draft's own files to keep (MailAttachment ids); left out keeps
 	// every file that is not an inline image. Inline images stay while the HTML shows them.
 	KeepAttachments []string `json:"keep_attachments,omitempty" maxItems:"100" doc:"The draft's own files to keep (MailAttachment ids); left out keeps them all"`
+	FromEmail       string   `json:"from_email,omitempty" maxLength:"254" doc:"One of the account's usable addresses; left out keeps the draft's"`
 }
 
 type draftCreateInput struct {
@@ -50,6 +51,7 @@ type draftCreateInput struct {
 		BodyHTML           string      `json:"body_html" maxLength:"2097152"`
 		AttachmentIDs      []uuid.UUID `json:"attachment_ids,omitempty" maxItems:"50" doc:"POST /v1/attachments uploads of the caller"`
 		ForwardAttachments bool        `json:"forward_attachments,omitempty" doc:"Forward: attach the original's files"`
+		FromEmail          string      `json:"from_email,omitempty" maxLength:"254" doc:"One of the account's usable addresses"`
 	}
 }
 
@@ -83,7 +85,7 @@ func (s *service) registerDraftRoutes(api huma.API) {
 				threadID, threadRemote = &t.thread.ID, t.thread.RemoteID
 			}
 			id, _, err := s.saveDraft(ctx, p, t, nil, threadRemote, threadID, composeIn{Mode: b.Mode, To: b.To, Cc: b.Cc, Bcc: b.Bcc,
-				Subject: b.Subject, BodyHTML: b.BodyHTML, AttachmentIDs: b.AttachmentIDs, ForwardAttachments: b.ForwardAttachments})
+				Subject: b.Subject, BodyHTML: b.BodyHTML, AttachmentIDs: b.AttachmentIDs, ForwardAttachments: b.ForwardAttachments, FromEmail: b.FromEmail})
 			if err != nil {
 				return nil, err
 			}
@@ -172,8 +174,21 @@ func (s *service) registerDraftRoutes(api huma.API) {
 			}
 			var raw []byte
 			var recipients []string
-			if in.Body != nil {
-				id, out, err := s.saveDraft(ctx, p, target{a: a}, m, t.RemoteID, &t.ID, draftCompose(m, in.Body, true))
+			from := a.Email
+			content := in.Body
+			if content == nil {
+				// Sent as saved, unless its From name has variables: then it is composed again
+				// from what was saved, so the name is the sender's (personal.go).
+				idents, err := accountIdentities(ctx, s.d.DB.Pool, a)
+				if err != nil {
+					return nil, httpx.Wrap(err)
+				}
+				if snd, ok := usableSender(a, idents, m.From.Email); ok && nameTemplated(snd.Name) {
+					content = savedContent(m)
+				}
+			}
+			if content != nil {
+				id, out, err := s.saveDraft(ctx, p, target{a: a}, m, t.RemoteID, &t.ID, draftCompose(m, content, true))
 				if err != nil {
 					return nil, err
 				}
@@ -181,8 +196,16 @@ func (s *service) registerDraftRoutes(api huma.API) {
 					WHERE m.workspace_id = $1 AND m.id = $2`, p.WorkspaceID, id)); err != nil {
 					return nil, httpx.Wrap(err)
 				}
-				raw, recipients = out.Raw, out.Recipients
+				raw, recipients, from = out.Raw, out.Recipients, out.From
 			} else {
+				// As saved: from its own From when that is one of the account's usable addresses.
+				idents, err := accountIdentities(ctx, s.d.DB.Pool, a)
+				if err != nil {
+					return nil, httpx.Wrap(err)
+				}
+				if snd, ok := usableSender(a, idents, m.From.Email); ok {
+					from = snd.Email
+				}
 				if raw, err = s.loadRaw(ctx, a, m, t.RemoteID); err != nil {
 					return nil, errSend(safeError(err))
 				}
@@ -200,7 +223,7 @@ func (s *service) registerDraftRoutes(api huma.API) {
 			defer prov.Close()
 			sctx, cancel := context.WithTimeout(ctx, providerTimeout)
 			defer cancel()
-			ref, err := dp.SendDraft(sctx, m.ref(t.RemoteID), bare(m.MessageID), raw, SendInfo{From: a.Email, Recipients: recipients,
+			ref, err := dp.SendDraft(sctx, m.ref(t.RemoteID), bare(m.MessageID), raw, SendInfo{From: from, Recipients: recipients,
 				ThreadRemoteID: t.RemoteID})
 			if err != nil {
 				s.log.Warn("collab draft send refused", "account_id", a.ID, "err", err)
@@ -220,6 +243,19 @@ func (s *service) registerDraftRoutes(api huma.API) {
 
 // draftCompose is the compose input of a draft saved again: its Message-ID, its replies'
 // headers and the files it keeps.
+// savedContent is a draft's content as saved, for composing it again.
+func savedContent(m *messageRow) *draftContent {
+	emails := func(list []Address) []string {
+		out := make([]string, 0, len(list))
+		for _, x := range list {
+			out = append(out, x.Email)
+		}
+		return out
+	}
+	return &draftContent{To: emails(m.To), Cc: emails(m.Cc), Bcc: emails(m.Bcc), Subject: m.Subject, BodyHTML: m.BodyHTML,
+		FromEmail: m.From.Email}
+}
+
 func draftCompose(m *messageRow, c *draftContent, send bool) composeIn {
 	keep := []int{}
 	if c.KeepAttachments == nil {
@@ -240,7 +276,7 @@ func draftCompose(m *messageRow, c *draftContent, send bool) composeIn {
 		}
 	}
 	return composeIn{To: c.To, Cc: c.Cc, Bcc: c.Bcc, Subject: c.Subject, BodyHTML: c.BodyHTML, AttachmentIDs: c.AttachmentIDs,
-		MessageID: m.MessageID, Draft: m, Keep: keep, NeedRecipients: send}
+		FromEmail: c.FromEmail, MessageID: m.MessageID, Draft: m, Keep: keep, NeedRecipients: send}
 }
 
 // loadDraft loads a draft the caller sees, with its account and conversation; anything

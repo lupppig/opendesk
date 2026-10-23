@@ -68,6 +68,7 @@ type Mailbox = Mailbox /* contracts/api.md */ & {
   brand_id: string;
   aliases: string[] /* at most 20 addresses that deliver into this mailbox */;
   alias_teams: Record<string, string> /* an alias to the team its new tickets go to instead of team_id; none on a private team's address */;
+  alias_settings: Record<string, AliasSettings> /* every alias's own name, signature, brand and send_as ("Aliases"; contracts/api.md) */;
   from_name_format: string /* up to 80; {agent} {agent_first} {team} {brand} {mailbox}; default "{agent} at {mailbox}" */;
   private: boolean /* its team is private: only that team's members send from it */;
 };
@@ -169,7 +170,8 @@ A new ticket gets its team, in order:
 
 1. **Address**: an email gets the team of the alias it was written to (`alias_teams`), else the default
    team of the mailbox it arrived at (`routed.via = "address"`). A private team's address delivers every
-   alias to that team.
+   alias to that team. Its brand is the alias's (`alias_settings[alias].brand_id`), else the mailbox's,
+   and `brand_id` conditions read that brand.
    **Widget**: a chat gets the topic's team (`topic`), else the widget's team (`widget`).
    **API**: `team_id` from the body (`api`), else the mailbox's team.
 2. **Routing rules**, in `position` order: the first enabled rule whose conditions match moves the
@@ -204,11 +206,10 @@ stays the first address. Ticket lists and views filter on the ticket's `received
 The reply address is `ticket.mailbox_id`:
 
 - A new email ticket replies from the address it arrived at. When it arrived through an alias,
-  `received_at` is the alias and replies go out as the alias when the provider allows sending as it:
-  SMTP sends From the alias; the platform sender (`system`) sends From its own address with the alias
-  as Reply-To; Google and Microsoft, whose verified send-as addresses are not looked up, send From the
-  mailbox address with the alias as Reply-To. A forwarding mailbox's Reply-To stays its forwarding
-  address, which keeps the thread.
+  `received_at` is the alias and every email on the ticket goes out as the alias ("Aliases"): its
+  name and signature, From the alias where the provider sends as it, else From the mailbox address
+  with the alias as Reply-To. A forwarding mailbox's Reply-To stays its forwarding address, which
+  keeps the thread.
 - A chat or API ticket with no address takes, when it first needs one, the brand's address whose
   default team is the ticket's team, else the brand's oldest active address that is not another
   private team's. Changing the brand picks the same way (or none).
@@ -217,6 +218,10 @@ The reply address is `ticket.mailbox_id`:
   to it. A ticket leaving a private team also leaves that team's address, for the new team's or
   else the brand's (as above), when the brand has one. The `team_changed` activity records
   `mailbox_from`/`mailbox_to`. Otherwise it stays.
+- An address belongs to its own brand and to each brand one of its aliases has: a ticket of an
+  alias's brand keeps the address as its reply address, and agents may pick it there. Choosing an
+  address for a brand (a chat or API ticket, a brand change, a team change) picks among the
+  addresses whose own brand it is.
 - An agent may pick any address of the ticket's brand they may send from (`PATCH mailbox_id`, or per
   reply). Addresses of a private team are only for that team's members (`403 forbidden`); a reply
   that would go out from such an address without naming another is `403 reply_address_forbidden`.
@@ -233,13 +238,16 @@ The reply address is `ticket.mailbox_id`:
 What the customer sees on every email (replies, auto-replies, CSAT):
 - **From**: `from_name_format` filled in, at the reply address. `{agent}` is the author's full name,
   `{agent_first}` the first name, `{team}` the ticket's team (the brand when there is none), `{brand}`
-  the brand, `{mailbox}` the address's `display_name` (else `name`). Without an author (automations,
+  the brand, `{mailbox}` the alias's `display_name` for mail as an alias that has one, else the
+  address's `display_name` (else `name`). Without an author (automations,
   auto-replies, CSAT) the agent variable and the words between it and the next variable are dropped:
   `"{agent} at {mailbox}"` reads `"<mailbox>"`, `"{agent_first} from {team}"` reads `"<team>"`. A
   format with no other variable falls back to `{mailbox}`; separators left at either end are trimmed
   (`"{brand} - {agent}"` reads `"<brand>"`). The AI agent's replies use its bot's name (the mailbox's bot, contracts/bots.md) as the agent.
-- **Signature**: the team's `signature_html`, else the address's, else the author's personal signature
-  (contracts/templates.md "Signatures"). Signatures, auto-replies and CSAT emails take every template
+  Formats are checked and filled by `internal/fromname`, whose vocabulary Collab's From names share
+  (contracts/collab.md "Who sends": `{agent}`, `{agent_first}`, `{mailbox}`, `{workspace}`).
+- **Signature**: for mail as an alias, the alias's `signature_html`; else the team's, else the
+  address's, else the author's personal signature (contracts/templates.md "Signatures"). Signatures, auto-replies and CSAT emails take every template
   variable (`{{ agent.name }}`, `{{ contact.first_name | default: "there" }}`, `{% if agent.phone %}`…,
   contracts/templates.md); `{{ team.name }}` reads the brand without a team, `{{ agent.* }}` are empty
   without an author, `{{ mailbox.email }}` is the alias when replies go out as one. Auto-replies and
@@ -251,6 +259,40 @@ What the customer sees on every email (replies, auto-replies, CSAT):
 
 In chat, the widget header shows the routed team's name under the title once a conversation has one,
 with its hours when it is closed.
+
+## Aliases
+
+An alias is another address that delivers into a mailbox (`aliases`, at most 20). Aliases are free on
+every plan and never count as mailboxes (contracts/billing.md). Each alias is its own identity
+(`alias_settings`), so one mailbox can answer for several projects without another workspace:
+
+- **Team**: `alias_teams`, as in "Routing".
+- **Brand**: `brand_id`. New tickets written to the alias take it, and with it its email layout, help
+  center links, CSAT survey and logo; `null` follows the mailbox's brand. A brand an alias uses cannot
+  be deleted (`409 brand_in_use`), as with an address.
+- **Name and signature**: `display_name` is the From name's `{mailbox}` and `{{ mailbox.name }}`;
+  `signature_html` comes first in the signature order above. Both apply to every email on a ticket
+  written to the alias (replies, auto-replies, CSAT), whichever From address it goes out with.
+- **Sending as the alias** (`send_as`): SMTP sends From the alias. Gmail sends From an alias only
+  when it is one of the account's verified send-as addresses (`send_as: "verified"`): otherwise Gmail
+  would put the account's own address in its place, so the reply goes From the mailbox address with the
+  alias as Reply-To. A connection that may read Gmail's send-as list (a sync grant,
+  `https://mail.google.com/`, or an api grant, `gmail.modify`) reads it on connecting and reconnecting,
+  on `POST /v1/mailboxes/{id}/send-as/check`, and about once a day while the mailbox syncs, and every
+  alias takes `verified` or `unverified` from it (`send_as_by: "provider"`). A send-only connection
+  (`gmail.send`) cannot read the list: an admin sets `send_as: "verified"` once Gmail sends as the
+  address (Gmail Settings > Accounts > Send mail as), `send_as_by: "admin"`. Microsoft sends From an
+  alias where the tenant allows it: every alias but an `unverified` one is tried, and a refusal
+  (`ErrorSendAsDenied`) marks the alias `unverified` (`send_as_by: "provider"`) and sends that email
+  once more From the mailbox address with the alias as Reply-To; later emails go that way at once. An
+  admin sets it back to `unknown` to try again. The platform sender always sends From its own address
+  with the alias as Reply-To. A connection to another account or provider, or none, sets every
+  `send_as` the provider decided back to `unknown` (an admin's word stays). Each message records the
+  From address it actually went out with.
+- **Discovering aliases**: Gmail's other send-as addresses are listed in `provider_send_as.addresses`
+  for an admin to add as aliases; nothing is added on its own, and the usual alias rules apply.
+- **Working an alias as its own inbox**: ticket lists and views filter on `received_at`, the inbox's
+  address filter lists each mailbox's aliases under it, and a ticket shows the address it was written to.
 
 ## Chat follow-up
 

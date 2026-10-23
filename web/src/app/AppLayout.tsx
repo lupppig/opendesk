@@ -30,6 +30,7 @@ import { ConnectionBanner } from "./ConnectionBanner";
 import { notifyDesktop, useDesktopBadge, useDesktopPreferences } from "./useDesktopBridge";
 import { AiBalanceBanner } from "@/components/billing/AiBalanceBanner";
 import { DesktopUpdateBanner } from "@/components/desktop/UpdateBanner";
+import { AllowNotificationsBanner } from "@/components/notifications/AllowBanner";
 import { shell, toggleNav, useNav, useShell } from "./shellStore";
 import { useCollab } from "@/lib/collab/hooks";
 import { compose } from "@/lib/collab/compose";
@@ -266,6 +267,7 @@ export function AppLayout() {
           <ConnectionBanner />
           <AiBalanceBanner />
           <DesktopUpdateBanner />
+          <AllowNotificationsBanner />
           {/* Moving between areas cross-fades the panel; moving within one (ticket to ticket) does not. */}
           <div key={section} className="flex min-h-0 flex-1 flex-col animate-route-in motion-reduce:animate-none">
             <Outlet />

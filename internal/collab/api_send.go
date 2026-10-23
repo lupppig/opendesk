@@ -45,6 +45,7 @@ type sendInput struct {
 		BodyHTML           string      `json:"body_html" maxLength:"2097152"`
 		AttachmentIDs      []uuid.UUID `json:"attachment_ids,omitempty" maxItems:"50" doc:"POST /v1/attachments uploads of the caller"`
 		ForwardAttachments bool        `json:"forward_attachments,omitempty" doc:"Forward: attach the original's files"`
+		FromEmail          string      `json:"from_email,omitempty" maxLength:"254" doc:"One of the account's usable addresses; left out: a reply's goes from the address it answers, new mail from the default"`
 	}
 }
 
@@ -76,7 +77,7 @@ func (s *service) send(ctx context.Context, p *auth.Principal, in *sendInput) (M
 		return MailMessage{}, err
 	}
 	out, err := s.compose(ctx, p, t, composeIn{Mode: b.Mode, To: b.To, Cc: b.Cc, Bcc: b.Bcc, Subject: b.Subject, BodyHTML: b.BodyHTML,
-		AttachmentIDs: b.AttachmentIDs, ForwardAttachments: b.ForwardAttachments, NeedRecipients: true})
+		AttachmentIDs: b.AttachmentIDs, ForwardAttachments: b.ForwardAttachments, FromEmail: b.FromEmail, NeedRecipients: true})
 	if err != nil {
 		return MailMessage{}, err
 	}
@@ -88,7 +89,7 @@ func (s *service) send(ctx context.Context, p *auth.Principal, in *sendInput) (M
 		return MailMessage{}, errSend(safeError(err))
 	}
 	defer prov.Close()
-	info := SendInfo{From: a.Email, Recipients: out.Recipients}
+	info := SendInfo{From: out.From, Recipients: out.Recipients}
 	var threadID *uuid.UUID
 	if t.thread != nil && b.Mode != ModeForward {
 		info.ThreadRemoteID = t.thread.RemoteID

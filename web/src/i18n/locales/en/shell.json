@@ -64,6 +64,12 @@
   },
   "newTicket": "New ticket",
   "notifications": {
+    "allow": {
+      "title": "Get told about new tickets and replies.",
+      "hint": "Allow notifications so they reach you while opendesk is in the background.",
+      "allow": "Allow notifications",
+      "later": "Not now"
+    },
     "title": "Notifications",
     "unread": "Notifications, {{count}} unread",
     "markAll": "Mark all read",

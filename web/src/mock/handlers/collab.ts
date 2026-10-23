@@ -13,26 +13,34 @@ import type {
   MailComment,
   MailFolder,
   MailFolderRole,
+  MailIdentity,
   MailMessage,
+  MailMessageDetails,
   MailThread,
   MailThreadAction,
   MailThreadDetail,
   SidebarPrefs,
 } from "@/lib/api/types";
+import { collabFromName } from "@/lib/collab/identities";
 import { LABEL_TONES, toneHex, type LabelTone } from "@/lib/collab/labelTones";
 import { defaultSidebarPrefs, normalizePrefs } from "@/lib/collab/sidebarPrefs";
-import { db, userRef, type WsData } from "../db";
+import { COLLAB_FROM_VARS, fromNameProblem, hasFromVars } from "@/lib/fromname";
+import { db, me as meUser, userRef, type WsData } from "../db";
 import { publish } from "../gateway";
 import { del, get, HttpError, invalid, notFound, patch, post, put, respond, strArr, type Ctx } from "../router";
 import { escapeHtml, isRecord, nowIso, uuid } from "../util";
+import { collabSignatureProblems, fillForSender } from "./templates";
 
-type Account = MailAccount & { ownerId: string | null };
+/** The account's addresses besides its own live in `aliases`; its own is built from the account (contracts/collab.md "Addresses"). */
+type Account = Omit<MailAccount, "identities" | "default_from"> & { ownerId: string | null; aliases: MailIdentity[]; defaultFrom: string };
 type ThreadMeta = { id: string; account_id: string; subject: string; shares: MailAudience; assignees: string[]; comments: MailComment[] };
 type State = { accounts: Account[]; folders: MailFolder[]; threads: Map<string, ThreadMeta>; messages: MailMessage[]; prefs: Record<string, SidebarPrefs> };
 
 const states = new Map<string, State>();
 /** Gmail's own copy of each two-way signature, by account id ("Get from Gmail"). */
 const providerSignature = new Map<string, string>();
+/** Gmail's own From name of each address, by account or address id ("Get from Gmail"). */
+const providerName = new Map<string, string>();
 const emptyAudience = (): MailAudience => ({ everyone: false, team_ids: [], user_ids: [] });
 
 // Its own PRNG: the shared one drives the rest of the seed.
@@ -79,11 +87,77 @@ const STORIES: { subject: string; body: string; designed?: boolean; attach?: boo
 const designed = (title: string, text: string) =>
   `<table width="100%" cellpadding="0" cellspacing="0" bgcolor="#f6f9fc"><tr><td align="center" style="padding:24px"><table width="560" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="border-radius:8px"><tr><td style="padding:28px;font-family:Helvetica,Arial,sans-serif;color:#1f2328"><h2 style="margin:0 0 12px">${escapeHtml(title)}</h2><p style="margin:0 0 16px;line-height:1.5">${escapeHtml(text).replace(/\n/g, "<br>")}</p><img src="https://images.example.com/track.gif" width="1" height="1" alt=""><p style="margin:0;color:#6a737d;font-size:12px">You are receiving this because you have an account.</p></td></tr></table></td></tr></table>`;
 
+type Quoted = { html: string; text: string; at: string; from: MailAddress };
+const attribution = (q: Quoted) => {
+  const d = new Date(q.at);
+  const day = d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+  const time = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }).toLowerCase();
+  return `On ${day} at ${time}, ${q.from.name || q.from.email} <${q.from.email}> wrote:`;
+};
+const quoteOf = (q: Quoted) =>
+  `<br><div class="gmail_quote gmail_quote_container"><div dir="ltr" class="gmail_attr">${escapeHtml(attribution(q))}<br></div><blockquote class="gmail_quote" style="margin:0px 0px 0px 0.8ex;border-left:1px solid rgb(204,204,204);padding-left:1ex">${q.html}</blockquote></div>`;
+
 const fileSvg = (label: string) =>
   `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400"><rect width="640" height="400" fill="#eef2f7"/><text x="32" y="210" font-family="Helvetica" font-size="28" fill="#5b6472">${label}</text></svg>`)}`;
 
+/** A Gmail send-as address of the mock's Gmail account: Gmail's changes come in, edits here stay here. */
+function alias(email: string, display_name: string, signature_html: string, p: Partial<MailIdentity> = {}): MailIdentity {
+  return {
+    id: uuid(),
+    email,
+    display_name,
+    signature_html,
+    reply_to: "",
+    primary: false,
+    default: false,
+    source: "provider",
+    verification: "accepted",
+    can_send: true,
+    signature_sync: "pull",
+    display_name_sync: "pull",
+    signature_synced_at: new Date(Date.now() - 6 * MIN).toISOString(),
+    ...p,
+  };
+}
+
 function folder(account_id: string, name: string, role: MailFolderRole | null, kind: "folder" | "label" = "folder", path = name, color: string | null = null): MailFolder {
   return { id: uuid(), account_id, name, path, role, kind, unread: 0, total: 0, color, can_rename: !role };
+}
+
+// The Margin wordmark a signature carries, as Gmail would host it.
+const MARGIN_WORDMARK = `data:image/svg+xml;utf8,${encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="64" viewBox="0 0 240 64"><rect x="4" y="4" width="56" height="56" rx="12" fill="#4f46e5"/>' +
+    '<rect x="16" y="4" width="5" height="56" fill="#ffffff" opacity="0.35"/><rect x="28" y="20" width="22" height="6" rx="3" fill="#ffffff" opacity="0.8"/><rect x="28" y="34" width="16" height="6" rx="3" fill="#ffffff" opacity="0.8"/>' +
+    '<text x="76" y="44" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="700" fill="#111827" letter-spacing="-1">Margin</text></svg>',
+)}`;
+
+/** A signature as Gmail keeps one made with a signature generator: a layout table, inline styles, a sized logo. */
+function gmailSignature(name: string, email: string): string {
+  const grey = "color:#6b7280";
+  return (
+    `<div dir="ltr"><div>Thanks,</div><br>` +
+    `<table cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:18px;color:#1f2328"><tbody>` +
+    `<tr><td style="font-size:14px"><b>${escapeHtml(name)}</b></td></tr>` +
+    `<tr><td style="${grey}">Customer success &amp; onboarding</td></tr>` +
+    `<tr><td style="padding:10px 0 8px"><img src="${MARGIN_WORDMARK}" width="120" height="32" alt="Margin"></td></tr>` +
+    `<tr><td><a href="mailto:${email}" style="color:#4f46e5;text-decoration:none">${email}</a> <span style="color:#d1d5db">·</span> <a href="https://margin.app" style="color:#4f46e5;text-decoration:none">margin.app</a></td></tr>` +
+    `<tr><td style="${grey}">+1 415 555 0134</td></tr>` +
+    `<tr><td style="padding-top:10px;color:#9ca3af;font-size:11px;line-height:15px">Margin Labs, Inc. · 548 Market St, San Francisco, CA 94104 · Registered in Delaware No. 7700001</td></tr>` +
+    `</tbody></table></div>`
+  );
+}
+
+/** A team address's designed signature, as Gmail keeps it: a coloured rule, the logo, a line of links. */
+function teamSignature(team: string, line: string, link: string, accent: string): string {
+  return (
+    `<table cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:18px;color:#1f2328"><tbody><tr>` +
+    `<td style="border-left:3px solid ${accent};padding:2px 0 2px 12px">` +
+    `<img src="${MARGIN_WORDMARK}" width="96" height="26" alt="Margin"><br>` +
+    `<b style="font-size:14px">${escapeHtml(team)}</b><br>` +
+    `<span style="color:#6b7280">${escapeHtml(line)}</span><br>` +
+    `<a href="https://${link}" style="color:${accent};text-decoration:none">${escapeHtml(link)}</a>` +
+    `</td></tr></tbody></table>`
+  );
 }
 
 function seedState(ws: WsData): State {
@@ -111,6 +185,8 @@ function seedState(ws: WsData): State {
     display_name_sync: "none",
     out_of_office: null,
     out_of_office_sync: "none",
+    aliases: [],
+    defaultFrom: "",
     ...p,
   });
   const work = mk({
@@ -121,12 +197,18 @@ function seedState(ws: WsData): State {
     visibility: "private",
     ownerId: me,
     // Synced with Gmail both ways (contracts/collab.md "Account settings").
-    signature_html: `<p><strong>${escapeHtml(meUser?.name ?? "")}</strong><br>Customer success, Margin<br><a href="https://margin.app">margin.app</a> · +1 415 555 0134</p>`,
+    signature_html: gmailSignature(meUser?.name ?? "", `${local}@margin.app`),
     signature_sync: "two_way",
     signature_synced_at: new Date(now - 6 * MIN).toISOString(),
     display_name_sync: "two_way",
     out_of_office: { enabled: false, start: null, end: null, subject: "Out of office", message_html: "", contacts_only: false, internal_only: false },
     out_of_office_sync: "two_way",
+    // Gmail's send-as addresses: each with its own From name and signature, one still being confirmed.
+    aliases: [
+      alias("support@margin.app", "Margin Support", teamSignature("Margin Support", "We usually answer within a few hours.", "margin.app/help", "#4f46e5")),
+      alias("billing@margin.app", "Margin Billing", teamSignature("Margin Billing", "Invoices and receipts", "margin.app/billing", "#0f766e"), { reply_to: "accounts@margin.app" }),
+      alias("press@margin.app", "", "", { verification: "pending", can_send: false }),
+    ],
   });
   const sales = mk({
     provider: "microsoft",
@@ -136,8 +218,9 @@ function seedState(ws: WsData): State {
     visibility: "shared",
     ownerId: other,
     shared_with: { everyone: true, team_ids: [], user_ids: [] },
-    display_name: "Margin Sales",
-    signature_html: "<p>The Margin sales team</p>",
+    // A shared account whose mail names whoever sends it, with their own title (contracts/collab.md "Addresses").
+    display_name: "{agent} at Margin Sales",
+    signature_html: "<p><b>{{ agent.name }}</b><br>{{ agent.title }}, Margin Sales<br>{{ mailbox.email }}</p>",
     // Outlook: no signature API, a From name someone chose, automatic replies both ways (on now).
     out_of_office: {
       enabled: true,
@@ -164,6 +247,11 @@ function seedState(ws: WsData): State {
   });
   const accounts = [work, sales, personal];
   providerSignature.set(work.id, work.signature_html);
+  providerName.set(work.id, work.display_name);
+  for (const x of work.aliases) {
+    providerSignature.set(x.id!, x.signature_html);
+    providerName.set(x.id!, x.display_name);
+  }
   const folders: MailFolder[] = [];
   for (const a of accounts) {
     const roles: [string, MailFolderRole][] = [["Inbox", "inbox"], ["Starred", "starred"], ["Sent", "sent"], ["Drafts", "drafts"], ["Archive", "archive"], ["Spam", "spam"], ["Trash", "trash"]];
@@ -185,6 +273,9 @@ function seedState(ws: WsData): State {
   const threads = new Map<string, ThreadMeta>();
   const messages: MailMessage[] = [];
 
+  // Mail from an account names whoever sent it (here, you); mail to it, the account.
+  const sentAs = (a: Account) => filledName(ws, a, a.display_name);
+  const writtenTo = (a: Account) => (hasFromVars(a.display_name) ? a.name : a.display_name);
   const addThread = (a: Account, i: number) => {
     const story = STORIES[(i + accounts.indexOf(a) * 3) % STORIES.length];
     const person = pickR(PEOPLE);
@@ -195,11 +286,17 @@ function seedState(ws: WsData): State {
     const start = now - (i * 5 + r() * 4) * HOUR - (i > 8 ? i * DAY * 0.4 : 0);
     const place = i % 9 === 7 ? "spam" : i % 11 === 10 ? "trash" : i % 5 === 4 ? "archive" : "inbox";
     const labels = a.provider === "google" && r() < 0.4 ? [pickR(userFolders(a.id)).id] : [];
+    let prev: Quoted | null = null;
     for (let k = 0; k < n; k++) {
       const fromUs = k % 2 === 1;
       const at = new Date(Math.min(start + k * 3 * HOUR, now - (n - k) * 7 * MIN)).toISOString();
-      const text = fromUs ? `Thanks, ${person.name.split(" ")[0]}. I'll get back to you shortly.\n\n${a.display_name}` : story.body;
-      const html = story.designed && !fromUs ? designed(story.subject, text) : `<p>${escapeHtml(text).replace(/\n\n/g, "</p><p>").replace(/\n/g, "<br>")}</p>`;
+      const own = fromUs ? `Thanks, ${person.name.split(" ")[0]}. I'll get back to you shortly.\n\n${sentAs(a)}` : story.body;
+      const ownHtml = story.designed && !fromUs ? designed(story.subject, own) : `<p>${escapeHtml(own).replace(/\n\n/g, "</p><p>").replace(/\n/g, "<br>")}</p>`;
+      // A reply carries the mail before it, quoted the way Gmail does.
+      const html: string = prev ? `${ownHtml}${quoteOf(prev)}` : ownHtml;
+      const text: string = prev ? `${own}\n\n${attribution(prev)}\n${prev.text.replace(/^/gm, "> ")}` : own;
+      const from = fromUs ? { name: sentAs(a), email: a.email } : person;
+      prev = { html, text, at, from };
       const attachments: MailAttachment[] =
         story.attach && !fromUs && k === 0
           ? [
@@ -213,13 +310,13 @@ function seedState(ws: WsData): State {
         thread_id: id,
         account_id: a.id,
         message_id: `${uuid()}@mail.example.com`,
-        from: fromUs ? { name: a.display_name, email: a.email } : person,
-        to: fromUs ? [person] : [{ name: a.display_name, email: a.email }],
+        from,
+        to: fromUs ? [person] : [{ name: writtenTo(a), email: a.email }],
         cc: !fromUs && k === 0 && r() < 0.3 ? [pickR(PEOPLE)] : [],
         bcc: [],
         reply_to: [],
         subject: k === 0 ? story.subject : `Re: ${story.subject}`,
-        snippet: text.replace(/\s+/g, " ").slice(0, 140),
+        snippet: own.replace(/\s+/g, " ").slice(0, 140),
         body_html: html,
         body_text: text,
         sent_at: at,
@@ -266,7 +363,7 @@ function seedState(ws: WsData): State {
       reply_to: [],
       subject: `Re: ${workThreads[0].subject}`,
       snippet: text,
-      body_html: `<p>${escapeHtml(text)}</p><p></p>${work.signature_html}`,
+      body_html: `<p>${escapeHtml(text)}</p><p></p><div class="od-signature">${work.signature_html}</div>`,
       body_text: text,
       sent_at: new Date(now - 25 * MIN).toISOString(),
       unread: false,
@@ -297,7 +394,7 @@ function seedState(ws: WsData): State {
       reply_to: [],
       subject,
       snippet: text.slice(0, 140),
-      body_html: `<p>${escapeHtml(text)}</p><p></p>${work.signature_html}`,
+      body_html: `<p>${escapeHtml(text)}</p><p></p><div class="od-signature">${work.signature_html}</div>`,
       body_text: text,
       sent_at: new Date(now - 3 * HOUR).toISOString(),
       unread: false,
@@ -308,6 +405,104 @@ function seedState(ws: WsData): State {
       folder_ids: [roleId(work.id, "drafts")],
       attachments: [],
       sent_by: userRef(me),
+    });
+  }
+
+  // A follow-up that quotes the one before it under its signature, as most mail clients send it.
+  {
+    const tid = uuid();
+    const subject = "Your application to Fieldway";
+    const from = { name: "Jade Morrow", email: "jade@fieldway.io" };
+    const sig = `<div>Jade Morrow<br><b>Growth @ Fieldway</b><br>28 W 23rd St, New York, NY 10010</div><br><div>Not the right time for Fieldway? Reply and I'll stop reaching out.</div><br><br><br>`;
+    const first = { text: "Matthew,\n\nHaven't heard from you, are you still interested in Fieldway?\n\nFeel free to reply with a simple yes or no.\n\nBest,\nJade", at: new Date(now - 4 * DAY).toISOString(), from };
+    const second = "Hi Matthew,\n\nI was curious to ask: what's holding you back from completing your application? It looks like you started it a few days ago but haven't submitted it yet.\n\nIf you have any questions, send me a quick note. Happy to answer by email or jump on a quick call.\n\nBest,\nJade";
+    const html = (text: string) => `<div dir="ltr">${text.split("\n\n").map((p) => `<div>${escapeHtml(p).replace(/\n/g, "<br>")}</div><div><br></div>`).join("")}${sig}</div>`;
+    threads.set(tid, { id: tid, account_id: work.id, subject, shares: emptyAudience(), assignees: [], comments: [] });
+    const msg = (text: string, body_html: string, at: string, unread: boolean, sub: string): MailMessage => ({
+      id: uuid(),
+      thread_id: tid,
+      account_id: work.id,
+      message_id: `${uuid()}@fieldway.io`,
+      from,
+      to: [{ name: work.display_name, email: work.email }],
+      cc: [],
+      bcc: [],
+      reply_to: [],
+      subject: sub,
+      snippet: text.replace(/\s+/g, " ").slice(0, 140),
+      body_html,
+      body_text: text,
+      sent_at: at,
+      unread,
+      starred: false,
+      draft: false,
+      folder_ids: [roleId(work.id, "inbox")],
+      attachments: [],
+      sent_by: null,
+    });
+    const firstHtml = html(first.text);
+    messages.push(msg(first.text, firstHtml, first.at, false, subject));
+    messages.push(msg(second, `${html(second)}${quoteOf({ ...first, html: firstHtml })}`, new Date(now - 12 * MIN).toISOString(), true, `Re: ${subject}`));
+  }
+
+  // Mail that only claims to be from PayPal: it fails DMARC, so it carries a warning.
+  {
+    const tid = uuid();
+    const subject = "Your account access has been limited";
+    const text = "We noticed unusual activity on your account. To restore access, confirm your details within 24 hours.\n\nConfirm your account: https://paypal-review.example/confirm\n\nPayPal Security";
+    threads.set(tid, { id: tid, account_id: work.id, subject, shares: emptyAudience(), assignees: [], comments: [] });
+    messages.push({
+      id: uuid(),
+      thread_id: tid,
+      account_id: work.id,
+      message_id: `${uuid()}@mail-relay.top`,
+      from: { name: "PayPal", email: "service@paypal.com" },
+      to: [{ name: work.display_name, email: work.email }],
+      cc: [],
+      bcc: [],
+      reply_to: [{ name: "", email: "support-desk@mail-relay.top" }],
+      subject,
+      snippet: text.replace(/\s+/g, " ").slice(0, 140),
+      body_html: `<p>${escapeHtml(text).replace(/\n\n/g, "</p><p>").replace(/\n/g, "<br>")}</p>`,
+      body_text: text,
+      sent_at: new Date(now - 95 * MIN).toISOString(),
+      unread: true,
+      starred: false,
+      draft: false,
+      folder_ids: [roleId(work.id, "inbox")],
+      attachments: [],
+      sent_by: null,
+    });
+  }
+
+  // A customer writing to one of the Gmail account's send-as addresses (support@): a reply goes from it.
+  {
+    const tid = uuid();
+    const subject = "Export to CSV keeps timing out";
+    const from = { name: "Priya Shah", email: "priya@cobalt.dev" };
+    const text = "Hi Margin team,\n\nExporting our workspace to CSV times out after about a minute. It worked last week. Is there a size limit we hit?\n\nThanks,\nPriya";
+    threads.set(tid, { id: tid, account_id: work.id, subject, shares: emptyAudience(), assignees: [], comments: [] });
+    messages.push({
+      id: uuid(),
+      thread_id: tid,
+      account_id: work.id,
+      message_id: `${uuid()}@cobalt.dev`,
+      from,
+      to: [{ name: "Margin Support", email: "support@margin.app" }],
+      cc: [],
+      bcc: [],
+      reply_to: [],
+      subject,
+      snippet: text.replace(/\s+/g, " ").slice(0, 140),
+      body_html: `<p>${escapeHtml(text).replace(/\n\n/g, "</p><p>").replace(/\n/g, "<br>")}</p>`,
+      body_text: text,
+      sent_at: new Date(now - 12 * MIN).toISOString(),
+      unread: true,
+      starred: false,
+      draft: false,
+      folder_ids: [roleId(work.id, "inbox")],
+      attachments: [],
+      sent_by: null,
     });
   }
 
@@ -333,7 +528,7 @@ function seedState(ws: WsData): State {
       account_id: sales.id,
       message_id: `${uuid()}@webdrop.dev`,
       from,
-      to: [{ name: sales.display_name, email: sales.email }],
+      to: [{ name: writtenTo(sales), email: sales.email }],
       cc: [],
       bcc: [],
       reply_to: [],
@@ -418,9 +613,91 @@ function seesThread(ws: WsData, t: ThreadMeta, uid: string) {
 
 function accountOut(ws: WsData, a: Account): MailAccount {
   const me = db.meId;
-  const { ownerId, ...rest } = a;
+  const { ownerId, aliases: _aliases, defaultFrom: _default, ...rest } = a;
   const manage = (!!ownerId && ownerId === me) || (a.visibility === "shared" && isAdmin(ws, me));
-  return { ...rest, owner: userRef(ownerId), can_manage: manage, unread: unreadInbox(ws, a.id), imap: manage ? a.imap : undefined };
+  return { ...rest, owner: userRef(ownerId), can_manage: manage, unread: unreadInbox(ws, a.id), imap: manage ? a.imap : undefined, identities: identitiesOut(ws, a), default_from: defaultOf(a) };
+}
+
+/** An address of the account that can send, if email is one. */
+function sendableAddress(a: Account, email: string | undefined): MailIdentity | undefined {
+  const e = (email ?? "").trim().toLowerCase();
+  if (!e) return undefined;
+  return rawIdentities(a).find((i) => i.email === e && i.can_send);
+}
+const defaultOf = (a: Account) => (a.defaultFrom && a.aliases.some((x) => x.email === a.defaultFrom && x.can_send) ? a.defaultFrom : a.email.toLowerCase());
+
+/** Its own address first (the account's From name and signature), then the others, as stored. */
+function rawIdentities(a: Account): MailIdentity[] {
+  const def = defaultOf(a);
+  const own: MailIdentity = {
+    id: null,
+    email: a.email.toLowerCase(),
+    display_name: a.display_name,
+    signature_html: a.signature_html,
+    reply_to: "",
+    primary: true,
+    default: false,
+    source: "account",
+    verification: "accepted",
+    can_send: true,
+    signature_sync: a.signature_sync,
+    display_name_sync: a.display_name_sync,
+    signature_synced_at: a.signature_synced_at,
+  };
+  return [own, ...a.aliases].map((i) => ({ ...i, default: i.email === def }));
+}
+
+const templated = (sig: string) => /\{\{|\{%/.test(sig);
+
+/** A From name as your mail carries it: {agent} is you, {mailbox} the account's name. */
+function filledName(ws: WsData, a: Account, format: string): string {
+  return hasFromVars(format) ? collabFromName(format, { agent: meUser().name, account: a.name || a.email, workspace: ws.workspace.name }) : format;
+}
+
+/** The addresses for the API: each From name and signature filled for you, and whether Gmail keeps its own. */
+function identitiesOut(ws: WsData, a: Account): MailIdentity[] {
+  const google = a.provider === "google";
+  return rawIdentities(a).map((i) => {
+    const from_name = filledName(ws, a, i.display_name || a.display_name);
+    return {
+      ...i,
+      from_name,
+      filled_signature_html: templated(i.signature_html) ? fillForSender(ws, i.signature_html, { name: from_name, email: i.email }) : null,
+      display_name_local: google && hasFromVars(i.display_name),
+      signature_local: google && templated(i.signature_html),
+    };
+  });
+}
+
+/** A From name and signature as the server checks them (422 with the first problem). */
+function checkSender(name: unknown, signature: unknown) {
+  if (typeof name === "string" && /[{}]/.test(name)) {
+    const problem = fromNameProblem(name, COLLAB_FROM_VARS);
+    if (problem === "variable") throw invalid("display_name takes only the variables {agent}, {agent_first}, {mailbox} and {workspace}");
+    if (problem) throw invalid(problem === "long" ? "display_name must be 80 characters or less" : "display_name cannot contain < or > characters");
+  }
+  if (typeof signature === "string") {
+    const p = collabSignatureProblems(signature)[0];
+    if (p) throw invalid(p.message);
+  }
+}
+
+/** The account's address a message was sent from or written to. */
+function ownAddressOf(a: Account, m: MailMessage): string | null {
+  const own = new Set(rawIdentities(a).map((i) => i.email));
+  return [m.from, ...m.to, ...m.cc].map((x) => x.email.toLowerCase()).find((e) => own.has(e)) ?? null;
+}
+
+/** The From of mail sent from the account: the chosen address (422 when it is not one that can send), else for a reply the one it answers, else the default. */
+function senderFor(ws: WsData, a: Account, fromEmail: unknown, replied?: MailMessage): MailAddress {
+  // The From name names whoever sends (a format like "{agent} at Margin Sales").
+  if (typeof fromEmail === "string" && fromEmail.trim()) {
+    const i = sendableAddress(a, fromEmail);
+    if (!i) throw invalid("Choose one of the account's addresses to send from.");
+    return { name: filledName(ws, a, i.display_name || a.display_name), email: i.email };
+  }
+  const i = sendableAddress(a, replied ? (ownAddressOf(a, replied) ?? undefined) : undefined) ?? sendableAddress(a, defaultOf(a))!;
+  return { name: filledName(ws, a, i.display_name || a.display_name), email: i.email };
 }
 
 const msgsOf = (s: State, threadId: string) => s.messages.filter((m) => m.thread_id === threadId).sort((a, b) => a.sent_at.localeCompare(b.sent_at));
@@ -432,8 +709,10 @@ function threadOut(ws: WsData, t: ThreadMeta): MailThread {
   const a = s.accounts.find((x) => x.id === t.account_id);
   const people: MailAddress[] = [];
   for (const m of [...ms].reverse()) for (const p of [m.from, ...m.to, ...m.cc]) if (!people.some((x) => x.email === p.email)) people.push(p);
-  const own = people.filter((p) => p.email === a?.email);
-  const others = people.filter((p) => p.email !== a?.email);
+  const mine = new Set(a ? rawIdentities(a).map((i) => i.email) : []);
+  const own = people.filter((p) => mine.has(p.email.toLowerCase()));
+  const others = people.filter((p) => !mine.has(p.email.toLowerCase()));
+  const aliases = new Set(a?.aliases.map((x) => x.email) ?? []);
   return {
     id: t.id,
     account_id: t.account_id,
@@ -449,6 +728,7 @@ function threadOut(ws: WsData, t: ThreadMeta): MailThread {
     shared: t.shares.everyone || t.shares.team_ids.length > 0 || t.shares.user_ids.length > 0,
     assignees: t.assignees.map((id) => userRef(id)).filter((x): x is NonNullable<typeof x> => !!x),
     comment_count: t.comments.length,
+    to_address: people.map((p) => p.email.toLowerCase()).find((e) => aliases.has(e)) ?? null,
   };
 }
 
@@ -457,8 +737,8 @@ function detailOut(ws: WsData, t: ThreadMeta): MailThreadDetail {
   const a = s.accounts.find((x) => x.id === t.account_id)!;
   return {
     thread: threadOut(ws, t),
-    account: { id: a.id, email: a.email, name: a.name, display_name: a.display_name, color: a.color, provider: a.provider, signature_html: a.signature_html },
-    messages: msgsOf(s, t.id),
+    account: { id: a.id, email: a.email, name: a.name, display_name: a.display_name, color: a.color, provider: a.provider, signature_html: a.signature_html, identities: identitiesOut(ws, a), default_from: defaultOf(a) },
+    messages: msgsOf(s, t.id).map((m) => ({ ...m, own_address: ownAddressOf(a, m) })),
     comments: t.comments,
     shares: t.shares,
     can_act: canActRole(ws, db.meId),
@@ -519,6 +799,8 @@ function listThreads(ws: WsData, ctx: Ctx) {
       }
     });
   }
+  const to = (ctx.query.get("to") ?? "").trim().toLowerCase();
+  if (to) rows = rows.filter((t) => msgsOf(s, t.id).some((m) => [m.from, ...m.to, ...m.cc].some((x) => x.email.toLowerCase() === to)));
   if (q)
     rows = rows.filter(
       (t) =>
@@ -725,6 +1007,8 @@ export function registerCollab() {
       display_name_sync: "none",
       out_of_office: null,
       out_of_office_sync: "none",
+      aliases: [],
+      defaultFrom: "",
       imap: {
         imap_host: String(b.imap_host),
         imap_port: Number(b.imap_port),
@@ -756,17 +1040,24 @@ export function registerCollab() {
     // Two-way settings are made at Gmail first; a From name someone chose stops following Microsoft's.
     if (b.signature_html === "<p>gmail refuses</p>" && a.signature_sync === "two_way") throw new HttpError(502, "provider_error", "Gmail refused the request (400 INVALID_ARGUMENT).");
     if (typeof b.name === "string") a.name = b.name.trim() || a.email;
+    checkSender(b.display_name, b.signature_html);
+    // A value with variables is kept in opendesk: Gmail keeps its own (contracts/collab.md "Account settings").
     if (typeof b.display_name === "string" && b.display_name.trim() !== a.display_name) {
-      a.display_name = b.display_name.trim();
+      a.display_name = b.display_name.trim().replace(/\s+/g, " ");
       if (a.provider === "microsoft") a.display_name_sync = "none";
+      if (a.display_name_sync === "two_way" && !hasFromVars(a.display_name)) providerName.set(a.id, a.display_name);
     }
     if (typeof b.color === "string") a.color = b.color;
     if (typeof b.signature_html === "string" && b.signature_html !== a.signature_html) {
       a.signature_html = b.signature_html;
-      if (a.signature_sync === "two_way") {
+      if (a.signature_sync === "two_way" && !templated(b.signature_html)) {
         providerSignature.set(a.id, b.signature_html);
         a.signature_synced_at = nowIso();
       }
+    }
+    if (typeof b.default_from === "string") {
+      if (!sendableAddress(a, b.default_from)) throw invalid("Choose one of the account's addresses that can send.");
+      a.defaultFrom = b.default_from.trim().toLowerCase() === a.email.toLowerCase() ? "" : b.default_from.trim().toLowerCase();
     }
     if (b.visibility === "private" || b.visibility === "shared") a.visibility = b.visibility;
     if (b.shared_with !== undefined) a.shared_with = audienceFrom(b.shared_with);
@@ -795,6 +1086,38 @@ export function registerCollab() {
     return accountOut(ctx.ws, a);
   });
 
+  post("/v1/collab/accounts/:id/display-name/pull", (ctx) => {
+    requireCollab(ctx.ws);
+    const a = accountOr404(ctx.ws, ctx.params.id);
+    requireManage(ctx.ws, a);
+    if (a.provider !== "google") throw new HttpError(422, "display_name_sync_unsupported", "Only Gmail accounts share their From name with opendesk.");
+    a.display_name = providerName.get(a.id) || meUser().name;
+    emit(ctx.ws, "collab.accounts", { account_id: a.id }, audienceOf(ctx.ws, a.id, []));
+    return accountOut(ctx.ws, a);
+  });
+
+  // Your From name and signature filled for you, as typed (nothing saved).
+  post("/v1/collab/accounts/:id/identities/preview", (ctx) => {
+    requireCollab(ctx.ws);
+    const a = accountOr404(ctx.ws, ctx.params.id);
+    requireManage(ctx.ws, a);
+    const b = ctx.body;
+    const email = String(b.email ?? "").trim().toLowerCase() || a.email.toLowerCase();
+    let format = String(b.display_name ?? "").trim() || a.display_name;
+    const problem = /[{}<>]/.test(format) ? fromNameProblem(format, COLLAB_FROM_VARS) : null;
+    const from_name_problem = problem ? "Fix the From name first." : "";
+    if (problem) format = "";
+    const from_name = filledName(ctx.ws, a, format);
+    const sig = String(b.signature_html ?? "");
+    return {
+      from_name,
+      from: from_name ? `${from_name} <${email}>` : email,
+      signature_html: templated(sig) ? fillForSender(ctx.ws, sig, { name: from_name, email }) : sig,
+      from_name_problem,
+      problems: collabSignatureProblems(sig),
+    };
+  });
+
   put("/v1/collab/accounts/:id/out-of-office", (ctx) => {
     requireCollab(ctx.ws);
     const a = accountOr404(ctx.ws, ctx.params.id);
@@ -818,6 +1141,88 @@ export function registerCollab() {
     a.out_of_office = o;
     emit(ctx.ws, "collab.accounts", { account_id: a.id }, audienceOf(ctx.ws, a.id, []));
     return accountOut(ctx.ws, a);
+  });
+
+  // Addresses (contracts/collab.md "Addresses"): Gmail's come from Gmail; Microsoft's and IMAP's are added by hand.
+  const identityOr404 = (a: Account, id: string) => {
+    const i = a.aliases.find((x) => x.id === id);
+    if (!i) throw notFound("Address");
+    return i;
+  };
+  post("/v1/collab/accounts/:id/identities", (ctx) => {
+    requireCollab(ctx.ws);
+    const a = accountOr404(ctx.ws, ctx.params.id);
+    requireManage(ctx.ws, a);
+    if (a.provider === "google") throw new HttpError(422, "identities_from_provider", "Add and remove send-as addresses in Gmail's settings (Accounts, Send mail as). They show here within 15 minutes.");
+    const b = ctx.body;
+    const email = String(b.email ?? "").trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw invalid("Enter the address to send from.");
+    if (email === a.email.toLowerCase() || a.aliases.some((x) => x.email === email)) throw new HttpError(409, "identity_conflict", "The account already has this address.");
+    checkSender(b.display_name, b.signature_html);
+    a.aliases.push({
+      ...alias(email, String(b.display_name ?? "").trim(), String(b.signature_html ?? "")),
+      source: "manual",
+      reply_to: String(b.reply_to ?? "").trim().toLowerCase(),
+      signature_sync: "none",
+      display_name_sync: "none",
+      signature_synced_at: null,
+    });
+    emit(ctx.ws, "collab.accounts", { account_id: a.id }, audienceOf(ctx.ws, a.id, []));
+    return accountOut(ctx.ws, a);
+  });
+  patch("/v1/collab/accounts/:id/identities/:identityId", (ctx) => {
+    requireCollab(ctx.ws);
+    const a = accountOr404(ctx.ws, ctx.params.id);
+    requireManage(ctx.ws, a);
+    const i = identityOr404(a, ctx.params.identityId);
+    const b = ctx.body;
+    if (typeof b.reply_to === "string" && i.source === "provider" && b.reply_to.trim().toLowerCase() !== i.reply_to) throw invalid("Gmail keeps this address's reply-to. Change it in Gmail's settings.");
+    checkSender(b.display_name, b.signature_html);
+    if (typeof b.display_name === "string") i.display_name = b.display_name.trim().replace(/\s+/g, " ");
+    // Kept here: Gmail lets apps change its main address alone (a later change in Gmail replaces it).
+    if (typeof b.signature_html === "string") i.signature_html = b.signature_html;
+    if (typeof b.reply_to === "string" && i.source === "manual") i.reply_to = b.reply_to.trim().toLowerCase();
+    emit(ctx.ws, "collab.accounts", { account_id: a.id }, audienceOf(ctx.ws, a.id, []));
+    return accountOut(ctx.ws, a);
+  });
+  post("/v1/collab/accounts/:id/identities/:identityId/signature/pull", (ctx) => {
+    requireCollab(ctx.ws);
+    const a = accountOr404(ctx.ws, ctx.params.id);
+    requireManage(ctx.ws, a);
+    const i = identityOr404(a, ctx.params.identityId);
+    if (i.source !== "provider") throw new HttpError(422, "signature_sync_unsupported", "Only Gmail's send-as addresses share their signature with opendesk.");
+    i.signature_html = providerSignature.get(i.id!) ?? i.signature_html;
+    i.signature_synced_at = nowIso();
+    emit(ctx.ws, "collab.accounts", { account_id: a.id }, audienceOf(ctx.ws, a.id, []));
+    return accountOut(ctx.ws, a);
+  });
+  post("/v1/collab/accounts/:id/identities/:identityId/display-name/pull", (ctx) => {
+    requireCollab(ctx.ws);
+    const a = accountOr404(ctx.ws, ctx.params.id);
+    requireManage(ctx.ws, a);
+    const i = identityOr404(a, ctx.params.identityId);
+    if (i.source !== "provider") throw new HttpError(422, "display_name_sync_unsupported", "Only Gmail accounts share their From name with opendesk.");
+    i.display_name = providerName.get(i.id!) ?? i.display_name;
+    emit(ctx.ws, "collab.accounts", { account_id: a.id }, audienceOf(ctx.ws, a.id, []));
+    return accountOut(ctx.ws, a);
+  });
+  del("/v1/collab/accounts/:id/identities/:identityId", (ctx) => {
+    requireCollab(ctx.ws);
+    const a = accountOr404(ctx.ws, ctx.params.id);
+    requireManage(ctx.ws, a);
+    const i = identityOr404(a, ctx.params.identityId);
+    if (i.source === "provider") throw new HttpError(422, "identities_from_provider", "Add and remove send-as addresses in Gmail's settings (Accounts, Send mail as).");
+    a.aliases = a.aliases.filter((x) => x.id !== i.id);
+    if (a.defaultFrom === i.email) a.defaultFrom = "";
+    emit(ctx.ws, "collab.accounts", { account_id: a.id }, audienceOf(ctx.ws, a.id, []));
+    return accountOut(ctx.ws, a);
+  });
+  get("/v1/collab/accounts/:id/identities/suggestions", (ctx) => {
+    requireCollab(ctx.ws);
+    const a = accountOr404(ctx.ws, ctx.params.id);
+    requireManage(ctx.ws, a);
+    if (a.provider !== "microsoft") return { addresses: [] };
+    return { addresses: ["deals@margin.app", "partners@margin.app"].filter((e) => !a.aliases.some((x) => x.email === e)) };
   });
 
   del("/v1/collab/accounts/:id", (ctx) => {
@@ -934,6 +1339,16 @@ export function registerCollab() {
     return detailOut(ctx.ws, threadOr404(ctx.ws, ctx.params.id));
   });
 
+  get("/v1/collab/messages/:id/details", (ctx) => {
+    requireCollab(ctx.ws);
+    const s = state(ctx.ws);
+    const m = s.messages.find((x) => x.id === ctx.params.id);
+    if (!m) throw notFound("Message");
+    const t = threadOr404(ctx.ws, m.thread_id);
+    const a = s.accounts.find((x) => x.id === t.account_id)!;
+    return messageDetails(m, a.provider, m.sent_by !== null || m.from.email === a.email);
+  });
+
   post("/v1/collab/threads/actions", (ctx) => {
     requireCollab(ctx.ws);
     requireAct(ctx.ws);
@@ -1040,6 +1455,7 @@ export function registerCollab() {
     if (to.some((e) => e.endsWith("@bounce.test"))) throw new HttpError(502, "send_failed", "The provider refused the message: 550 5.1.1 mailbox unavailable");
     const replied = mode !== "new" ? s.messages.find((m) => m.id === b.message_id) : undefined;
     if (mode !== "new" && !replied) throw invalid("message_id is required unless new");
+    const from = senderFor(ctx.ws, a, b.from_email, replied);
     let thread: ThreadMeta;
     if (replied && mode !== "forward") thread = s.threads.get(replied.thread_id)!;
     else {
@@ -1056,7 +1472,7 @@ export function registerCollab() {
       thread_id: thread.id,
       account_id: a.id,
       message_id: `${uuid()}@margin.app`,
-      from: { name: a.display_name, email: a.email },
+      from,
       to: to.map(addr),
       cc: cc.map(addr),
       bcc: bcc.map(addr),
@@ -1100,8 +1516,10 @@ export function registerCollab() {
     const kept = m.attachments.filter((x) => !x.inline && (keep ? keep.includes(x.id) : true));
     const html = String(b.body_html ?? "");
     const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    // A draft keeps its From unless another of the account's addresses is chosen.
+    const from = typeof b.from_email === "string" && b.from_email.trim() ? senderFor(ws, a, b.from_email) : sendableAddress(a, m.from.email) ? senderFor(ws, a, m.from.email) : senderFor(ws, a, undefined);
     Object.assign(m, {
-      from: { name: a.display_name, email: a.email },
+      from,
       to: to.map(addr),
       cc: cc.map(addr),
       bcc: bcc.map(addr),
@@ -1139,7 +1557,7 @@ export function registerCollab() {
       thread_id: thread.id,
       account_id: a.id,
       message_id: `${uuid()}@margin.app`,
-      from: { name: a.display_name, email: a.email },
+      from: senderFor(ctx.ws, a, b.from_email, replied),
       to: [],
       cc: [],
       bcc: [],
@@ -1219,4 +1637,51 @@ export function registerCollab() {
     state(ctx.ws).prefs[db.meId] = p;
     return p;
   });
+}
+
+// How the mock's mail came: senders on their own domain pass every check; a few come
+// through a mailing service ("via"), and the PayPal look-alike fails DMARC.
+const MOCK_SOURCES: Record<string, Partial<MailMessageDetails>> = {
+  "service@paypal.com": { mailed_by: "mail-relay.top", signed_by: [], via: "mail-relay.top", spf: "softfail", dkim: "none", dmarc: "fail", encryption: "none", warning: "spoofed" },
+  "newsletter@webdrop.dev": { mailed_by: "mg.mailgun.org", signed_by: ["mailgun.org"], via: "mailgun.org" },
+};
+
+function messageDetails(m: MailMessage, provider: string, fromAccount: boolean): MailMessageDetails {
+  const domain = m.from.email.split("@")[1] ?? "";
+  const date = new Date(m.sent_at).toUTCString().replace("GMT", "+0000");
+  const addr = (xs: MailAddress[]) => xs.map((x) => (x.name ? `${x.name} <${x.email}>` : x.email)).join(", ");
+  const base: [string, string][] = [
+    ["From", addr([m.from])],
+    ["To", addr(m.to)],
+    ...(m.cc.length ? [["Cc", addr(m.cc)] as [string, string]] : []),
+    ...(m.reply_to.length ? [["Reply-To", addr(m.reply_to)] as [string, string]] : []),
+    ["Subject", m.subject],
+    ["Date", date],
+    ["Message-ID", `<${m.message_id}>`],
+    ["MIME-Version", "1.0"],
+    ["Content-Type", 'multipart/alternative; boundary="000000000000a1b2c3"'],
+  ];
+  if (fromAccount) {
+    const headers = [...base, ...(m.bcc.length ? [["Bcc", addr(m.bcc)] as [string, string]] : [])];
+    return { mailed_by: "", signed_by: [], via: "", spf: "", dkim: "", dmarc: "", encryption: "", warning: "", headers: headers.map(([name, value]) => ({ name, value })) };
+  }
+  const d: MailMessageDetails = { mailed_by: domain, signed_by: [domain], via: "", spf: "pass", dkim: "pass", dmarc: "pass", encryption: "tls", warning: "", headers: [], ...MOCK_SOURCES[m.from.email] };
+  const mx = provider === "google" ? "mx.google.com" : provider === "microsoft" ? "outlook.office365.com" : "mx.margin.app";
+  const signer = d.signed_by[0];
+  const results = [
+    signer ? `dkim=pass header.i=@${signer} header.s=s1 header.b=Xk3pQa9z` : "dkim=none (no signature)",
+    `spf=${d.spf} (${mx}: domain of bounce@${d.mailed_by} ${d.spf === "pass" ? "designates 203.0.113.24 as permitted sender" : "does not designate 198.51.100.7 as permitted sender"}) smtp.mailfrom=bounce@${d.mailed_by}`,
+    `dmarc=${d.dmarc} (p=${d.dmarc === "fail" ? "REJECT" : "NONE"} sp=NONE dis=${d.dmarc === "fail" ? "QUARANTINE" : "NONE"}) header.from=${domain}`,
+  ];
+  const sending = d.encryption === "tls" ? "with ESMTPS id 5b1f17b1804b1-43a8f" : "with ESMTP id 9c2a64e1f0a3d-12be4";
+  d.headers = [
+    { name: "Delivered-To", value: m.to[0]?.email ?? "" },
+    { name: "Received", value: `by 2002:a05:7300:5b8e:b0:1a4 with SMTP id k14csp; ${date}` },
+    { name: "Authentication-Results", value: `${mx}; ${results.join("; ")}` },
+    { name: "Return-Path", value: `<bounce@${d.mailed_by}>` },
+    { name: "Received", value: `from mta-24.${d.mailed_by} (mta-24.${d.mailed_by}. [203.0.113.24]) by ${mx} ${sending} for <${m.to[0]?.email ?? ""}>; ${date}` },
+    ...(signer ? [{ name: "DKIM-Signature", value: `v=1; a=rsa-sha256; c=relaxed/relaxed; d=${signer}; s=s1; h=from:to:subject:date:message-id; bh=47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=; b=Xk3pQa9z` }] : []),
+    ...base.map(([name, value]) => ({ name, value })),
+  ];
+  return d;
 }

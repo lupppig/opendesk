@@ -1,5 +1,6 @@
 // Builds the mock database: the Margin workspace (rich) and Lumen Labs (small).
 
+import { normalizeAliases, setGmailSendAs } from "./aliases";
 import { applyDecisions, severityFor } from "./decisions";
 import type {
   ApiKey,
@@ -400,7 +401,9 @@ function seedMargin(): WsData {
     forwarding_address: "margin-support-2m9q@in.opendesk.sh",
     config: { oauth_email: "support@margin.app" },
     team_id: teamId("Support"),
-    aliases: ["help@margin.app", "hello@margin.app"],
+    // hello@lumen.studio is Lumen, a side project answered from the same inbox with its own
+    // name, signature and brand (filled in once the brands exist, below).
+    aliases: ["help@margin.app", "hello@margin.app", "hello@lumen.studio"],
     // hello@ is where partners write; it has a team of its own.
     alias_teams: { "hello@margin.app": teamId("Partnerships")! },
     // The contact form on margin.app sends from this address with the visitor as Reply-To.
@@ -412,6 +415,7 @@ function seedMargin(): WsData {
     ai_answers: true,
     status: "active",
     last_synced_at: ago(40 * 1000),
+    last_received_at: ago(3 * MIN),
     created_at: ago(300 * DAY),
   };
   const billing: Mailbox = {
@@ -429,6 +433,7 @@ function seedMargin(): WsData {
     aliases: ["invoices@margin.app"],
     status: "active",
     last_synced_at: ago(12 * MIN),
+    last_received_at: ago(11 * DAY),
     created_at: ago(260 * DAY),
   };
   const partners: Mailbox = {
@@ -444,6 +449,7 @@ function seedMargin(): WsData {
     status: "error",
     last_error: "IMAP login failed: [AUTHENTICATIONFAILED] Invalid credentials",
     last_synced_at: ago(2 * DAY),
+    last_received_at: ago(2 * DAY),
     created_at: ago(90 * DAY),
   };
   const legal: Mailbox = {
@@ -466,6 +472,7 @@ function seedMargin(): WsData {
     auto_reply_html: "<p>Thanks for writing to our legal team. We answer within two working days, and within 30 days for GDPR requests.</p>",
     status: "active",
     last_synced_at: ago(25 * MIN),
+    last_received_at: ago(5 * 60 * MIN),
     created_at: ago(160 * DAY),
   };
   const security: Mailbox = {
@@ -484,6 +491,7 @@ function seedMargin(): WsData {
     from_name_format: "{agent} at {mailbox}",
     status: "active",
     last_synced_at: ago(2 * MIN),
+    last_received_at: ago(40 * MIN),
     created_at: ago(120 * DAY),
   };
   const pressroom: Mailbox = {
@@ -503,6 +511,7 @@ function seedMargin(): WsData {
     signature_html: "<p>{{agent.first_name}}, Pressroom<br>pressroom.app</p>",
     status: "active",
     last_synced_at: ago(4 * MIN),
+    last_received_at: ago(2 * 60 * MIN),
     created_at: ago(70 * DAY),
   };
   ws.mailboxes = [support, billing, legal, security, partners, pressroom];
@@ -528,8 +537,31 @@ function seedMargin(): WsData {
   });
   const marginBrand = brand("Margin", "margin", "#4f46e5", 400, { is_default: true });
   const pressBrand = brand("Pressroom", "pressroom", "#e11d48", 70, { position: 1, help_center: { enabled: false, title: "Pressroom Help Desk", url: "", default_url: "", domain: null } });
-  ws.brands = [marginBrand, pressBrand];
+  // Lumen, a side project: one alias of the Support mailbox, no mailbox of its own.
+  const lumenBrand = brand("Lumen", "lumen", "#0d9488", 30, { position: 2, help_center: { enabled: true, title: "Lumen Help", url: "", default_url: "", domain: null } });
+  ws.brands = [marginBrand, pressBrand, lumenBrand];
   for (const m of ws.mailboxes) m.brand_id = m === pressroom ? pressBrand.id : marginBrand.id;
+  // Gmail's send-as addresses for support@: help@ and Lumen's are verified, so replies go out
+  // From them; hello@margin.app is not one, so its replies answer from support@.
+  const gmailSendAs = [
+    { email: "help@margin.app", display_name: "Margin Help", verified: true },
+    { email: "hello@lumen.studio", display_name: "Lumen", verified: true },
+    { email: "sales@margin.app", display_name: "Margin Sales", verified: true },
+    { email: "jobs@lumen.studio", display_name: "Lumen Careers", verified: true },
+    { email: "press@margin.app", display_name: "Margin Press", verified: false },
+  ];
+  setGmailSendAs(support, gmailSendAs);
+  support.provider_send_as = { readable: true, checked_at: ago(3 * 60 * MIN), addresses: gmailSendAs };
+  support.alias_settings = {
+    "hello@lumen.studio": {
+      display_name: "Lumen",
+      signature_html: "<p>{{agent.first_name}} from Lumen<br>lumen.studio · Photo journals for small teams</p>",
+      brand_id: lumenBrand.id,
+      send_as: "verified",
+      send_as_by: "provider",
+    },
+  };
+  for (const m of ws.mailboxes) normalizeAliases(m);
 
   // Chat widgets, one per website. Topics route a conversation before its first message.
   const topic = (label: string, team: Parameters<typeof teamId>[0]) => ({ id: uuid(), label, team_id: teamId(team) });
@@ -849,6 +881,8 @@ function seedMargin(): WsData {
     { subject: "Custom domain for my publication", contact: 18, to: "", mailbox: pressroom, team: "Support", status: "open", priority: "normal", assignee: "priya", hours: 7, body: "I added the CNAME record two days ago but the domain still shows as pending.", channel: "chat", widget: pressWidget, page: "https://app.pressroom.app/settings/domain" },
     { subject: "Import subscribers from Substack", contact: 21, to: "support@pressroom.app", mailbox: pressroom, team: "Support", status: "pending", priority: "normal", assignee: "sam", hours: 28, body: "I exported my list from Substack as CSV. The import says 0 subscribers found." },
     { subject: "Refund for a paid subscriber", contact: 24, to: "hello@pressroom.app", mailbox: pressroom, team: "Billing", status: "open", priority: "normal", assignee: null, hours: 11, body: "A reader paid twice for an annual subscription. How do I refund one of the charges?" },
+    { subject: "Shared journal stopped syncing photos", contact: 31, to: "hello@lumen.studio", mailbox: support, team: "Support", status: "open", priority: "high", assignee: null, hours: 2, body: "Since this morning new photos in our team journal stay on my phone. The web app shows nothing after 8:12." },
+    { subject: "Can Lumen export a journal as PDF?", contact: 35, to: "hello@lumen.studio", mailbox: support, team: "Support", status: "pending", priority: "low", assignee: "priya", hours: 30, body: "We'd like to print last year's journal for the office. Is there a PDF export, or a way to get the photos out in order?" },
     { subject: "Pricing question", contact: 27, to: "", mailbox: support, team: "Billing", status: "open", priority: "normal", assignee: null, hours: 1, body: "Is the Business plan billed per member or per workspace?", channel: "chat", widget: marketingSite, page: "https://margin.app/pricing", topic: marketingTopics[0].id },
   ];
   const extraMeta = new Map<string, (typeof extra)[number]>();
@@ -1060,8 +1094,12 @@ function seedMargin(): WsData {
     }
     const arrived = ws.mailboxes.find((m) => m.id === t.mailbox_id) ?? support;
     t.origin_mailbox_id = arrived.id;
-    t.brand_id = arrived.brand_id;
     t.received_at = x?.to || (arrived.aliases.length && chance(0.25) ? arrived.aliases[0] : arrived.email);
+    // An alias with a brand of its own gives its tickets that brand.
+    t.brand_id = arrived.alias_settings?.[t.received_at]?.brand_id ?? arrived.brand_id;
+    // Its emails were written to that address too.
+    if (t.channel === "email" && t.received_at !== arrived.email)
+      for (const m of ws.messages) if (m.ticket_id === t.id && m.direction === "inbound" && !m.thread_id) Object.assign(m, { to: [t.received_at], received_at: t.received_at });
     if (t.channel === "api" || t.channel === "portal") {
       t.routed = t.team_id ? { via: "api" } : null;
       continue;

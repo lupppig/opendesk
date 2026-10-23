@@ -38,6 +38,8 @@ type sendError struct {
 	// failed connection check; detail is scrubbed before anyone sees it.
 	reason string
 	detail string
+	// sendAsDenied: the provider refused the From address as one the account may send as.
+	sendAsDenied bool
 }
 
 func (e *sendError) Error() string { return e.msg }
@@ -285,6 +287,9 @@ func providerFailure(provider string, status int, body []byte) error {
 	msg := fmt.Sprintf("%s refused the message (%d)", provider, status)
 	if detail != "" {
 		msg += ": " + detail
+	}
+	if code, _ := e.Error.Code.(string); strings.EqualFold(code, "ErrorSendAsDenied") {
+		return &sendError{msg: msg, permanent: true, sendAsDenied: true}
 	}
 	switch {
 	case status == http.StatusTooManyRequests || status >= 500:

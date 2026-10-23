@@ -713,15 +713,13 @@ func routedVia(r *domain.TicketRouted, actor Actor) string {
 	return "agent"
 }
 
-// mailboxInBrand reports whether the workspace's mailbox belongs to brand (false for nil).
+// mailboxInBrand reports whether the workspace's mailbox is an address of brand, its own or
+// an alias's (false for nil).
 func mailboxInBrand(ctx context.Context, q db.Querier, wid, brand uuid.UUID, mailbox *uuid.UUID) (bool, error) {
 	if mailbox == nil {
 		return false, nil
 	}
-	var ok bool
-	err := q.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM mailboxes WHERE workspace_id = $1 AND id = $2 AND brand_id = $3)`,
-		wid, *mailbox, brand).Scan(&ok)
-	return ok, err
+	return domain.MailboxInBrand(ctx, q, wid, brand, *mailbox)
 }
 
 // replyMailbox is where a ticket of team in brand replies from by default: the brand's

@@ -7,8 +7,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Row } from "@/components/layout";
-import { EmailPreview } from "@/components/templates/EmailPreview";
-import { TemplateEditor } from "@/components/templates/TemplateEditor";
+import { SignatureEditor } from "@/components/templates/SignatureEditor";
 import { Field, TextInput } from "@/components/ui/input";
 import { toast } from "@/components/ui/toast";
 import { isApiError } from "@/lib/api/client";
@@ -107,20 +106,20 @@ export function MemberProfileFields({
   ];
 
   const signatureBlock = (
-    <div className="flex flex-col gap-3">
-      <TemplateEditor
-        kind="personal_signature"
-        html
-        value={signature}
-        onChange={(v) => set("signature_html", v)}
-        ariaLabel={t("memberProfile.signature")}
-        placeholder={t("memberProfile.signaturePlaceholder")}
-        disabled={disabled}
-        problems={shown}
-      />
-      <EmailPreview collapsible defaultOpen={false} height={360} title={t("memberProfile.preview")} body={body} onProblems={onProblems} />
-      {other && <p className="text-[11.5px] leading-4 text-fg-4">{t("memberProfile.previewOther")}</p>}
-    </div>
+    <SignatureEditor
+      kind="personal_signature"
+      value={signature}
+      onChange={(v) => set("signature_html", v)}
+      ariaLabel={t("memberProfile.signature")}
+      placeholder={t("memberProfile.signaturePlaceholder")}
+      disabled={disabled}
+      problems={shown}
+      previewTitle={t("memberProfile.preview")}
+      previewHeight={360}
+      previewBody={body}
+      onProblems={onProblems}
+      footer={other && <p className="text-[11.5px] leading-4 text-fg-4">{t("memberProfile.previewOther")}</p>}
+    />
   );
 
   if (variant === "stacked")

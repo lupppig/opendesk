@@ -121,6 +121,9 @@ func (s *service) ingestRef(ctx context.Context, m *mailboxRow, raw []byte, rcpt
 			return nil
 		}
 		inserted = true
+		if _, err := tx.Exec(ctx, `UPDATE mailboxes SET last_received_at = now() WHERE id = $1`, m.ID); err != nil {
+			return err
+		}
 		_, err = s.d.Jobs.InsertTx(ctx, tx, jobs.ProcessInboundArgs{WorkspaceID: m.WorkspaceID, InboundEmailID: id},
 			&river.InsertOpts{Queue: jobs.QueueEmail, MaxAttempts: 5})
 		return err

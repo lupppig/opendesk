@@ -5,15 +5,19 @@
 // What is written is kept as a draft at the provider (POST/PUT /v1/collab/drafts) a
 // couple of seconds after typing stops and when the composer closes; Send sends that
 // draft, and Discard deletes it. A draft made anywhere (Gmail, Outlook) opens here too.
+// From picks the address it goes out from (the account's own or an alias, lib/collab/identities),
+// and the signature follows it.
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import { Loader2, Paperclip, Send, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { create } from "zustand";
 import { api, type CollabDraftBody, type CollabSendBody } from "@/lib/api/endpoints";
 import { isApiError } from "@/lib/api/client";
-import type { Attachment, MailAccount, MailAddress, MailAttachment, MailMessage, MailThreadDetail } from "@/lib/api/types";
+import type { Attachment, MailAccount, MailAddress, MailAttachment, MailIdentity, MailMessage, MailThreadDetail } from "@/lib/api/types";
+import { defaultIdentity, findIdentity, fromLabel, identitySignature, sendableIdentities } from "@/lib/collab/identities";
 import { escapeHtml, isBlankHtml } from "@/lib/collab/html";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { forwardHeader, replyRecipients, replySubject, type ComposeMode } from "@/lib/collab/recipients";
@@ -21,6 +25,7 @@ import { bytes, fullDate } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { qk } from "@/lib/queries";
 import { RichEditor, type RichEditorHandle } from "@/components/editor/RichEditor";
+import { replaceSignature, SignatureBlock, signatureBlockHtml, withoutSignature } from "@/components/editor/signature";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm";
 import { Select } from "@/components/ui/select";
@@ -45,22 +50,27 @@ export type ComposerDraft = {
   draftId?: string | null;
   /** The draft's own files (not inline images), kept on it while listed. */
   kept?: MailAttachment[];
+  /** The account's address it goes out from; the account's default when not set. */
+  from?: string;
 };
 
 // Inline drafts survive moving between conversations (memory only).
 const useDrafts = create<Record<string, ComposerDraft>>(() => ({}));
 
-/** What the account adds under what you write. */
+/** What the account adds under what you write: its signature, as one block sent as stored. */
 function withSignature(signature: string | undefined) {
-  return signature && !isBlankHtml(signature) ? `<p></p><p></p>${signature}` : "<p></p>";
+  return signature && !isBlankHtml(signature) ? `<p></p><p></p>${signatureBlockHtml(signature)}` : "<p></p>";
 }
 
 /** A fresh draft for a mode: who it goes to, its subject, and the signature (and the original, forwarding). */
-export function startDraft(mode: ComposeMode, opts: { message?: MailMessage; ownEmail: string; signature?: string; subject?: string; forwardBlock?: string }): ComposerDraft {
+export function startDraft(
+  mode: ComposeMode,
+  opts: { message?: MailMessage; ownEmail: string | readonly string[]; signature?: string; subject?: string; forwardBlock?: string; from?: string },
+): ComposerDraft {
   const r = opts.message ? replyRecipients(opts.message, opts.ownEmail, mode) : { to: [], cc: [] };
   const subject = opts.message ? replySubject(opts.message.subject, mode) : (opts.subject ?? "");
   const html = withSignature(opts.signature) + (mode === "forward" && opts.forwardBlock ? opts.forwardBlock : "");
-  return { mode, to: r.to, cc: r.cc, bcc: [], subject, html, showCc: r.cc.length > 0, showBcc: false };
+  return { mode, to: r.to, cc: r.cc, bcc: [], subject, html, showCc: r.cc.length > 0, showBcc: false, from: opts.from };
 }
 
 /** A stored draft, as the composer opens it: a reply when it answers a message, else new mail. */
@@ -77,6 +87,7 @@ export function draftFromMessage(m: MailMessage): ComposerDraft {
     showBcc: m.bcc.length > 0,
     draftId: m.draft_id ?? m.id,
     kept: m.attachments.filter((a) => !a.inline),
+    from: m.from.email || undefined,
   };
 }
 
@@ -86,11 +97,14 @@ type SaveState = "idle" | "saving" | "saved" | "error";
 /** Typing stops this long before the draft is saved. */
 const SAVE_AFTER_MS = 2000;
 
+/** An account the composer sends from, with its addresses. */
+export type ComposerAccount = Pick<MailAccount, "id" | "email" | "name" | "color" | "signature_html" | "display_name"> & { identities?: MailIdentity[]; default_from?: string };
+
 export type MailComposerProps = {
   variant: "inline" | "floating";
   /** The conversation replied in (inline); its id keys the kept draft. */
   threadId?: string;
-  accounts: Pick<MailAccount, "id" | "email" | "name" | "color" | "signature_html">[];
+  accounts: ComposerAccount[];
   /** The account it sends from; floating lets you change it. */
   accountId: string;
   onAccountChange?: (id: string) => void;
@@ -118,6 +132,19 @@ export function MailComposer({ variant, threadId, accounts, accountId, onAccount
   const editor = useRef<RichEditorHandle>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const account = accounts.find((a) => a.id === accountId);
+  const navigate = useNavigate();
+  const accountIdRef = useRef(accountId);
+  accountIdRef.current = accountId;
+  // The signature block's settings button opens the account's settings (its signature and its addresses').
+  const extensions = useMemo(
+    () => [SignatureBlock.configure({ onSettings: () => void navigate({ to: "/settings/mail-accounts/$accountId", params: { accountId: accountIdRef.current } }) })],
+    [navigate],
+  );
+  // The address it goes out from, and the signature that comes with it.
+  const identity = account ? (findIdentity(account, draft.from) ?? defaultIdentity(account)) : undefined;
+  const fromEmail = identity?.email;
+  // Filled for you: a shared address's signature carries the name and details of whoever writes.
+  const signature = identity ? identitySignature(identity) : (account?.signature_html ?? "");
 
   const setDraft = (patch: Partial<ComposerDraft>) =>
     setDraftState((d) => {
@@ -135,8 +162,8 @@ export function MailComposer({ variant, threadId, accounts, accountId, onAccount
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inflight = useRef<Promise<void> | null>(null);
   const again = useRef(false);
-  const latest = useRef({ draft, uploads, keptFiles, forwardFiles, accountId, message });
-  latest.current = { draft, uploads, keptFiles, forwardFiles, accountId, message };
+  const latest = useRef({ draft, uploads, keptFiles, forwardFiles, accountId, message, fromEmail });
+  latest.current = { draft, uploads, keptFiles, forwardFiles, accountId, message, fromEmail };
   const onDraftIdRef = useRef(onDraftId);
   onDraftIdRef.current = onDraftId;
 
@@ -149,6 +176,7 @@ export function MailComposer({ variant, threadId, accounts, accountId, onAccount
       subject: s.draft.subject.trim() || (s.message && s.draft.mode !== "new" ? replySubject(s.message.subject, s.draft.mode) : ""),
       body_html: isBlankHtml(html) ? "<p></p>" : html,
       attachment_ids: s.uploads.filter((u) => u.attachment).map((u) => u.attachment!.id),
+      from_email: s.fromEmail,
     };
   };
 
@@ -249,11 +277,10 @@ export function MailComposer({ variant, threadId, accounts, accountId, onAccount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Switching the From account swaps the signature, when the text still ends with the old one.
+  // Switching the From account: the draft made in the old one goes.
   const prevAccount = useRef(accountId);
   useEffect(() => {
     if (prevAccount.current === accountId) return;
-    const before = accounts.find((a) => a.id === prevAccount.current)?.signature_html ?? "";
     prevAccount.current = accountId;
     // A draft belongs to its account: the one made in the old account goes, the next save makes it in this one.
     const old = draftIdRef.current;
@@ -265,12 +292,28 @@ export function MailComposer({ variant, threadId, accounts, accountId, onAccount
       void api.collab.drafts.remove(old).catch(() => undefined);
       if (touched.current) changed();
     }
-    const after = account?.signature_html ?? "";
+  }, [accountId, changed]);
+
+  // A saved draft whose signature takes variables carries the filled one of whoever wrote it
+  // (a teammate, on a shared account): opened here, its block takes yours, as the From name does.
+  useEffect(() => {
+    if (!initial.draftId || identity?.filled_signature_html == null) return;
+    const html = replaceSignature(draft.html, signature);
+    if (html && html !== draft.html) setDraft({ html });
+    // Once, when it opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Switching the From address (or account) swaps the signature block for the new one's (unless it was taken out).
+  const prevSignature = useRef(signature);
+  useEffect(() => {
+    if (prevSignature.current === signature) return;
+    prevSignature.current = signature;
     setDraftState((d) => {
-      const html = before && d.html.includes(before) ? d.html.replace(before, after) : isBlankHtml(d.html) ? withSignature(after) : d.html;
+      const html = replaceSignature(d.html, signature) ?? (isBlankHtml(d.html) ? withSignature(signature) : d.html);
       return { ...d, html };
     });
-  }, [accountId, account, accounts, changed]);
+  }, [signature]);
 
   const upload = (files: FileList | File[]) => {
     for (const file of Array.from(files)) {
@@ -313,7 +356,7 @@ export function MailComposer({ variant, threadId, accounts, accountId, onAccount
       }, true);
       uploads.forEach((u) => u.preview && URL.revokeObjectURL(u.preview));
       setUploads([]);
-      toast.success(t("toast.sent", { email: account?.email ?? "" }));
+      toast.success(t("toast.sent", { email: m.from.email || fromEmail || account?.email || "" }));
       onSent?.(m);
     },
     onError: (e) => {
@@ -367,7 +410,7 @@ export function MailComposer({ variant, threadId, accounts, accountId, onAccount
       }
       onDiscard?.();
     };
-    const dirty = !!draftIdRef.current || !isBlankHtml(draft.html.replace(account?.signature_html ?? "\u0000", "")) || uploads.length > 0;
+    const dirty = !!draftIdRef.current || !isBlankHtml(withoutSignature(draft.html)) || uploads.length > 0;
     if (!dirty) return clear();
     confirm.show(draftIdRef.current ? t("composer.discardDraftConfirm") : t("composer.discardConfirm"), clear, {
       title: draftIdRef.current ? t("composer.discardDraftTitle") : t("composer.discardTitle"),
@@ -404,9 +447,26 @@ export function MailComposer({ variant, threadId, accounts, accountId, onAccount
     </span>
   );
 
-  const accountOptions = useMemo(
-    () => accounts.map((a) => ({ value: a.id, label: a.name && a.name !== a.email ? `${a.name} (${a.email})` : a.email, icon: <AccountDot color={a.color} /> })),
+  // Every address it can go out from: each account's own and its aliases ("Name <email>").
+  const fromOptions = useMemo(
+    () =>
+      accounts.flatMap((a) =>
+        sendableIdentities(a).map((i) => ({ value: fromValue(a.id, i.email), label: fromLabel(i, a), icon: <AccountDot color={a.color} /> })),
+      ),
     [accounts],
+  );
+  const inlineOptions = useMemo(() => fromOptions.filter((o) => o.value.startsWith(`${accountId}\n`)), [fromOptions, accountId]);
+  const pickFrom = (value: string) => {
+    const [id, email] = value.split("\n");
+    if (id !== accountId) {
+      setDraft({ from: email });
+      onAccountChange?.(id);
+      return;
+    }
+    edit({ from: email });
+  };
+  const fromSelect = (options: typeof fromOptions, className: string) => (
+    <Select size="sm" value={fromValue(accountId, fromEmail ?? "")} onChange={pickFrom} options={options} aria-label={t("composer.from")} className={className} />
   );
 
   return (
@@ -430,7 +490,7 @@ export function MailComposer({ variant, threadId, accounts, accountId, onAccount
       {variant === "floating" ? (
         <div className="flex min-h-9 items-center gap-2 border-b border-line-soft px-3">
           <span className="w-9 shrink-0 text-xs text-fg-3">{t("composer.from")}</span>
-          <Select size="sm" value={accountId} onChange={(v) => onAccountChange?.(v)} options={accountOptions} aria-label={t("composer.from")} className="h-7 border-transparent px-1.5 shadow-none hover:border-line" />
+          {fromSelect(fromOptions, "h-7 border-transparent px-1.5 shadow-none hover:border-line")}
         </div>
       ) : (
         <div className="flex h-8 items-center gap-2 border-b border-line-soft px-3 text-[11.5px] text-fg-3">
@@ -438,7 +498,14 @@ export function MailComposer({ variant, threadId, accounts, accountId, onAccount
           <span className="min-w-0 truncate">
             {draft.mode === "forward" ? t("composer.forwarding") : message ? t("composer.replyingTo", { name: message.from.name || message.from.email }) : ""}
           </span>
-          <span className="mono ml-auto truncate text-fg-4">{account?.email}</span>
+          {inlineOptions.length > 1 ? (
+            <span className="ml-auto flex min-w-0 items-center gap-1">
+              <span className="shrink-0">{t("composer.from")}</span>
+              {fromSelect(inlineOptions, "h-6 max-w-[300px] border-transparent px-1.5 text-[11.5px] shadow-none hover:border-line")}
+            </span>
+          ) : (
+            <span className="mono ml-auto truncate text-fg-4">{fromEmail ?? account?.email}</span>
+          )}
         </div>
       )}
       <RecipientField label={t("composer.to")} values={draft.to} onChange={(to) => edit({ to })} suggestions={suggestions} autoFocus={autoFocus && !draft.to.length} end={ccToggles} onSubmit={() => void submit()} />
@@ -475,6 +542,7 @@ export function MailComposer({ variant, threadId, accounts, accountId, onAccount
         placeholder={draft.mode === "new" ? t("composer.newPlaceholder") : t("composer.placeholder")}
         ariaLabel={draft.mode === "new" ? t("composer.newPlaceholder") : t("composer.placeholder")}
         onSubmit={() => void submit()}
+        extensions={extensions}
         className={variant === "floating" ? "min-h-[200px] flex-1" : undefined}
         contentClassName={cn("text-[13px]", variant === "floating" ? "min-h-[180px]" : "min-h-[96px] max-h-[360px]")}
         toolbar="compact"
@@ -594,6 +662,9 @@ export function MailComposer({ variant, threadId, accounts, accountId, onAccount
     </div>
   );
 }
+
+/** A From picker value: the account and the address. */
+const fromValue = (accountId: string, email: string) => `${accountId}\n${email}`;
 
 /** The forward header and the original message, for the editor. */
 export function useForwardBlock(message: MailMessage | undefined): string {

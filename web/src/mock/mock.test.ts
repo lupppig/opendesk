@@ -48,7 +48,8 @@ describe("mock backend", () => {
     const all = (await call("GET", `/v1/reports/overview?${range}`)).body;
     expect(all.by_team.length).toBeGreaterThan(1);
     expect(all.by_team.some((r: { team_id: string | null }) => r.team_id === null)).toBe(true);
-    expect(all.by_brand.length).toBe(2);
+    // Margin, Pressroom and Lumen (tickets written to its alias of the Support mailbox).
+    expect(all.by_brand.length).toBe(3);
     const team = all.by_team.find((r: { team_id: string | null }) => r.team_id)!.team_id;
     const one = (await call("GET", `/v1/reports/overview?${range}&team_id=${team}`)).body;
     expect(one.by_team.map((r: { team_id: string }) => r.team_id)).toEqual([team]);

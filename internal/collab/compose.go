@@ -31,6 +31,8 @@ type composeIn struct {
 	BodyHTML           string
 	AttachmentIDs      []uuid.UUID
 	ForwardAttachments bool
+	// FromEmail is the account's address it goes out from ("" = composeSender's choice).
+	FromEmail string
 	// MessageID keeps a draft's Message-ID across saves ("" = a new one).
 	MessageID string
 	// Draft is the draft being saved again: its files listed in Keep stay on it.
@@ -50,6 +52,7 @@ type composed struct {
 	HTML       string
 	MessageID  string // bare
 	HasFiles   bool
+	From       string // the address it goes out from
 }
 
 // target is the account a message goes out from and, for a reply or forward, the message
@@ -87,6 +90,32 @@ func (s *service) composeTarget(ctx context.Context, p *auth.Principal, accountI
 		return target{}, notFound(err, "Message")
 	}
 	return out, nil
+}
+
+// composeSender is the account's address a message goes out from (identities.go): the
+// one chosen, which must be one of its usable addresses; else a draft saved again keeps
+// its own From, a reply or forward goes from the address the original was written to,
+// and anything else from the account's default.
+func (s *service) composeSender(ctx context.Context, t target, in composeIn) (sender, error) {
+	idents, err := accountIdentities(ctx, s.d.DB.Pool, t.a)
+	if err != nil {
+		return sender{}, httpx.Wrap(err)
+	}
+	if strings.TrimSpace(in.FromEmail) != "" {
+		if from, ok := usableSender(t.a, idents, in.FromEmail); ok {
+			return from, nil
+		}
+		return sender{}, httpx.Validation("Choose one of the account's addresses to send from.")
+	}
+	if in.Draft != nil {
+		if from, ok := usableSender(t.a, idents, in.Draft.From.Email); ok {
+			return from, nil
+		}
+	}
+	if t.orig != nil {
+		return replySender(t.a, idents, t.orig), nil
+	}
+	return defaultSender(t.a, idents), nil
 }
 
 // cleanRecipients checks and dedupes addresses ("Ada <ada@x.test>" or bare).
@@ -129,6 +158,15 @@ type imageSource struct {
 
 func (s *service) compose(ctx context.Context, p *auth.Principal, t target, in composeIn) (*composed, error) {
 	a, orig := t.a, t.orig
+	from, err := s.composeSender(ctx, t, in)
+	if err != nil {
+		return nil, err
+	}
+	// A From name with variables names the member sending it (personal.go), whoever wrote
+	// the draft.
+	if from.Name, err = s.fillerFor(s.d.DB.Pool, p.WorkspaceID, p.UserID).fromName(ctx, a, from.Name); err != nil {
+		return nil, httpx.Wrap(err)
+	}
 	to, err := cleanRecipients(in.To)
 	if err != nil {
 		return nil, err
@@ -288,11 +326,14 @@ func (s *service) compose(ctx context.Context, p *auth.Principal, t target, in c
 
 	msgID := bare(in.MessageID)
 	if msgID == "" {
-		domain := a.Email[strings.LastIndex(a.Email, "@")+1:]
+		domain := from.Email[strings.LastIndex(from.Email, "@")+1:]
 		msgID = ids.New().String() + "@" + domain
 	}
-	msg := &email.OutMessage{From: mail.Address{Name: a.DisplayName, Address: a.Email}, To: to, Cc: cc, Bcc: bcc,
+	msg := &email.OutMessage{From: from.address(), To: to, Cc: cc, Bcc: bcc,
 		Subject: subject, MessageID: "<" + msgID + ">", HTML: body, Text: email.HTMLToText(body), Attachments: files, Date: time.Now()}
+	if from.ReplyTo != "" && !strings.EqualFold(from.ReplyTo, from.Email) {
+		msg.ReplyTo = &mail.Address{Address: from.ReplyTo}
+	}
 	if orig != nil && in.Mode != ModeForward {
 		parent := email.NormalizeMsgID(orig.MessageID)
 		if parent == "" && orig.MessageID != "" {
@@ -325,5 +366,5 @@ func (s *service) compose(ctx context.Context, p *auth.Principal, t target, in c
 		return nil, httpx.Wrap(err)
 	}
 	return &composed{Raw: raw, Recipients: slices.Concat(to, cc, bcc), To: to, Cc: cc, Bcc: bcc, Subject: subject, HTML: body,
-		MessageID: msgID, HasFiles: len(files) > 0}, nil
+		MessageID: msgID, HasFiles: len(files) > 0, From: from.Email}, nil
 }

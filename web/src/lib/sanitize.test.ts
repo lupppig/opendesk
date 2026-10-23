@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isDesignedEmail, sanitizeEmailHtml, sanitizeHtml, sanitizeProse } from "./sanitize";
+import { cleanSignatureHtml, isDesignedEmail, sanitizeEmailHtml, sanitizeHtml, sanitizeProse } from "./sanitize";
 
 describe("sanitize", () => {
   it("keeps only the app's own classes in the app's DOM", () => {
@@ -70,5 +70,16 @@ describe("sanitize", () => {
       expect(held).toBe(1);
       expect(html).not.toContain("t.example");
     });
+  });
+});
+
+describe("cleanSignatureHtml", () => {
+  it("keeps a signature's layout and adds nothing to it", () => {
+    const sig = '<table cellpadding="0" style="border-collapse: collapse"><tbody><tr><td class="gmail_signature"><img src="https://example.com/logo.png" width="96" height="38" alt="Logo"><a href="https://example.com">example.com</a></td></tr></tbody></table>';
+    expect(cleanSignatureHtml(sig)).toBe(sig);
+  });
+
+  it("drops what runs", () => {
+    expect(cleanSignatureHtml('<a href="javascript:alert(1)" onclick="x()">x</a><img src=x onerror="alert(1)"><style>a{}</style>')).toBe('<a>x</a><img>');
   });
 });

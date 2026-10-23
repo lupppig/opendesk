@@ -139,7 +139,7 @@ Customers see the address they wrote to. Each message in the timeline shows whic
 <Steps>
 <Step title="Replies go out from the ticket's address">
 
-A new email ticket replies from the address it arrived at. When the customer wrote to an alias, replies go out as the alias where the mailbox allows it: SMTP mailboxes send from the alias, and Google, Microsoft and opendesk's own sending use the mailbox's address with the alias as the reply-to address. A chat or API ticket replies from the brand's address for the ticket's team, else the brand's default reply address.
+A new email ticket replies from the address it arrived at. When the customer wrote to an alias, replies go out as the alias, with its own sender name and signature: from the alias where the mailbox can send as it, else from the mailbox's address with the alias as the reply-to address (see [Aliases](/guides/mailboxes/#aliases)). An alias with a brand of its own gives its new tickets that brand. A chat or API ticket replies from the brand's address for the ticket's team, else the brand's default reply address.
 
 </Step>
 <Step title="Change it for a reply">
@@ -163,7 +163,7 @@ When you move a ticket to another team, and its address belonged to the old team
 What customers see on every email, replies, auto-replies and satisfaction surveys alike:
 
 - **From name**: each address's sender name format, set in [Mailboxes](/guides/mailboxes/). It can use `{agent}`, `{agent_first}`, `{team}`, `{brand}` and `{mailbox}`, such as `{agent_first} from {team}`. On emails without a person, such as auto-replies, the agent part is left out.
-- **Signature**: the team's signature when it has one, else the address's, else the sender's personal signature. See [Signatures](/guides/email-templates/#signatures).
+- **Signature**: the alias's signature for mail to an alias that has one, else the team's, else the address's, else the sender's personal signature. See [Signatures](/guides/email-templates/#signatures).
 - **Layout**: every email goes out in its brand's [email design](/guides/email-templates/#email-design).
 - **Satisfaction surveys** use the brand's satisfaction email. The default asks "How did Billing do?" with the ticket's team, or the brand when it has none.
 - In chat, the widget header shows the team's name once the conversation has one, and its hours when it is closed.

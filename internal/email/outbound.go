@@ -102,12 +102,12 @@ func loadTicketInfo(ctx context.Context, q db.Querier, wid, id uuid.UUID) (*tick
 		LEFT JOIN brands b ON b.id = t.brand_id AND b.workspace_id = t.workspace_id
 		WHERE t.workspace_id = $1 AND t.id = $2 AND t.deleted_at IS NULL`, wid, id).
 		Scan(&t.id, &t.number, &t.subject, &t.mailboxID, &t.contactEmail, &blocked, &contactName, &t.brandID, &t.teamID,
-			&t.receivedAt, &t.names.team, &t.names.brand)
+			&t.receivedAt, &t.names.Team, &t.names.Brand)
 	t.contactBlocked = blocked != nil && *blocked
 	if contactName != nil {
 		t.contactName = displayname.Displayable(*contactName)
 	}
-	t.names.team, t.names.brand = displayname.Displayable(t.names.team), displayname.Displayable(t.names.brand)
+	t.names.Team, t.names.Brand = displayname.Displayable(t.names.Team), displayname.Displayable(t.names.Brand)
 	return &t, err
 }
 
@@ -180,10 +180,10 @@ func threadHeaders(ctx context.Context, q db.Querier, wid, ticketID uuid.UUID, e
 // answer to the mailbox's own address (or the alias they wrote to), never the forwarding
 // address: their reply reaches opendesk the way their first message did, and threads by
 // In-Reply-To and References. alias is the mailbox alias the customer wrote to, or "":
-// SMTP sends as the alias, the platform sender answers to it, and Google and Microsoft,
-// whose send-as addresses are not known here, send as the mailbox with the alias as Reply-To.
+// mail goes out From the alias where the provider sends as it (sendsAs), else From the
+// mailbox (the platform sender: its own address) with the alias as Reply-To.
 func (s *service) addressing(m *mailboxRow, name, alias string) (from mail.Address, replyTo *mail.Address, envFrom string) {
-	display := m.displayName()
+	display := m.nameFor(alias)
 	if name == "" {
 		name = display
 	}
@@ -195,13 +195,62 @@ func (s *service) addressing(m *mailboxRow, name, alias string) (from mail.Addre
 	case OutboundSystem:
 		sys := s.systemFrom()
 		return mail.Address{Name: name, Address: sys.Address}, &mail.Address{Name: display, Address: addr}, sys.Address
-	case OutboundSMTP:
+	}
+	if alias != "" && m.sendsAs(alias) {
 		return mail.Address{Name: name, Address: addr}, nil, m.Email
 	}
 	if alias != "" {
 		replyTo = &mail.Address{Name: display, Address: alias}
 	}
 	return mail.Address{Name: name, Address: m.Email}, replyTo, m.Email
+}
+
+// deliverAs delivers out, which goes out as alias (or the mailbox when ""), with addressing's
+// From and Reply-To. When Microsoft refuses the alias as From, the alias is marked as one it
+// does not send as and the message goes out once more From the mailbox with the alias as
+// Reply-To, so the reply is not lost. A retry of the job reads the mark and sends that way
+// straight away.
+func (s *service) deliverAs(ctx context.Context, m *mailboxRow, out *outMessage, envFrom, alias string) (string, error) {
+	stamped, err := s.deliver(ctx, m, out, envFrom)
+	var se *sendError
+	if alias == "" || m.OutboundKind != KindMicrosoft || !strings.EqualFold(out.From.Address, alias) ||
+		!errors.As(err, &se) || !se.sendAsDenied {
+		return stamped, err
+	}
+	if err := s.refuseSendAs(ctx, m, alias); err != nil {
+		return "", err
+	}
+	s.log.Info("alias not sent as: provider refused it, sent from the mailbox address", "workspace_id", m.WorkspaceID, "mailbox_id", m.ID)
+	from, replyTo, envFrom := s.addressing(m, out.From.Name, alias)
+	out.From, out.ReplyTo = from, replyTo
+	return s.deliver(ctx, m, out, envFrom)
+}
+
+// refuseSendAs records that the provider refused alias as From, and publishes the change.
+func (s *service) refuseSendAs(ctx context.Context, m *mailboxRow, alias string) error {
+	alias = strings.ToLower(alias)
+	err := s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `UPDATE mailboxes SET alias_settings = jsonb_set(alias_settings, ARRAY[$3::text],
+			COALESCE(alias_settings -> $3::text, '{}'::jsonb) || jsonb_build_object('send_as', $4::text, 'send_as_by', $5::text)),
+			updated_at = now()
+			WHERE workspace_id = $1 AND id = $2 AND $3::text = ANY(aliases)
+			AND coalesce(alias_settings -> $3::text ->> 'send_as', '') <> $4::text`,
+			m.WorkspaceID, m.ID, alias, SendAsUnverified, SendAsByProvider)
+		if err != nil || tag.RowsAffected() == 0 {
+			return err
+		}
+		return s.publishMailbox(ctx, tx, m.WorkspaceID, m.ID, "mailbox.updated")
+	})
+	if err != nil {
+		return err
+	}
+	st := m.AliasSettings[alias]
+	st.SendAs, st.SendAsBy = SendAsUnverified, SendAsByProvider
+	if m.AliasSettings == nil {
+		m.AliasSettings = map[string]AliasSettings{}
+	}
+	m.AliasSettings[alias] = st
+	return nil
 }
 
 // sentAs is what a delivered message actually went out as.
@@ -382,16 +431,16 @@ func (s *service) composeAndSend(ctx context.Context, wid, mid, ticketID uuid.UU
 	if to, err = replyDestination(ctx, s.d.DB.Pool, wid, ticketID, t.contactEmail, to); err != nil {
 		return "", nil, err
 	}
+	alias := m.alias(t.receivedAt)
 	names := t.names
-	names.mailbox = m.displayName()
+	names.Mailbox = m.nameFor(alias)
 	if authorID != nil {
 		if u, err := domain.LoadUserRef(ctx, s.d.DB.Pool, *authorID); err == nil {
-			names.agent = agentName(u.Name)
+			names.Agent = agentName(u.Name)
 		}
 	} else if bot.ai {
-		names.agent = agentName(bot.name)
+		names.Agent = agentName(bot.name)
 	}
-	alias := m.alias(t.receivedAt)
 	from, replyTo, envFrom := s.addressing(m, fromName(m.FromNameFormat, names), alias)
 	inReplyTo, refs, err := threadHeaders(ctx, s.d.DB.Pool, wid, ticketID, mid)
 	if err != nil {
@@ -440,11 +489,11 @@ func (s *service) composeAndSend(ctx context.Context, wid, mid, ticketID uuid.UU
 	if thread != nil && thread.Provider == KindGoogle {
 		out.GmailThread = thread.Thread
 	}
-	stamped, err := s.deliver(ctx, m, out, envFrom)
+	stamped, err := s.deliverAs(ctx, m, out, envFrom, alias)
 	if err != nil {
 		return stamped, nil, err
 	}
-	return stamped, &sentAs{mailboxID: m.ID, fromEmail: strings.ToLower(from.Address), fromName: from.Name, ticketMailbox: t.mailboxID == nil,
+	return stamped, &sentAs{mailboxID: m.ID, fromEmail: strings.ToLower(out.From.Address), fromName: out.From.Name, ticketMailbox: t.mailboxID == nil,
 		to: dedupe(to), provider: out.sent}, nil
 }
 
@@ -485,10 +534,10 @@ func (s *service) composeAndSendThread(ctx context.Context, wid, mid, ticketID, 
 		return "", nil, permanent("The thread has no recipient.")
 	}
 	names := t.names
-	names.mailbox = m.displayName()
+	names.Mailbox = m.displayName()
 	if authorID != nil {
 		if u, err := domain.LoadUserRef(ctx, s.d.DB.Pool, *authorID); err == nil {
-			names.agent = agentName(u.Name)
+			names.Agent = agentName(u.Name)
 		}
 	}
 	from, replyTo, envFrom := s.addressing(m, fromName(m.FromNameFormat, names), "")
@@ -756,9 +805,9 @@ func (s *service) sendTicketEmail(ctx context.Context, a jobs.SendTicketEmailArg
 	if m.Status == "disabled" || !s.canSend(m) {
 		return nil
 	}
-	names := t.names
-	names.mailbox = m.displayName()
 	alias := m.alias(t.receivedAt)
+	names := t.names
+	names.Mailbox = m.nameFor(alias)
 	from, replyTo, envFrom := s.addressing(m, fromName(m.FromNameFormat, names), alias)
 	inReplyTo, refs, err := threadHeaders(ctx, s.d.DB.Pool, a.WorkspaceID, t.id, uuid.Nil)
 	if err != nil {
@@ -812,6 +861,6 @@ func (s *service) sendTicketEmail(ctx context.Context, a jobs.SendTicketEmailArg
 	if thread != nil && thread.Provider == KindGoogle {
 		out.GmailThread = thread.Thread
 	}
-	_, err = s.deliver(ctx, m, out, envFrom)
+	_, err = s.deliverAs(ctx, m, out, envFrom, alias)
 	return err
 }

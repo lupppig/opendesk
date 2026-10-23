@@ -266,3 +266,70 @@ func TestNewTicketSkipsSpamAndHandoffs(t *testing.T) {
 		}
 	}
 }
+
+// customerReply adds a customer's reply to a ticket and runs its triggers.
+func customerReply(t *testing.T, e *hdtest.Env, ws hdtest.WS, tid uuid.UUID) {
+	t.Helper()
+	err := e.D.DB.Tx(e.Ctx, func(tx pgx.Tx) error {
+		cid, _, err := domain.UpsertContactByEmail(e.Ctx, tx, ws.ID, "sam.ortiz@customer.test", "Sam Ortiz")
+		if err != nil {
+			return err
+		}
+		_, err = domain.AddMessage(e.Ctx, tx, e.D.Jobs, domain.NewMessage{WorkspaceID: ws.ID, TicketID: tid, Kind: "reply",
+			Direction: "inbound", AuthorType: "contact", AuthorContactID: &cid, BodyHTML: "<p>Any news?</p>", BodyText: "Any news?",
+			FromEmail: "sam.ortiz@customer.test"})
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runTriggers(t, e, ws.ID)
+}
+
+func repliedRecipients(t *testing.T, e *hdtest.Env, ws hdtest.WS, tid uuid.UUID) []uuid.UUID {
+	t.Helper()
+	rows, err := e.D.DB.Pool.Query(e.Ctx, `SELECT user_id FROM notifications WHERE workspace_id = $1 AND ticket_id = $2
+		AND type = 'customer_replied'`, ws.ID, tid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return got
+}
+
+func TestCustomerReplyOnAnUnassignedTicketNotifies(t *testing.T) {
+	e, ws := newEnv(t)
+	mb := addMailbox(t, e, ws)
+	tid := customerTicket(t, e, ws, domain.NewTicket{Channel: domain.ChannelEmail, MailboxID: &mb})
+
+	// Nobody has it: the reply reaches the people the new ticket did.
+	customerReply(t, e, ws, tid)
+	if got := repliedRecipients(t, e, ws, tid); !sameUsers(got, newTicketRecipients(t, e, ws, tid)...) || len(got) == 0 {
+		t.Fatalf("unassigned reply recipients %v", got)
+	}
+	var preview string
+	e.Scalar(`SELECT data->>'preview' FROM notifications WHERE ticket_id = $1 AND type = 'customer_replied' LIMIT 1`, &preview, tid)
+	if preview != "Any news?" {
+		t.Fatalf("preview %q", preview)
+	}
+
+	// Once someone has it, only they hear.
+	e.Exec(`DELETE FROM notifications WHERE ticket_id = $1`, tid)
+	e.Exec(`UPDATE tickets SET assignee_id = $2 WHERE id = $1`, tid, ws.Agent.ID)
+	customerReply(t, e, ws, tid)
+	if got := repliedRecipients(t, e, ws, tid); !sameUsers(got, ws.Agent.ID) {
+		t.Fatalf("assigned reply recipients %v", got)
+	}
+
+	// With new ticket notifications off, an unassigned reply is quiet too.
+	e.Exec(`DELETE FROM notifications WHERE ticket_id = $1`, tid)
+	e.Exec(`UPDATE tickets SET assignee_id = NULL WHERE id = $1`, tid)
+	e.SetSettings(ws, map[string]any{"new_ticket_notify": "off"})
+	customerReply(t, e, ws, tid)
+	if got := repliedRecipients(t, e, ws, tid); len(got) != 0 {
+		t.Fatalf("notified with notifications off: %v", got)
+	}
+}

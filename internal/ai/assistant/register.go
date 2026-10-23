@@ -43,6 +43,12 @@ type Service struct {
 	api   http.Handler
 	tools map[string]*tool
 	order []*tool
+	// spec is the API's OpenAPI document, which the API tools search and match.
+	spec    *huma.OpenAPI
+	opsOnce sync.Once
+	apiOps  []apiOp
+	apiIDF  map[string]float64
+	apiAvg  float64
 
 	mu      sync.Mutex
 	running map[uuid.UUID]bool
@@ -51,7 +57,7 @@ type Service struct {
 // New builds the service. api is the public API handler the tools call.
 func New(d *deps.Deps, svc *ai.Service, api http.Handler) *Service {
 	s := &Service{d: d, ai: svc, api: api, tools: map[string]*tool{}, running: map[uuid.UUID]bool{}}
-	for _, t := range append(readTools(), writeTools()...) {
+	for _, t := range append(append(readTools(), writeTools()...), apiTools()...) {
 		s.tools[t.Name] = t
 		s.order = append(s.order, t)
 	}
@@ -118,6 +124,7 @@ type Transcript struct {
 }
 
 func (s *Service) register(api huma.API) {
+	s.spec = api.OpenAPI()
 	tags := []string{"Assistant"}
 
 	huma.Register(api, huma.Operation{OperationID: "assistant-list-sessions", Method: http.MethodGet, Path: "/v1/assistant/sessions",

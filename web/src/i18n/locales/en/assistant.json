@@ -14,6 +14,8 @@
   "stop": "Stop",
   "placeholder": "Ask {{name}} about your queue…",
   "send": "Send",
+  "showMore": "Show more",
+  "showLess": "Show less",
   "thinking": "{{name}} is thinking",
   "hello": "Hi, I'm {{name}}.",
   "helloSub": "I can read your queue, explain a ticket, pull numbers and prepare changes. Nothing changes until you approve it.",

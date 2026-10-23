@@ -7,6 +7,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMailAccounts } from "@/lib/collab/hooks";
 import { compose, useCompose } from "@/lib/collab/compose";
+import { defaultIdentity, identitySignature } from "@/lib/collab/identities";
 import { springs } from "@/lib/motion";
 import { Tooltip } from "@/components/ui/tooltip";
 import { CustomizeSidebar } from "./CustomizeSidebar";
@@ -22,6 +23,8 @@ function ComposeDock() {
   const wanted = draft.fromDraft?.account_id ?? draft.accountId;
   const accountId = (picked?.key === key ? picked.id : undefined) ?? (wanted && usable.some((a) => a.id === wanted) ? wanted : usable[0]?.id);
   const account = usable.find((a) => a.id === accountId);
+  // New mail starts from the account's default address (Gmail's default send-as).
+  const from = account ? defaultIdentity(account) : undefined;
 
   return (
     <AnimatePresence>
@@ -52,7 +55,7 @@ function ComposeDock() {
             </Tooltip>
           </div>
           <div className={minimized ? "hidden" : "flex max-h-[min(640px,calc(100vh-120px))] min-h-[360px] flex-col"}>
-            {account ? (
+            {account && from ? (
               <MailComposer
                 key={key}
                 variant="floating"
@@ -62,7 +65,7 @@ function ComposeDock() {
                 initial={
                   draft.fromDraft
                     ? { ...draftFromMessage(draft.fromDraft), mode: "new" }
-                    : { ...startDraft("new", { ownEmail: account.email, signature: account.signature_html, subject: draft.subject }), to: draft.to ?? [], html: draft.html ?? startDraft("new", { ownEmail: account.email, signature: account.signature_html }).html }
+                    : { ...startDraft("new", { ownEmail: account.email, signature: identitySignature(from), subject: draft.subject, from: from.email }), to: draft.to ?? [], html: draft.html ?? startDraft("new", { ownEmail: account.email, signature: identitySignature(from) }).html }
                 }
                 autoFocus
                 onSent={() => compose.close()}

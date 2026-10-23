@@ -1,5 +1,5 @@
-// One mail account: its name, From name and colour, the signature its mail carries, its
-// automatic reply (each synced with the provider where it can be: AccountSettings), who it
+// One mail account: its name, From name and colour, the signature its mail carries, the
+// addresses it sends from (AddressesSection), its automatic reply (each synced with the provider where it can be: AccountSettings), who it
 // is shared with, its server settings (IMAP), its sync, and disconnecting it.
 // Only whoever connected it (and workspace admins, for a shared one) can change it.
 
@@ -10,21 +10,25 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { BackLink, Row, Section, SettingsPage } from "@/components/layout";
 import { ColorSwatchPicker } from "@/components/settings2/ColorSwatchPicker";
-import { RichEditor } from "@/components/editor/RichEditor";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm";
 import { EmptyState } from "@/components/ui/empty";
 import { TextInput } from "@/components/ui/input";
 import { toast } from "@/components/ui/toast";
+import { SignatureEditor } from "@/components/templates/SignatureEditor";
 import { ACCOUNT_TONES, ProviderMark } from "@/components/collab/bits";
-import { editorFocused, FromNameHint, OutOfOfficeSection, SignatureSync } from "@/components/collab/AccountSettings";
+import { FromNameHint, OutOfOfficeSection, SignatureSync } from "@/components/collab/AccountSettings";
+import { AddressesSection } from "@/components/collab/AddressesSection";
+import { CollabFromNameField, KeptInOpendesk, SenderPreview, useSenderPreview } from "@/components/collab/SenderPreview";
 import { ImapFields, imapValid, type ImapForm } from "@/components/collab/ConnectAccount";
 import { audienceIsEmpty, ChoiceCard, SharedAudience } from "@/components/collab/pickers";
 import { api, type CollabAccountPatch } from "@/lib/api/endpoints";
-import type { MailAccount, MailAudience } from "@/lib/api/types";
+import type { MailAccount, MailAudience, MailIdentityPreview } from "@/lib/api/types";
 import { errorMessage } from "@/lib/api/client";
 import { storeAccount, useSettingsAccounts } from "@/lib/collab/hooks";
+import { identitySignature } from "@/lib/collab/identities";
 import { relLong } from "@/lib/format";
+import { COLLAB_FROM_VARS, fromNameProblem } from "@/lib/fromname";
 import { qk } from "@/lib/queries";
 import { useSession } from "@/lib/session";
 import type { Tone } from "@/lib/tones";
@@ -82,12 +86,12 @@ export default function MailAccountDetail() {
   const base = useMemo(() => (account ? formOf(account) : null), [account]);
   // A signature or From name that changed at the provider replaces the field while it is not being edited.
   const lastBase = useRef(base);
-  // The editor's own form of the saved signature (it writes links its way): not a change.
-  const [sigShown, setSigShown] = useState<string | null>(null);
+  // Whether the person changed the signature: only then does a save send it, so opening
+  // and saving other settings never writes a signature back to Gmail.
+  const [sigEdited, setSigEdited] = useState(false);
   useEffect(() => {
     const prev = lastBase.current;
     lastBase.current = base;
-    if (prev?.signature_html !== base?.signature_html) setSigShown(null);
     if (!prev || !base) return;
     setForm((f) => {
       if (!f) return f;
@@ -105,7 +109,7 @@ export default function MailAccountDetail() {
     if (form.name.trim() !== base.name) p.name = form.name.trim();
     if (form.display_name.trim() !== base.display_name) p.display_name = form.display_name.trim();
     if (form.color !== base.color) p.color = form.color;
-    if (form.signature_html !== base.signature_html && form.signature_html !== sigShown) p.signature_html = form.signature_html;
+    if (sigEdited && form.signature_html !== base.signature_html) p.signature_html = form.signature_html;
     if (form.visibility !== base.visibility) p.visibility = form.visibility;
     const aud = form.visibility === "shared" ? (form.shared_with.everyone ? { everyone: true, team_ids: [], user_ids: [] } : form.shared_with) : { everyone: false, team_ids: [], user_ids: [] };
     if (form.visibility === "shared" && (p.visibility || !sameAudience(aud, base.shared_with))) p.shared_with = aud;
@@ -118,7 +122,7 @@ export default function MailAccountDetail() {
       if (Object.keys(changed).length) p.imap = changed as CollabAccountPatch["imap"];
     }
     return p;
-  }, [form, base, account, imap, imapBase, sigShown]);
+  }, [form, base, account, imap, imapBase, sigEdited]);
   const dirty = Object.keys(patch).length > 0;
   const audienceOk = !form || form.visibility === "private" || !audienceIsEmpty(form.shared_with);
   const imapOk = !imap || account?.provider !== "imap" || imapValid(imap, false);
@@ -129,6 +133,7 @@ export default function MailAccountDetail() {
       storeAccount(qc, a);
       setForm(formOf(a));
       setImap(imapOf(a));
+      setSigEdited(false);
       setFailure(null);
       toast.success(t("detail.saved"));
     },
@@ -139,6 +144,24 @@ export default function MailAccountDetail() {
     mutationFn: () => api.collab.accounts.sync(accountId),
     onSuccess: () => toast.info(t("detail.syncStarted", { name: account?.name || account?.email || "" })),
     onError: (e) => toast.error(e),
+  });
+
+  // The From name and signature as your mail carries them: filled by the server while they
+  // are typed; for someone who cannot change them, as they are now.
+  const primary = account?.identities?.[0];
+  const typed = useSenderPreview(accountId, { display_name: form?.display_name ?? "", signature_html: form?.signature_html ?? "" }, !!form && !!account?.can_manage);
+  const preview: MailIdentityPreview | undefined =
+    account && !account.can_manage
+      ? { from_name: primary?.from_name ?? account.display_name, from: `<${account.email}>`, signature_html: primary ? identitySignature(primary) : account.signature_html, from_name_problem: "", problems: [] }
+      : typed;
+  const pullName = useMutation({
+    mutationFn: () => api.collab.accounts.pullDisplayName(accountId),
+    onSuccess: (a) => {
+      storeAccount(qc, a);
+      setForm((f) => (f ? { ...f, display_name: a.display_name } : f));
+      toast.success(t("sender.namePulled"));
+    },
+    onError: (e) => toast.error(errorMessage(e)),
   });
 
   if (isLoading || (account && !form))
@@ -185,7 +208,7 @@ export default function MailAccountDetail() {
       back={<BackLink to="/settings/mail-accounts">{t("detail.back")}</BackLink>}
       actions={
         manage ? (
-          <Button variant="primary" disabled={!dirty || !audienceOk || !imapOk} loading={save.isPending} onClick={() => save.mutate()}>
+          <Button variant="primary" disabled={!dirty || !audienceOk || !imapOk || !!fromNameProblem(form.display_name, COLLAB_FROM_VARS)} loading={save.isPending} onClick={() => save.mutate()}>
             {t("detail.save")}
           </Button>
         ) : undefined
@@ -228,13 +251,29 @@ export default function MailAccountDetail() {
           label={t("detail.fromName")}
           description={
             <>
-              {t("detail.fromNameHint")}
+              {t("detail.fromNameHint")}. {t("sender.varsHint")}
               <FromNameHint account={account} />
             </>
           }
           htmlFor="acc-from"
+          stack
         >
-          <TextInput id="acc-from" className="w-[260px]" value={form.display_name} disabled={!manage} onChange={(e) => set({ display_name: e.target.value })} />
+          <CollabFromNameField
+            id="acc-from"
+            account={account}
+            email={account.email}
+            value={form.display_name}
+            disabled={!manage}
+            onChange={(display_name) => set({ display_name })}
+            gmail={
+              manage &&
+              primary?.display_name_local && (
+                <Button size="sm" loading={pullName.isPending} onClick={() => pullName.mutate()}>
+                  {t("detail.getFromGmail")}
+                </Button>
+              )
+            }
+          />
         </Row>
         <Row label={t("detail.color")} description={t("detail.colorHint")}>
           <ColorSwatchPicker size="sm" tones={[...ACCOUNT_TONES] as Tone[]} value={form.color as Tone} onChange={(c) => manage && set({ color: c })} label={t("detail.color")} />
@@ -243,18 +282,25 @@ export default function MailAccountDetail() {
 
       <Section title={t("detail.signature")} description={t("detail.signatureHint")} flush>
         <SignatureSync account={account} manage={manage} onReconnect={() => void reconnect(account)} />
-        <RichEditor
-          value={form.signature_html}
-          onChange={(html) => {
-            if (!editorFocused()) setSigShown(html);
-            set({ signature_html: html });
-          }}
-          editable={manage}
-          toolbar={manage ? "full" : "none"}
-          ariaLabel={t("detail.signature")}
-          contentClassName="min-h-[96px] text-[13px]"
-        />
+        <div className="p-3">
+          <SignatureEditor
+            kind="collab_signature"
+            value={form.signature_html}
+            onChange={(html) => {
+              setSigEdited(true);
+              set({ signature_html: html });
+            }}
+            disabled={!manage}
+            ariaLabel={t("detail.signature")}
+            problems={preview?.problems}
+            preview={<SenderPreview preview={preview} />}
+          />
+          {account.provider === "google" && /\{\{|\{%/.test(form.signature_html) && <KeptInOpendesk className="mt-2" />}
+          <p className="mt-2 text-[11.5px] text-fg-4">{t("sender.signatureVars")}</p>
+        </div>
       </Section>
+
+      <AddressesSection account={account} manage={manage} />
 
       <OutOfOfficeSection account={account} manage={manage} onReconnect={() => void reconnect(account)} />
 

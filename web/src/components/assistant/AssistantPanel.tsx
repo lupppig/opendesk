@@ -126,6 +126,32 @@ function Empty({ onPick }: { onPick: (p: string) => void }) {
   );
 }
 
+/** Pasted text this long folds to its first lines until it is opened. */
+const FOLD_LINES = 12;
+const FOLD_CHARS = 700;
+
+/** A message the user sent. Long unbroken runs (HTML, links) wrap inside the bubble. */
+function UserText({ text }: { text: string }) {
+  const { t } = useTranslation("assistant");
+  const long = text.length > FOLD_CHARS || text.split("\n").length > FOLD_LINES;
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <div className={cn("whitespace-pre-wrap wrap-anywhere", long && !open && "line-clamp-12")}>{text}</div>
+      {long && (
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+          className="mt-1 text-[12px] font-medium text-fg-3 transition-colors hover:text-fg"
+        >
+          {open ? t("showLess") : t("showMore")}
+        </button>
+      )}
+    </>
+  );
+}
+
 function Conversation({ composer }: { composer: React.RefObject<ComposerHandle | null> }) {
   const { entries, running, approval, loading } = useOllie();
   const scroller = useRef<HTMLDivElement>(null);
@@ -170,11 +196,11 @@ function Conversation({ composer }: { composer: React.RefObject<ComposerHandle |
             initial={reduce ? false : { opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.22, ease: EASE }}
-            className="ml-8 self-end whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-sunken px-3 py-2 text-[13px] leading-5 text-fg"
+            className="ml-8 min-w-0 max-w-full shrink-0 self-end rounded-2xl rounded-br-md bg-sunken px-3 py-2 text-[13px] leading-5 text-fg"
             data-ph-mask
             data-entry="user"
           >
-            {e.text}
+            <UserText text={e.text} />
           </motion.div>
         ) : (
           <AssistantEntry key={e.id} e={e} live={running && i === entries.length - 1} />

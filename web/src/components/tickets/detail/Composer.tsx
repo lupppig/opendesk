@@ -840,6 +840,11 @@ function ReplyingAs({
       <span className="mono min-w-0 truncate text-[11.5px] text-fg-3" data-ph-mask>
         &lt;{from.email}&gt;
       </span>
+      {from.replyTo && (
+        <span className="min-w-0 shrink truncate text-[11.5px] text-fg-4" data-ph-mask>
+          {t("composer.repliesTo", { address: from.replyTo })}
+        </span>
+      )}
       {mailbox.private && <Lock className="size-3 shrink-0 text-fg-4" />}
       {canPick && <ChevronDown className="size-3 shrink-0 text-fg-4 transition-colors group-hover:text-fg-2" />}
     </button>

@@ -312,6 +312,13 @@ func (s *service) oauthCallback(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	// Gmail's send-as addresses, when the connection may read them: which aliases send as
+	// themselves, and which addresses the mailbox page offers to add. Best effort.
+	if provider == KindGoogle && (grant == GrantSync || grant == GrantAPI) {
+		if err := s.checkSendAs(ctx, nil, wid, id); err != nil {
+			s.log.Info("gmail send-as list not read", "workspace_id", wid, "mailbox_id", id, "reason", safeError(err))
+		}
+	}
 	http.Redirect(w, r, s.settingsURL(url.Values{"connected": {id.String()}}), http.StatusFound)
 }
 
@@ -422,13 +429,19 @@ func (s *service) saveOAuthMailbox(ctx context.Context, p *auth.Principal, provi
 				cfg.ProviderArchiveOnSolve = existing.Config.ProviderArchiveOnSolve
 				cfg.ProviderLabel = existing.Config.ProviderLabel
 			}
+			// What the provider said about sending as each alias was about the account it said
+			// it for: another account or provider starts from unknown.
+			aliasSettings := existing.AliasSettings
+			if existing.oauthProvider() != provider || !strings.EqualFold(existing.Config.OAuthEmail, email) {
+				aliasSettings = forgetProviderSendAs(existing.AliasSettings)
+			}
 			_, err = tx.Exec(ctx, `UPDATE mailboxes SET email = $3, inbound_kind = $4, outbound_kind = $5, config = $6,
 				credentials_enc = $7, status = 'active', last_error = '', sync_failures = 0, next_sync_at = NULL,
 				imap_uid_validity = CASE WHEN $8 THEN 0 ELSE imap_uid_validity END,
 				imap_last_uid = CASE WHEN $8 THEN 0 ELSE imap_last_uid END,
 				api_sync_state = CASE WHEN $9 THEN '{}'::jsonb ELSE api_sync_state END,
-				display_name = CASE WHEN btrim(display_name) = '' THEN $10 ELSE display_name END, updated_at = now()
-				WHERE workspace_id = $1 AND id = $2`, wid, id, addr, inbound, provider, cfg, sealed, resetCursor, resetAPI, names.forAddress(addr))
+				display_name = CASE WHEN btrim(display_name) = '' THEN $10 ELSE display_name END, alias_settings = $11, updated_at = now()
+				WHERE workspace_id = $1 AND id = $2`, wid, id, addr, inbound, provider, cfg, sealed, resetCursor, resetAPI, names.forAddress(addr), aliasSettings)
 			if err != nil {
 				return err
 			}

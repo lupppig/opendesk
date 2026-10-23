@@ -1,6 +1,6 @@
 // Recipients, subjects and quoting for replies and forwards from a mail account.
 // Reply all is computed here, in the browser: everyone on the replied message except
-// the account's own address (contracts/collab.md, POST /v1/collab/messages).
+// the account's own addresses, its aliases included (contracts/collab.md, POST /v1/collab/messages).
 
 import type { MailAddress, MailMessage } from "../api/types";
 import { escapeHtml } from "./html";
@@ -59,13 +59,13 @@ export function replyTarget(messages: MailMessage[]): MailMessage | undefined {
 /**
  * Who a reply goes to. Reply: the message's Reply-To, else its sender; when the
  * account sent it, its recipients again. Reply all: those plus everyone on To and
- * Cc, without the account's own address. Forward and new: nobody yet.
+ * Cc, without the account's own addresses (its own and its aliases). Forward and new: nobody yet.
  */
-export function replyRecipients(m: MailMessage, ownEmail: string, mode: ComposeMode): { to: string[]; cc: string[] } {
+export function replyRecipients(m: MailMessage, ownEmails: string | readonly string[], mode: ComposeMode): { to: string[]; cc: string[] } {
   if (mode === "new" || mode === "forward") return { to: [], cc: [] };
-  const own = normEmail(ownEmail);
-  const notOwn = (e: string) => normEmail(e) !== own && isEmail(e);
-  const fromUs = normEmail(m.from.email) === own;
+  const own = new Set((typeof ownEmails === "string" ? [ownEmails] : ownEmails).map(normEmail));
+  const notOwn = (e: string) => !own.has(normEmail(e)) && isEmail(e);
+  const fromUs = own.has(normEmail(m.from.email));
   const primary = fromUs ? m.to.map((a) => a.email) : (m.reply_to.length ? m.reply_to : [m.from]).map((a) => a.email);
   if (mode === "reply") {
     const to = dedupe(primary.filter(notOwn));
@@ -87,7 +87,7 @@ export function replySubject(subject: string, mode: ComposeMode): string {
 }
 
 /** Whether "reply all" would reach more people than "reply". */
-export function hasReplyAll(m: MailMessage, ownEmail: string): boolean {
+export function hasReplyAll(m: MailMessage, ownEmail: string | readonly string[]): boolean {
   const one = replyRecipients(m, ownEmail, "reply");
   const all = replyRecipients(m, ownEmail, "reply_all");
   return all.to.length + all.cc.length > one.to.length + one.cc.length;

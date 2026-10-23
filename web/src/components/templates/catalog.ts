@@ -69,7 +69,9 @@ export function slotsFor(kind: TemplateKind | "history_header"): string[] {
 export function useCatalog(kind: TemplateKind = "reply"): Catalog {
   const { data, isLoading } = useQuery(q.templateVariables());
   return useMemo(() => {
-    const variables = (data?.variables ?? []).filter((v) => !(kind === "personal_signature" && v.key === "agent.signature"));
+    // A kind that takes only some groups (a Collab signature: no ticket, customer, team or brand) offers only those.
+    const groups = data?.kind_groups?.[kind];
+    const variables = (data?.variables ?? []).filter((v) => !(kind === "personal_signature" && v.key === "agent.signature") && (!groups || groups.includes(v.group)));
     const slots = (data?.slots ?? []).filter((s) => slotsFor(kind).includes(s.key));
     const known = new Set<string>([...variables.map((v) => v.key), ...slots.map((s) => s.key)]);
     return { variables, slots, known, byKey: new Map(variables.map((v) => [v.key, v])), filters: data?.filters ?? [], loading: isLoading };

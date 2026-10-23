@@ -254,6 +254,7 @@ func (w *world) api(p *auth.Principal) *httptest.Server {
 	s.registerSendRoutes(api)
 	s.registerDraftRoutes(api)
 	s.registerCommentRoutes(api)
+	s.registerDetailRoutes(api)
 	s.registerSidebarRoutes(api)
 	r.Get("/v1/collab/attachments/{message_id}/{index}", s.attachmentHandler)
 	srv := httptest.NewServer(r)

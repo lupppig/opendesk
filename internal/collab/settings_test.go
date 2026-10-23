@@ -25,6 +25,12 @@ type fakeGmailSettings struct {
 	patches                []map[string]any
 	vacationPuts           []map[string]any
 	reads                  int // sendAs reads
+	// aliases are the other send-as addresses (identities_test.go); nil lists one plain alias.
+	// Gmail refuses every app's change of them (403), as it does for clients without a
+	// service account's domain-wide authority; aliasPatches counts the attempts.
+	aliases          []gmailSendAs
+	aliasPatches     int
+	primaryIsDefault bool
 }
 
 func (f *fakeGmailSettings) serve(t *testing.T, w http.ResponseWriter, r *http.Request, path string) {
@@ -43,11 +49,36 @@ func (f *fakeGmailSettings) serve(t *testing.T, w http.ResponseWriter, r *http.R
 		_, _ = w.Write([]byte(`{"error":{"code":400,"message":"Signature has secret content","status":"INVALID_ARGUMENT"}}`))
 		return true
 	}
+	alias := func(addr string) *gmailSendAs {
+		for i := range f.aliases {
+			if strings.EqualFold(f.aliases[i].SendAsEmail, addr) {
+				return &f.aliases[i]
+			}
+		}
+		return nil
+	}
 	switch {
 	case r.Method == "GET" && path == "/settings/sendAs":
 		f.reads++
+		if f.aliases != nil {
+			list := []any{}
+			for _, a := range f.aliases {
+				list = append(list, a)
+			}
+			e := entry("primary@example.com")
+			e["isDefault"] = f.primaryIsDefault
+			reply(map[string]any{"sendAs": append([]any{e}, list...)})
+			return
+		}
 		reply(map[string]any{"sendAs": []map[string]any{
 			{"sendAsEmail": "alias@example.com", "isPrimary": false, "signature": "alias"}, entry("primary@example.com")}})
+	case r.Method == "PATCH" && alias(strings.TrimPrefix(path, "/settings/sendAs/")) != nil:
+		f.aliasPatches++
+		w.WriteHeader(403)
+		_, _ = w.Write([]byte(`{"error":{"code":403,"message":"Access restricted to service accounts that have been delegated domain-wide authority","status":"PERMISSION_DENIED"}}`))
+	case r.Method == "GET" && alias(strings.TrimPrefix(path, "/settings/sendAs/")) != nil:
+		f.reads++
+		reply(alias(strings.TrimPrefix(path, "/settings/sendAs/")))
 	case r.Method == "GET" && strings.HasPrefix(path, "/settings/sendAs/"):
 		f.reads++
 		if f.unknownAlias {
@@ -94,6 +125,7 @@ func (f *fakeGmailSettings) serve(t *testing.T, w http.ResponseWriter, r *http.R
 // fakeGraphSettings is the profile name and automatic replies; served under fakeGraph's lock.
 type fakeGraphSettings struct {
 	displayName  string
+	proxies      []string // proxyAddresses; nil answers 403
 	replies      graphAutoReplies
 	refuse       int
 	patches      []map[string]any
@@ -107,6 +139,13 @@ func (f *fakeGraphSettings) serve(t *testing.T, w http.ResponseWriter, r *http.R
 		_ = json.NewEncoder(w).Encode(v)
 	}
 	switch {
+	case r.Method == "GET" && path == "/me" && strings.Contains(r.URL.Query().Get("$select"), "proxyAddresses"):
+		if f.proxies == nil {
+			w.WriteHeader(403)
+			_, _ = w.Write([]byte(`{"error":{"code":"Authorization_RequestDenied","message":"secret"}}`))
+			return
+		}
+		reply(map[string]any{"proxyAddresses": f.proxies})
 	case r.Method == "GET" && path == "/me":
 		f.profileReads++
 		reply(map[string]any{"displayName": f.displayName})

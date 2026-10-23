@@ -5,7 +5,7 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { AnimatePresence } from "motion/react";
-import { Archive, Folder, Mail, MailOpen, PenSquare, RefreshCw, ShieldAlert, Star, Tag, Trash2, X } from "lucide-react";
+import { Archive, AtSign, Folder, Mail, MailOpen, PenSquare, RefreshCw, ShieldAlert, Star, Tag, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { MailFolder, MailThread, MailThreadAction } from "@/lib/api/types";
@@ -15,7 +15,8 @@ import { accountName, isMailBox, mailListQuery, type MailSearch } from "@/lib/co
 import { cachedFolders } from "@/lib/collab/cache";
 import { compose } from "@/lib/collab/compose";
 import { useAllFolders, useCanAct, useMailAccounts, useSidebarPrefs, useThreadAction } from "@/lib/collab/hooks";
-import { normEmail, type ComposeMode } from "@/lib/collab/recipients";
+import { type ComposeMode } from "@/lib/collab/recipients";
+import { identitiesOf, ownEmails as ownEmailsOf } from "@/lib/collab/identities";
 import { useHotkeys } from "@/lib/hotkeys";
 import { cn } from "@/lib/cn";
 import { qk, q } from "@/lib/queries";
@@ -24,6 +25,7 @@ import { usePageCrumb } from "@/app/useBreadcrumbs";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty";
 import { SearchInput } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -80,7 +82,7 @@ export default function MailPage() {
   const canAct = useCanAct();
   const box = params.box ?? "inbox";
   const openId = params.threadId;
-  const query = useMemo(() => mailListQuery(box, search), [box, search.account, search.folder, search.q]); // eslint-disable-line react-hooks/exhaustive-deps
+  const query = useMemo(() => mailListQuery(box, search), [box, search.account, search.folder, search.q, search.to]); // eslint-disable-line react-hooks/exhaustive-deps
   const listKey = JSON.stringify(query);
   const list = useInfiniteQuery(q.mailThreads(query));
   const { data: accounts } = useMailAccounts();
@@ -94,7 +96,7 @@ export default function MailPage() {
   const folder: MailFolder | undefined = search.folder ? Object.values(folderMap).flatMap((f) => f ?? []).find((f) => f.id === search.folder) : undefined;
   const folderAccount = folder ? accounts?.find((a) => a.id === folder.account_id) : undefined;
   const spans = !account && !folder && (accounts?.length ?? 0) > 1;
-  const ownEmails = useMemo(() => new Set((accounts ?? []).map((a) => normEmail(a.email))), [accounts]);
+  const ownEmails = useMemo(() => new Set((accounts ?? []).flatMap((a) => ownEmailsOf(a))), [accounts]);
   const accountsById = useMemo(() => new Map((accounts ?? []).map((a) => [a.id, a])), [accounts]);
 
   const boxLabel = isMailBox(box) ? (box === "inbox" && !account ? t("nav.allInboxes") : t(`box.${box}`)) : t("box.folder");
@@ -153,6 +155,10 @@ export default function MailPage() {
     const next: MailSearch = { ...search, q: v.trim() || undefined };
     go(undefined, next, true);
   };
+  // One account's mail written to one of its addresses (an alias): GET /v1/collab/threads?to=.
+  const scopeAccount = account ?? folderAccount;
+  const addresses = scopeAccount ? identitiesOf(scopeAccount) : [];
+  const setTo = (v: string) => go(undefined, { ...search, to: v || undefined }, true);
 
   const toggle = useCallback(
     (x: MailThread, shift: boolean) => {
@@ -416,6 +422,29 @@ export default function MailPage() {
             counts={counts}
             prefs={prefs}
           />
+        )}
+        {(addresses.length > 1 || search.to) && (
+          <div className="flex h-9 shrink-0 items-center gap-2 border-b border-line-soft px-4 text-[11.5px] text-fg-3">
+            <AtSign className="size-3.5 shrink-0 text-fg-4" />
+            <span className="shrink-0">{t("list.writtenTo")}</span>
+            {addresses.length > 1 ? (
+              <Select
+                size="sm"
+                value={search.to ?? "*"}
+                onChange={(v) => setTo(v === "*" ? "" : v)}
+                aria-label={t("list.writtenTo")}
+                className="h-7 max-w-[280px] border-transparent px-1.5 shadow-none hover:border-line"
+                options={[{ value: "*", label: t("list.anyAddress") }, ...addresses.map((i) => ({ value: i.email, label: i.email }))]}
+              />
+            ) : (
+              <span className="mono min-w-0 truncate text-fg-2">{search.to}</span>
+            )}
+            {search.to && (
+              <Button size="sm" variant="ghost" icon={<X />} onClick={() => setTo("")} className="ml-auto">
+                {t("list.anyAddress")}
+              </Button>
+            )}
+          </div>
         )}
         {compact && (
           <div className="border-b border-line-soft px-3 py-2">

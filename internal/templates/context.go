@@ -26,7 +26,9 @@ type Ref struct {
 	AuthorUserID *uuid.UUID
 	BotName      string
 	// MailboxID is the sending address (else the ticket's); MailboxEmail overrides its
-	// address (the alias replies go out as).
+	// address (the alias replies go out as). An alias of the address, named here or else the
+	// one the ticket was written to, brings its display name and signature
+	// (contracts/templates.md "Signatures").
 	MailboxID    *uuid.UUID
 	MailboxEmail string
 	// BrandID and TeamID apply without a ticket, or override the ticket's.
@@ -51,7 +53,7 @@ type Context struct {
 	LogoURL    string
 	BrandName  string
 	// Signatures as stored (not yet filled).
-	TeamSignature, MailboxSignature, PersonalSignature string
+	AliasSignature, TeamSignature, MailboxSignature, PersonalSignature string
 }
 
 // Load reads everything the variables need.
@@ -81,6 +83,7 @@ func Load(ctx context.Context, q db.Querier, cfg *config.Config, ref Ref) (*Cont
 
 	brandID, teamID, mailboxID := ref.BrandID, ref.TeamID, ref.MailboxID
 	var contactID *uuid.UUID
+	receivedAt := ""
 	ticketFields := map[string]any{}
 	if ref.TicketID != nil {
 		var number int64
@@ -89,9 +92,9 @@ func Load(ctx context.Context, q db.Querier, cfg *config.Config, ref Ref) (*Cont
 		var fields []byte
 		var tBrand uuid.UUID
 		var tTeam, tMailbox *uuid.UUID
-		err := q.QueryRow(ctx, `SELECT number, subject, status, priority, channel, created_at, fields, brand_id, team_id, mailbox_id, contact_id
+		err := q.QueryRow(ctx, `SELECT number, subject, status, priority, channel, created_at, fields, brand_id, team_id, mailbox_id, contact_id, received_at
 			FROM tickets WHERE workspace_id = $1 AND id = $2`, ref.WorkspaceID, *ref.TicketID).
-			Scan(&number, &subject, &status, &priority, &channel, &created, &fields, &tBrand, &tTeam, &tMailbox, &contactID)
+			Scan(&number, &subject, &status, &priority, &channel, &created, &fields, &tBrand, &tTeam, &tMailbox, &contactID, &receivedAt)
 		if err != nil {
 			return nil, fmt.Errorf("load ticket: %w", err)
 		}
@@ -246,9 +249,13 @@ func Load(ctx context.Context, q db.Querier, cfg *config.Config, ref Ref) (*Cont
 	v["team.name"] = team
 
 	if mailboxID != nil {
-		var name, display, email, sig string
-		err := q.QueryRow(ctx, `SELECT name, display_name, email, signature_html FROM mailboxes WHERE workspace_id = $1 AND id = $2`,
-			ref.WorkspaceID, *mailboxID).Scan(&name, &display, &email, &sig)
+		var name, display, email, sig, aliasName, aliasSig string
+		var isAlias bool
+		alias := strings.ToLower(strings.TrimSpace(firstText(ref.MailboxEmail, receivedAt)))
+		err := q.QueryRow(ctx, `SELECT name, display_name, email, signature_html, $3::text = ANY(aliases),
+			COALESCE(alias_settings -> $3::text ->> 'display_name', ''), COALESCE(alias_settings -> $3::text ->> 'signature_html', '')
+			FROM mailboxes WHERE workspace_id = $1 AND id = $2`,
+			ref.WorkspaceID, *mailboxID, alias).Scan(&name, &display, &email, &sig, &isAlias, &aliasName, &aliasSig)
 		if err != nil && !db.IsNotFound(err) {
 			return nil, fmt.Errorf("load mailbox: %w", err)
 		}
@@ -257,9 +264,18 @@ func Load(ctx context.Context, q db.Querier, cfg *config.Config, ref Ref) (*Cont
 			if strings.TrimSpace(display) != "" {
 				name = display
 			}
+			if isAlias && strings.TrimSpace(aliasName) != "" {
+				name = aliasName
+			}
 			v["mailbox.name"] = displayname.Displayable(name)
 			v["mailbox.email"] = email
+			if isAlias {
+				v["mailbox.email"] = alias
+			}
 			c.MailboxSignature = sig
+			if isAlias {
+				c.AliasSignature = aliasSig
+			}
 		}
 	}
 	if ref.MailboxEmail != "" {
@@ -309,15 +325,26 @@ func Load(ctx context.Context, q db.Querier, cfg *config.Config, ref Ref) (*Cont
 	return c, nil
 }
 
-// Signature is the signature an email carries, filled in: the team's, else the address's,
-// else the author's own.
+// Signature is the signature an email carries, filled in: the alias's it goes out as, else
+// the team's, else the address's, else the author's own.
 func (c *Context) Signature() string {
-	for _, s := range []string{c.TeamSignature, c.MailboxSignature, c.PersonalSignature} {
+	for _, s := range []string{c.AliasSignature, c.TeamSignature, c.MailboxSignature, c.PersonalSignature} {
 		if strings.TrimSpace(s) != "" {
 			return SanitizeForSend(Render(s, c.Values, HTML))
 		}
 	}
 	return ""
+}
+
+// SetMailbox sets the sending address's variables (mailbox.name, mailbox.email) after Load,
+// and fills the personal signature again with them: one Load serves each of a Collab
+// account's addresses.
+func (c *Context) SetMailbox(name, email string) {
+	c.Values.Text["mailbox.name"], c.Values.Text["mailbox.email"] = Inert(name), Inert(email)
+	delete(c.Values.HTML, "agent.signature")
+	if strings.TrimSpace(c.PersonalSignature) != "" {
+		c.Values.HTML["agent.signature"] = SanitizeForSend(Render(c.PersonalSignature, c.Values, HTML))
+	}
 }
 
 // Fill renders src (design HTML) with the context's values, ready to send.
@@ -476,4 +503,14 @@ func Inert(s string) string {
 		return s
 	}
 	return inert.Replace(s)
+}
+
+// firstText is the first non-blank value.
+func firstText(vals ...string) string {
+	for _, v := range vals {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
 }

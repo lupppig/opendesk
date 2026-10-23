@@ -12,6 +12,7 @@ import (
 
 	"github.com/useopendesk/opendesk/internal/audit"
 	"github.com/useopendesk/opendesk/internal/auth"
+	"github.com/useopendesk/opendesk/internal/displayname"
 	"github.com/useopendesk/opendesk/internal/email"
 	"github.com/useopendesk/opendesk/internal/httpx"
 )
@@ -21,6 +22,8 @@ import (
 
 var (
 	errSignatureUnsupported = httpx.E(422, "signature_sync_unsupported", "Only Gmail accounts share their signature with opendesk.")
+	errNameUnsupported      = httpx.E(422, "display_name_sync_unsupported", "Only Gmail accounts share their From name with opendesk.")
+	errNoGmailName          = httpx.E(422, "validation_failed", "Gmail has no From name of its own for this address. Type one here instead.")
 	errOutOfOfficeReadOnly  = httpx.E(422, "out_of_office_read_only", "Reconnect the account to change its automatic reply from opendesk.")
 	errOutOfOfficeNone      = httpx.E(422, "out_of_office_unsupported", "This account's provider does not share its automatic reply with opendesk.")
 )
@@ -36,6 +39,7 @@ type outOfOfficeInput struct {
 }
 
 func (s *service) registerSettingsRoutes(api huma.API) {
+	s.registerIdentityRoutes(api)
 	collabOp(api, huma.Operation{OperationID: "pull-collab-signature", Method: http.MethodPost, Path: "/v1/collab/accounts/{id}/signature/pull",
 		Summary: "Replace a mail account's signature with its Gmail one"},
 		func(ctx context.Context, in *accountIDInput) (*accountBody, error) {
@@ -61,6 +65,43 @@ func (s *service) registerSettingsRoutes(api huma.API) {
 				}
 				if err := audit.Log(ctx, tx, p, p.WorkspaceID, "collab.account_updated", "collab_account", &a.ID,
 					map[string]any{"fields": []string{"signature_html"}, "from_provider": true}); err != nil {
+					return err
+				}
+				return s.publishAccounts(ctx, tx, p.WorkspaceID, a.ID, nil)
+			})
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			return s.accountReply(ctx, p, a.ID)
+		})
+
+	collabOp(api, huma.Operation{OperationID: "pull-collab-display-name", Method: http.MethodPost, Path: "/v1/collab/accounts/{id}/display-name/pull",
+		Summary: "Replace a mail account's From name with its Gmail one", Description: "Brings Gmail's back in place of one with variables, which Gmail never gets."},
+		func(ctx context.Context, in *accountIDInput) (*accountBody, error) {
+			p, a, err := s.manageable(ctx, in.ID)
+			if err != nil {
+				return nil, err
+			}
+			if a.Provider != ProviderGoogle {
+				return nil, errNameUnsupported
+			}
+			sa, err := (&gmailProvider{s: s, a: a}).sendAs(ctx)
+			if err != nil {
+				return nil, errSettingsProvider(err)
+			}
+			name := displayname.Clean(sa.DisplayName, displayname.Workspace)
+			if name == "" {
+				return nil, errNoGmailName
+			}
+			err = s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
+				if _, err := s.withSettings(ctx, tx, a.ID, func(row *accountRow, st *settingsState) bool {
+					row.DisplayName, st.DisplayNameHash = name, settingHash(sa.DisplayName)
+					return true
+				}); err != nil {
+					return err
+				}
+				if err := audit.Log(ctx, tx, p, p.WorkspaceID, "collab.account_updated", "collab_account", &a.ID,
+					map[string]any{"fields": []string{"display_name"}, "from_provider": true}); err != nil {
 					return err
 				}
 				return s.publishAccounts(ctx, tx, p.WorkspaceID, a.ID, nil)
@@ -175,17 +216,19 @@ type pushedSettings struct {
 
 // pushAccountSettings makes a changed signature and From name at Gmail first, when they sync
 // two-way (a and changed are the account after the change and the changed fields). Read-only
-// and opendesk-only settings are saved locally only.
+// and opendesk-only settings, and values with variables, are saved locally only.
 func (s *service) pushAccountSettings(ctx context.Context, a *accountRow, changed []string) (pushedSettings, error) {
 	var out pushedSettings
 	if a.Provider != ProviderGoogle || signatureSync(a) != SyncTwoWay {
 		return out, nil
 	}
-	body := map[string]string{}
-	if slices.Contains(changed, "signature_html") {
+	// A value with variables is kept in opendesk (personal.go): Gmail keeps its own, so a
+	// literal {agent} or {{ agent.name }} never reaches Gmail.
+	body := map[string]any{}
+	if slices.Contains(changed, "signature_html") && !signatureTemplated(a.SignatureHTML) {
 		body["signature"] = a.SignatureHTML // sanitized
 	}
-	if slices.Contains(changed, "display_name") {
+	if slices.Contains(changed, "display_name") && !nameTemplated(a.DisplayName) {
 		body["displayName"] = a.DisplayName
 	}
 	if len(body) == 0 {

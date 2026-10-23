@@ -751,6 +751,30 @@ export type MailboxConnectOptions = {
 };
 /** Why a connection check failed and what fixes it. */
 export type MailboxCause = { code: string; title: string; fix: string; retryable: boolean };
+/**
+ * Whether replies to an alias go out From the alias itself: verified when Gmail lists it as a
+ * send-as address or an admin said the provider sends as it; unverified when the provider does
+ * not list it or refused it; unknown until then.
+ */
+export type AliasSendAs = "verified" | "unverified" | "unknown";
+export type AliasSettings = {
+  /** The From name's {mailbox} for mail to this alias; "" = the mailbox's. */
+  display_name: string;
+  /** Comes before the team's and the address's signature; "" = none of its own. */
+  signature_html: string;
+  /** New tickets written to this alias take this brand; null = the mailbox's. */
+  brand_id: string | null;
+  send_as: AliasSendAs;
+  send_as_by: "provider" | "admin" | "";
+};
+export type ProviderSendAs = {
+  /** The connection may read Gmail's send-as list (a sync or api grant, not send-only). */
+  readable: boolean;
+  checked_at: string | null;
+  /** Gmail's send-as addresses other than the account's own. */
+  addresses: { email: string; display_name: string; verified: boolean }[];
+};
+export type AliasSettingsInput = { display_name?: string; signature_html?: string; brand_id?: string | null; send_as?: AliasSendAs };
 export type Mailbox = {
   id: string;
   name: string;
@@ -778,6 +802,10 @@ export type Mailbox = {
   aliases: string[];
   /** An alias to the team its new tickets go to instead of team_id. None on a private team's address. */
   alias_teams?: Record<string, string>;
+  /** Every alias's own identity, keyed by the alias (contracts/teams.md "Aliases"). */
+  alias_settings?: Record<string, AliasSettings>;
+  /** Gmail's send-as list for a Google mailbox; admins only, null otherwise. */
+  provider_send_as?: ProviderSendAs | null;
   /** {agent} {agent_first} {team} {brand} {mailbox}. */
   from_name_format: string;
   /** Its team is private: only that team's members send from it. */
@@ -798,6 +826,8 @@ export type Mailbox = {
   status: "active" | "error" | "disabled";
   last_error: string;
   last_synced_at: string | null;
+  /** When mail last arrived, by any route; null before the first. */
+  last_received_at?: string | null;
   created_at: string;
 };
 /** draft: a suggested reply a teammate sends; send: Ollie replies by email. */
@@ -1915,8 +1945,9 @@ export type TemplateFilter = { name: string; group: "text" | "list" | "number" |
 export type TemplateTag = { name: string; syntax: string; description: string };
 export type TemplateSlotKey = "content" | "signature" | "history" | "survey";
 export type TemplateSlot = { key: TemplateSlotKey; label: string; description: string; required_in: TemplateKind[] | null };
-export type TemplateKind = "reply" | "signature" | "personal_signature" | "auto_reply" | "layout" | "csat" | "subject";
-export type TemplateCatalog = { variables: TemplateVariable[]; slots: TemplateSlot[]; filters: TemplateFilter[]; tags?: TemplateTag[] };
+export type TemplateKind = "reply" | "signature" | "personal_signature" | "auto_reply" | "layout" | "csat" | "subject" | "collab_signature";
+/** kind_groups: the variable groups of the kinds that take only some (a Collab signature). */
+export type TemplateCatalog = { variables: TemplateVariable[]; slots: TemplateSlot[]; filters: TemplateFilter[]; tags?: TemplateTag[]; kind_groups?: Partial<Record<TemplateKind, TemplateGroup[]>> };
 export type TemplateProblem = { message: string; token: string };
 
 export type EmailLayoutOptions = {
@@ -1952,6 +1983,8 @@ export type TemplatePreviewBody = {
   brand_id?: string;
   team_id?: string;
   mailbox_id?: string;
+  /** One of mailbox_id's aliases: preview mail written to it. */
+  alias?: string;
   ticket_id?: string;
 };
 export type TemplatePreview = { subject: string; html: string; text: string; problems: TemplateProblem[] };
@@ -2013,10 +2046,57 @@ export type MailAccount = {
   /** Null for IMAP, and while it was never read. */
   out_of_office: MailOutOfOffice | null;
   out_of_office_sync: MailSettingSync;
+  /** The addresses it sends from, its own first (contracts/collab.md "Addresses"). */
+  identities: MailIdentity[];
+  /** The address new mail goes out from. */
+  default_from: string;
 };
+
+/**
+ * An address an account sends from: its own (primary; its From name and signature are the
+ * account's) or another one: Gmail's send-as addresses, aliases added by hand for Microsoft and IMAP.
+ */
+export type MailIdentity = {
+  /** Null for the account's own address. */
+  id: string | null;
+  email: string;
+  /** The From name; empty uses the account's. */
+  display_name: string;
+  signature_html: string;
+  /** Replies go here when set. */
+  reply_to: string;
+  primary: boolean;
+  /** New mail goes out from it. */
+  default: boolean;
+  source: "account" | "provider" | "manual";
+  /** pending: Gmail is waiting for the address's owner to confirm it. */
+  verification: "accepted" | "pending";
+  can_send: boolean;
+  signature_sync: MailIdentitySync;
+  display_name_sync: MailIdentitySync;
+  signature_synced_at: string | null;
+  /** The From name has variables, so it is kept in opendesk and Gmail keeps its own. */
+  display_name_local?: boolean;
+  /** The signature has variables, so it is kept in opendesk and Gmail keeps its own. */
+  signature_local?: boolean;
+  /** The From name (its own, else the account's) filled for you. */
+  from_name?: string;
+  /** The signature filled for you; null when it has no variables. */
+  filled_signature_html?: string | null;
+};
+
+/** An address's From name and signature as typed, filled for you (POST .../identities/preview). */
+export type MailIdentityPreview = { from_name: string; from: string; signature_html: string; from_name_problem: string; problems: TemplateProblem[] };
+export type MailIdentityPreviewBody = { email?: string; display_name: string; signature_html?: string };
 
 /** two_way: read from the provider and changed there too; read_only: read only; none: opendesk only (or not available). */
 export type MailSettingSync = "two_way" | "read_only" | "none";
+
+/**
+ * How an address's From name and signature sync: as an account's setting, or pull (Gmail's
+ * other send-as addresses): read when it changes at the provider, a change here kept in opendesk.
+ */
+export type MailIdentitySync = MailSettingSync | "pull";
 
 /** An account's automatic reply as its provider keeps it. */
 export type MailOutOfOffice = {
@@ -2072,6 +2152,8 @@ export type MailThread = {
   shared: boolean;
   assignees: UserRef[];
   comment_count: number;
+  /** The account's address other than its own the conversation was written to or sent from (an alias); null when none. */
+  to_address?: string | null;
 };
 
 export type MailAttachment = {
@@ -2115,6 +2197,27 @@ export type MailMessage = {
   draft_id?: string | null;
   /** The message of the conversation it answers (its In-Reply-To), when stored. */
   in_reply_to_id?: string | null;
+  /** The account's address (its own or an alias) it was sent from or written to; null when none. */
+  own_address?: string | null;
+};
+
+/** How a message came, read from its source (GET /v1/collab/messages/{id}/details). */
+export type MailMessageDetails = {
+  /** The envelope sender's domain. */
+  mailed_by: string;
+  /** Domains whose DKIM signature the receiving server verified. */
+  signed_by: string[];
+  /** The domain it came through, when that is not the sender's own. */
+  via: string;
+  /** The receiving server's results ("pass", "fail", "softfail", "none", ...); empty when it reported none. */
+  spf: string;
+  dkim: string;
+  dmarc: string;
+  /** How it reached the receiving server; empty when unknown. */
+  encryption: "tls" | "none" | "";
+  /** spoofed: DMARC failed; unverified: neither SPF nor DKIM passed. */
+  warning: "spoofed" | "unverified" | "";
+  headers: { name: string; value: string }[];
 };
 
 export type MailComment = {
@@ -2129,7 +2232,18 @@ export type MailComment = {
   updated_at: string;
 };
 
-export type MailThreadAccount = { id: string; email: string; name: string; display_name: string; color: string; provider: string; signature_html: string };
+export type MailThreadAccount = {
+  id: string;
+  email: string;
+  name: string;
+  display_name: string;
+  color: string;
+  provider: string;
+  signature_html: string;
+  /** The addresses it sends from, its own first. */
+  identities?: MailIdentity[];
+  default_from?: string;
+};
 
 export type MailThreadDetail = {
   thread: MailThread;

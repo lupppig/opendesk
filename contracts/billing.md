@@ -18,6 +18,8 @@ Same code, same API.
   limits below. The one deliberate
   exception is Collab (members' own mail accounts, contracts/collab.md), which only the
   `collab` plan has.
+- An address's aliases (up to 20 each, contracts/teams.md "Aliases") are not mailboxes and are
+  never counted: each alias has its own name, signature, team and brand on every plan.
 - Seats (Stripe quantity) = members whose role is owner, admin or agent. **Viewers are free.**
   The quantity is synced to Stripe whenever members change (prorated).
 - On free, "members" counts all members plus pending invitations; the owner is the 1.

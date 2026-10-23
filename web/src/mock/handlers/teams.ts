@@ -378,7 +378,8 @@ function registerBrandRoutes() {
     requireAdmin(ctx.ws);
     const b = findBrand(ctx);
     if (b.is_default) throw new HttpError(409, "default_brand", "The default brand can't be deleted. Make another brand the default first.");
-    if (ctx.ws.mailboxes.some((m) => m.brand_id === b.id)) throw new HttpError(409, "brand_in_use", "Move or remove this brand's addresses first.");
+    if (ctx.ws.mailboxes.some((m) => m.brand_id === b.id || Object.values(m.alias_settings ?? {}).some((x) => x.brand_id === b.id)))
+      throw new HttpError(409, "brand_in_use", "Move or remove this brand's addresses and aliases first.");
     for (const w of ctx.ws.widgets.filter((x) => x.brand_id === b.id)) {
       delete ctx.ws.widgetSecrets[w.id];
       publish(ctx.ws, "widget.deleted", { widget_id: w.id });

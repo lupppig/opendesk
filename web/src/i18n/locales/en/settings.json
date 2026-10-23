@@ -525,7 +525,7 @@
       },
       "customer_replied": {
         "label": "Customer replies",
-        "hint": "On tickets assigned to you"
+        "hint": "On tickets assigned to you, and on tickets nobody has yet"
       },
       "thread_replied": {
         "label": "Side conversation answers",
@@ -618,5 +618,12 @@
     "preview": "Preview",
     "previewOther": "The preview fills the sender's name and details with yours.",
     "saved": "Profile saved"
+  },
+  "signatureEditor": {
+    "block": "Signature",
+    "edit": "Edit signature",
+    "remove": "Remove signature",
+    "preview": "Preview",
+    "none": "No signature"
   }
 }

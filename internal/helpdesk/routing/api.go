@@ -403,7 +403,15 @@ func runTest(ctx context.Context, q db.Querier, wid uuid.UUID, inboundDomain str
 	default:
 		return out, httpx.Validation(`channel must be "email" or "chat"`)
 	}
-	brand, err := domain.ResolveBrand(ctx, q, wid, nil, in.MailboxID, in.WidgetID)
+	var aliasBrand *uuid.UUID
+	if in.MailboxID != nil && in.ReceivedAt != "" {
+		b, err := domain.AddressBrand(ctx, q, wid, *in.MailboxID, in.ReceivedAt)
+		if err != nil {
+			return out, err
+		}
+		aliasBrand = b
+	}
+	brand, err := domain.ResolveBrand(ctx, q, wid, aliasBrand, in.MailboxID, in.WidgetID)
 	if err != nil {
 		return out, err
 	}

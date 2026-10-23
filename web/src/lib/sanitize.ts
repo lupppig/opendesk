@@ -20,9 +20,10 @@ const EMAIL_ATTR = [...ALLOWED_ATTR, "style", "align", "valign", "bgcolor", "cel
 // In the app's own DOM a class could pick up the app's styles; only mentions keep theirs.
 const APP_CLASSES = new Set(["mention"]);
 
-// The pass in progress: whether classes stay, and whether remote images are held back
-// (and how many were).
-type Pass = { keepClasses: boolean; blockRemote: boolean; blocked: number };
+// The pass in progress: whether classes stay, whether remote images are held back (and how
+// many were), and whether links and images get the app's display attributes (off for HTML
+// that is sent on as written: a signature in a composer).
+type Pass = { keepClasses: boolean; blockRemote: boolean; blocked: number; display?: boolean };
 let pass: Pass | null = null;
 
 const CSS_URL = /url\s*\(\s*(['"]?)([^'"()]*)\1\s*\)/gi;
@@ -89,11 +90,14 @@ function ensureHook() {
         else node.removeAttribute("style");
       }
     }
+    const display = pass?.display !== false;
     if (node.tagName === "A") {
       const href = node.getAttribute("href") ?? "";
       if (/^\s*(javascript|data|vbscript):/i.test(href)) node.removeAttribute("href");
-      node.setAttribute("target", "_blank");
-      node.setAttribute("rel", "noopener noreferrer nofollow");
+      if (display) {
+        node.setAttribute("target", "_blank");
+        node.setAttribute("rel", "noopener noreferrer nofollow");
+      }
     }
     if (node.tagName === "IMG") {
       const src = node.getAttribute("src") ?? "";
@@ -103,8 +107,10 @@ function ensureHook() {
         node.setAttribute("data-od-held", "");
         pass.blocked++;
       }
-      node.setAttribute("loading", "lazy");
-      node.setAttribute("referrerpolicy", "no-referrer");
+      if (display) {
+        node.setAttribute("loading", "lazy");
+        node.setAttribute("referrerpolicy", "no-referrer");
+      }
     }
   });
 }
@@ -150,6 +156,15 @@ export function sanitizeEmailHtml(html: string, opts: SanitizeOptions = {}): San
     ALLOWED_URI_REGEXP: URI,
   });
   return { html: out, held: p.blocked };
+}
+
+/**
+ * A signature as it goes out: the email allowlist (tables, styles, sized images, classes)
+ * and nothing added, so a composer sends the stored signature as it is.
+ */
+export function cleanSignatureHtml(html: string): string {
+  const p: Pass = { keepClasses: true, blockRemote: false, blocked: 0, display: false };
+  return run(html, p, { ALLOWED_TAGS: EMAIL_TAGS.filter((t) => t !== "style"), ALLOWED_ATTR: EMAIL_ATTR, ALLOW_DATA_ATTR: false, ALLOWED_URI_REGEXP: URI });
 }
 
 /** A designed email: laid out with tables or painted backgrounds, which the app's prose would flatten. */

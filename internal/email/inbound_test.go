@@ -75,6 +75,10 @@ func TestInboundHTTP(t *testing.T) {
 	if w.jobCount("email.process_inbound", "inbound_email_id", id.String()) != 1 {
 		t.Fatal("processing not queued")
 	}
+	// The mailbox records when mail last arrived.
+	if w.count(`SELECT count(*) FROM mailboxes WHERE id = $1 AND last_received_at > now() - interval '1 minute'`, m.ID) != 1 {
+		t.Fatal("last_received_at not set")
+	}
 	if code, out := postInbound(t, srv.URL, "test", w.forwardAddr(m, ""), raw); code != http.StatusAccepted || out["duplicate"] != true {
 		t.Fatalf("dup: %d %v", code, out)
 	}

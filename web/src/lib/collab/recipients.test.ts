@@ -57,6 +57,21 @@ describe("replyRecipients", () => {
     expect(replyRecipients(m, "me@ours.com", "reply_all")).toEqual({ to: ["ada@acme.com"], cc: ["cy@acme.com"] });
   });
 
+  it("reply all leaves out every one of the account's addresses, its aliases included", () => {
+    const m = msg({
+      from: { name: "Ada", email: "ada@acme.com" },
+      to: [{ name: "Sales", email: "Sales@ours.com" }],
+      cc: [
+        { name: "Me", email: "me@ours.com" },
+        { name: "Cy", email: "cy@acme.com" },
+      ],
+    });
+    expect(replyRecipients(m, ["me@ours.com", "sales@ours.com"], "reply_all")).toEqual({ to: ["ada@acme.com"], cc: ["cy@acme.com"] });
+    // Sent from an alias: a reply goes to its recipients again.
+    const sent = msg({ from: { name: "Sales", email: "sales@ours.com" }, to: [{ name: "Ada", email: "ada@acme.com" }] });
+    expect(replyRecipients(sent, ["me@ours.com", "sales@ours.com"], "reply")).toEqual({ to: ["ada@acme.com"], cc: [] });
+  });
+
   it("forward and new start empty", () => {
     expect(replyRecipients(msg({}), "me@ours.com", "forward")).toEqual({ to: [], cc: [] });
     expect(replyRecipients(msg({}), "me@ours.com", "new")).toEqual({ to: [], cc: [] });

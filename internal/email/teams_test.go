@@ -423,11 +423,11 @@ func TestMailboxAddressesAPI(t *testing.T) {
 }
 
 func TestFromName(t *testing.T) {
-	n := senderNames{agent: "Anna Agent", team: "Billing", brand: "Acme", mailbox: "Acme Support"}
+	n := senderNames{Agent: "Anna Agent", Team: "Billing", Brand: "Acme", Mailbox: "Acme Support"}
 	none := n
-	none.agent = ""
+	none.Agent = ""
 	noTeam := none
-	noTeam.team = ""
+	noTeam.Team = ""
 	cases := []struct {
 		format string
 		names  senderNames
@@ -446,7 +446,7 @@ func TestFromName(t *testing.T) {
 	}
 	for _, c := range cases {
 		if got := fromName(c.format, c.names); got != c.want {
-			t.Errorf("fromName(%q, agent %q) = %q, want %q", c.format, c.names.agent, got, c.want)
+			t.Errorf("fromName(%q, agent %q) = %q, want %q", c.format, c.names.Agent, got, c.want)
 		}
 	}
 	for _, f := range []string{"{agent} at {mailbox}", "Team {team}", "{brand}", "Support desk"} {

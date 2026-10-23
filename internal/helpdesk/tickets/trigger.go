@@ -87,7 +87,7 @@ func RunTrigger(ctx context.Context, d *deps.Deps, a jobs.TicketTriggerArgs) err
 			}
 		}
 		if a.Trigger == jobs.TriggerCustomerReplied {
-			if err := notifyCustomerReplied(ctx, tx, a.WorkspaceID, a.TicketID, a.MessageID); err != nil {
+			if err := notifyCustomerReplied(ctx, tx, d, a.WorkspaceID, a.TicketID, a.MessageID, a.ActorUserID); err != nil {
 				return err
 			}
 		}
@@ -728,13 +728,21 @@ func chooseCandidate(cands []candidate, last *uuid.UUID, mode string) uuid.UUID 
 	return best.ID
 }
 
-func notifyCustomerReplied(ctx context.Context, tx pgx.Tx, wid, tid uuid.UUID, messageID *uuid.UUID) error {
+// notifyCustomerReplied tells the assignee about a customer's reply, or, on a ticket nobody
+// has, the people a new ticket would tell, so a reply never waits unseen.
+func notifyCustomerReplied(ctx context.Context, tx pgx.Tx, d *deps.Deps, wid, tid uuid.UUID, messageID, actor *uuid.UUID) error {
 	var assignee *uuid.UUID
 	if err := tx.QueryRow(ctx, `SELECT assignee_id FROM tickets WHERE workspace_id = $1 AND id = $2`, wid, tid).Scan(&assignee); err != nil {
 		return err
 	}
-	if assignee == nil {
-		return nil
+	var recipients []uuid.UUID
+	if assignee != nil {
+		recipients = []uuid.UUID{*assignee}
+	} else {
+		var err error
+		if recipients, _, _, err = unassignedAudience(ctx, tx, d, wid, tid, actor); err != nil || len(recipients) == 0 {
+			return err
+		}
 	}
 	data := map[string]any{}
 	if messageID != nil {
@@ -750,7 +758,12 @@ func notifyCustomerReplied(ctx context.Context, tx pgx.Tx, wid, tid uuid.UUID, m
 		WHERE t.workspace_id = $1 AND t.id = $2`, wid, tid).Scan(&cid, &cname); err == nil {
 		data["contact"] = map[string]any{"id": cid.String(), "name": cname}
 	}
-	return hd.Notify(ctx, tx, wid, *assignee, hd.NotifyCustomerReplied, &tid, data)
+	for _, uid := range recipients {
+		if err := hd.Notify(ctx, tx, wid, uid, hd.NotifyCustomerReplied, &tid, maps.Clone(data)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Who hears about a new unassigned ticket (contracts/api.md "Assignment").
@@ -760,50 +773,9 @@ const (
 	newTicketMax       = 50
 )
 
-// notifyNewTicket tells people about a new ticket nobody is assigned to, by
-// settings.new_ticket_notify, never the person who created it. Spam, a solved or closed
-// ticket, and one the answer bot is answering are not announced: the bot's handoff
-// notifies (ai_handoff).
+// notifyNewTicket tells people about a new ticket nobody is assigned to.
 func notifyNewTicket(ctx context.Context, tx pgx.Tx, d *deps.Deps, wid, tid uuid.UUID, actor *uuid.UUID) error {
-	s, err := hd.LoadSettings(ctx, tx, wid)
-	if err != nil {
-		return err
-	}
-	mode := s.NewTicketNotify()
-	if mode == hd.NewTicketNotifyOff {
-		return nil
-	}
-	var assignee, team, mailbox, contact *uuid.UUID
-	var channel, status string
-	var spam bool
-	var custom map[string]any
-	err = tx.QueryRow(ctx, `SELECT assignee_id, team_id, mailbox_id, contact_id, channel, status, spam, custom FROM tickets
-		WHERE workspace_id = $1 AND id = $2 AND deleted_at IS NULL`, wid, tid).
-		Scan(&assignee, &team, &mailbox, &contact, &channel, &status, &spam, &custom)
-	if db.IsNotFound(err) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if assignee != nil || spam || status == domain.StatusSolved || status == domain.StatusClosed {
-		return nil
-	}
-	if v, _ := custom["ai_handoff"].(bool); v {
-		return nil
-	}
-	if bot, err := botAnswers(ctx, tx, d, s, wid, team, mailbox, contact, channel); err != nil || bot {
-		return err
-	}
-	// The ticket's team, else its address's team: the pool auto-assignment uses.
-	pool := team
-	if pool == nil && mailbox != nil {
-		if err := tx.QueryRow(ctx, `SELECT team_id FROM mailboxes WHERE workspace_id = $1 AND id = $2`, wid, *mailbox).
-			Scan(&pool); err != nil && !db.IsNotFound(err) {
-			return err
-		}
-	}
-	recipients, err := newTicketRecipients(ctx, tx, wid, pool, mode, actor)
+	recipients, channel, contact, err := unassignedAudience(ctx, tx, d, wid, tid, actor)
 	if err != nil || len(recipients) == 0 {
 		return err
 	}
@@ -820,6 +792,52 @@ func notifyNewTicket(ctx context.Context, tx pgx.Tx, d *deps.Deps, wid, tid uuid
 		}
 	}
 	return nil
+}
+
+// unassignedAudience is who hears about a ticket nobody is assigned to, by
+// settings.new_ticket_notify, never actor. Spam, a solved or closed ticket, and one the
+// answer bot is answering have none: the bot's handoff notifies (ai_handoff).
+func unassignedAudience(ctx context.Context, tx pgx.Tx, d *deps.Deps, wid, tid uuid.UUID, actor *uuid.UUID) (recipients []uuid.UUID, channel string, contact *uuid.UUID, err error) {
+	s, err := hd.LoadSettings(ctx, tx, wid)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	mode := s.NewTicketNotify()
+	if mode == hd.NewTicketNotifyOff {
+		return nil, "", nil, nil
+	}
+	var assignee, team, mailbox *uuid.UUID
+	var status string
+	var spam bool
+	var custom map[string]any
+	err = tx.QueryRow(ctx, `SELECT assignee_id, team_id, mailbox_id, contact_id, channel, status, spam, custom FROM tickets
+		WHERE workspace_id = $1 AND id = $2 AND deleted_at IS NULL`, wid, tid).
+		Scan(&assignee, &team, &mailbox, &contact, &channel, &status, &spam, &custom)
+	if db.IsNotFound(err) {
+		return nil, "", nil, nil
+	}
+	if err != nil {
+		return nil, "", nil, err
+	}
+	if assignee != nil || spam || status == domain.StatusSolved || status == domain.StatusClosed {
+		return nil, "", nil, nil
+	}
+	if v, _ := custom["ai_handoff"].(bool); v {
+		return nil, "", nil, nil
+	}
+	if bot, err := botAnswers(ctx, tx, d, s, wid, team, mailbox, contact, channel); err != nil || bot {
+		return nil, "", nil, err
+	}
+	// The ticket's team, else its address's team: the pool auto-assignment uses.
+	pool := team
+	if pool == nil && mailbox != nil {
+		if err := tx.QueryRow(ctx, `SELECT team_id FROM mailboxes WHERE workspace_id = $1 AND id = $2`, wid, *mailbox).
+			Scan(&pool); err != nil && !db.IsNotFound(err) {
+			return nil, "", nil, err
+		}
+	}
+	recipients, err = newTicketRecipients(ctx, tx, wid, pool, mode, actor)
+	return recipients, channel, contact, err
 }
 
 // newTicketRecipients picks who hears about a new ticket of pool, leaving out actor.

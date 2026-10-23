@@ -115,7 +115,7 @@ export function Markdown({ text, refs = [], caret, className }: { text: string; 
   const nodes = parseBlocks(text);
   const caretEl = caret ? <span aria-hidden className="ollie-caret ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[0.18em] rounded-full bg-tone-violet-solid" /> : null;
   return (
-    <div className={cn("flex flex-col gap-1.5 text-[13px] leading-[20px] text-fg-2", className)} data-ph-mask>
+    <div className={cn("flex min-w-0 flex-col gap-1.5 text-[13px] leading-[20px] text-fg-2 wrap-anywhere", className)} data-ph-mask>
       {nodes.map((n, i) => {
         const last = i === nodes.length - 1;
         const k = `b${i}`;

@@ -86,6 +86,9 @@ async function gmailToConnect(page) {
   await page.getByLabel('App password', { exact: true }).waitFor();
 }
 
+// An alias's open identity, under its row in the mailbox's Aliases section.
+const aliasPanel = (page) => page.locator('#alias-hello-lumen-studio');
+
 async function openMailbox(page, email) {
   await page.getByText(email, { exact: true }).first().click();
   await settle(page);
@@ -468,12 +471,29 @@ export const shots = [
     path: '/settings/mailboxes',
     viewport: { width: 1440, height: 1400 },
     run: (page) => openMailbox(page, 'support@margin.app'),
-    clip: (p) => [text(p, 'Sending'), text(p, '2 / 20', false)],
+    clip: (p) => [text(p, 'Name and addresses'), around(p, 'A reply', 'Auto-reply')],
     pad: 24,
     highlight: [
       { target: (p) => around(p, 'New tickets to this address go to', 'The team that owns').locator('xpath=..'), label: 1, inset: { x: 8, y: -6 } },
       { target: (p) => [text(p, 'From name'), around(p, 'A reply', 'Auto-reply')], label: 2, inset: 8 },
-      { target: (p) => [text(p, 'Aliases'), text(p, '2 / 20', false)], label: 3, inset: 8 },
+    ],
+  },
+  {
+    name: 'mailboxes/aliases',
+    path: '/settings/mailboxes',
+    viewport: { width: 1440, height: 2800 },
+    run: async (page) => {
+      await openMailbox(page, 'support@margin.app');
+      await labelled(page, 'Edit hello@lumen.studio').click();
+      await settle(page);
+    },
+    clip: (p) => [text(p, 'Aliases'), aliasPanel(p)],
+    pad: 24,
+    highlight: [
+      { target: (p) => around(p, 'hello@lumen.studio', '3 / 20'), label: 1, inset: 6 },
+      { target: (p) => around(p, 'From Gmail', 'Waiting for confirmation in Gmail'), label: 2, inset: 4 },
+      { target: (p) => [aliasPanel(p).locator('.grid').first(), aliasPanel(p).getByText('Go out from this address', { exact: false })], label: 3, inset: 6 },
+      { target: (p) => [aliasPanel(p).getByText('Signature', { exact: true }), aliasPanel(p).locator('.signature-editor')], label: 4, inset: 6 },
     ],
   },
   {

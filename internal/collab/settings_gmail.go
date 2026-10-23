@@ -25,12 +25,49 @@ import (
 //   internal_only restrictToDomain: replies only to people in the account's Google
 //                 Workspace domain (Workspace accounts only; Gmail refuses it elsewhere)
 
-// gmailSendAs is a users.settings.sendAs resource (the fields used).
+// gmailSendAs is a users.settings.sendAs resource (the fields used). verificationStatus
+// is set on custom "from" aliases only: "accepted", or "pending" until their owner
+// confirms them (Gmail does not send from those).
 type gmailSendAs struct {
-	SendAsEmail string `json:"sendAsEmail"`
-	DisplayName string `json:"displayName"`
-	Signature   string `json:"signature"`
-	IsPrimary   bool   `json:"isPrimary"`
+	SendAsEmail        string `json:"sendAsEmail"`
+	DisplayName        string `json:"displayName"`
+	Signature          string `json:"signature"`
+	ReplyToAddress     string `json:"replyToAddress"`
+	IsPrimary          bool   `json:"isPrimary"`
+	IsDefault          bool   `json:"isDefault"`
+	VerificationStatus string `json:"verificationStatus"`
+}
+
+// sendAsList reads every send-as address (one call) and picks the account address's
+// entry: the address itself, else the primary one. The rest are its other addresses
+// (identities.go).
+func (g *gmailProvider) sendAsList(ctx context.Context) (own gmailSendAs, others []gmailSendAs, err error) {
+	var list struct {
+		SendAs []gmailSendAs `json:"sendAs"`
+	}
+	if err := g.do(ctx, http.MethodGet, "/settings/sendAs", nil, &list); err != nil {
+		return own, nil, err
+	}
+	at := -1
+	for i, sa := range list.SendAs {
+		if strings.EqualFold(sa.SendAsEmail, g.a.Email) {
+			at = i
+			break
+		}
+		if sa.IsPrimary && at < 0 {
+			at = i
+		}
+	}
+	if at < 0 {
+		return own, nil, &providerError{msg: "Gmail has no send-as address for this account.", permanent: true}
+	}
+	others = []gmailSendAs{}
+	for i, sa := range list.SendAs {
+		if i != at {
+			others = append(others, sa)
+		}
+	}
+	return list.SendAs[at], others, nil
 }
 
 // sendAs reads the account address's sendAs entry: the address itself, else (when Gmail
@@ -65,15 +102,24 @@ func (g *gmailProvider) sendAs(ctx context.Context) (gmailSendAs, error) {
 	return *primary, nil
 }
 
-// patchSendAs changes the account's sendAs entry (gmail.settings.basic) and returns
-// Gmail's answer.
-func (g *gmailProvider) patchSendAs(ctx context.Context, body map[string]string) (gmailSendAs, error) {
+// patchSendAs changes the account's own sendAs entry (gmail.settings.basic) and returns
+// Gmail's answer. Only that one: Gmail lets addresses other than the primary be changed
+// only by service accounts with domain-wide authority, so the others are read and never
+// written (identities.go).
+func (g *gmailProvider) patchSendAs(ctx context.Context, body map[string]any) (gmailSendAs, error) {
 	sa, err := g.sendAs(ctx)
 	if err != nil {
 		return sa, err
 	}
 	var out gmailSendAs
 	err = g.do(ctx, http.MethodPatch, "/settings/sendAs/"+url.PathEscape(sa.SendAsEmail), body, &out)
+	return out, err
+}
+
+// sendAsOf reads one of the account's other send-as addresses.
+func (g *gmailProvider) sendAsOf(ctx context.Context, address string) (gmailSendAs, error) {
+	var out gmailSendAs
+	err := g.do(ctx, http.MethodGet, "/settings/sendAs/"+url.PathEscape(address), nil, &out)
 	return out, err
 }
 
@@ -138,13 +184,22 @@ func (g *gmailProvider) putVacation(ctx context.Context, o OutOfOffice) (gmailVa
 	return out, err
 }
 
-// readSettings reads the signature, From name and automatic reply. What was read is kept
-// even when another part failed.
+// readSettings reads the send-as list (the account's signature and From name, its other
+// addresses and the default one) and the automatic reply. What was read is kept even when
+// another part failed.
 func (g *gmailProvider) readSettings(ctx context.Context) (remoteSettings, error) {
 	var r remoteSettings
-	sa, err := g.sendAs(ctx)
+	sa, others, err := g.sendAsList(ctx)
 	if err == nil {
-		r.signature, r.displayName = &sa.Signature, &sa.DisplayName
+		r.signature, r.displayName, r.replyTo = &sa.Signature, &sa.DisplayName, &sa.ReplyToAddress
+		r.identities = &others
+		def := sa.SendAsEmail
+		for _, o := range others {
+			if o.IsDefault {
+				def = o.SendAsEmail
+			}
+		}
+		r.defaultFrom = &def
 	}
 	v, verr := g.vacation(ctx)
 	if verr == nil {

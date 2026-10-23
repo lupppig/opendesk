@@ -17,8 +17,8 @@ const on: NotificationChannels = { email: true, push: true, desktop: true };
 /** Each type's group and the channels it follows until the person sets them. */
 export const NOTIFICATION_DEFAULTS: Record<NotificationType, { group: NotificationGroup; defaults: NotificationChannels }> = {
   assigned: { group: "tickets", defaults: on },
-  // A new ticket nobody is assigned to (contracts/api.md "Assignment"): no email until turned on.
-  new_ticket: { group: "tickets", defaults: { email: false, push: true, desktop: true } },
+  // A new ticket nobody is assigned to (contracts/api.md "Assignment").
+  new_ticket: { group: "tickets", defaults: on },
   mentioned: { group: "tickets", defaults: on },
   customer_replied: { group: "tickets", defaults: on },
   thread_replied: { group: "tickets", defaults: on },

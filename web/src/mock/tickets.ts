@@ -64,7 +64,8 @@ export function addressAfterMove(ws: WsData, t: Ticket, toTeam: string | null): 
 export function fromName(ws: WsData, t: Ticket, m: Mailbox, agent: string | null): string {
   const team = ws.teams.find((x) => x.id === t.team_id)?.name;
   const brand = ws.brands.find((b) => b.id === (t.brand_id || m.brand_id))?.name ?? "";
-  const mailbox = m.display_name || m.name;
+  const alias = t.received_at.toLowerCase();
+  const mailbox = (m.aliases.includes(alias) && m.alias_settings?.[alias]?.display_name) || m.display_name || m.name;
   let f = (m.from_name_format || "{agent} at {mailbox}").trim();
   if (!/\{(team|brand|mailbox|agent|agent_first)\}/.test(f)) return f || mailbox;
   if (!agent) {
@@ -75,10 +76,16 @@ export function fromName(ws: WsData, t: Ticket, m: Mailbox, agent: string | null
   return f.replace(/\{(agent_first|agent|team|brand|mailbox)\}/g, (_, k: string) => vars[k] ?? "").replace(/\s+/g, " ").trim() || mailbox;
 }
 
-/** The address a reply goes out as: the alias the customer wrote to, when it belongs to that mailbox. */
+/**
+ * The address a reply goes out From: the alias the customer wrote to, when it belongs to that
+ * mailbox and the provider sends as it (contracts/teams.md "Aliases"), else the mailbox's own.
+ */
 function sendAs(t: Ticket, m: Mailbox): string {
   const r = t.received_at.toLowerCase();
-  return r && m.aliases.some((a) => a.toLowerCase() === r) ? t.received_at : m.email;
+  if (!r || !m.aliases.some((a) => a.toLowerCase() === r)) return m.email;
+  const st = m.alias_settings?.[r]?.send_as ?? "unknown";
+  const self = m.outbound_kind === "smtp" || (m.outbound_kind === "google" && st === "verified") || (m.outbound_kind === "microsoft" && st !== "unverified");
+  return self ? t.received_at : m.email;
 }
 
 /** A team filter: ids, "mine" and "none", comma separated. */

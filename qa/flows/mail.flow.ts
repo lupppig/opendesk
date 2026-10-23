@@ -134,3 +134,94 @@ test.describe("dark", () => {
     await proof.shot("pinned-dark", { caption: "The pinned bar in the dark theme" });
   });
 });
+
+test("a reply shows what is new and keeps the quoted mail a click away", async ({ page, proof }) => {
+  await proof.open("/mail");
+  await page.getByRole("option", { name: /Your application to Fieldway/ }).first().click();
+  await expect(page.getByRole("heading", { name: "Your application to Fieldway" })).toBeVisible();
+  await page.getByRole("button", { name: "Not now" }).click();
+  const latest = page.getByRole("article", { name: "Show message from Jade Morrow" });
+  await expect(latest.getByText("what's holding you back")).toBeVisible();
+  await expect(latest.getByText("Growth @ Fieldway")).toBeVisible();
+  await expect(latest.getByText(/wrote:/)).toHaveCount(0);
+  await proof.chapter("Quoted text", "A reply shows what the sender wrote; the earlier mail their client copied in folds away");
+  await proof.shot("quoted-folded", { caption: "The newest reply: the message and its signature, the earlier mail folded into ..." });
+
+  await latest.getByRole("button", { name: "Show quoted text" }).click();
+  await expect(latest.getByText(/Jade Morrow <jade@fieldway.io> wrote:/)).toBeVisible();
+  await proof.dwell();
+  await proof.shot("quoted-open", { caption: "Asked for: the quoted mail opens under the reply, set off by a rule" });
+
+  await latest.getByRole("button", { name: "Hide quoted text" }).click();
+  await expect(latest.getByText(/wrote:/)).toHaveCount(0);
+  await proof.dwell();
+});
+
+test("fold a message from its header and read how it came", async ({ page, proof }) => {
+  await proof.open("/mail");
+  await page.getByRole("option", { name: /Your application to Fieldway/ }).first().click();
+  await expect(page.getByRole("heading", { name: "Your application to Fieldway" })).toBeVisible();
+  await page.getByRole("button", { name: "Not now" }).click();
+  const latest = page.getByRole("article", { name: "Show message from Jade Morrow" });
+  await expect(latest.getByText("what's holding you back")).toBeVisible();
+  await proof.chapter("Message details", "Click the header to fold a message; the arrow beside its recipients shows how it came");
+
+  await latest.locator("header time").click();
+  await expect(latest).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Show message from Jade Morrow" }).last()).toBeFocused();
+  await proof.dwell();
+  await proof.shot("header-folded", { caption: "A click on the header folds the message: the row keeps the avatar, name and time where they were" });
+
+  await page.getByRole("button", { name: "Show message from Jade Morrow" }).last().click();
+  await expect(latest.getByText("what's holding you back")).toBeVisible();
+  await latest.getByRole("button", { name: "Show details" }).click();
+  const card = page.getByRole("dialog").filter({ hasText: "mailed by" });
+  await expect(card.getByText("fieldway.io", { exact: true }).first()).toBeVisible();
+  await expect(card.getByText("Standard encryption (TLS)")).toBeVisible();
+  await proof.dwell();
+  await proof.shot("details", { caption: "Details: who it is from and to, mailed by, signed by, encryption and the sender checks" });
+
+  await card.getByRole("button", { name: "Show original headers" }).click();
+  const headers = page.getByRole("dialog", { name: "Original headers" });
+  await expect(headers.getByText("Authentication-Results:")).toBeVisible();
+  await proof.dwell();
+  await proof.shot("headers", { caption: "The original headers, in order, ready to copy" });
+});
+
+test("mail that fails its sender's checks carries a warning", async ({ page, proof }) => {
+  await proof.open("/mail");
+  await page.getByRole("option", { name: /Your account access has been limited/ }).first().click();
+  await expect(page.getByRole("heading", { name: "Your account access has been limited" })).toBeVisible();
+  await page.getByRole("button", { name: "Not now" }).click();
+  const msg = page.getByRole("article", { name: "Show message from PayPal" });
+  await expect(msg.getByRole("alert")).toContainText("Be careful with this message");
+  await expect(msg.getByText("via mail-relay.top")).toBeVisible();
+  await proof.chapter("Sender warning", "A message that only claims to be from PayPal fails DMARC");
+  await proof.shot("spoofed", { caption: "The warning above a message that failed its sender's checks, and the domain it came through" });
+
+  await msg.getByRole("button", { name: "Show details" }).click();
+  const card = page.getByRole("dialog").filter({ hasText: "mailed by" });
+  await expect(card.getByText("DMARC fail")).toBeVisible();
+  await proof.dwell();
+  await proof.shot("spoofed-details", { caption: "Its details: mailed by another domain, no signature, DMARC failed, not encrypted" });
+});
+
+test("fold a long email from its header while reading it", async ({ page, proof }) => {
+  await proof.open("/mail");
+  await openNewsletter(page);
+  const mail = page.getByRole("article", { name: "Show message from Webdrop" });
+  const header = mail.locator("header");
+  await header.hover();
+  await page.mouse.wheel(0, 1400);
+  await expect(header.getByText("newsletter@webdrop.dev")).toBeInViewport();
+  await proof.chapter("Always in reach", "Deep in a long email, its header stays on top, one click from folding");
+  await proof.dwell();
+  await proof.shot("sticky-header", { caption: "Scrolled through a long newsletter: its header stays at the top" });
+
+  await header.locator("time").click();
+  const row = page.getByRole("button", { name: "Show message from Webdrop" });
+  await expect(row).toBeInViewport();
+  await expect(row).toBeFocused();
+  await proof.dwell();
+  await proof.shot("long-folded", { caption: "Folded: the row stays in view, ready to open again" });
+});
