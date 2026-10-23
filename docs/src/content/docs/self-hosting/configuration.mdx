@@ -248,6 +248,15 @@ Agent pictures from Google and GitHub, Gravatar and website icons need no config
 | `POSTHOG_KEY` | | Product analytics. Empty sends nothing. |
 | `POSTHOG_HOST` | `https://us.i.posthog.com` | PostHog host. |
 
+Server-side analytics is off while `POSTHOG_KEY` is empty. Setting it opts the instance into
+the backend event schemas: only known event names and approved scalar properties are sent;
+unknown events, nested values, and unapproved properties are discarded. User and workspace
+UUIDs identify events. Message text, email addresses, credentials, and exception messages are
+not included. Browser analytics has separate `WEB_POSTHOG_KEY` and `WEB_POSTHOG_HOST` settings
+and is not limited by these schemas.
+The receiving PostHog project controls access, data residency, and retention, so configure
+those settings for your deployment; the instance does not set PostHog retention.
+
 ## AI
 
 AI features are on when a provider is configured. See [AI features](/guides/ai/).

@@ -234,6 +234,24 @@ func TestAttachmentStored(t *testing.T) {
 	}
 }
 
+func TestActiveAttachmentStoredAsText(t *testing.T) {
+	w := newWorld(t)
+	m := w.mailbox(InboundForwarding, OutboundSystem, nil)
+	raw := "From: " + customer() + "\r\nTo: " + w.forwardAddr(m, "") + "\r\nSubject: Page\r\nMessage-ID: <act" + crypto.RandomString(6) + "@a.test>\r\n" +
+		"MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=b\r\n\r\n" +
+		"--b\r\nContent-Type: text/plain\r\n\r\nSee attached.\r\n" +
+		"--b\r\nContent-Type: image/png\r\nContent-Disposition: attachment; filename=\"page.png\"\r\n\r\n<html><script>alert(1)</script></html>\r\n" +
+		"--b--\r\n"
+	msg := w.messageFor(w.receive(m, raw))
+	var ct string
+	if err := w.d.DB.Pool.QueryRow(w.ctx, `SELECT content_type FROM attachments WHERE message_id = $1`, msg.ID).Scan(&ct); err != nil {
+		t.Fatal(err)
+	}
+	if ct != "text/plain; charset=utf-8" {
+		t.Fatalf("an HTML file claiming to be an image is stored as %q", ct)
+	}
+}
+
 func TestNoiseIgnored(t *testing.T) {
 	w := newWorld(t)
 	m := w.mailbox(InboundForwarding, OutboundSystem, nil)

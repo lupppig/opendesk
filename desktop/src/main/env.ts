@@ -25,7 +25,7 @@ export function devArg(name: string): string | undefined {
 }
 
 /**
- * `OPENDESK_DESKTOP_SANDBOX=<dir>` (development builds): a throwaway run for recorded proof (qa/).
+ * `OPENDESK_DESKTOP_SANDBOX=<dir>` (development builds): a throwaway run for automated testing.
  * Its settings live in <dir>, it registers no opendesk:// handler, shows no OS notification or
  * badge, takes no Dock icon or focus, and its windows are invisible to the person at the machine
  * (fully transparent, click-through) while still painting for the recorder.

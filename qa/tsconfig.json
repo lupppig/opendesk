@@ -11,5 +11,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["lib", "flows", "scripts", "hooks", "playwright.config.ts"]
+  "include": ["lib", "scripts", "hooks"]
 }

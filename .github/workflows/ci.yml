@@ -367,8 +367,7 @@ jobs:
       - name: test
         run: mix test
 
-  # The QA harness and the gate the Proof workflow runs (qa/README.md). Recording is local; CI
-  # checks the code, the gate's rules, and that every flow still loads.
+  # The QA harness (qa/README.md): its code and the hook's rules.
   qa:
     name: QA harness
     needs: changes
@@ -392,8 +391,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
-      - name: Every flow loads
-        run: pnpm exec playwright test --list
 
   e2e:
     name: End-to-end

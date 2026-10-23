@@ -21,7 +21,7 @@ service (opendesk.sh) and as a self-host, and **the two are the same code**.
 | `contracts/` | **the contracts between parts**: API, events, realtime, tokens. Read before changing an interface | |
 | `migrations/` | SQL migrations, embedded in the binary, applied at boot | |
 | `brand/` | logo, icons, tokens | |
-| `qa/` | `pnpm qa`, recorded proof (Playwright on the mocks) and the gate every pull request is held to; `qa/README.md` | your machine; the gate in CI (`Proof`) |
+| `qa/` | `pnpm qa`: CI's checks for what a branch changes, run locally; `qa/README.md` | your machine |
 
 Data: Postgres. Hosted = **PlanetScale Postgres**, reached only over AWS PrivateLink
 (`DATABASE_URL` is PgBouncer on 6432 for request handlers; `DATABASE_URL_DIRECT` is the
@@ -235,35 +235,14 @@ Errors, logging, data
 - The social card (`site/public/og.jpg`, also the docs' and GitHub's) is the hero's app window
   on its painting. After changing that window, run `pnpm og` in `site/` and commit the copies.
 
-## QA and proof on pull requests
+## QA on pull requests
 
-Every pull request carries a QA section, and every one that changes something people see
-carries recorded proof of it. This is not a judgment call: CI's `Proof` check (main's copy of
-`qa/lib/gate.ts`) fails without them, and the Claude Code hooks in `.claude/settings.json` hold
-an agent to the same rule before it opens a pull request and before it finishes.
-`qa/README.md` is the playbook; read it before the first recording.
+`pnpm qa` in `qa/` runs CI's checks for every area the branch changes, on the committed HEAD
+(`qa/README.md`). Run it before opening a pull request and after every follow-up commit: fix what
+fails, commit, run it again.
 
-- **QA, always.** `pnpm qa` in `qa/` runs CI's checks for every area the branch changes, on the
-  committed HEAD. Fix what fails, commit, run it again. A run vouches for one commit: after a
-  follow-up commit, run it again.
-- **Stills for every visible change.** Anything under `web/src`, `web/widget/src`, `admin/src`,
-  `site/`, the docs chrome, `desktop/src`, `ios/` or `brand/` (`qa/lib/policy.ts` is the list)
-  needs stills of the screens it changes. Nothing is too small: a label, a colour or a spacing
-  nudge is what a still shows best. Shoot the changed screen in the state the change is about, not
-  a generic page.
-- **A walkthrough video where it behaves.** Every surface but the site and docs also needs a video,
-  and every recorded flow makes one: walk the changed interaction (open it, use it, show the result).
-- Write a flow in `qa/flows/` from the code you changed and run `pnpm proof <filter>`. Everything
-  records without a backend: the app, widget and desktop app on the web mock, the admin panel on
-  its mock, the iPhone app in demo mode on its own simulator. When the mock or demo lacks the state
-  the change is about, extend it (`web/src/mock/`, `admin/src/mock/`, `ios/Opendesk/Core/Demo/`)
-  in the same pull request.
-- Read every still once before sharing. It is what the reviewer sees; a still of the wrong screen
-  or a loading state is not proof.
-- Open the pull request with `pnpm share --title ... --body-file ...`, never `gh pr create`. After
-  every follow-up push: `pnpm qa`, record again if a surface changed, `pnpm share`.
-- Never apply the `qa-exempt` label, merge with `--admin` or change rulesets: those are the
-  maintainer's. Record from the main agent only; a machine-wide lock runs one recording at a time.
+Never merge with `--admin` or change rulesets: those are the maintainer's (the hook in
+`.claude/settings.json` refuses both).
 
 ## Commits
 

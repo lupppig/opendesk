@@ -10,12 +10,10 @@ function blocked(command: string): boolean {
   return res.status === 2;
 }
 
-test("refuses the commands that step around the gate", () => {
-  assert.ok(blocked("gh pr create --title x --body y"));
-  assert.ok(blocked("cd qa && gh pr create --fill"));
-  assert.ok(blocked("GH_HOST=github.com gh pr create"));
+test("refuses merging past the queue and changing the repository's rules", () => {
   assert.ok(blocked("gh pr merge 5 --squash --admin"));
-  assert.ok(blocked("gh pr edit 5 --add-label qa-exempt"));
+  assert.ok(blocked("cd web && gh pr merge 5 --admin"));
+  assert.ok(blocked("GH_HOST=github.com gh pr merge 5 --admin"));
   assert.ok(blocked("gh api repos/o/r/rulesets/1 -X PUT --input r.json"));
   assert.ok(blocked("gh api repos/o/r/branches/main/protection --method DELETE"));
 });
@@ -25,8 +23,7 @@ test("lets everything else through, including text that only mentions those comm
   assert.ok(!blocked("gh pr merge 5 --auto --squash"));
   assert.ok(!blocked("gh api repos/o/r/rulesets"));
   assert.ok(!blocked("git push -u origin HEAD"));
-  assert.ok(!blocked("cd qa && pnpm share --title 'feat: x' --body-file pr.md"));
-  assert.ok(!blocked("grep -rn qa-exempt qa/"));
-  assert.ok(!blocked("python3 - <<'EOF'\ns = 'never `gh pr create`, never the qa-exempt label'\nEOF"));
-  assert.ok(!blocked("git commit -m 'feat: block gh pr create in the QA hook'"));
+  assert.ok(!blocked("gh pr create --title x --body-file pr.md"));
+  assert.ok(!blocked("python3 - <<'EOF'\ns = 'never `gh pr merge --admin`'\nEOF"));
+  assert.ok(!blocked("git commit -m 'feat: block gh pr merge --admin in the hook'"));
 });

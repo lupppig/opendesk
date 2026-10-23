@@ -7,6 +7,8 @@ opendesk reads mail through restricted Google scopes: Collab mail accounts and s
 
 Each CASA requirement and how opendesk meets it is listed in [CASA controls](/security/casa/).
 
+See [Email security and data controls](/security/email-data-controls/) for attachment scanning, DLP, retention, and legal-hold responsibilities.
+
 ## Authentication
 
 - Passwords are hashed with **Argon2id** (64 MiB memory, 3 iterations, 2 lanes, 16-byte salt).

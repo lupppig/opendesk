@@ -211,7 +211,8 @@ Errors, all `application/problem+json`:
 A failed call costs nothing: the AI balance is charged only after the feature succeeded, and a
 usage row (`ai_usage`, counts only) is written with every spend. Without billing (self-host)
 usage rows are still written; there is no balance. Each successful call also sends the
-analytics event `ai_feature_used {feature, model}` (no content).
+analytics event `ai_feature_used {feature, own_key}`. It records the feature category and
+whether the workspace's own provider key was used; it does not include model names or content.
 
 Streaming: `draft`, `ask` and `rewrite` also accept `Accept: text/event-stream` and stream
 `event: delta` `{text}` chunks, then `event: done` with the full JSON response. The call is

@@ -365,7 +365,7 @@ func (c *call) charge(ctx context.Context) {
 	if c.userID != nil {
 		distinct = c.userID.String()
 	}
-	c.s.d.Analytics.Capture(distinct, c.wid.String(), "ai_feature_used", map[string]any{"feature": c.feature, "model": c.resp.Model, "own_key": c.onKey})
+	c.s.d.Analytics.Capture(distinct, c.wid.String(), "ai_feature_used", map[string]any{"feature": c.feature, "own_key": c.onKey})
 }
 
 // apiErr maps AI errors to problem responses.

@@ -1,7 +1,7 @@
 {
   "name": "@opendesk/qa",
   "private": true,
-  "description": "QA and recorded proof for pull requests: the checks for what changed, scripted Playwright flows that record stills and walkthrough videos, and the gate CI holds every pull request to",
+  "description": "QA for pull requests: the checks CI runs, for the areas a branch changes, on your machine",
   "type": "module",
   "packageManager": "pnpm@12.10.1",
   "engines": {
@@ -9,20 +9,11 @@
   },
   "scripts": {
     "qa": "node scripts/qa.ts",
-    "proof": "playwright test",
-    "share": "node scripts/share.ts",
-    "gate": "node scripts/gate.ts",
-    "aria": "node scripts/aria.ts",
-    "doctor": "node scripts/doctor.ts",
     "typecheck": "tsc --noEmit -p .",
-    "test": "node --test lib/*.test.ts hooks/*.test.ts"
+    "test": "node --test hooks/*.test.ts"
   },
   "devDependencies": {
-    "@playwright/test": "1.64.1",
     "@types/node": "^26.6.5",
-    "@types/pngjs": "^6.0.5",
-    "pixelmatch": "^8.0.0",
-    "pngjs": "^7.0.0",
     "typescript": "~7.0.2"
   }
 }

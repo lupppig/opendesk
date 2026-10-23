@@ -1,15 +1,14 @@
 // `pnpm qa`: runs the checks CI runs, for the areas this branch changes, against the committed
-// HEAD, and records the result for `pnpm share` to put in the pull request's QA section.
+// HEAD, and records the result in .artifacts/qa/latest.json.
 //
 //   node scripts/qa.ts            check what the branch changes since it left main
 //   node scripts/qa.ts --all      every area, whatever changed
-//   node scripts/qa.ts --dirty    allow uncommitted changes (the run cannot be shared)
+//   node scripts/qa.ts --dirty    allow uncommitted changes
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { QA_RUNS, ROOT } from "../lib/env.ts";
 import { baseRef, changedFiles, git } from "../lib/git.ts";
-import { classify } from "../lib/policy.ts";
 
 export type CheckResult = { area: string; name: string; cmd: string; ok: boolean; seconds: number; summary?: string; log: string };
 export type QaRun = {
@@ -21,9 +20,8 @@ export type QaRun = {
   finishedAt: string;
   files: number;
   checks: CheckResult[];
-  // Areas the branch changes that `pnpm qa` has no check for; listed in the QA section as such.
+  // Areas the branch changes that `pnpm qa` has no check for.
   unchecked: string[];
-  surfaces: string[];
 };
 
 type Check = { name: string; dir: string; cmd: string[]; env?: Record<string, string>; summarize?: (out: string) => string | undefined; ok?: (code: number, out: string) => boolean };
@@ -125,7 +123,7 @@ const AREAS: Area[] = [
   { name: "installer", match: /^(deploy\/(install|self-host|caddy)\/|docker-compose\.yml$)/, checks: () => [{ name: "installer checks", dir: ".", cmd: ["make", "installer-check"] }] },
 ];
 
-// Areas a change can touch that have no local check here; named in the QA section so a reviewer knows.
+// Areas a change can touch that have no local check here; named after the run so nobody assumes they were checked.
 const UNCHECKED: [string, RegExp][] = [
   ["e2e flows", /^scripts\/e2e\//],
   ["workflows", /^\.github\//],
@@ -155,7 +153,7 @@ function run(area: string, c: Check, logDir: string): CheckResult {
 
 function main(): void {
   const dirty = git("status", "--porcelain", "--untracked-files=no").length > 0;
-  if (dirty && !flags.has("--dirty")) die("the tree has uncommitted changes. QA vouches for a commit: commit first (or pass --dirty for a run that cannot be shared)");
+  if (dirty && !flags.has("--dirty")) die("the tree has uncommitted changes. QA vouches for a commit: commit first (or pass --dirty)");
   const sha = git("rev-parse", "HEAD");
   const base = baseRef();
   const files = changedFiles(base);
@@ -185,11 +183,9 @@ function main(): void {
     files: files.length,
     checks,
     unchecked,
-    surfaces: classify(files).required,
   };
   writeFileSync(join(QA_RUNS, "latest.json"), JSON.stringify(qa, null, 2));
   if (unchecked.length) console.log(`qa: not checked here: ${unchecked.join(", ")}`);
-  if (qa.surfaces.length) console.log(`qa: this changes ${qa.surfaces.join(", ")}: record proof with \`pnpm proof <flow>\` before \`pnpm share\``);
   console.log(`qa: ${result === "pass" ? "passed" : "FAILED"}`);
   process.exit(result === "pass" ? 0 : 1);
 }

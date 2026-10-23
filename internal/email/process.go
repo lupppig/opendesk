@@ -19,6 +19,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/displayname"
 	"github.com/useopendesk/opendesk/internal/domain"
 	"github.com/useopendesk/opendesk/internal/events"
+	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
 	"github.com/useopendesk/opendesk/internal/helpdesk/routing"
 	"github.com/useopendesk/opendesk/internal/ids"
 	"github.com/useopendesk/opendesk/internal/jobs"
@@ -536,10 +537,12 @@ func (s *service) storeAttachments(ctx context.Context, wid uuid.UUID, pm *parse
 		} else {
 			ct = "application/octet-stream"
 		}
-		a := preparedAttachment{id: ids.New(), contentType: ct, size: int64(len(p.Content)), cid: normalizeCID(p.ContentID)}
+		a := preparedAttachment{id: ids.New(), size: int64(len(p.Content)), cid: normalizeCID(p.ContentID)}
 		a.filename = cleanFilename(p.FileName, ct)
+		// The stored type comes from the bytes, as for an upload: active types are kept as plain text.
+		a.contentType = hd.DetectType(p.Content[:min(len(p.Content), 512)], a.filename)
 		a.key = "workspaces/" + wid.String() + "/attachments/" + a.id.String()
-		if err := s.d.Storage.Put(ctx, a.key, bytes.NewReader(p.Content), a.size, ct); err != nil {
+		if err := s.d.Storage.Put(ctx, a.key, bytes.NewReader(p.Content), a.size, a.contentType); err != nil {
 			s.deleteAttachmentObjects(out)
 			return nil, err
 		}

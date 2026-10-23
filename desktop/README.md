@@ -47,7 +47,7 @@ add a few switches after `pnpm dev --`:
 | `--url=<address>` | same as `OPENDESK_DESKTOP_URL` |
 | `--picker=1` | show the server picker even when a server is saved |
 | `--theme=light\|dark` | start the web app in that theme |
-| `OPENDESK_DESKTOP_SANDBOX=<dir>` | a throwaway run for recorded proof (`qa/`): settings in `<dir>`, no `opendesk://` handler, no OS notifications, badge or Dock icon, an invisible click-through window |
+| `OPENDESK_DESKTOP_SANDBOX=<dir>` | a throwaway run for automated testing: settings in `<dir>`, no `opendesk://` handler, no OS notifications, badge or Dock icon, an invisible click-through window |
 | `--capture=<dir>` | save screenshots after load (`--capture-paths=/a;;/b\|script`, `--capture-name`, `--capture-quit=1`); each is also composited over a stand-in for the macOS material with the traffic lights drawn in, since a page capture has neither |
 
 `pnpm typecheck` checks main, preloads and picker. `pnpm icons` re-renders
