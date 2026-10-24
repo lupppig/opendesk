@@ -1,10 +1,12 @@
 package supportchannels
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -31,6 +33,15 @@ type fakeAdapter struct {
 	interactive []channel.Message
 	cleared     []string
 	responses   []string
+	files       map[string][]byte
+}
+
+func (f *fakeAdapter) DownloadAttachment(_ context.Context, _ *http.Client, _ map[string]string, file channel.Attachment) (io.ReadCloser, error) {
+	data, ok := f.files[file.ID]
+	if !ok {
+		return nil, errors.New("missing fake file")
+	}
+	return io.NopCloser(bytes.NewReader(data)), nil
 }
 
 func (*fakeAdapter) Describe() channel.Descriptor {
@@ -231,6 +242,62 @@ func TestTypedReplyIsNotPreviewed(t *testing.T) {
 	w.e.Scalar(`SELECT EXISTS(SELECT 1 FROM support_channel_conversations WHERE connection_id=$1 AND pending_action IS NOT NULL)`, &pending, w.c.ID)
 	if pending {
 		t.Fatal("a typed reply waits for confirmation")
+	}
+}
+
+func TestProviderFilesUseTicketAttachmentChecks(t *testing.T) {
+	w := newWorkflow(t)
+	w.fake.files = map[string][]byte{"F1": []byte("safe attachment")}
+	w.run(t, channel.Inbound{ExternalUserID: "U1", Command: "note", Text: "Screenshot", ExternalMessageID: "provider-1",
+		Files: []channel.Attachment{{ID: "F1", Name: "screen.txt", SizeBytes: int64(len("safe attachment"))}}})
+	messages, err := domain.ListMessages(w.e.Ctx, w.e.D.DB.Pool, w.ws.ID, w.ticket.ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := messages[len(messages)-1]
+	if last.Kind != "note" || len(last.Attachments) != 1 || last.Attachments[0].Filename != "screen.txt" {
+		t.Fatalf("message = %+v", last)
+	}
+	var linked bool
+	w.e.Scalar(`SELECT EXISTS(SELECT 1 FROM support_channel_messages WHERE destination_id=(SELECT destination_id FROM support_channel_threads WHERE ticket_id=$1) AND message_id=$2 AND kind='source' AND external_message_id='provider-1')`, &linked, w.ticket.ID, last.ID)
+	if !linked {
+		t.Fatal("provider source message was not linked")
+	}
+}
+
+func TestProviderCanEditAndDeleteItsOwnNoteButNotRewriteAReply(t *testing.T) {
+	w := newWorkflow(t)
+	w.run(t, channel.Inbound{ExternalUserID: "U1", Command: "note", Text: "first", ExternalMessageID: "note-1"})
+	w.run(t, channel.Inbound{ExternalUserID: "U1", Command: "note", Text: "corrected", ExternalMessageID: "note-1", Mutation: "edit"})
+	var body string
+	w.e.Scalar(`SELECT body_text FROM messages WHERE ticket_id=$1 AND kind='note' ORDER BY created_at DESC LIMIT 1`, &body, w.ticket.ID)
+	if body != "corrected" {
+		t.Fatalf("edited note = %q", body)
+	}
+	w.run(t, channel.Inbound{ExternalUserID: "U1", ExternalMessageID: "note-1", Mutation: "delete"})
+	var deleted bool
+	w.e.Scalar(`SELECT deleted_at IS NOT NULL FROM messages WHERE ticket_id=$1 AND kind='note' ORDER BY created_at DESC LIMIT 1`, &deleted, w.ticket.ID)
+	if !deleted {
+		t.Fatal("provider note deletion was not applied")
+	}
+
+	var reply domain.Message
+	if err := w.e.D.DB.Tx(w.e.Ctx, func(tx pgx.Tx) error {
+		var err error
+		reply, err = domain.AddMessage(w.e.Ctx, tx, w.e.D.Jobs, domain.NewMessage{WorkspaceID: w.ws.ID, TicketID: w.ticket.ID, Kind: "reply", Direction: "outbound", AuthorType: "user", AuthorUserID: &w.ws.Agent.ID, BodyHTML: "<p>sent</p>", BodyText: "sent"})
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(w.e.Ctx, `INSERT INTO support_channel_messages(destination_id,message_id,kind,external_message_id,external_user_id)
+			SELECT destination_id,$2,'source','reply-1','U1' FROM support_channel_threads WHERE ticket_id=$1`, w.ticket.ID, reply.ID)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	w.run(t, channel.Inbound{ExternalUserID: "U1", Command: "reply", Text: "changed", ExternalMessageID: "reply-1", Mutation: "edit"})
+	w.e.Scalar(`SELECT body_text FROM messages WHERE ticket_id=$1 AND kind='reply' AND direction='outbound' ORDER BY created_at DESC LIMIT 1`, &body, w.ticket.ID)
+	if body != "sent" {
+		t.Fatalf("provider rewrote customer reply to %q", body)
 	}
 }
 

@@ -975,6 +975,8 @@ export type SupportChannelDestination = {
   enabled: boolean;
   /** Internal notes are posted too; off by default. */
   include_notes: boolean;
+  /** Maximum characters before the provider message links back to opendesk. */
+  message_limit: number;
   created_at: string;
 };
 export type TicketLink = {

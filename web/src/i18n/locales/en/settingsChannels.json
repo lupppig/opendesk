@@ -608,10 +608,10 @@
     "provider": {
       "slack": {
         "description": "Mirror email tickets into Slack threads and work them by talking to Ollie.",
-        "setup": "Create a Slack app with the chat:write, app_mentions:read, channels:read and groups:read bot scopes, install it, then paste its bot token and signing secret. After connecting, opendesk shows the setup steps to finish in Slack.",
+        "setup": "Create a Slack app with the chat:write, app_mentions:read, channels:read, groups:read, channels:history, groups:history and files:read bot scopes, install it, then paste its bot token and signing secret. After connecting, opendesk shows the setup steps to finish in Slack.",
         "steps": [
           "In your Slack app, open Event Subscriptions, turn it on and paste the address above as the Request URL.",
-          "Under Subscribe to bot events, add app_mention and save.",
+          "Under Subscribe to bot events, add app_mention, message.channels and message.groups, then save.",
           "Open Interactivity & Shortcuts, turn it on and use the same address as its Request URL.",
           "Open Slash Commands, create /opendesk and use the same address as its Request URL.",
           "Invite the bot to each channel you route tickets to: /invite @your-bot."
@@ -666,6 +666,9 @@
       "displayNamePlaceholder": "support",
       "notes": "Include internal notes",
       "notesHint": "Off by default. When on, notes are posted to this channel and Ollie can use them in its answers there.",
+      "messageLimit": "Message length",
+      "messageLimitHint": "Longer messages are shortened with a View in opendesk link. Providers may use a lower limit.",
+      "messageLimitValue": "{{count}} characters",
       "submit": "Add destination",
       "cancel": "Cancel",
       "added": "Destination added.",

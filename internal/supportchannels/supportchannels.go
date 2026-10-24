@@ -88,6 +88,7 @@ type destination struct {
 	ExternalChannelName string     `json:"external_channel_name"`
 	Enabled             bool       `json:"enabled"`
 	IncludeNotes        bool       `json:"include_notes"`
+	MessageLimit        int        `json:"message_limit"`
 	CreatedAt           time.Time  `json:"created_at"`
 }
 

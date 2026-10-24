@@ -183,6 +183,27 @@ func TestEditsInArchivedThreadsAreSkipped(t *testing.T) {
 	}
 }
 
+func TestRichMutationsUseTicketThreadChannel(t *testing.T) {
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.Method+" "+r.URL.Path)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+	a := Adapter{BaseURL: server.URL}
+	credentials := map[string]string{"bot_token": "token", "channel_id": "PARENT"}
+	if err := a.UpdateRich(context.Background(), server.Client(), credentials, "THREAD", "M1", channel.RichMessage{Text: "edited"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.DeleteRich(context.Background(), server.Client(), credentials, "THREAD", "M1"); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"PATCH /channels/THREAD/messages/M1", "DELETE /channels/THREAD/messages/M1"}
+	if strings.Join(paths, ",") != strings.Join(want, ",") {
+		t.Fatalf("paths = %v, want %v", paths, want)
+	}
+}
+
 func TestTicketPayloadHasNativeControls(t *testing.T) {
 	payload := ticketPayload(channel.Ticket{Number: 42, Subject: "Printer", Customer: "Rae", Assignee: "Jo", Status: "open", Priority: "high", URL: "https://app.test/t/42"})
 	components, ok := payload["components"].([]any)

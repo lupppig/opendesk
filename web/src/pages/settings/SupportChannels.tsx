@@ -513,6 +513,7 @@ function DestinationDialog({ connectionId, provider, onClose }: { connectionId: 
   const [team, setTeam] = useState("all");
   const [channelId, setChannelId] = useState("");
   const [includeNotes, setIncludeNotes] = useState(false);
+  const [messageLimit, setMessageLimit] = useState("3500");
   // When the bot can't list channels (missing scopes, an older bot), its id still works.
   const [manual, setManual] = useState(false);
   const [error, setError] = useState("");
@@ -539,6 +540,7 @@ function DestinationDialog({ connectionId, provider, onClose }: { connectionId: 
         external_channel_id: manual ? manualId : channelId.trim(),
         external_channel_name: selectedChannel?.name,
         include_notes: includeNotes,
+        message_limit: Number(messageLimit),
       }),
     onSuccess: (row) => {
       upsertInList(qc, qk.supportChannelDestinations, row);
@@ -612,6 +614,20 @@ function DestinationDialog({ connectionId, provider, onClose }: { connectionId: 
           </label>
           <Switch id={notesId} checked={includeNotes} onCheckedChange={setIncludeNotes} />
         </div>
+        <Field label={t("supportChannels.destination.messageLimit")} hint={t("supportChannels.destination.messageLimitHint")}>
+          {({ id }) => (
+            <Select
+              id={id}
+              value={messageLimit}
+              onChange={setMessageLimit}
+              options={[
+                { value: "1000", label: t("supportChannels.destination.messageLimitValue", { count: 1000 }) },
+                { value: "2000", label: t("supportChannels.destination.messageLimitValue", { count: 2000 }) },
+                { value: "3500", label: t("supportChannels.destination.messageLimitValue", { count: 3500 }) },
+              ]}
+            />
+          )}
+        </Field>
         {error && (
           <p role="alert" className="text-[12px] text-danger-fg">
             {error}

@@ -50,6 +50,108 @@ type messageMutationTarget struct {
 	createdAt time.Time
 }
 
+// EditNote applies the same note mutation as the HTTP API for another trusted
+// surface. The caller must already have resolved and checked visibility of the
+// ticket; authorship, sanitizing, notifications, activity and events are checked here.
+func EditNote(ctx context.Context, tx pgx.Tx, d *deps.Deps, p *auth.Principal, tid, mid uuid.UUID, bodyHTML string) (domain.Message, error) {
+	cleanHTML := hd.SanitizeRich(bodyHTML)
+	bodyText := hd.HTMLToText(cleanHTML)
+	target, err := lockMessageMutationTarget(ctx, tx, p.WorkspaceID, tid, mid)
+	if err != nil {
+		return domain.Message{}, err
+	}
+	if target.sentAsReply {
+		return domain.Message{}, httpx.Validation("this note was sent as a reply; it can't be edited")
+	}
+	if target.deleted {
+		return domain.Message{}, httpx.NotFound("Message")
+	}
+	if target.kind != "note" || target.threadID != nil {
+		return domain.Message{}, httpx.Validation("only internal notes can be edited")
+	}
+	if target.authorType != "user" || target.authorID == nil || *target.authorID != p.UserID || p.Kind != auth.KindUser {
+		return domain.Message{}, httpx.Forbidden()
+	}
+	if strings.TrimSpace(bodyText) == "" && !strings.Contains(cleanHTML, "<img") {
+		var hasAttachments bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM attachments WHERE workspace_id = $1 AND message_id = $2)`, p.WorkspaceID, mid).Scan(&hasAttachments); err != nil {
+			return domain.Message{}, err
+		}
+		if !hasAttachments {
+			return domain.Message{}, httpx.Validation("a note needs text or an attachment")
+		}
+	}
+	if _, err := tx.Exec(ctx, `UPDATE messages SET body_html = $1, body_text = $2, edited_at = now()
+		WHERE workspace_id = $3 AND ticket_id = $4 AND id = $5`, cleanHTML, bodyText, p.WorkspaceID, tid, mid); err != nil {
+		return domain.Message{}, err
+	}
+	actor := actorOf(p)
+	if _, err := domain.LogActivity(ctx, tx, p.WorkspaceID, tid, actor.Type, actor.UserID, "note_edited", map[string]any{"message_id": mid}); err != nil {
+		return domain.Message{}, err
+	}
+	edited, err := domain.LoadMessage(ctx, tx, p.WorkspaceID, mid)
+	if err != nil {
+		return domain.Message{}, err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE notifications SET data = jsonb_set(data, '{preview}', to_jsonb($4::text))
+		WHERE workspace_id = $1 AND ticket_id = $2 AND type = $3 AND data->>'message_id' = $5`,
+		p.WorkspaceID, tid, hd.NotifyMentioned, hd.Excerpt(bodyText, 140), mid.String()); err != nil {
+		return domain.Message{}, err
+	}
+	if err := notifyNewMentions(ctx, tx, p.WorkspaceID, tid, edited, actor.UserID, target.bodyHTML, target.bodyText); err != nil {
+		return domain.Message{}, err
+	}
+	return edited, domain.PublishMessageUpdated(ctx, tx, p.WorkspaceID, mid)
+}
+
+// DeleteMessage applies the normal ticket deletion policy for another trusted
+// surface. A provider cannot use this to recall a delivered customer reply
+// unless the same member could delete it in opendesk.
+func DeleteMessage(ctx context.Context, tx pgx.Tx, d *deps.Deps, p *auth.Principal, tid, mid uuid.UUID) error {
+	target, err := lockMessageMutationTarget(ctx, tx, p.WorkspaceID, tid, mid)
+	if err != nil {
+		return err
+	}
+	if target.sentAsReply {
+		return httpx.Validation("this note was sent as a reply; delete the reply instead")
+	}
+	if target.deleted {
+		return nil
+	}
+	if target.threadID != nil {
+		return httpx.Validation("a side conversation's messages can't be deleted")
+	}
+	rule, err := messageDeleteRule(ctx, tx, p.WorkspaceID, p.UserID)
+	if err != nil {
+		return err
+	}
+	if !mayDelete(p, rule, target) {
+		return httpx.Forbidden()
+	}
+	if _, err := tx.Exec(ctx, `UPDATE messages SET deleted_at = now(), deleted_by = $4
+		WHERE workspace_id = $1 AND ticket_id = $2 AND id = $3`, p.WorkspaceID, tid, mid, p.UserID); err != nil {
+		return err
+	}
+	if target.delivery == "pending" {
+		if _, err := tx.Exec(ctx, `UPDATE messages SET delivery_status = 'failed', delivery_error = $4
+			WHERE workspace_id = $1 AND ticket_id = $2 AND id = $3 AND delivery_status = 'pending'`, p.WorkspaceID, tid, mid, domain.DeletedBeforeSent); err != nil {
+			return err
+		}
+	}
+	if err := hideMessage(ctx, tx, d, p.WorkspaceID, tid, mid); err != nil {
+		return err
+	}
+	typ := "message_deleted"
+	if target.kind == "note" {
+		typ = "note_deleted"
+	}
+	actor := actorOf(p)
+	if _, err := domain.LogActivity(ctx, tx, p.WorkspaceID, tid, actor.Type, actor.UserID, typ, map[string]any{"message_id": mid}); err != nil {
+		return err
+	}
+	return publishDeletion(ctx, tx, p.WorkspaceID, tid, mid, target.kind == "reply")
+}
+
 func registerMessageMutations(d *deps.Deps, api huma.API, tags []string) {
 	registerRetract(d, api, tags)
 	registerPurge(d, api, tags)
@@ -64,64 +166,14 @@ func registerMessageMutations(d *deps.Deps, api huma.API, tags []string) {
 			if err != nil {
 				return nil, err
 			}
-			cleanHTML := hd.SanitizeRich(in.Body.BodyHTML)
-			bodyText := hd.HTMLToText(cleanHTML)
 			var edited domain.Message
 			if err := d.DB.Tx(ctx, func(tx pgx.Tx) error {
 				tid, err := resolveVisible(ctx, tx, p, in.ID)
 				if err != nil {
 					return err
 				}
-				target, err := lockMessageMutationTarget(ctx, tx, p.WorkspaceID, tid, mid)
-				if err != nil {
-					return err
-				}
-				if target.sentAsReply {
-					return httpx.Validation("this note was sent as a reply; it can't be edited")
-				}
-				if target.deleted {
-					return httpx.NotFound("Message")
-				}
-				if target.kind != "note" || target.threadID != nil {
-					return httpx.Validation("only internal notes can be edited")
-				}
-				if target.authorType != "user" || target.authorID == nil || *target.authorID != p.UserID || p.Kind != auth.KindUser {
-					return httpx.Forbidden()
-				}
-				// Empty as on create: no text, no inline image and no attachment.
-				if strings.TrimSpace(bodyText) == "" && !strings.Contains(cleanHTML, "<img") {
-					var hasAttachments bool
-					if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM attachments WHERE workspace_id = $1 AND message_id = $2)`, p.WorkspaceID, mid).Scan(&hasAttachments); err != nil {
-						return err
-					}
-					if !hasAttachments {
-						return httpx.Validation("a note needs text or an attachment")
-					}
-				}
-				if _, err := tx.Exec(ctx, `UPDATE messages SET body_html = $1, body_text = $2, edited_at = now()
-				WHERE workspace_id = $3 AND ticket_id = $4 AND id = $5`, cleanHTML, bodyText, p.WorkspaceID, tid, mid); err != nil {
-					return err
-				}
-				actor := actorOf(p)
-				if _, err := domain.LogActivity(ctx, tx, p.WorkspaceID, tid, actor.Type, actor.UserID,
-					"note_edited", map[string]any{"message_id": mid}); err != nil {
-					return err
-				}
-				edited, err = domain.LoadMessage(ctx, tx, p.WorkspaceID, mid)
-				if err != nil {
-					return err
-				}
-				// Mentions already sent show the note as it reads now.
-				if _, err := tx.Exec(ctx, `UPDATE notifications SET data = jsonb_set(data, '{preview}', to_jsonb($4::text))
-				WHERE workspace_id = $1 AND ticket_id = $2 AND type = $3 AND data->>'message_id' = $5`,
-					p.WorkspaceID, tid, hd.NotifyMentioned, hd.Excerpt(bodyText, 140), mid.String()); err != nil {
-					return err
-				}
-				// Someone the edit mentions for the first time hears about it; the others already did.
-				if err := notifyNewMentions(ctx, tx, p.WorkspaceID, tid, edited, actor.UserID, target.bodyHTML, target.bodyText); err != nil {
-					return err
-				}
-				return domain.PublishMessageUpdated(ctx, tx, p.WorkspaceID, mid)
+				edited, err = EditNote(ctx, tx, d, p, tid, mid, in.Body.BodyHTML)
+				return err
 			}); err != nil {
 				return nil, httpx.Wrap(err)
 			}
@@ -145,49 +197,7 @@ func registerMessageMutations(d *deps.Deps, api huma.API, tags []string) {
 				if err != nil {
 					return err
 				}
-				target, err := lockMessageMutationTarget(ctx, tx, p.WorkspaceID, tid, mid)
-				if err != nil {
-					return err
-				}
-				if target.sentAsReply {
-					return httpx.Validation("this note was sent as a reply; delete the reply instead")
-				}
-				if target.deleted {
-					return nil
-				}
-				if target.threadID != nil {
-					return httpx.Validation("a side conversation's messages can't be deleted")
-				}
-				rule, err := messageDeleteRule(ctx, tx, p.WorkspaceID, p.UserID)
-				if err != nil {
-					return err
-				}
-				if !mayDelete(p, rule, target) {
-					return httpx.Forbidden()
-				}
-				if _, err := tx.Exec(ctx, `UPDATE messages SET deleted_at = now(), deleted_by = $4
-					WHERE workspace_id = $1 AND ticket_id = $2 AND id = $3`, p.WorkspaceID, tid, mid, p.UserID); err != nil {
-					return err
-				}
-				// A reply that has not gone out yet is not sent: it says so, also once restored.
-				if target.delivery == "pending" {
-					if _, err := tx.Exec(ctx, `UPDATE messages SET delivery_status = 'failed', delivery_error = $4
-						WHERE workspace_id = $1 AND ticket_id = $2 AND id = $3 AND delivery_status = 'pending'`, p.WorkspaceID, tid, mid, domain.DeletedBeforeSent); err != nil {
-						return err
-					}
-				}
-				if err := hideMessage(ctx, tx, d, p.WorkspaceID, tid, mid); err != nil {
-					return err
-				}
-				typ := "message_deleted"
-				if target.kind == "note" {
-					typ = "note_deleted"
-				}
-				actor := actorOf(p)
-				if _, err := domain.LogActivity(ctx, tx, p.WorkspaceID, tid, actor.Type, actor.UserID, typ, map[string]any{"message_id": mid}); err != nil {
-					return err
-				}
-				return publishDeletion(ctx, tx, p.WorkspaceID, tid, mid, target.kind == "reply")
+				return DeleteMessage(ctx, tx, d, p, tid, mid)
 			})
 			if err != nil {
 				return nil, httpx.Wrap(err)

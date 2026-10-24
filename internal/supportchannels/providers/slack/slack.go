@@ -21,9 +21,11 @@ import (
 
 type Adapter struct{ BaseURL string }
 
+func (Adapter) RichTextLimit() int { return 2500 }
+
 func (Adapter) Describe() channel.Descriptor {
 	return channel.Descriptor{Key: "slack", Name: "Slack", Description: "Mirror email tickets into Slack threads and work them by talking to Ollie.", Fields: []channel.Field{
-		{Name: "bot_token", Label: "Bot token", Secret: true, Help: "A bot token with chat:write, app_mentions:read, channels:read and groups:read."},
+		{Name: "bot_token", Label: "Bot token", Secret: true, Help: "A bot token with chat:write, app_mentions:read, channels:read, groups:read, channels:history, groups:history and files:read."},
 		{Name: "signing_secret", Label: "Signing secret", Secret: true},
 	}}
 }
@@ -139,6 +141,23 @@ func (Adapter) Verify(h http.Header, body []byte, cr map[string]string) error {
 	return nil
 }
 
+type slackFile struct {
+	ID                 string `json:"id"`
+	Name               string `json:"name"`
+	Mimetype           string `json:"mimetype"`
+	Size               int64  `json:"size"`
+	URLPrivateDownload string `json:"url_private_download"`
+}
+
+type slackMessage struct {
+	User     string      `json:"user"`
+	ThreadTS string      `json:"thread_ts"`
+	TS       string      `json:"ts"`
+	Text     string      `json:"text"`
+	BotID    string      `json:"bot_id"`
+	Files    []slackFile `json:"files"`
+}
+
 func (Adapter) Parse(h http.Header, body []byte) (channel.WebhookResult, error) {
 	if strings.Contains(h.Get("Content-Type"), "application/x-www-form-urlencoded") {
 		v, err := url.ParseQuery(string(body))
@@ -159,13 +178,18 @@ func (Adapter) Parse(h http.Header, body []byte) (channel.WebhookResult, error) 
 		EventID   string `json:"event_id"`
 		TeamID    string `json:"team_id"`
 		Event     struct {
-			Type     string `json:"type"`
-			User     string `json:"user"`
-			Channel  string `json:"channel"`
-			ThreadTS string `json:"thread_ts"`
-			TS       string `json:"ts"`
-			Text     string `json:"text"`
-			BotID    string `json:"bot_id"`
+			Type            string        `json:"type"`
+			Subtype         string        `json:"subtype"`
+			User            string        `json:"user"`
+			Channel         string        `json:"channel"`
+			ThreadTS        string        `json:"thread_ts"`
+			TS              string        `json:"ts"`
+			Text            string        `json:"text"`
+			BotID           string        `json:"bot_id"`
+			Files           []slackFile   `json:"files"`
+			Message         *slackMessage `json:"message"`
+			PreviousMessage *slackMessage `json:"previous_message"`
+			DeletedTS       string        `json:"deleted_ts"`
 		} `json:"event"`
 	}
 	if err := json.Unmarshal(body, &x); err != nil {
@@ -175,22 +199,76 @@ func (Adapter) Parse(h http.Header, body []byte) (channel.WebhookResult, error) 
 		response, _ := json.Marshal(map[string]string{"challenge": x.Challenge})
 		return channel.WebhookResult{Status: http.StatusOK, ContentType: "application/json", Body: response}, nil
 	}
-	if (x.Event.Type != "message" && x.Event.Type != "app_mention") || x.Event.BotID != "" {
+	if x.Event.Type != "message" && x.Event.Type != "app_mention" {
+		return channel.WebhookResult{}, nil
+	}
+	event := slackMessage{User: x.Event.User, ThreadTS: x.Event.ThreadTS, TS: x.Event.TS, Text: x.Event.Text, BotID: x.Event.BotID, Files: x.Event.Files}
+	mutation := ""
+	switch x.Event.Subtype {
+	case "message_changed":
+		if x.Event.Message == nil {
+			return channel.WebhookResult{}, nil
+		}
+		event, mutation = *x.Event.Message, "edit"
+	case "message_deleted":
+		if x.Event.PreviousMessage == nil {
+			return channel.WebhookResult{}, nil
+		}
+		event, mutation = *x.Event.PreviousMessage, "delete"
+		event.TS = x.Event.DeletedTS
+	case "":
+	default:
+		return channel.WebhookResult{}, nil
+	}
+	if event.BotID != "" || event.User == "" || event.TS == "" {
 		return channel.WebhookResult{}, nil
 	}
 	// A root app mention starts a new Ollie conversation in its own Slack
 	// thread. Ordinary root messages remain ignored.
-	if x.Event.ThreadTS == "" {
-		if x.Event.Type != "app_mention" {
+	if event.ThreadTS == "" {
+		if x.Event.Type != "app_mention" && mutation == "" {
 			return channel.WebhookResult{}, nil
 		}
-		x.Event.ThreadTS = x.Event.TS
+		event.ThreadTS = event.TS
 	}
-	cmd, text := parseCommand(x.Event.Text)
-	if cmd == "" {
+	cmd, text := parseCommand(event.Text)
+	if cmd == "" && mutation == "" {
 		return channel.WebhookResult{}, nil
 	}
-	return channel.WebhookResult{Events: []channel.Inbound{{EventID: x.EventID + ":" + x.Event.TS, AccountID: x.TeamID, ExternalChannelID: x.Event.Channel, ExternalThreadID: x.Event.ThreadTS, ExternalUserID: x.Event.User, Command: cmd, Text: text, Value: text, Directed: x.Event.Type == "app_mention"}}}, nil
+	files := make([]channel.Attachment, 0, len(event.Files))
+	for _, file := range event.Files {
+		files = append(files, channel.Attachment{ID: file.ID, Name: file.Name, ContentType: file.Mimetype, SizeBytes: file.Size, URL: file.URLPrivateDownload})
+	}
+	return channel.WebhookResult{Events: []channel.Inbound{{EventID: x.EventID + ":" + event.TS, AccountID: x.TeamID, ExternalChannelID: x.Event.Channel, ExternalThreadID: event.ThreadTS, ExternalUserID: event.User, Command: cmd, Text: text, Value: text, Directed: x.Event.Type == "app_mention", ExternalMessageID: event.TS, Mutation: mutation, Files: files}}}, nil
+}
+
+func (a Adapter) DownloadAttachment(ctx context.Context, c *http.Client, cr map[string]string, file channel.Attachment) (io.ReadCloser, error) {
+	u, err := url.Parse(file.URL)
+	if err != nil || u.User != nil || !a.slackFileHost(u) {
+		return nil, errors.New("slack attachment URL is invalid")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, errors.New("slack attachment request is invalid")
+	}
+	req.Header.Set("Authorization", "Bearer "+cr["bot_token"])
+	resp, err := c.Do(req)
+	if err != nil {
+		return nil, errors.New("slack attachment download failed")
+	}
+	if resp.StatusCode/100 != 2 {
+		resp.Body.Close()
+		return nil, fmt.Errorf("slack attachment: status %d", resp.StatusCode)
+	}
+	return resp.Body, nil
+}
+
+func (a Adapter) slackFileHost(u *url.URL) bool {
+	if a.BaseURL != "" {
+		base, err := url.Parse(a.BaseURL)
+		return err == nil && u.Scheme == base.Scheme && u.Host == base.Host
+	}
+	return u.Scheme == "https" && u.Host == "files.slack.com"
 }
 
 // controls are the action ids opendesk's own blocks send. Any other action,
@@ -340,6 +418,53 @@ func (a Adapter) Post(ctx context.Context, c *http.Client, cr map[string]string,
 		msg["thread_ts"] = thread
 	}
 	return a.call(ctx, c, cr["bot_token"], "chat.postMessage", msg, nil)
+}
+
+func (a Adapter) PostRich(ctx context.Context, c *http.Client, cr map[string]string, thread string, message channel.RichMessage) (channel.MessageRef, error) {
+	var out struct {
+		TS string `json:"ts"`
+	}
+	payload := richPayload(cr["channel_id"], thread, "", message)
+	err := a.call(ctx, c, cr["bot_token"], "chat.postMessage", payload, &out)
+	return channel.MessageRef{ID: out.TS}, err
+}
+
+func (a Adapter) UpdateRich(ctx context.Context, c *http.Client, cr map[string]string, _ string, id string, message channel.RichMessage) error {
+	return a.call(ctx, c, cr["bot_token"], "chat.update", richPayload(cr["channel_id"], "", id, message), nil)
+}
+
+func (a Adapter) DeleteRich(ctx context.Context, c *http.Client, cr map[string]string, _ string, id string) error {
+	return a.call(ctx, c, cr["bot_token"], "chat.delete", map[string]any{"channel": cr["channel_id"], "ts": id}, nil)
+}
+
+func richPayload(channelID, thread, id string, message channel.RichMessage) map[string]any {
+	text := slackText(message.Text)
+	view := ""
+	if message.ViewURL != "" {
+		view = "\n<" + message.ViewURL + "|View in opendesk>"
+	}
+	blocks := []any{}
+	for i, file := range message.Attachments {
+		line := fmt.Sprintf("\n<%s|%s> · %d bytes", file.URL, slackText(file.Name), file.SizeBytes)
+		if len([]rune(text+line+view)) > 2900 {
+			text += fmt.Sprintf("\n%d more attachment(s)", len(message.Attachments)-i)
+			break
+		}
+		text += line
+		if file.Preview && len(blocks) < 10 {
+			blocks = append(blocks, map[string]any{"type": "image", "image_url": file.URL, "alt_text": file.Name})
+		}
+	}
+	text += view
+	blocks = append([]any{map[string]any{"type": "section", "text": map[string]string{"type": "mrkdwn", "text": text}}}, blocks...)
+	payload := map[string]any{"channel": channelID, "text": text, "blocks": blocks, "unfurl_links": false, "unfurl_media": false}
+	if thread != "" {
+		payload["thread_ts"] = thread
+	}
+	if id != "" {
+		payload["ts"] = id
+	}
+	return payload
 }
 func (a Adapter) Update(ctx context.Context, c *http.Client, cr map[string]string, root string, t channel.Ticket) error {
 	return a.call(ctx, c, cr["bot_token"], "chat.update", ticketPayload(cr["channel_id"], root, t), nil)

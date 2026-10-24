@@ -18,6 +18,8 @@ import (
 
 type Adapter struct{ BaseURL string }
 
+func (Adapter) RichTextLimit() int { return 3000 }
+
 func (Adapter) Describe() channel.Descriptor {
 	return channel.Descriptor{Key: "telegram", Name: "Telegram", Description: "Mirror email tickets into Telegram forum topics and work them by talking to Ollie.", Fields: []channel.Field{
 		{Name: "bot_token", Label: "Bot token", Secret: true, Help: "Create a bot with BotFather and add it as an administrator to a forum group."},
@@ -125,7 +127,7 @@ func (a Adapter) Configure(ctx context.Context, c *http.Client, cr map[string]st
 	}
 	return a.call(ctx, c, cr, "setWebhook", map[string]any{
 		"url": setup.WebhookURL, "secret_token": cr["webhook_secret"],
-		"allowed_updates": []string{"message", "callback_query", "my_chat_member"},
+		"allowed_updates": []string{"message", "edited_message", "callback_query", "my_chat_member"},
 	}, nil)
 }
 
@@ -155,35 +157,50 @@ func (Adapter) Verify(h http.Header, _ []byte, cr map[string]string) error {
 	}
 	return nil
 }
+
+type telegramInboundMessage struct {
+	MessageID       int64  `json:"message_id"`
+	MessageThreadID int64  `json:"message_thread_id"`
+	Text            string `json:"text"`
+	Caption         string `json:"caption"`
+	Document        *struct {
+		FileID   string `json:"file_id"`
+		FileName string `json:"file_name"`
+		MimeType string `json:"mime_type"`
+		FileSize int64  `json:"file_size"`
+	} `json:"document"`
+	Photo []struct {
+		FileID   string `json:"file_id"`
+		FileSize int64  `json:"file_size"`
+	} `json:"photo"`
+	From struct {
+		ID    int64 `json:"id"`
+		IsBot bool  `json:"is_bot"`
+	} `json:"from"`
+	ViaBot *struct {
+		ID int64 `json:"id"`
+	} `json:"via_bot"`
+	ReplyTo *struct {
+		From struct {
+			IsBot    bool   `json:"is_bot"`
+			Username string `json:"username"`
+		} `json:"from"`
+		TopicCreated json.RawMessage `json:"forum_topic_created"`
+	} `json:"reply_to_message"`
+	Chat struct {
+		ID      int64  `json:"id"`
+		Title   string `json:"title"`
+		Type    string `json:"type"`
+		IsForum bool   `json:"is_forum"`
+	} `json:"chat"`
+}
+
 func (Adapter) Parse(_ http.Header, body []byte) (channel.WebhookResult, error) {
 	var x struct {
-		UpdateID int64 `json:"update_id"`
-		Message  *struct {
-			MessageID       int64  `json:"message_id"`
-			MessageThreadID int64  `json:"message_thread_id"`
-			Text            string `json:"text"`
-			From            struct {
-				ID    int64 `json:"id"`
-				IsBot bool  `json:"is_bot"`
-			} `json:"from"`
-			ViaBot *struct {
-				ID int64 `json:"id"`
-			} `json:"via_bot"`
-			ReplyTo *struct {
-				From struct {
-					IsBot    bool   `json:"is_bot"`
-					Username string `json:"username"`
-				} `json:"from"`
-				TopicCreated json.RawMessage `json:"forum_topic_created"`
-			} `json:"reply_to_message"`
-			Chat struct {
-				ID      int64  `json:"id"`
-				Title   string `json:"title"`
-				Type    string `json:"type"`
-				IsForum bool   `json:"is_forum"`
-			} `json:"chat"`
-		} `json:"message"`
-		MyChatMember *struct {
+		UpdateID      int64                   `json:"update_id"`
+		Message       *telegramInboundMessage `json:"message"`
+		EditedMessage *telegramInboundMessage `json:"edited_message"`
+		MyChatMember  *struct {
 			Chat struct {
 				ID      int64  `json:"id"`
 				Title   string `json:"title"`
@@ -211,6 +228,10 @@ func (Adapter) Parse(_ http.Header, body []byte) (channel.WebhookResult, error) 
 	}
 	if err := json.Unmarshal(body, &x); err != nil {
 		return channel.WebhookResult{}, err
+	}
+	mutation := ""
+	if x.Message == nil && x.EditedMessage != nil {
+		x.Message, mutation = x.EditedMessage, "edit"
 	}
 	if x.MyChatMember != nil {
 		m := x.MyChatMember
@@ -244,11 +265,21 @@ func (Adapter) Parse(_ http.Header, body []byte) (channel.WebhookResult, error) 
 	if x.Message.From.IsBot || x.Message.ViaBot != nil {
 		return channel.WebhookResult{Destinations: []channel.Destination{discovery}}, nil
 	}
-	p := strings.Fields(x.Message.Text)
-	if len(p) == 0 || x.Message.MessageThreadID == 0 {
+	content := x.Message.Text
+	if content == "" {
+		content = x.Message.Caption
+	}
+	p := strings.Fields(content)
+	if x.Message.MessageThreadID == 0 {
 		return channel.WebhookResult{Destinations: []channel.Destination{discovery}}, nil
 	}
-	cmd, text := "chat", strings.TrimSpace(x.Message.Text)
+	if len(p) == 0 {
+		if mutation == "" {
+			return channel.WebhookResult{Destinations: []channel.Destination{discovery}}, nil
+		}
+		return channel.WebhookResult{Events: []channel.Inbound{{EventID: strconv.FormatInt(x.UpdateID, 10), ExternalChannelID: strconv.FormatInt(x.Message.Chat.ID, 10), ExternalThreadID: strconv.FormatInt(x.Message.MessageThreadID, 10), ExternalUserID: strconv.FormatInt(x.Message.From.ID, 10), ExternalMessageID: strconv.FormatInt(x.Message.MessageID, 10), Mutation: mutation, Files: telegramFiles(x.Message)}}, Destinations: []channel.Destination{discovery}}, nil
+	}
+	cmd, text := "chat", strings.TrimSpace(content)
 	mention := ""
 	switch r := x.Message.ReplyTo; {
 	case len(p[0]) > 1 && strings.HasPrefix(p[0], "@"):
@@ -262,9 +293,9 @@ func (Adapter) Parse(_ http.Header, body []byte) (channel.WebhookResult, error) 
 		candidate := strings.TrimPrefix(strings.SplitN(p[0], "@", 2)[0], "/")
 		if explicitCommand(candidate) {
 			cmd = candidate
-			text = strings.TrimSpace(strings.TrimPrefix(x.Message.Text, p[0]))
+			text = strings.TrimSpace(strings.TrimPrefix(content, p[0]))
 		} else {
-			text = strings.TrimSpace(strings.TrimPrefix(x.Message.Text, p[0]))
+			text = strings.TrimSpace(strings.TrimPrefix(content, p[0]))
 			if text == "" {
 				text = candidate
 			} else {
@@ -272,7 +303,48 @@ func (Adapter) Parse(_ http.Header, body []byte) (channel.WebhookResult, error) 
 			}
 		}
 	}
-	return channel.WebhookResult{Events: []channel.Inbound{{EventID: strconv.FormatInt(x.UpdateID, 10), ExternalChannelID: strconv.FormatInt(x.Message.Chat.ID, 10), ExternalThreadID: strconv.FormatInt(x.Message.MessageThreadID, 10), ExternalUserID: strconv.FormatInt(x.Message.From.ID, 10), Command: cmd, Text: text, Value: text, Mention: mention}}, Destinations: []channel.Destination{discovery}}, nil
+	files := telegramFiles(x.Message)
+	return channel.WebhookResult{Events: []channel.Inbound{{EventID: strconv.FormatInt(x.UpdateID, 10), ExternalChannelID: strconv.FormatInt(x.Message.Chat.ID, 10), ExternalThreadID: strconv.FormatInt(x.Message.MessageThreadID, 10), ExternalUserID: strconv.FormatInt(x.Message.From.ID, 10), Command: cmd, Text: text, Value: text, Mention: mention, ExternalMessageID: strconv.FormatInt(x.Message.MessageID, 10), Mutation: mutation, Files: files}}, Destinations: []channel.Destination{discovery}}, nil
+}
+
+func telegramFiles(message *telegramInboundMessage) []channel.Attachment {
+	var files []channel.Attachment
+	if d := message.Document; d != nil {
+		files = append(files, channel.Attachment{ID: d.FileID, Name: d.FileName, ContentType: d.MimeType, SizeBytes: d.FileSize})
+	} else if n := len(message.Photo); n > 0 {
+		photo := message.Photo[n-1]
+		files = append(files, channel.Attachment{ID: photo.FileID, Name: "photo.jpg", ContentType: "image/jpeg", SizeBytes: photo.FileSize})
+	}
+	return files
+}
+
+func (a Adapter) DownloadAttachment(ctx context.Context, c *http.Client, cr map[string]string, file channel.Attachment) (io.ReadCloser, error) {
+	var got struct {
+		FilePath string `json:"file_path"`
+	}
+	if err := a.call(ctx, c, cr, "getFile", map[string]any{"file_id": file.ID}, &got); err != nil {
+		return nil, err
+	}
+	if got.FilePath == "" || strings.Contains(got.FilePath, "..") || strings.HasPrefix(got.FilePath, "/") {
+		return nil, errors.New("telegram attachment path is invalid")
+	}
+	base := strings.TrimRight(a.BaseURL, "/")
+	if base == "" {
+		base = "https://api.telegram.org"
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/file/bot"+url.PathEscape(cr["bot_token"])+"/"+got.FilePath, nil)
+	if err != nil {
+		return nil, errors.New("telegram attachment request is invalid")
+	}
+	resp, err := c.Do(req)
+	if err != nil {
+		return nil, errors.New("telegram attachment download failed")
+	}
+	if resp.StatusCode/100 != 2 {
+		resp.Body.Close()
+		return nil, fmt.Errorf("telegram attachment: status %d", resp.StatusCode)
+	}
+	return resp.Body, nil
 }
 
 // controls are the callback commands opendesk's own keyboards send.
@@ -321,6 +393,48 @@ func (a Adapter) Post(ctx context.Context, c *http.Client, cr map[string]string,
 		"chat_id": cr["channel_id"], "message_thread_id": tid, "text": strings.ReplaceAll(text, "@", "@\u200b"),
 		"link_preview_options": map[string]bool{"is_disabled": true},
 	}, nil)
+}
+
+func (a Adapter) PostRich(ctx context.Context, c *http.Client, cr map[string]string, thread string, message channel.RichMessage) (channel.MessageRef, error) {
+	var out struct {
+		MessageID int64 `json:"message_id"`
+	}
+	payload := richPayload(cr["channel_id"], thread, message)
+	err := a.call(ctx, c, cr, "sendMessage", payload, &out)
+	return channel.MessageRef{ID: strconv.FormatInt(out.MessageID, 10)}, err
+}
+
+func (a Adapter) UpdateRich(ctx context.Context, c *http.Client, cr map[string]string, _ string, id string, message channel.RichMessage) error {
+	payload := richPayload(cr["channel_id"], "", message)
+	payload["message_id"], _ = strconv.ParseInt(id, 10, 64)
+	delete(payload, "message_thread_id")
+	return a.edit(ctx, c, cr, "editMessageText", payload)
+}
+
+func (a Adapter) DeleteRich(ctx context.Context, c *http.Client, cr map[string]string, _ string, id string) error {
+	mid, _ := strconv.ParseInt(id, 10, 64)
+	return a.call(ctx, c, cr, "deleteMessage", map[string]any{"chat_id": cr["channel_id"], "message_id": mid}, nil)
+}
+
+func richPayload(chatID, thread string, message channel.RichMessage) map[string]any {
+	text := telegramText(message.Text)
+	preview := false
+	view := ""
+	if message.ViewURL != "" {
+		view = "\nView in opendesk: " + message.ViewURL
+	}
+	for i, file := range message.Attachments {
+		line := fmt.Sprintf("\n%s · %d bytes\n%s", telegramText(file.Name), file.SizeBytes, file.URL)
+		if len([]rune(text+line+view)) > 4000 {
+			text += fmt.Sprintf("\n%d more attachment(s)", len(message.Attachments)-i)
+			break
+		}
+		text += line
+		preview = preview || file.Preview
+	}
+	text += view
+	tid, _ := strconv.ParseInt(thread, 10, 64)
+	return map[string]any{"chat_id": chatID, "message_thread_id": tid, "text": text, "link_preview_options": map[string]bool{"is_disabled": !preview}}
 }
 func (a Adapter) Update(ctx context.Context, c *http.Client, cr map[string]string, root string, t channel.Ticket) error {
 	messageID, _ := strconv.ParseInt(root, 10, 64)

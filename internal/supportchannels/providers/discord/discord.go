@@ -10,12 +10,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/useopendesk/opendesk/internal/supportchannels/channel"
 )
 
 type Adapter struct{ BaseURL string }
+
+func (Adapter) RichTextLimit() int { return 1500 }
 
 const gatewayIntents = 512 | 32768 // GUILD_MESSAGES | MESSAGE_CONTENT
 
@@ -135,8 +138,8 @@ type application struct {
 var commands = []map[string]any{
 	{"name": "ask", "description": "Ask Ollie about the ticket", "options": []map[string]any{{"name": "text", "description": "What would you like to know?", "type": 3, "required": true}}},
 	{"name": "link", "description": "Link your Discord account to opendesk", "options": []map[string]any{{"name": "text", "description": "The one-time link code", "type": 3, "required": true}}},
-	{"name": "reply", "description": "Reply to the customer", "options": []map[string]any{{"name": "text", "description": "Reply text", "type": 3, "required": true}}},
-	{"name": "note", "description": "Add an internal note", "options": []map[string]any{{"name": "text", "description": "Note text", "type": 3, "required": true}}},
+	{"name": "reply", "description": "Reply to the customer", "options": []map[string]any{{"name": "text", "description": "Reply text", "type": 3}, {"name": "file", "description": "File to attach", "type": 11}}},
+	{"name": "note", "description": "Add an internal note", "options": []map[string]any{{"name": "text", "description": "Note text", "type": 3}, {"name": "file", "description": "File to attach", "type": 11}}},
 	{"name": "assign", "description": "Assign the ticket to yourself"},
 	{"name": "status", "description": "Change the ticket status", "options": []map[string]any{{"name": "value", "description": "The new status", "type": 3, "required": true}}},
 	{"name": "priority", "description": "Change the ticket priority", "options": []map[string]any{{"name": "value", "description": "The new priority", "type": 3, "required": true}}},
@@ -248,6 +251,15 @@ func (Adapter) Parse(_ http.Header, body []byte) (channel.WebhookResult, error) 
 				Name  string
 				Value any
 			} `json:"options"`
+			Resolved struct {
+				Attachments map[string]struct {
+					ID          string `json:"id"`
+					Filename    string `json:"filename"`
+					ContentType string `json:"content_type"`
+					Size        int64  `json:"size"`
+					URL         string `json:"url"`
+				} `json:"attachments"`
+			} `json:"resolved"`
 		} `json:"data"`
 		Message struct{ ID string } `json:"message"`
 	}
@@ -277,12 +289,44 @@ func (Adapter) Parse(_ http.Header, body []byte) (channel.WebhookResult, error) 
 	if cmd == "ask" || cmd == "chat" {
 		cmd = "chat"
 	}
+	files := make([]channel.Attachment, 0, len(x.Data.Resolved.Attachments))
+	for _, file := range x.Data.Resolved.Attachments {
+		files = append(files, channel.Attachment{ID: file.ID, Name: file.Filename, ContentType: file.ContentType, SizeBytes: file.Size, URL: file.URL})
+	}
 	return channel.WebhookResult{
-		Events:      []channel.Inbound{{EventID: x.ID, AccountID: x.GuildID, ExternalChannelID: x.ChannelID, ExternalThreadID: x.ChannelID, ExternalUserID: x.Member.User.ID, Command: cmd, Text: text, Value: text, Directed: true, Respond: respond}},
+		Events:      []channel.Inbound{{EventID: x.ID, AccountID: x.GuildID, ExternalChannelID: x.ChannelID, ExternalThreadID: x.ChannelID, ExternalUserID: x.Member.User.ID, Command: cmd, Text: text, Value: text, Directed: true, Respond: respond, Files: files}},
 		Status:      http.StatusOK,
 		ContentType: "application/json",
 		Body:        []byte(`{"type":4,"data":{"content":"Command received.","flags":64}}`),
 	}, nil
+}
+
+func (a Adapter) DownloadAttachment(ctx context.Context, c *http.Client, _ map[string]string, file channel.Attachment) (io.ReadCloser, error) {
+	u, err := url.Parse(file.URL)
+	if err != nil || u.User != nil || !a.discordFileHost(u) {
+		return nil, errors.New("discord attachment URL is invalid")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, errors.New("discord attachment request is invalid")
+	}
+	resp, err := c.Do(req)
+	if err != nil {
+		return nil, errors.New("discord attachment download failed")
+	}
+	if resp.StatusCode/100 != 2 {
+		resp.Body.Close()
+		return nil, fmt.Errorf("discord attachment: status %d", resp.StatusCode)
+	}
+	return resp.Body, nil
+}
+
+func (a Adapter) discordFileHost(u *url.URL) bool {
+	if a.BaseURL != "" {
+		base, err := url.Parse(a.BaseURL)
+		return err == nil && u.Scheme == base.Scheme && u.Host == base.Host
+	}
+	return u.Scheme == "https" && (u.Host == "cdn.discordapp.com" || u.Host == "media.discordapp.net")
 }
 
 // controls are the custom ids opendesk's own components send.
@@ -337,6 +381,55 @@ func (a Adapter) Post(ctx context.Context, c *http.Client, cr map[string]string,
 	return a.call(ctx, c, cr["bot_token"], http.MethodPost, "/channels/"+thread+"/messages", map[string]any{
 		"content": clip(text, 1900), "allowed_mentions": map[string]any{"parse": []string{}}, "flags": 4,
 	}, nil)
+}
+
+func (a Adapter) PostRich(ctx context.Context, c *http.Client, cr map[string]string, thread string, message channel.RichMessage) (channel.MessageRef, error) {
+	if thread == "" {
+		thread = cr["channel_id"]
+	}
+	var out struct {
+		ID string `json:"id"`
+	}
+	err := a.call(ctx, c, cr["bot_token"], http.MethodPost, "/channels/"+thread+"/messages", richPayload(message), &out)
+	return channel.MessageRef{ID: out.ID}, err
+}
+
+func (a Adapter) UpdateRich(ctx context.Context, c *http.Client, cr map[string]string, thread, id string, message channel.RichMessage) error {
+	err := a.call(ctx, c, cr["bot_token"], http.MethodPatch, "/channels/"+thread+"/messages/"+id, richPayload(message), nil)
+	if archived(err) {
+		return nil
+	}
+	return err
+}
+
+func (a Adapter) DeleteRich(ctx context.Context, c *http.Client, cr map[string]string, thread, id string) error {
+	err := a.call(ctx, c, cr["bot_token"], http.MethodDelete, "/channels/"+thread+"/messages/"+id, nil, nil)
+	if archived(err) {
+		return nil
+	}
+	return err
+}
+
+func richPayload(message channel.RichMessage) map[string]any {
+	text := message.Text
+	var embeds []any
+	view := ""
+	if message.ViewURL != "" {
+		view = "\nView in opendesk: " + message.ViewURL
+	}
+	for i, file := range message.Attachments {
+		line := fmt.Sprintf("\n%s · %d bytes: %s", file.Name, file.SizeBytes, file.URL)
+		if len([]rune(text+line+view)) > 1900 {
+			text += fmt.Sprintf("\n%d more attachment(s)", len(message.Attachments)-i)
+			break
+		}
+		text += line
+		if file.Preview && len(embeds) < 10 {
+			embeds = append(embeds, map[string]any{"image": map[string]string{"url": file.URL}})
+		}
+	}
+	text += view
+	return map[string]any{"content": clip(text, 1900), "embeds": embeds, "allowed_mentions": map[string]any{"parse": []string{}}, "flags": 4}
 }
 func (a Adapter) Update(ctx context.Context, c *http.Client, cr map[string]string, root string, t channel.Ticket) error {
 	err := a.call(ctx, c, cr["bot_token"], http.MethodPatch, "/channels/"+cr["channel_id"]+"/messages/"+root, ticketPayload(t), nil)

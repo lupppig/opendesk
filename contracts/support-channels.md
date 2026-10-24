@@ -22,7 +22,7 @@ type Connection = { id: string; provider: string; name: string;
 type AvailableDestination = { id: string; name: string; kind?: string; available: boolean };
 type Destination = { id: string; connection_id: string; team_id: string|null;
   external_channel_id: string; external_channel_name: string; enabled: boolean;
-  include_notes: boolean; created_at: string };
+  include_notes: boolean; message_limit: number; created_at: string };
 ```
 
 | method | path | role | body → response |
@@ -36,7 +36,7 @@ type Destination = { id: string; connection_id: string; team_id: string|null;
 | GET | `/v1/support-channels/connections/{id}/destinations` | admin user | discovers → `{data: AvailableDestination[]}` |
 | DELETE | `/v1/support-channels/connections/{id}` | admin user | → 204, including its destinations and thread mappings |
 | GET | `/v1/support-channels/destinations` | viewer, `settings:read` | → `{data: Destination[]}` |
-| POST | `/v1/support-channels/destinations` | admin user | `{connection_id,team_id?,external_channel_id,external_channel_name?,include_notes?}` → 201 `Destination` |
+| POST | `/v1/support-channels/destinations` | admin user | `{connection_id,team_id?,external_channel_id,external_channel_name?,include_notes?,message_limit?}` → 201 `Destination` |
 | DELETE | `/v1/support-channels/destinations/{id}` | admin user | → 204, including its thread mappings |
 | POST | `/v1/me/support-channel-link-code` | agent user | → 201 `{code,expires_at}` |
 | POST | `/v1/support-channels/hooks/{provider}/{connectionId}` | signed provider | provider payload → provider acknowledgement |
@@ -95,6 +95,14 @@ visibility before every mutation. Adapters that can answer one person privately 
 action came with a handle, and into the thread otherwise. Every Telegram callback is answered
 by the worker once the action ran.
 
+Adapters implement `RichAdapter` to post, update and remove mirrored ticket messages and
+return the provider message id. A rich message contains bounded plain text, safe attachment
+metadata and freshly signed opendesk download URLs. Storage keys never cross the boundary.
+An adapter implements `AttachmentDownloader` when agents can add provider files to an
+explicit `reply` or `note`. The engine downloads with the connection's credentials, limits
+the whole message to 20 files and 25 MB, cleans the names, sniffs the bytes, refuses programs
+and scripts, stores each file through `internal/storage`, then calls the normal ticket write.
+
 A provider that delivers chat over a long-lived connection also implements
 `Subscriber`: `Subscribe(ctx, client, credentials, Stream) error` runs one subscription,
 hands events to `Stream.Emit` and calls `Stream.Connected` once the provider accepts the
@@ -144,7 +152,9 @@ none for a batch without ticket events. For each matching destination:
    itself on Discord, whose threads are channels). Thread ids are only unique within a chat
    on some providers (Telegram topic ids), so inbound messages are always matched by channel
    and thread together.
-3. The adapter creates or updates the ticket root and posts text-only message activity.
+3. The adapter creates or updates the ticket root and posts message activity with safe
+   attachment links. It records provider message ids so later note edits, deletions and
+   restores stay synchronized with the provider copy.
 4. The delivery is marked complete. Provider failures set the connection to `error` and
    River retries; the next successful delivery clears the error. A card that can't be edited
    is retried without touching the connection's status. An edit that changes nothing
@@ -161,7 +171,17 @@ thread records the event (`history_event_seq`) and the ids of the messages the h
 so an earlier message event that runs late posts only a message the history left out.
 Messages identify customer replies, agent replies and, where the destination includes
 them, internal notes. Stored HTML is never sent to a provider; adapters receive bounded
-plain text.
+plain text. Each destination chooses a limit from 500 to 3,500 characters. When the text is
+longer, the provider gets the bounded text and a **View in opendesk** link to the complete
+ticket. Attachment links are signed again for every attempt, so a retry never reuses an
+expired event URL.
+
+An explicit provider `reply` or `note` may carry files. Provider-side edits and deletions
+are matched by the recorded source message id. An edit or deletion of the member's own note
+uses the same authorship, visibility, deletion-policy, activity and event path as the API.
+A provider edit or deletion never changes a customer-facing reply, because it may already
+be in the customer's inbox. Providers which do not report the actor for a deletion do not
+apply that deletion. Telegram reports edits but not deletions through its Bot API.
 
 ## Conversations, commands and identity
 
@@ -230,10 +250,13 @@ available." `/opendesk link <code>` needs no number.
 ## Provider setup
 
 - **Slack:** bot token and signing secret. Grant `chat:write`, `app_mentions:read`,
-  `channels:read` and `groups:read`, then invite the bot to each selectable channel.
+  `channels:read`, `groups:read`, `channels:history`, `groups:history` and `files:read`,
+  then invite the bot to each selectable channel.
   Slack does not let a bot token change its own app configuration, so the health state is
   `action_required` and tells an admin to point Event Subscriptions, Interactivity & Shortcuts
-  and the `/opendesk` slash command at `webhook_url`, then test them in Slack. Apps connected
+  and the `/opendesk` slash command at `webhook_url`, then test them in Slack. Subscribe to
+  `app_mention`, `message.channels` and `message.groups` bot events.
+  Apps connected
   before the ticket controls existed lack Interactivity: they return to `action_required`
   with the setup steps until a signed callback from one of the controls arrives
   (`WebhookResult.Control`); other callbacks don't clear that step.
@@ -253,7 +276,8 @@ available." `/opendesk link <code>` needs no number.
   for the admin, instead of retrying. A successful session sets it back to `connected`.
 - **Telegram:** bot token. opendesk generates and seals the webhook secret, calls
   `setWebhook` with `webhook_url`, and subscribes to `message` and `my_chat_member`.
-  It also subscribes to `callback_query` for the ticket and confirmation controls. Connections
+  It also subscribes to `edited_message` for note edits and `callback_query` for the ticket
+  and confirmation controls. Telegram's Bot API does not send message deletions. Connections
   made before that are marked (`reconfigure`) and set up again once by a worker at boot,
   retried hourly while the provider refuses.
   Add the bot as an administrator to a forum-enabled group; that signed membership update

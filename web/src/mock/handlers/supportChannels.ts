@@ -130,6 +130,7 @@ export function registerSupportChannels() {
       external_channel_name: String(ctx.body.external_channel_name ?? "").trim(),
       enabled: true,
       include_notes: ctx.body.include_notes === true,
+      message_limit: typeof ctx.body.message_limit === "number" ? ctx.body.message_limit : 3500,
       created_at: nowIso(),
     };
     destinations.push(row);

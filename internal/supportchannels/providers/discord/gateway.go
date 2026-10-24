@@ -227,10 +227,23 @@ func (a Adapter) session(ctx context.Context, c *http.Client, url string, cr map
 				stream.Connected()
 			}
 		case "MESSAGE_CREATE":
-			in, ok := mentionEvent(event.D, cr["guild_id"], sess.BotID)
+			in, ok := mentionEvent(event.D, cr["guild_id"], sess.BotID, true)
 			if !ok {
 				continue
 			}
+			if err = stream.Emit(streamCtx, []channel.Inbound{in}); err != nil {
+				return ready, err
+			}
+		case "MESSAGE_UPDATE":
+			in, ok := mentionEvent(event.D, cr["guild_id"], sess.BotID, false)
+			if !ok {
+				continue
+			}
+			in.EventID += ":edit:"
+			if event.S != nil {
+				in.EventID += fmt.Sprint(*event.S)
+			}
+			in.Mutation = "edit"
 			if err = stream.Emit(streamCtx, []channel.Inbound{in}); err != nil {
 				return ready, err
 			}
@@ -270,7 +283,7 @@ func closeError(err error, sess *gatewaySession) error {
 
 // mentionEvent reads a MESSAGE_CREATE that mentions the bot in the configured
 // server as a chat event for the engine.
-func mentionEvent(raw json.RawMessage, guildID, botID string) (channel.Inbound, bool) {
+func mentionEvent(raw json.RawMessage, guildID, botID string, defaultText bool) (channel.Inbound, bool) {
 	var message struct {
 		ID        string `json:"id"`
 		GuildID   string `json:"guild_id"`
@@ -283,6 +296,13 @@ func mentionEvent(raw json.RawMessage, guildID, botID string) (channel.Inbound, 
 		Mentions []struct {
 			ID string `json:"id"`
 		} `json:"mentions"`
+		Attachments []struct {
+			ID          string `json:"id"`
+			Filename    string `json:"filename"`
+			ContentType string `json:"content_type"`
+			Size        int64  `json:"size"`
+			URL         string `json:"url"`
+		} `json:"attachments"`
 	}
 	if json.Unmarshal(raw, &message) != nil || message.Author.Bot || message.GuildID != guildID || botID == "" {
 		return channel.Inbound{}, false
@@ -295,9 +315,22 @@ func mentionEvent(raw json.RawMessage, guildID, botID string) (channel.Inbound, 
 		return channel.Inbound{}, false
 	}
 	text := strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(message.Content, "<@"+botID+">", ""), "<@!"+botID+">", ""))
-	if text == "" {
+	if text == "" && len(message.Attachments) == 0 && defaultText {
 		text = "What can you tell me about this ticket?"
 	}
+	command, value := "chat", text
+	if fields := strings.Fields(text); len(fields) > 0 {
+		candidate := strings.TrimPrefix(strings.ToLower(fields[0]), "/")
+		if candidate == "reply" || candidate == "note" {
+			command = candidate
+			value = strings.TrimSpace(strings.TrimPrefix(text, fields[0]))
+		}
+	}
+	files := make([]channel.Attachment, 0, len(message.Attachments))
+	for _, file := range message.Attachments {
+		files = append(files, channel.Attachment{ID: file.ID, Name: file.Filename, ContentType: file.ContentType, SizeBytes: file.Size, URL: file.URL})
+	}
 	return channel.Inbound{EventID: message.ID, AccountID: message.GuildID, ExternalChannelID: message.ChannelID,
-		ExternalThreadID: message.ChannelID, ExternalUserID: message.Author.ID, Command: "chat", Text: text, Value: text, Directed: true}, true
+		ExternalThreadID: message.ChannelID, ExternalUserID: message.Author.ID, Command: command, Text: value, Value: value, Directed: true,
+		ExternalMessageID: message.ID, Files: files}, true
 }

@@ -163,7 +163,7 @@ func supportChannelWorkspaces(ctx context.Context, tx pgx.Tx, batch []Envelope) 
 
 func supportChannelEvent(typ string) bool {
 	switch typ {
-	case "ticket.created", "ticket.updated", "message.created":
+	case "ticket.created", "ticket.updated", "message.created", "message.updated":
 		return true
 	default:
 		return false

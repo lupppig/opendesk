@@ -6,6 +6,7 @@ package channel
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 )
 
@@ -89,6 +90,27 @@ type Message struct {
 	Actions []Action
 }
 
+// Attachment is safe metadata at the provider boundary. URL is set only for an
+// opendesk attachment being mirrored out; provider files arriving in an Inbound
+// are opened by AttachmentDownloader so provider credentials never enter the
+// engine or an event payload.
+type Attachment struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	ContentType string `json:"content_type,omitempty"`
+	SizeBytes   int64  `json:"size_bytes"`
+	URL         string `json:"url,omitempty"`
+	Preview     bool   `json:"preview,omitempty"`
+}
+
+// RichMessage is a mirrored ticket message. ViewURL is present when Text was
+// truncated, and is also the durable fallback for attachment links.
+type RichMessage struct {
+	Text        string
+	Attachments []Attachment
+	ViewURL     string
+}
+
 type MessageRef struct{ ID string }
 
 type Thread struct {
@@ -132,10 +154,22 @@ type Inbound struct {
 	// SourceText is the provider's copy of that message's text, for providers
 	// whose edits must restate it to remove the controls (Slack).
 	SourceText string `json:",omitempty"`
+	// ExternalMessageID names an ordinary provider message. It maps a typed
+	// reply or note back to the ticket message it created without making the
+	// message look like a native control.
+	ExternalMessageID string `json:",omitempty"`
 	// Respond is an opaque provider handle for answering the sender privately
 	// (Slack's response_url, Discord's interaction, Telegram's callback query),
 	// used by a Responder.
 	Respond string `json:",omitempty"`
+	// Mutation is edit or delete for a provider-side change to ExternalMessageID.
+	// The engine applies normal ticket permissions and never rewrites a reply
+	// which may already have reached a customer.
+	Mutation  string       `json:",omitempty"`
+	Files     []Attachment `json:",omitempty"`
+	UploadIDs []string     `json:"-"`
+	// DestinationID is filled by the engine after it resolves the mapped thread.
+	DestinationID string `json:"-"`
 }
 
 // WebhookResult separates provider protocol acknowledgements from normalized
@@ -169,6 +203,27 @@ type Adapter interface {
 type InteractiveAdapter interface {
 	PostInteractive(context.Context, *http.Client, map[string]string, string, Message) (MessageRef, error)
 	ClearActions(context.Context, *http.Client, map[string]string, Inbound) error
+}
+
+// RichAdapter posts and mutates mirrored ticket messages. Adapters which do
+// not implement it keep the text-only Post behavior.
+type RichAdapter interface {
+	PostRich(context.Context, *http.Client, map[string]string, string, RichMessage) (MessageRef, error)
+	UpdateRich(context.Context, *http.Client, map[string]string, string, string, RichMessage) error
+	DeleteRich(context.Context, *http.Client, map[string]string, string, string) error
+}
+
+// RichTextLimiter reports a provider's safe text budget after its own framing.
+// The engine applies the lower of this and the destination setting so provider
+// clipping always gets a View in opendesk fallback.
+type RichTextLimiter interface {
+	RichTextLimit() int
+}
+
+// AttachmentDownloader opens a provider file. The engine owns size limits,
+// executable refusal, content sniffing and storage.
+type AttachmentDownloader interface {
+	DownloadAttachment(context.Context, *http.Client, map[string]string, Attachment) (io.ReadCloser, error)
 }
 
 // Responder answers the person behind an Inbound privately, through its

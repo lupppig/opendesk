@@ -1,12 +1,14 @@
 package supportchannels
 
 import (
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/useopendesk/opendesk/internal/supportchannels/channel"
 )
 
-func TestMessageCreatedTextDecodesEventPayload(t *testing.T) {
+func TestMessageEventDecodesEventPayload(t *testing.T) {
 	tests := []struct {
 		name  string
 		data  string
@@ -21,22 +23,45 @@ func TestMessageCreatedTextDecodesEventPayload(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := messageCreatedText([]byte(tt.data), tt.notes)
+			got, source, err := messageEvent([]byte(tt.data), tt.notes, 3500, "https://app.test/ticket")
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got != tt.want {
-				t.Fatalf("text = %q, want %q", got, tt.want)
+			if got.Text != tt.want || (source != nil) != (tt.want != "") {
+				t.Fatalf("message = %+v, source = %+v, want %q", got, source, tt.want)
 			}
 		})
 	}
 }
 
-func TestMessageCreatedTextRejectsMalformedPayload(t *testing.T) {
+func TestMessageEventRejectsMalformedPayload(t *testing.T) {
 	for _, data := range []string{`{"message":`, `{}`} {
-		if _, err := messageCreatedText([]byte(data), true); err == nil {
+		if _, _, err := messageEvent([]byte(data), true, 3500, "https://app.test/ticket"); err == nil {
 			t.Fatalf("accepted malformed payload %q", data)
 		}
+	}
+}
+
+func TestMessageEventKeepsAttachmentsAndLinksTruncatedText(t *testing.T) {
+	id := "0192f0c4-0000-7000-8000-000000000000"
+	data := `{"message":{"id":"0192f0c4-0000-7000-8000-000000000001","kind":"reply","direction":"inbound","body_text":"` + strings.Repeat("long ", 200) + `","attachments":[{"id":"` + id + `","filename":"screen.png","content_type":"image/png","size_bytes":42}]}}`
+	got, source, err := messageEvent([]byte(data), false, 500, "https://app.test/ticket")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source == nil || len([]rune(got.Text)) > 500 || got.ViewURL == "" || len(got.Attachments) != 1 || got.Attachments[0].Name != "screen.png" || !strings.Contains(got.Attachments[0].URL, id) {
+		t.Fatalf("rich message = %+v, source = %+v", got, source)
+	}
+}
+
+func TestMessageEventKeepsEmptyDeletionMarker(t *testing.T) {
+	data := `{"message":{"id":"0192f0c4-0000-7000-8000-000000000001","kind":"note","direction":"outbound","deleted_at":"2026-10-24T12:00:00Z"}}`
+	got, source, err := messageEvent([]byte(data), true, 3500, "https://app.test/ticket")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source == nil || source.DeletedAt == nil || !source.DeletedAt.Equal(time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)) || got.Text != "Internal note: " {
+		t.Fatalf("message = %+v, source = %+v", got, source)
 	}
 }
 

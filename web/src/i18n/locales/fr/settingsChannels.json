@@ -610,10 +610,10 @@
     "provider": {
       "slack": {
         "description": "Reproduisez les tickets par e-mail dans des fils Slack et traitez-les en parlant à Ollie.",
-        "setup": "Créez une application Slack avec les autorisations de bot chat:write, app_mentions:read, channels:read et groups:read, installez-la, puis collez son jeton de bot et son secret de signature. Après la connexion, opendesk affiche les deux réglages à terminer dans Slack.",
+        "setup": "Créez une application Slack avec les autorisations de bot chat:write, app_mentions:read, channels:read, groups:read, channels:history, groups:history et files:read, installez-la, puis collez son jeton de bot et son secret de signature. Après la connexion, opendesk affiche les réglages à terminer dans Slack.",
         "steps": {
           "0": "Dans votre application Slack, ouvrez Event Subscriptions, activez-le et collez l’adresse ci-dessus comme Request URL.",
-          "1": "Dans Subscribe to bot events, ajoutez app_mention et enregistrez.",
+          "1": "Dans Subscribe to bot events, ajoutez app_mention, message.channels et message.groups, puis enregistrez.",
           "2": "Ouvrez Slash Commands, créez /opendesk et utilisez la même adresse comme Request URL.",
           "3": "Invitez le bot dans chaque canal où vous acheminez des tickets : /invite @your-bot."
         },
@@ -667,6 +667,9 @@
       "displayNamePlaceholder": "support",
       "notes": "Inclure les notes internes",
       "notesHint": "Désactivé par défaut. Si activé, les notes sont publiées dans ce canal et Ollie peut les utiliser dans ses réponses.",
+      "messageLimit": "Longueur du message",
+      "messageLimitHint": "Les messages plus longs sont raccourcis avec un lien Voir dans opendesk. Certains fournisseurs peuvent appliquer une limite inférieure.",
+      "messageLimitValue": "{{count}} caractères",
       "submit": "Ajouter une destination",
       "cancel": "Annuler",
       "added": "Destination ajoutée.",
