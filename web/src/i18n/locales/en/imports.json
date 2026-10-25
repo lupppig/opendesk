@@ -278,6 +278,7 @@
     "articles": "Bringing over help center articles",
     "tickets": "Bringing over tickets",
     "changes": "Bringing over what changed",
+    "threading": "Linking replies to their emails: {{done}} of {{total}}",
     "undoing": "Taking out what the import brought",
     "paused": "Paused. It goes on from here when you resume.",
     "waiting": "{{name}} asked us to slow down. Going on in {{seconds}}s.",

@@ -147,7 +147,7 @@ Front needs an **API token**. Only a Front admin can create one.
 
 Front conversations come over from every shared inbox the token can read, with their messages, internal comments (as notes), attachments and tags. Each one's contact becomes the requester, and its inbox maps to a team. Conversations that are not email, such as chat or SMS, get a label like `front-chat`. Front's read receipts are left out, and images Front proxied point back at where they came from.
 
-Emails in conversations active in the last 180 days keep their original Message-ID, In-Reply-To and References, so a customer's reply to one threads into its imported ticket. Reading them costs one more request per email, so older conversations come over without them.
+Every email keeps its original Message-ID, In-Reply-To and References, so a customer's reply to one, however old, threads into its imported ticket. Front gives them one email at a time, so they are read last, newest first: the tickets are already here and can be worked while the import shows **Linking replies to their emails**.
 
 Front's API is read at most 60 requests a minute, so a large account takes a while. Bringing over what changed reads Front's events feed; if the token cannot read events, the import walks each inbox from its newest conversations instead.
 

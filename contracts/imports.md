@@ -23,7 +23,9 @@ answers `409 import_running`.
    CSV upload (`{source: "csv", upload_id, mapping?}`) answers an `ImportCheck` for a mapping.
 2. **Start** it: `POST /v1/imports` with the same credentials (or the upload), the options
    and the mapping. It checks the source once more, answers the `Import` at once and runs in
-   the background: help center articles first, then tickets.
+   the background: help center articles first, then tickets, then (for a source whose
+   listings leave out its emails' threading headers, Front) those headers, one email at a
+   time, newest first. The tickets can be worked while that last phase runs.
 3. **Watch** it: `import.updated` events carry the whole `Import` as it moves, at most once
    a second while it writes and after every page. When it completes, fails or needs new
    credentials, the member who started it is notified (`import_finished`).
@@ -50,7 +52,7 @@ interface Import {
   id: string; source: ImportSource;
   account: { name: string; url: string };          // "Acme Support", "https://acme.zendesk.com"; a CSV import: its filename, ""
   status: ImportStatus;
-  phase: "articles" | "tickets" | "done";
+  phase: "articles" | "tickets" | "threading" | "done";
   run: number;                                      // 1, then +1 per sync
   options: ImportOptions; mapping: ImportMapping;
   totals: { tickets: number | null; articles: number | null }; // what the source said it has; null = unknown or not imported
@@ -64,7 +66,8 @@ interface Import {
   started_at: string /* of the latest run */; finished_at: string | null; created_at: string; updated_at: string;
 }
 interface ImportCounts { tickets: number; updated: number /* by a sync */; messages: number; contacts: number; companies: number;
-  articles: number; attachments: number; skipped: number /* deleted or spam in the source, CSV rows left out */; failed: number }
+  articles: number; attachments: number; skipped: number /* deleted or spam in the source, CSV rows left out */; failed: number;
+  threaded: number; thread_total: number /* emails the threading phase has read, of how many */ }
 interface ImportProblem { at: string; item: string /* "Ticket #1234", "Article Billing FAQ", "Row 18", "Label vip", "Help center" */; message: string }
 
 interface ImportOptions {
@@ -184,9 +187,10 @@ the encoding, a line that cannot be read, more than 500,000 rows, no rows under 
   reply's quoted history and signature are cut the way an inbound email's are, with the whole original
   kept behind it (`full_html`); notes, chats and forwards keep everything. Front drafts
   are left out; a Front conversation that is not email (chat, SMS, social) is tagged `front-<channel>`.
-  Front's read-receipt pixel is dropped and images it proxied get their original link back. Front emails in
-  conversations last active within 180 days carry `message_id`, `in_reply_to` and `references`, read from
-  `GET /messages/{id}` as `message/rfc822` (headers only).
+  Front's read-receipt pixel is dropped and images it proxied get their original link back. Front emails
+  get `message_id`, `in_reply_to` and `references` in the threading phase, read from `GET /messages/{id}`
+  as `message/rfc822` (headers only). Each email is read once, by this import or a later sync; one Front
+  cannot answer for (not a rate limit, refused token or outage) is left without them.
 - Attachments are copied here (25 MB per file, programs refused); inline images point at the copies.
   The plan bounds how many files one message brings, their size in all, and what imports bring into a
   workspace in all (contracts/billing.md "Imports"); a self-hosted instance has none of these limits.

@@ -621,7 +621,6 @@ func (s *front) Load(ctx context.Context, t *source.Ticket) error {
 	}
 	var out []source.Message
 	first := ""
-	headers := s.wantHeaders(t.UpdatedAt)
 	for _, m := range msgs {
 		if m.IsDraft {
 			continue
@@ -629,13 +628,7 @@ func (s *front) Load(ctx context.Context, t *source.Ticket) error {
 		if first == "" {
 			first = m.Type
 		}
-		msg := toMessage(m)
-		if headers && m.Type == "email" {
-			if err := s.thread(ctx, &msg); err != nil {
-				return err
-			}
-		}
-		out = append(out, msg)
+		out = append(out, toMessage(m))
 	}
 	for _, c := range comments {
 		out = append(out, toNote(c))

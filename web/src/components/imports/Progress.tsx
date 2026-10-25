@@ -35,12 +35,14 @@ function useNow(on: boolean) {
 }
 
 function doneOf(x: Import) {
+  if (x.phase === "threading") return x.counts.threaded;
   return x.counts.tickets + x.counts.updated + x.counts.articles + x.counts.skipped + x.counts.failed;
 }
 
 /** Share done, or null when the source gave no total (or a date or an update narrows it). */
 function shareOf(x: Import): number | null {
   if (x.status === "completed") return 1;
+  if (x.phase === "threading") return x.counts.thread_total > 0 ? Math.min(0.99, x.counts.threaded / x.counts.thread_total) : null;
   if (x.run > 1 || x.options.since) return null;
   const total = (x.totals.tickets ?? NaN) * (x.options.tickets ? 1 : 0) + (x.options.articles ? (x.totals.articles ?? NaN) : 0);
   if (!Number.isFinite(total) || total <= 0) return null;
@@ -180,9 +182,11 @@ export function ImportCard({ x, admin }: { x: Import; admin: boolean }) {
         ? t("progress.waiting", { name, seconds: Math.max(1, Math.ceil((Date.parse(x.waiting_until!) - now) / 1000)) })
         : x.phase === "articles"
           ? t("progress.articles")
-          : x.run > 1
-            ? t("progress.changes")
-            : t("progress.tickets");
+          : x.phase === "threading"
+            ? t("progress.threading", { done: number(x.counts.threaded), total: number(x.counts.thread_total) })
+            : x.run > 1
+              ? t("progress.changes")
+              : t("progress.tickets");
   const tag = x.options.tag;
   const canUndo = admin && x.status !== "running" && x.status !== "undoing" && x.status !== "undone";
 

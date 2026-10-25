@@ -199,6 +199,8 @@ func (s *Service) step(ctx context.Context, w *writer) (bool, error) {
 			}
 		}
 		return false, s.checkpoint(ctx, w, PhaseTickets, page.Next)
+	case PhaseThreading:
+		return false, s.threadStep(ctx, w)
 	}
 	return true, nil
 }
@@ -228,6 +230,8 @@ func (s *Service) checkpoint(ctx context.Context, w *writer, phase, next string)
 		case PhaseArticles:
 			nextPhase = PhaseTickets
 		case PhaseTickets:
+			nextPhase = PhaseThreading
+		case PhaseThreading:
 			nextPhase = PhaseDone
 		}
 	} else {

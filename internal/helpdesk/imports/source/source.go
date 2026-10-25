@@ -111,6 +111,22 @@ type Message struct {
 	References []string
 }
 
+// Threading is an email's Message-ID, In-Reply-To and References, each as "<id>".
+type Threading struct {
+	MessageID  string
+	InReplyTo  string
+	References []string
+}
+
+// Threader is a source whose listings leave out its emails' threading headers and that
+// reads them one email at a time. The engine asks for them after the tickets are in, newest
+// first (the import's threading phase), so an import is not held up by them. An error
+// that is not a rate limit, refused credentials, or the source being unreachable or
+// failing leaves that one email without headers.
+type Threader interface {
+	Threading(ctx context.Context, messageID string) (Threading, error)
+}
+
 // Attachment is a file on a message, fetched with Source.Download.
 type Attachment struct {
 	ID          string

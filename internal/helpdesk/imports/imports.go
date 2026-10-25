@@ -55,9 +55,10 @@ const (
 
 // Phases, in order.
 const (
-	PhaseArticles = "articles"
-	PhaseTickets  = "tickets"
-	PhaseDone     = "done"
+	PhaseArticles  = "articles"
+	PhaseTickets   = "tickets"
+	PhaseThreading = "threading"
+	PhaseDone      = "done"
 )
 
 // sourceNames are how people know the products.
@@ -193,6 +194,9 @@ type ImportCounts struct {
 	Attachments int `json:"attachments"`
 	Skipped     int `json:"skipped"`
 	Failed      int `json:"failed"`
+	// Threaded is how many emails the threading phase has read, of ThreadTotal.
+	Threaded    int `json:"threaded"`
+	ThreadTotal int `json:"thread_total"`
 }
 
 // ImportProblem is something an import could not bring over.
@@ -211,7 +215,7 @@ type Import struct {
 	Source           string          `json:"source" enum:"zendesk,helpscout,freshdesk,intercom,front,csv"`
 	Account          ImportAccount   `json:"account"`
 	Status           string          `json:"status" enum:"running,paused,completed,failed,canceled,undoing,undone"`
-	Phase            string          `json:"phase" enum:"articles,tickets,done"`
+	Phase            string          `json:"phase" enum:"articles,tickets,threading,done"`
 	Run              int             `json:"run"`
 	Options          ImportOptions   `json:"options"`
 	Mapping          ImportMapping   `json:"mapping"`
