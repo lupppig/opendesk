@@ -1,6 +1,6 @@
 import { i18n } from "@/i18n";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRightLeft, Check, ChevronDown, Loader2, Lock, MessageSquareText, MessagesSquare, Paperclip, TriangleAlert, X } from "lucide-react";
+import { ArrowRightLeft, Check, ChevronDown, Eye, Loader2, Lock, MessageSquareText, MessagesSquare, Paperclip, TriangleAlert, X } from "lucide-react";
 import { Morph } from "@/components/motion";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
@@ -30,7 +30,8 @@ import { mentionExtension, savedReplyExtension, SuggestionPopup } from "./sugges
 import { templateGroupLabel, useCatalog } from "@/components/templates/catalog";
 import { matchVars, refreshTags, templateExtension, VarSuggestPopup, type VarItem } from "@/components/templates/extension";
 import { variableText } from "./composerTemplates";
-import { SignaturePreview } from "./SignaturePreview";
+import { ReplySignature } from "./ReplySignature";
+import { ReplyPreview } from "./ReplyPreview";
 import { StatusIcon, statusLabel } from "../bits";
 import { useTicketViewers } from "../presence";
 import { useUpdateTicket } from "../useTicketActions";
@@ -339,6 +340,7 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
   const personalSender = personal.find(personalFrom);
   const tempMessage = useTempMessage(ticket, teams, personalSender);
   const me = useSession((s) => s.user!.id);
+  const userName = useSession((s) => s.user!.name);
   const { data: workspace } = useQuery(q.workspace());
   // Email replies wait a few seconds by default, chat replies go at once (settings).
   const undoSeconds = undoSecondsFor(workspace?.settings, ticket.channel);
@@ -580,6 +582,18 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
   const note = mode === "note";
   const threadMode = mode === "thread";
   const recipient = ticket.contact?.email ?? ticket.contact?.name ?? t("composer.theCustomer");
+  // An email reply: from one of my own addresses, or from a team address.
+  const replyMailboxId = draft.mailboxId ?? ticket.mailbox_id;
+  const replyMailbox = teams.mailbox(replyMailboxId);
+  const emailReply = mode === "reply" && (!!personalSender || (!!replyMailbox && (ticket.channel === "email" || !!ticket.mailbox_id)));
+  // The signature it carries, filled by the server: the team's, else the address's, else mine; from my own address, that address's.
+  const signature = !emailReply ? undefined : personalSender ? identitySignature(personalSender.identity) : vars?.signature_html;
+  const replyFrom = personalSender
+    ? { ...personalFromLine(personalSender), replyTo: null as string | null }
+    : replyMailbox
+      ? fromLine(teams, ticket, replyMailbox, userName)
+      : null;
+  const [previewing, setPreviewing] = useState(false);
   // The editor opens up while in use or holding a draft, and rests small otherwise.
   const open = focused || !!draft.html || uploads.length > 0;
 
@@ -813,6 +827,7 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
               onKeyDown={onKeyDown}
               editable={!disabled && !ai.busy}
               contentClassName={cn("max-h-[40vh] transition-[min-height] duration-200 ease-out motion-reduce:transition-none", open ? "min-h-[96px]" : "min-h-[44px]")}
+              afterContent={open && signature?.trim() ? <ReplySignature html={signature} /> : null}
               ariaLabel={note ? t("composer.note") : threadMode ? t("composer.thread") : t("composer.reply")}
               toolbarEnd={
                 <>
@@ -849,6 +864,19 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
                       </Tooltip>
                     }
                   />
+                  {emailReply && (
+                    <Tooltip content={draft.html ? t("composer.previewEmail") : t("composer.previewEmpty")}>
+                      <button
+                        type="button"
+                        aria-label={t("composer.previewEmail")}
+                        aria-disabled={!draft.html}
+                        onClick={() => draft.html && setPreviewing(true)}
+                        className="flex size-7 items-center justify-center rounded-md text-fg-3 transition-colors hover:bg-hover hover:text-fg active:scale-95 aria-disabled:opacity-50 aria-disabled:hover:bg-transparent aria-disabled:hover:text-fg-3"
+                      >
+                        <Eye className="size-[15px]" />
+                      </button>
+                    </Tooltip>
+                  )}
                   <span className="mx-1 h-4 w-px bg-line" />
                   <SendButton
                     note={note}
@@ -895,6 +923,26 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
         </div>
         <SuggestionPopup />
         <VarSuggestPopup />
+        {emailReply && (
+          <ReplyPreview
+            open={previewing && !!draft.html}
+            onOpenChange={setPreviewing}
+            ticket={ticket}
+            html={draft.html}
+            from={replyFrom}
+            to={recipient}
+            cc={draft.cc}
+            bcc={draft.bcc}
+            files={uploads.filter((u) => u.status !== "error").map((u) => u.file.name)}
+            mailboxId={replyMailboxId}
+            personalSignature={personalSender ? (signature ?? "") : undefined}
+            canSend={canSend}
+            onSend={() => {
+              setPreviewing(false);
+              submit();
+            }}
+          />
+        )}
       </div>
     </div>
   );
@@ -934,8 +982,6 @@ function ReplyingAs({
   const { data: activities } = useQuery(q.activities(ticket.id));
   const { data: messages } = useQuery(q.messages(ticket.id));
   const mailbox = ctx.mailbox(mailboxId);
-  // The signature this reply carries, filled by the server: the team's, else the address's, else mine.
-  const { data: vars } = useQuery({ ...q.ticketVariables(ticket.id, mailboxId), enabled: !!mailbox && !personal });
   const options = replyAddresses(ctx, ticket);
   // Without an address of its own, an email ticket still offers mine.
   if (!mailbox && !personal && senders.length === 0) return null;
@@ -945,7 +991,6 @@ function ReplyingAs({
   const moved = chosen || personal || !mailbox ? null : movedTo(activities, messages, mailbox, ctx);
   const canPick = senders.length > 0 || options.length > 1 || (options.length === 1 && options[0].id !== mailbox?.id);
   const grouped = senders.length > 0;
-  const signature = personal ? identitySignature(personal.sender.identity) : vars?.signature_html;
   const chip = (
     <button
       type="button"
@@ -1015,7 +1060,6 @@ function ReplyingAs({
             chip
           )}
         </div>
-        {signature && <SignaturePreview html={signature} />}
       </div>
       {personal && (
         <ReplyToLine

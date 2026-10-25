@@ -172,10 +172,10 @@ func (t *TicketMail) StillSendable(ctx context.Context, wid, mid uuid.UUID) (boo
 }
 
 // RecordSent records that reply mid went out as fromName <fromEmail> to to, with the
-// Message-ID stamped, and publishes the change.
-func (t *TicketMail) RecordSent(ctx context.Context, wid, mid, ticketID uuid.UUID, stamped, fromEmail, fromName string, to []string) error {
+// Message-ID stamped and html, the email as it went out, and publishes the change.
+func (t *TicketMail) RecordSent(ctx context.Context, wid, mid, ticketID uuid.UUID, stamped, fromEmail, fromName string, to []string, html string) error {
 	return t.s.recordDelivery(ctx, wid, mid, ticketID, "sent", "", stamped,
-		&sentAs{fromEmail: strings.ToLower(fromEmail), fromName: fromName, to: dedupe(to)})
+		&sentAs{fromEmail: strings.ToLower(fromEmail), fromName: fromName, to: dedupe(to), html: html})
 }
 
 // RecordFailed records that reply mid could not go out, with the reason shown on it.

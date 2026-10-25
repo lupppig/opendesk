@@ -5,6 +5,7 @@ import (
 	"errors"
 	"html"
 	"net/mail"
+	"regexp"
 	"strings"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/displayname"
 	"github.com/useopendesk/opendesk/internal/domain"
 	"github.com/useopendesk/opendesk/internal/events"
+	"github.com/useopendesk/opendesk/internal/ids"
 	"github.com/useopendesk/opendesk/internal/jobs"
 	"github.com/useopendesk/opendesk/internal/mailer"
 	"github.com/useopendesk/opendesk/internal/templates"
@@ -264,6 +266,9 @@ type sentAs struct {
 	to []string
 	// provider is where it lives at Gmail, when the mailbox sends through its API.
 	provider *providerRef
+	// html is the email as it went out: the layout, the reply, the signature and the
+	// quoted conversation, kept so the team can open it as the customer got it.
+	html string
 }
 
 func messageIDFor(prefix string, id uuid.UUID, number int64, m *mailboxRow) string {
@@ -510,7 +515,7 @@ func (s *service) composeAndSend(ctx context.Context, wid, mid, ticketID uuid.UU
 		return stamped, nil, err
 	}
 	return stamped, &sentAs{mailboxID: m.ID, fromEmail: strings.ToLower(out.From.Address), fromName: out.From.Name, ticketMailbox: t.mailboxID == nil,
-		to: dedupe(to), provider: out.sent}, nil
+		to: dedupe(to), provider: out.sent, html: mail.HTML}, nil
 }
 
 // composeAndSendThread emails a message of a third-party thread (contracts/api.md
@@ -602,7 +607,7 @@ func (s *service) composeAndSendThread(ctx context.Context, wid, mid, ticketID, 
 	if err != nil {
 		return stamped, nil, err
 	}
-	return stamped, &sentAs{mailboxID: m.ID, fromEmail: strings.ToLower(from.Address), fromName: from.Name, to: dedupe(to)}, nil
+	return stamped, &sentAs{mailboxID: m.ID, fromEmail: strings.ToLower(from.Address), fromName: from.Name, to: dedupe(to), html: mail.HTML}, nil
 }
 
 // threadMessageHeaders returns In-Reply-To and References for a message of a third-party
@@ -738,6 +743,29 @@ func (s *service) outboundAttachments(ctx context.Context, wid, mid uuid.UUID, b
 	return out, bodyHTML, nil
 }
 
+// sentCID is the content id an inline image of ours goes out as (outboundAttachments).
+var sentCID = regexp.MustCompile(`(?i)cid:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})@opendesk`)
+
+// keptCopy is an email as it went out, for the team to open: its inline images point at
+// their stored attachments again, and it is sanitized like every stored email.
+func keptCopy(sent string) string {
+	if strings.TrimSpace(sent) == "" {
+		return ""
+	}
+	doc := parseFragment(sent)
+	if doc == nil {
+		return ""
+	}
+	urls := map[string]string{}
+	for _, m := range sentCID.FindAllStringSubmatch(sent, -1) {
+		if id, ok := ids.Parse(m[1]); ok {
+			urls[strings.ToLower(m[1])+"@opendesk"] = domain.AttachmentURL(id)
+		}
+	}
+	rewriteCID(doc, urls)
+	return sanitizeHTML(render(doc))
+}
+
 // errNotSendable: the message was deleted (or otherwise settled) before it was handed over.
 var errNotSendable = errors.New("message no longer sendable")
 
@@ -793,6 +821,12 @@ func (s *service) recordDelivery(ctx context.Context, wid, mid, ticketID uuid.UU
 			}
 			if sent.provider != nil {
 				if _, err := tx.Exec(ctx, `UPDATE messages SET provider_ref = $3 WHERE workspace_id = $1 AND id = $2`, wid, mid, sent.provider); err != nil {
+					return err
+				}
+			}
+			// The email as it went out; one too large to keep whole is not kept.
+			if kept := keptCopy(sent.html); kept != "" && len(kept) <= maxBodyHTML {
+				if _, err := tx.Exec(ctx, `UPDATE messages SET full_html = $3 WHERE workspace_id = $1 AND id = $2`, wid, mid, kept); err != nil {
 					return err
 				}
 			}

@@ -372,6 +372,9 @@ func purgeMessage(ctx context.Context, tx pgx.Tx, d *deps.Deps, wid, tid, mid uu
 		WHERE workspace_id = $1 AND ticket_id = $2 AND id = $3`, wid, tid, mid); err != nil {
 		return nil, err
 	}
+	if err := forgetSentCopies(ctx, tx, wid, tid, mid); err != nil {
+		return nil, err
+	}
 	if _, err := tx.Exec(ctx, `DELETE FROM notifications WHERE workspace_id = $1 AND ticket_id = $2 AND data->>'message_id' = $3`,
 		wid, tid, mid.String()); err != nil {
 		return nil, err
@@ -434,7 +437,38 @@ func hideMessage(ctx context.Context, tx pgx.Tx, d *deps.Deps, wid, tid, mid uui
 		WHERE workspace_id = $1 AND ticket_id = $2 AND message_id = $3 AND status = 'pending'`, wid, tid, mid); err != nil {
 		return err
 	}
+	if err := forgetSentCopies(ctx, tx, wid, tid, mid); err != nil {
+		return err
+	}
 	return hd.EnqueueAIEmbed(ctx, tx, d.Jobs, d.Cfg, wid, "ticket", tid)
+}
+
+// forgetSentCopies drops the kept copies of emails sent after reply mid (their quoted
+// conversation may hold it), so what it said is not read there once it is deleted or
+// purged. Each such message is published without its copy.
+func forgetSentCopies(ctx context.Context, tx pgx.Tx, wid, tid, mid uuid.UUID) error {
+	rows, err := tx.Query(ctx, `UPDATE messages m SET full_html = '' FROM messages h
+		WHERE h.workspace_id = $1 AND h.id = $3 AND h.kind = 'reply'
+			AND m.workspace_id = $1 AND m.ticket_id = $2 AND m.id <> $3 AND m.direction = 'outbound' AND m.full_html <> ''
+			AND m.created_at >= h.created_at
+		RETURNING m.id`, wid, tid, mid)
+	if err != nil {
+		return err
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		msg, err := domain.LoadMessage(ctx, tx, wid, id)
+		if err != nil {
+			return err
+		}
+		if _, err := events.Publish(ctx, tx, domain.MessageUpdatedEvent(wid, msg)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // messageDeleteRule is which messages an agent may delete: their own rule if an admin set

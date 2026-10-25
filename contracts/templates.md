@@ -126,6 +126,12 @@ sending address's, else the author's personal signature. Alias, team and address
 `{{ agent.signature }}`, so a company signature can wrap each person's own lines. Signatures take
 every variable; the personal signature cannot contain `{{ agent.signature }}`.
 
+The reply composer shows the signature its reply carries under what is written, as recipients get
+it, and previews the whole email before it goes (`POST /v1/templates/preview`, `kind: "reply"` with the
+ticket and the address: the same layout, signature and quoted conversation sending uses). A sent email
+keeps its copy as it went out (contracts/api.md `GET /v1/messages/{id}/original`), which the conversation
+opens as its recipients got it.
+
 Every signature is edited in one editor: a designed one (tables, inline styles, sized images) opens
 as HTML, its tags kept as typed, and is never simplified unless the person chooses to; a save sends
 it only when it changed. Wherever the app shows a signature (the reply composer's preview, the

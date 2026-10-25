@@ -248,6 +248,11 @@ const textOf = (h: string) =>
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 
+/** A reply as it goes out (layout, signature, history), the copy a sent email keeps. */
+export function renderSentReply(ws: WsData, ticketId: string, html: string, mailboxId: string | null): string {
+  return preview(ws, { kind: "reply", body_html: html, ticket_id: ticketId, mailbox_id: mailboxId ?? undefined }).html;
+}
+
 function preview(ws: WsData, b: Record<string, unknown>): TemplatePreview {
   const kind = String(b.kind ?? "");
   const ticket = typeof b.ticket_id === "string" ? ws.tickets.find((x) => x.id === b.ticket_id) : undefined;
@@ -272,6 +277,8 @@ function preview(ws: WsData, b: Record<string, unknown>): TemplatePreview {
     case "reply":
       probs = problems(body, kind);
       content = fill(body, vals);
+      // On a ticket, the signature its reply would carry, as the server picks it.
+      if (ticket) signature = signatureFor(ws, ticket, mailboxId, vals);
       break;
     case "signature":
     case "personal_signature":

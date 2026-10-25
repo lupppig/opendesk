@@ -22,6 +22,7 @@ import { ImproveAnswerButton } from "@/components/agent/quality";
 import { AiAuthorLabel, TranslateButton, TranslatedNote, useMessageTranslation } from "@/components/ai/ticket/MessageAi";
 import { BotRefFace } from "@/components/bots/BotFace";
 import { EmailFrame } from "./EmailFrame";
+import { SentEmail } from "./SentEmail";
 import { RichEditor } from "@/components/editor/RichEditor";
 import { mentionExtension, useSuggest } from "./suggestions";
 import { useConfirm } from "@/components/ui/confirm";
@@ -517,6 +518,7 @@ export const MessageItem = memo(function MessageItem({
   threadFirst?: boolean;
 }) {
   const [showOriginal, setShowOriginal] = useState(false);
+  const [viewingSent, setViewingSent] = useState(false);
   const ollie = useAssistantName();
   // An AI reply shows the bot it was sent as (contracts/bots.md), else Ollie.
   const bot = m.ai ? (m.author.bot ?? null) : null;
@@ -701,7 +703,21 @@ export const MessageItem = memo(function MessageItem({
         <TranslatedNote tr={tr} />
         {body.held > 0 && <HeldImages onLoad={() => setRemote(true)} />}
         {editing ? <NoteEditor m={m} onDone={() => setEditing(false)} /> : <Body body={body} />}
-        {m.has_quoted && (
+        {/* An email we sent keeps the copy that went out: it opens as its recipients got it. */}
+        {outbound && m.has_quoted && (
+          <>
+            <button
+              type="button"
+              onClick={() => setViewingSent(true)}
+              className="mt-2 inline-flex h-6 items-center gap-1.5 rounded-md px-1.5 -ml-1.5 text-[11.5px] text-fg-3 outline-none transition-colors hover:bg-hover hover:text-fg focus-visible:shadow-[0_0_0_2px_var(--focus)]"
+            >
+              <Mail className="size-3.5 text-fg-4" />
+              {t("message.viewSent")}
+            </button>
+            <SentEmail m={m} open={viewingSent} onOpenChange={setViewingSent} />
+          </>
+        )}
+        {!outbound && m.has_quoted && (
           <div>
             <Tooltip content={showOriginal ? t("message.hideQuoted") : t("message.showOriginal")}>
               <button

@@ -91,3 +91,33 @@ func TestPurgeRemovesWhatWasMadeFromIt(t *testing.T) {
 		t.Fatal("the ticket's AI summary stays after a purge")
 	}
 }
+
+// TestDeletedReplyLeavesSentCopies checks the kept copies of emails sent after a deleted
+// reply (their quoted conversation may hold it) are dropped, and earlier ones stay.
+func TestDeletedReplyLeavesSentCopies(t *testing.T) {
+	e, ws := newEnv(t)
+	tk := createTicket(t, e, ws, map[string]any{"channel": "api", "kind": "note", "contact": map[string]any{"email": "ada" + "@example.com"}})
+	var before, after domain.Message
+	e.Do("POST", "/v1/tickets/"+tk.ID.String()+"/messages", ws.Agent.As(ws), map[string]any{"kind": "reply", "body_html": "<p>Hello</p>"}).
+		Want(t, 201).JSON(t, &before)
+	msg := inbound(t, e, ws, tk.ID, "my card is 4242 4242 4242 4242")
+	e.Do("POST", "/v1/tickets/"+tk.ID.String()+"/messages", ws.Agent.As(ws), map[string]any{"kind": "reply", "body_html": "<p>Got it</p>"}).
+		Want(t, 201).JSON(t, &after)
+	e.Exec(`UPDATE messages SET full_html = '<p>Hello</p>' WHERE id = $1`, before.ID)
+	e.Exec(`UPDATE messages SET full_html = '<p>Got it</p><blockquote>my card is 4242 4242 4242 4242</blockquote>' WHERE id = $1`, after.ID)
+
+	e.Do("DELETE", "/v1/tickets/"+tk.ID.String()+"/messages/"+msg.ID.String(), ws.Admin.As(ws), nil).Want(t, 204)
+	if n := countRows(t, e, `SELECT count(*) FROM messages WHERE ticket_id = $1 AND full_html LIKE '%4242%'`, tk.ID); n != 0 {
+		t.Fatal("a sent copy still quotes the deleted message")
+	}
+	if n := countRows(t, e, `SELECT count(*) FROM messages WHERE id = $1 AND full_html = '<p>Hello</p>'`, before.ID); n != 1 {
+		t.Fatal("a copy sent before the deleted message should stay")
+	}
+	got, err := domain.LoadMessage(e.Ctx, e.D.DB.Pool, ws.ID, after.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.HasQuoted {
+		t.Fatal("the later reply should no longer offer its sent copy")
+	}
+}

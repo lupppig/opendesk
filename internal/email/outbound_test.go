@@ -165,6 +165,11 @@ func TestSendMessageSMTP(t *testing.T) {
 	if w.eventCount("message.updated") != 1 {
 		t.Fatal("message.updated not published")
 	}
+	// The email as it went out is kept for the team to open: the reply, the signature and the
+	// customer's message quoted under it.
+	if kept := sentCopy(t, w, mid); !strings.Contains(kept, "Unplug it now") || !strings.Contains(kept, "Acme Support team") || !strings.Contains(kept, "wrote:") {
+		t.Errorf("kept copy %q", kept)
+	}
 
 	// A wrong password is permanent: the message fails and the job is not retried.
 	mustExec(t, w.d, `UPDATE mailboxes SET credentials_enc = $2 WHERE id = $1`, m.ID, mustSeal(t, w, credentials{Password: "x", SMTPPassword: "wrong"}))
@@ -178,6 +183,19 @@ func TestSendMessageSMTP(t *testing.T) {
 	if msg.Delivery != "failed" || !strings.Contains(msg.DelivError, "refused the login") || strings.Contains(msg.DelivError, "wrong") {
 		t.Fatalf("failed delivery %s %q", msg.Delivery, msg.DelivError)
 	}
+	if kept := sentCopy(t, w, mid2); kept != "" {
+		t.Errorf("a reply that did not go out keeps no copy: %q", kept)
+	}
+}
+
+// sentCopy is the email kept for message mid as it went out ("" none).
+func sentCopy(t *testing.T, w *world, mid uuid.UUID) string {
+	t.Helper()
+	var kept string
+	if err := w.d.DB.Pool.QueryRow(w.ctx, `SELECT full_html FROM messages WHERE id = $1`, mid).Scan(&kept); err != nil {
+		t.Fatal(err)
+	}
+	return kept
 }
 
 func mustSeal(t *testing.T, w *world, c credentials) []byte {
@@ -257,6 +275,10 @@ func TestSendMessageSystemWithAttachments(t *testing.T) {
 	}
 	if w.message(mid).Delivery != "sent" {
 		t.Fatal("not marked sent")
+	}
+	// The kept copy shows the image from its stored attachment, not the email's part.
+	if kept := sentCopy(t, w, mid); !strings.Contains(kept, "/v1/attachments/"+img.String()+"?exp=") || strings.Contains(kept, "cid:") {
+		t.Errorf("kept copy image: %s", kept)
 	}
 }
 

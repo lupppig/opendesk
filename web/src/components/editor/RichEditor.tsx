@@ -29,6 +29,8 @@ export type RichEditorProps = {
   /** "compact" shows inline formatting only; "full" adds headings, quotes, code and images. */
   toolbar?: "none" | "compact" | "full";
   toolbarEnd?: ReactNode;
+  /** Drawn under what is written, above the toolbar: what goes out with it (a reply's signature). */
+  afterContent?: ReactNode;
   extensions?: Extensions;
   onSubmit?: () => void;
   autofocus?: boolean;
@@ -48,6 +50,7 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
     contentClassName,
     toolbar = "compact",
     toolbarEnd,
+    afterContent,
     extensions = [],
     onSubmit,
     autofocus,
@@ -128,6 +131,7 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
   return (
     <div className={cn("flex min-h-0 flex-col", className)}>
       <EditorContent editor={editor} className="min-h-0 flex-1 overflow-y-auto" />
+      {afterContent}
       {toolbar !== "none" && editor && (
         <Toolbar editor={editor} full={toolbar === "full"} onImage={onImage} end={toolbarEnd} />
       )}

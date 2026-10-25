@@ -380,7 +380,7 @@ func (s *service) deliverTicketReply(ctx context.Context, wid, mid uuid.UUID, r 
 	}
 	// It went out: what is left is bookkeeping, which must not send it again.
 	ctx = context.WithoutCancel(ctx)
-	if err := s.tickets.RecordSent(ctx, wid, mid, r.TicketID, r.MessageID, from.Email, from.Name, r.To); err != nil {
+	if err := s.tickets.RecordSent(ctx, wid, mid, r.TicketID, r.MessageID, from.Email, from.Name, r.To, html); err != nil {
 		return err
 	}
 	stored, err := s.storeSent(ctx, a, raw, ref, *r.AuthorID, threadID)

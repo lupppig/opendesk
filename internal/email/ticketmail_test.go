@@ -69,7 +69,7 @@ func TestPersonalReplyAndAnswer(t *testing.T) {
 	case len(r.To) != 1 || r.To[0] != "ada@customer.test":
 		t.Fatalf("to %v", r.To)
 	}
-	if err := tm.RecordSent(w.ctx, w.wid, mid, r.TicketID, r.MessageID, addr, "Adam", r.To); err != nil {
+	if err := tm.RecordSent(w.ctx, w.wid, mid, r.TicketID, r.MessageID, addr, "Adam", r.To, "<p>Hello</p>"); err != nil {
 		t.Fatal(err)
 	}
 	sent := w.message(mid)

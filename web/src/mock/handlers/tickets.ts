@@ -9,6 +9,7 @@ import { canSeeTicket, defaultBrand, teamRole } from "../teams";
 import { addActivity, addMessage, applyPatch, buildMessage, canSendFrom, counts, fieldFiltersFromQuery, findTicket, matches, newTicket, notify, publishTicketUpdated, sortTickets, type ListFilters } from "../tickets";
 import { DAY, isRecord, nowIso, uuid } from "../util";
 import { clearDraft } from "./drafts";
+import { renderSentReply } from "./templates";
 import { cannotSend, sendingOf } from "./mailhost";
 
 const STATUSES: TicketStatus[] = ["open", "pending", "on_hold", "solved", "closed"];
@@ -136,6 +137,11 @@ function simulateDelivery(ws: WsData, t: Ticket, msgId: string) {
     const fail = (t.contact?.email ?? "").includes("bounce");
     m.delivery_status = fail ? "failed" : "sent";
     m.delivery_error = fail ? "550 5.1.1 Recipient address rejected" : "";
+    // A ticket reply from a team address keeps the email as it went out.
+    if (!fail && m.kind === "reply" && !m.from_account) {
+      ws.originals[m.id] = renderSentReply(ws, t.id, m.body_html, m.mailbox_id ?? t.mailbox_id ?? null);
+      m.has_quoted = true;
+    }
     publish(ws, "message.updated", { ticket_id: t.id, message: m });
   }, 1500);
 }

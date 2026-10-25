@@ -5,6 +5,8 @@ import (
 	"net/netip"
 	"strings"
 	"testing"
+
+	"github.com/useopendesk/opendesk/internal/domain"
 )
 
 func TestPublicAddr(t *testing.T) {
@@ -147,5 +149,24 @@ func TestBuildMIMEHeaderInjection(t *testing.T) {
 	raw, _ = buildMIME(m, true)
 	if !strings.Contains(string(raw), "Bcc: <secret@acme.test>") {
 		t.Fatal("Bcc missing when requested (Gmail API needs it in the MIME)")
+	}
+}
+
+func TestKeptCopy(t *testing.T) {
+	domain.Configure("http://api.test", testSecret) // as the test world does: attachment links are absolute
+	id := "0b6f3c2e-8f4a-4d3b-9c1e-2a7d5e6f8a90"
+	got := keptCopy(`<!doctype html><html><head><style>p{color:#111}</style></head><body><p onclick="x()">Hi<img src="cid:` + id + `@opendesk"></p><script>alert(1)</script><img src="cid:other@example.com"></body></html>`)
+	for _, want := range []string{"<style>", "http://api.test/v1/attachments/" + id, "<p>Hi"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in %s", want, got)
+		}
+	}
+	for _, bad := range []string{"<script", "onclick", "cid:" + id} {
+		if strings.Contains(got, bad) {
+			t.Errorf("kept %q in %s", bad, got)
+		}
+	}
+	if keptCopy("  ") != "" {
+		t.Error("nothing sent keeps nothing")
 	}
 }
