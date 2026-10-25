@@ -19,6 +19,7 @@ import (
 
 	"github.com/useopendesk/opendesk/internal/ai"
 	"github.com/useopendesk/opendesk/internal/domain"
+	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hdtest"
 	"github.com/useopendesk/opendesk/internal/ids"
 	"github.com/useopendesk/opendesk/internal/jobs"
@@ -34,9 +35,11 @@ type fakeAdapter struct {
 	cleared     []string
 	responses   []string
 	files       map[string][]byte
+	downloads   int
 }
 
 func (f *fakeAdapter) DownloadAttachment(_ context.Context, _ *http.Client, _ map[string]string, file channel.Attachment) (io.ReadCloser, error) {
+	f.downloads++
 	data, ok := f.files[file.ID]
 	if !ok {
 		return nil, errors.New("missing fake file")
@@ -265,14 +268,82 @@ func TestProviderFilesUseTicketAttachmentChecks(t *testing.T) {
 	}
 }
 
+func TestProviderFilesAreRefusedAndFailedImportsAreRemoved(t *testing.T) {
+	t.Run("executable", func(t *testing.T) {
+		w := newWorkflow(t)
+		body := []byte("#!/bin/sh\necho no")
+		w.fake.files = map[string][]byte{"F1": body}
+		w.run(t, channel.Inbound{ExternalUserID: "U1", Command: "note", ExternalMessageID: "provider-executable",
+			Files: []channel.Attachment{{ID: "F1", Name: "run.sh", SizeBytes: int64(len(body))}}})
+		var attachments int
+		w.e.Scalar(`SELECT count(*) FROM attachments WHERE workspace_id=$1`, &attachments, w.ws.ID)
+		if attachments != 0 || len(w.fake.posts) != 1 || !strings.Contains(w.fake.posts[0], "Executable") {
+			t.Fatalf("attachments=%d posts=%q", attachments, w.fake.posts)
+		}
+	})
+
+	t.Run("oversized", func(t *testing.T) {
+		w := newWorkflow(t)
+		w.run(t, channel.Inbound{ExternalUserID: "U1", Command: "note", ExternalMessageID: "provider-large",
+			Files: []channel.Attachment{{ID: "F1", Name: "large.dat", SizeBytes: hd.MaxAttachmentBytes + 1}}})
+		if w.fake.downloads != 0 || len(w.fake.posts) != 1 || !strings.Contains(w.fake.posts[0], "25 MB") {
+			t.Fatalf("downloads=%d posts=%q", w.fake.downloads, w.fake.posts)
+		}
+	})
+
+	t.Run("post failure", func(t *testing.T) {
+		w := newWorkflow(t)
+		body := []byte("safe attachment")
+		w.fake.files = map[string][]byte{"F1": body}
+		// This email ticket has no contact, so its reply fails after the import.
+		w.run(t, channel.Inbound{ExternalUserID: "U1", Command: "reply", Text: "Attached", ExternalMessageID: "provider-failed",
+			Files: []channel.Attachment{{ID: "F1", Name: "safe.txt", SizeBytes: int64(len(body))}}})
+		var attachments int
+		w.e.Scalar(`SELECT count(*) FROM attachments WHERE workspace_id=$1`, &attachments, w.ws.ID)
+		if attachments != 0 || w.fake.downloads != 1 {
+			t.Fatalf("attachments=%d downloads=%d responses=%q", attachments, w.fake.downloads, w.fake.responses)
+		}
+	})
+}
+
+func TestProviderMessageRetryDoesNotDownloadAgain(t *testing.T) {
+	w := newWorkflow(t)
+	body := []byte("safe attachment")
+	w.fake.files = map[string][]byte{"F1": body}
+	in := channel.Inbound{ExternalUserID: "U1", Command: "note", Text: "Screenshot", ExternalMessageID: "provider-retry",
+		Files: []channel.Attachment{{ID: "F1", Name: "screen.txt", SizeBytes: int64(len(body))}}}
+	w.run(t, in)
+	w.run(t, in)
+	if w.fake.downloads != 1 {
+		t.Fatalf("downloads=%d, want one", w.fake.downloads)
+	}
+	var messages int
+	w.e.Scalar(`SELECT count(*) FROM messages WHERE ticket_id=$1 AND kind='note'`, &messages, w.ticket.ID)
+	if messages != 1 {
+		t.Fatalf("notes=%d, want one", messages)
+	}
+}
+
 func TestProviderCanEditAndDeleteItsOwnNoteButNotRewriteAReply(t *testing.T) {
 	w := newWorkflow(t)
 	w.run(t, channel.Inbound{ExternalUserID: "U1", Command: "note", Text: "first", ExternalMessageID: "note-1"})
+	w.fake.posts, w.fake.responses = nil, nil
+	w.run(t, channel.Inbound{ExternalUserID: "U1", Command: "note", Text: "first", ExternalMessageID: "note-1", Mutation: "edit"})
+	var edits int
+	w.e.Scalar(`SELECT count(*) FROM activities WHERE ticket_id=$1 AND type='note_edited'`, &edits, w.ticket.ID)
+	if edits != 0 || len(w.fake.posts) != 0 || len(w.fake.responses) != 0 {
+		t.Fatalf("unchanged edit: activities=%d posts=%q responses=%q", edits, w.fake.posts, w.fake.responses)
+	}
+	w.run(t, channel.Inbound{ExternalUserID: "U1", Command: "note", Text: "corrected", ExternalMessageID: "note-1", Mutation: "edit"})
 	w.run(t, channel.Inbound{ExternalUserID: "U1", Command: "note", Text: "corrected", ExternalMessageID: "note-1", Mutation: "edit"})
 	var body string
 	w.e.Scalar(`SELECT body_text FROM messages WHERE ticket_id=$1 AND kind='note' ORDER BY created_at DESC LIMIT 1`, &body, w.ticket.ID)
 	if body != "corrected" {
 		t.Fatalf("edited note = %q", body)
+	}
+	w.e.Scalar(`SELECT count(*) FROM activities WHERE ticket_id=$1 AND type='note_edited'`, &edits, w.ticket.ID)
+	if edits != 1 {
+		t.Fatalf("note edit activities=%d, want one", edits)
 	}
 	w.run(t, channel.Inbound{ExternalUserID: "U1", ExternalMessageID: "note-1", Mutation: "delete"})
 	var deleted bool
@@ -288,16 +359,28 @@ func TestProviderCanEditAndDeleteItsOwnNoteButNotRewriteAReply(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		_, err = tx.Exec(w.e.Ctx, `INSERT INTO support_channel_messages(destination_id,message_id,kind,external_message_id,external_user_id)
-			SELECT destination_id,$2,'source','reply-1','U1' FROM support_channel_threads WHERE ticket_id=$1`, w.ticket.ID, reply.ID)
+		_, err = tx.Exec(w.e.Ctx, `INSERT INTO support_channel_messages(destination_id,message_id,kind,external_message_id,external_user_id,source_text)
+			SELECT destination_id,$2,'source','reply-1','U1','sent' FROM support_channel_threads WHERE ticket_id=$1`, w.ticket.ID, reply.ID)
 		return err
 	}); err != nil {
 		t.Fatal(err)
+	}
+	w.fake.posts, w.fake.responses = nil, nil
+	w.run(t, channel.Inbound{ExternalUserID: "U1", Command: "reply", Text: "sent", ExternalMessageID: "reply-1", Mutation: "edit"})
+	if len(w.fake.posts) != 0 || len(w.fake.responses) != 0 {
+		t.Fatalf("unchanged reply edit was answered: posts=%q responses=%q", w.fake.posts, w.fake.responses)
 	}
 	w.run(t, channel.Inbound{ExternalUserID: "U1", Command: "reply", Text: "changed", ExternalMessageID: "reply-1", Mutation: "edit"})
 	w.e.Scalar(`SELECT body_text FROM messages WHERE ticket_id=$1 AND kind='reply' AND direction='outbound' ORDER BY created_at DESC LIMIT 1`, &body, w.ticket.ID)
 	if body != "sent" {
 		t.Fatalf("provider rewrote customer reply to %q", body)
+	}
+
+	w.fake.posts, w.fake.responses = nil, nil
+	w.run(t, channel.Inbound{ExternalUserID: "U2", Command: "reply", Text: "changed", ExternalMessageID: "reply-1", Mutation: "edit"})
+	w.run(t, channel.Inbound{ExternalUserID: "unlinked", Command: "reply", Text: "changed", ExternalMessageID: "reply-1", Mutation: "edit"})
+	if len(w.fake.posts) != 0 || len(w.fake.responses) != 0 {
+		t.Fatalf("other senders' mutations were answered: posts=%q responses=%q", w.fake.posts, w.fake.responses)
 	}
 }
 

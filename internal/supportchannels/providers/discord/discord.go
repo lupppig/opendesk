@@ -429,7 +429,7 @@ func richPayload(message channel.RichMessage) map[string]any {
 		}
 	}
 	text += view
-	return map[string]any{"content": clip(text, 1900), "embeds": embeds, "allowed_mentions": map[string]any{"parse": []string{}}, "flags": 4}
+	return map[string]any{"content": clip(text, 1900), "embeds": embeds, "allowed_mentions": map[string]any{"parse": []string{}}}
 }
 func (a Adapter) Update(ctx context.Context, c *http.Client, cr map[string]string, root string, t channel.Ticket) error {
 	err := a.call(ctx, c, cr["bot_token"], http.MethodPatch, "/channels/"+cr["channel_id"]+"/messages/"+root, ticketPayload(t), nil)

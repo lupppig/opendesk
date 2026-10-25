@@ -696,6 +696,9 @@ func (s *Service) handleInbound(ctx context.Context, c connection, r *reply) err
 	}
 	if p == nil {
 		if p, err = s.externalPrincipal(ctx, c, in.ExternalUserID); err != nil {
+			if in.Mutation != "" {
+				return nil
+			}
 			r.notice(ctx, "Link your opendesk account before using this command.")
 			return nil
 		}
@@ -709,6 +712,16 @@ func (s *Service) handleInbound(ctx context.Context, c connection, r *reply) err
 			r.notice(ctx, publicError(err))
 		}
 		return nil
+	}
+	if (in.Command == "reply" || in.Command == "note") && in.ExternalMessageID != "" {
+		var exists bool
+		if err = s.d.DB.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM support_channel_messages
+			WHERE destination_id=$1 AND external_message_id=$2 AND kind='source')`, destinationID, in.ExternalMessageID).Scan(&exists); err != nil {
+			return err
+		}
+		if exists {
+			return nil
+		}
 	}
 	if in.Command == "chat" {
 		answer, err := s.converse(ctx, p, c.ID, tid, includeNotes, *in)
@@ -728,6 +741,11 @@ func (s *Service) handleInbound(ctx context.Context, c connection, r *reply) err
 		return nil
 	}
 	if (in.Command == "reply" || in.Command == "note") && len(in.Files) > 0 {
+		// Reject hidden tickets before provider bytes are downloaded and stored.
+		if _, err = domain.LoadVisibleTicket(ctx, s.d.DB.Pool, p, tid); err != nil {
+			r.notice(ctx, publicError(err))
+			return nil
+		}
 		if err = s.importProviderAttachments(ctx, r.a, creds, p, in); err != nil {
 			r.notice(ctx, publicError(err))
 			return nil
@@ -756,6 +774,9 @@ func (s *Service) handleInbound(ctx context.Context, c connection, r *reply) err
 		return nil
 	}
 	if err = s.applyCommand(ctx, p, tid, *in); err != nil {
+		if len(in.UploadIDs) > 0 {
+			s.removeProviderAttachments(ctx, p, in.UploadIDs)
+		}
 		r.notice(ctx, publicError(err))
 		return nil
 	}
@@ -775,11 +796,11 @@ func (s *Service) applyProviderMutation(ctx context.Context, p *auth.Principal, 
 			return err
 		}
 		var messageID uuid.UUID
-		var externalUser, kind string
-		err := tx.QueryRow(ctx, `SELECT s.message_id,s.external_user_id,m.kind FROM support_channel_messages s
+		var externalUser, sourceText, kind string
+		err := tx.QueryRow(ctx, `SELECT s.message_id,s.external_user_id,s.source_text,m.kind FROM support_channel_messages s
 			JOIN messages m ON m.id=s.message_id AND m.ticket_id=$3
 			WHERE s.destination_id=$1 AND s.external_message_id=$2 AND s.kind='source'`,
-			destinationID, in.ExternalMessageID, tid).Scan(&messageID, &externalUser, &kind)
+			destinationID, in.ExternalMessageID, tid).Scan(&messageID, &externalUser, &sourceText, &kind)
 		if db.IsNotFound(err) {
 			return nil
 		}
@@ -787,7 +808,10 @@ func (s *Service) applyProviderMutation(ctx context.Context, p *auth.Principal, 
 			return err
 		}
 		if externalUser == "" || externalUser != in.ExternalUserID {
-			return httpx.Forbidden()
+			return nil
+		}
+		if in.Mutation == "edit" && strings.TrimSpace(in.Text) == strings.TrimSpace(sourceText) {
+			return nil
 		}
 		// A customer-facing reply may already be in an inbox. Editing or deleting
 		// its provider command never rewrites or recalls that reply.
@@ -797,7 +821,11 @@ func (s *Service) applyProviderMutation(ctx context.Context, p *auth.Principal, 
 		switch in.Mutation {
 		case "edit":
 			body := "<p>" + strings.ReplaceAll(html.EscapeString(in.Text), "\n", "<br>") + "</p>"
-			_, err = tickets.EditNote(ctx, tx, s.d, p, tid, messageID, body)
+			if _, err = tickets.EditNote(ctx, tx, s.d, p, tid, messageID, body); err != nil {
+				return err
+			}
+			_, err = tx.Exec(ctx, `UPDATE support_channel_messages SET source_text=$3,updated_at=now()
+				WHERE destination_id=$1 AND message_id=$2 AND kind='source'`, destinationID, messageID, in.Text)
 			return err
 		case "delete":
 			if err = tickets.DeleteMessage(ctx, tx, s.d, p, tid, messageID); err != nil {
@@ -941,8 +969,8 @@ func (s *Service) applyCommandTx(ctx context.Context, tx pgx.Tx, p *auth.Princip
 		if err != nil {
 			return err
 		}
-		_, err = tx.Exec(ctx, `INSERT INTO support_channel_messages(destination_id,message_id,kind,external_message_id,external_user_id)
-			VALUES($1,$2,'source',$3,$4) ON CONFLICT(destination_id,message_id,kind) DO NOTHING`, destinationID, msg.ID, in.ExternalMessageID, in.ExternalUserID)
+		_, err = tx.Exec(ctx, `INSERT INTO support_channel_messages(destination_id,message_id,kind,external_message_id,external_user_id,source_text)
+			VALUES($1,$2,'source',$3,$4,$5) ON CONFLICT(destination_id,message_id,kind) DO NOTHING`, destinationID, msg.ID, in.ExternalMessageID, in.ExternalUserID, in.Text)
 		return err
 	case "assign", "assign_self":
 		_, err := tickets.ApplyPatch(ctx, tx, s.d, p, tid, tickets.Patch{Assignee: tickets.Opt[uuid.UUID]{Set: true, Value: p.UserID}})
@@ -960,7 +988,7 @@ func (s *Service) applyCommandTx(ctx context.Context, tx pgx.Tx, p *auth.Princip
 	}
 }
 
-func (s *Service) importProviderAttachments(ctx context.Context, adapter channel.Adapter, credentials map[string]string, p *auth.Principal, in *channel.Inbound) error {
+func (s *Service) importProviderAttachments(ctx context.Context, adapter channel.Adapter, credentials map[string]string, p *auth.Principal, in *channel.Inbound) (err error) {
 	if len(in.Files) > 20 {
 		return httpx.Validation("At most 20 attachments can be added to a message.")
 	}
@@ -970,6 +998,13 @@ func (s *Service) importProviderAttachments(ctx context.Context, adapter channel
 	}
 	var total int64
 	var actualTotal int64
+	firstUpload := len(in.UploadIDs)
+	defer func() {
+		if err != nil && len(in.UploadIDs) > firstUpload {
+			s.removeProviderAttachments(context.WithoutCancel(ctx), p, in.UploadIDs[firstUpload:])
+			in.UploadIDs = in.UploadIDs[:firstUpload]
+		}
+	}()
 	for _, file := range in.Files {
 		if file.SizeBytes <= 0 || file.SizeBytes > hd.MaxAttachmentBytes || total+file.SizeBytes > hd.MaxAttachmentBytes {
 			return httpx.E(413, "too_large", "Attachments are limited to 25 MB per message.")
@@ -995,6 +1030,39 @@ func (s *Service) importProviderAttachments(ctx context.Context, adapter channel
 		in.UploadIDs = append(in.UploadIDs, att.ID.String())
 	}
 	return nil
+}
+
+// removeProviderAttachments removes only this agent's still-unattached imports. Once
+// PostMessage commits, message_id makes the files ineligible for cleanup.
+func (s *Service) removeProviderAttachments(ctx context.Context, p *auth.Principal, raw []string) {
+	ids, err := hd.ParseAttachmentIDs(raw)
+	if err != nil || len(ids) == 0 {
+		return
+	}
+	rows, err := s.d.DB.Pool.Query(ctx, `DELETE FROM attachments
+		WHERE workspace_id=$1 AND id=ANY($2) AND message_id IS NULL AND uploaded_by=$3
+		RETURNING id,storage_key`, p.WorkspaceID, ids, p.UserID)
+	if err != nil {
+		s.d.Log.Warn("clean provider attachments", "err", err)
+		return
+	}
+	type removed struct {
+		id  uuid.UUID
+		key string
+	}
+	files, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (removed, error) {
+		var file removed
+		return file, row.Scan(&file.id, &file.key)
+	})
+	if err != nil {
+		s.d.Log.Warn("clean provider attachments", "err", err)
+		return
+	}
+	for _, file := range files {
+		if err := s.d.Storage.Delete(ctx, file.key); err != nil {
+			s.d.Log.Warn("clean provider attachment object", "attachment_id", file.id, "err", err)
+		}
+	}
 }
 
 func (s *Service) finishInbound(ctx context.Context, a jobs.SupportChannelInboundArgs) error {

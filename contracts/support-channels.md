@@ -318,6 +318,9 @@ available." `/opendesk link <code>` needs no number.
   are adapter constants, never user input.
 - Provider posts suppress link previews and mass mentions, so customer-controlled
   subjects and message text cannot notify an external channel or fetch arbitrary links.
+  Attachment links use the API's short-lived signed URLs and may stop opening after about
+  two hours; the durable `View in opendesk` link remains available on mirrored messages
+  that include attachments.
 
 Events: `support_channel_connection.created {support_channel_connection}`,
 `support_channel_connection.updated {support_channel_connection}` (rotated credentials, a

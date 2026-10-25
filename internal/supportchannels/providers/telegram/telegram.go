@@ -418,7 +418,7 @@ func (a Adapter) DeleteRich(ctx context.Context, c *http.Client, cr map[string]s
 
 func richPayload(chatID, thread string, message channel.RichMessage) map[string]any {
 	text := telegramText(message.Text)
-	preview := false
+	previewURL := ""
 	view := ""
 	if message.ViewURL != "" {
 		view = "\nView in opendesk: " + message.ViewURL
@@ -430,11 +430,17 @@ func richPayload(chatID, thread string, message channel.RichMessage) map[string]
 			break
 		}
 		text += line
-		preview = preview || file.Preview
+		if file.Preview && previewURL == "" {
+			previewURL = file.URL
+		}
 	}
 	text += view
 	tid, _ := strconv.ParseInt(thread, 10, 64)
-	return map[string]any{"chat_id": chatID, "message_thread_id": tid, "text": text, "link_preview_options": map[string]bool{"is_disabled": !preview}}
+	preview := map[string]any{"is_disabled": true}
+	if previewURL != "" {
+		preview = map[string]any{"is_disabled": false, "url": previewURL}
+	}
+	return map[string]any{"chat_id": chatID, "message_thread_id": tid, "text": text, "link_preview_options": preview}
 }
 func (a Adapter) Update(ctx context.Context, c *http.Client, cr map[string]string, root string, t channel.Ticket) error {
 	messageID, _ := strconv.ParseInt(root, 10, 64)

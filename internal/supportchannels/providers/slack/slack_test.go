@@ -151,6 +151,15 @@ func TestParseAttachmentAndNoteEdit(t *testing.T) {
 	}
 }
 
+func TestDownloadAttachmentRefusesAnotherHost(t *testing.T) {
+	body, err := (Adapter{}).DownloadAttachment(context.Background(), http.DefaultClient, map[string]string{"bot_token": "secret"}, channel.Attachment{
+		URL: "https://customer.example/private-file",
+	})
+	if err == nil || body != nil || !strings.Contains(err.Error(), "invalid") {
+		t.Fatalf("body=%v err=%v", body, err)
+	}
+}
+
 func TestRichPayloadKeepsViewLinkWithinSlackBlockLimit(t *testing.T) {
 	payload := richPayload("C1", "T1", "", channel.RichMessage{
 		Text:    strings.Repeat("a", 2500),

@@ -8,6 +8,7 @@ CREATE TABLE support_channel_messages (
     kind text NOT NULL CHECK (kind IN ('mirror', 'source')),
     external_message_id text NOT NULL,
     external_user_id text NOT NULL DEFAULT '',
+    source_text text NOT NULL DEFAULT '',
     removed_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),

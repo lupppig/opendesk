@@ -204,6 +204,18 @@ func TestRichMutationsUseTicketThreadChannel(t *testing.T) {
 	}
 }
 
+func TestRichPayloadKeepsImageEmbedsEnabled(t *testing.T) {
+	payload := richPayload(channel.RichMessage{Text: "Screenshot", Attachments: []channel.Attachment{{
+		Name: "screen.png", SizeBytes: 42, URL: "https://api.test/attachment/1", Preview: true,
+	}}})
+	if _, suppressed := payload["flags"]; suppressed {
+		t.Fatalf("payload suppresses its own embeds: %#v", payload)
+	}
+	if embeds := payload["embeds"].([]any); len(embeds) != 1 {
+		t.Fatalf("embeds = %#v", embeds)
+	}
+}
+
 func TestTicketPayloadHasNativeControls(t *testing.T) {
 	payload := ticketPayload(channel.Ticket{Number: 42, Subject: "Printer", Customer: "Rae", Assignee: "Jo", Status: "open", Priority: "high", URL: "https://app.test/t/42"})
 	components, ok := payload["components"].([]any)

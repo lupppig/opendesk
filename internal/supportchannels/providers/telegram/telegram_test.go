@@ -120,6 +120,17 @@ func TestParseDocumentAndEditedNote(t *testing.T) {
 	}
 }
 
+func TestRichPayloadPreviewsOnlyTheAttachmentURL(t *testing.T) {
+	payload := richPayload("C1", "T1", channel.RichMessage{
+		Text:        "Customer link: https://customer.example/private",
+		Attachments: []channel.Attachment{{Name: "screen.png", SizeBytes: 42, URL: "https://api.test/attachment/1", Preview: true}},
+	})
+	preview := payload["link_preview_options"].(map[string]any)
+	if preview["is_disabled"] != false || preview["url"] != "https://api.test/attachment/1" {
+		t.Fatalf("preview = %#v", preview)
+	}
+}
+
 func TestParseNaturalConversation(t *testing.T) {
 	body := []byte(`{"update_id":8,"message":{"message_id":4,"message_thread_id":22,"text":"Please summarize what happened","from":{"id":9},"chat":{"id":-10}}}`)
 	result, err := (Adapter{}).Parse(http.Header{}, body)
