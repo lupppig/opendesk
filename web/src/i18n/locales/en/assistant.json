@@ -60,7 +60,18 @@
     "field": "Field",
     "before": "Now",
     "after": "After",
-    "of": "{{shown}} of {{total}} matching"
+    "of": "{{shown}} of {{total}} matching",
+    "moreFields_one": "1 more field",
+    "moreFields_other": "{{count}} more fields",
+    "clipped": "Some values are cut short",
+    "showArguments": "Show all arguments",
+    "hideArguments": "Hide arguments",
+    "arguments": "Everything this change sends"
+  },
+  "step": {
+    "auto": "Ran without asking",
+    "showRan": "Show what it ran",
+    "hideRan": "Hide what it ran"
   },
   "status": {
     "running": "Working",
@@ -70,6 +81,16 @@
     "approved": "Approved",
     "denied": "Declined",
     "expired": "Skipped"
+  },
+  "peer": {
+    "asking": "Asking {{name}}'s {{assistant}}",
+    "asked": "Asked {{name}}'s {{assistant}}",
+    "answered_one": "answered from 1 conversation",
+    "answered_other": "answered from {{count}} conversations",
+    "answered_zero": "answered",
+    "declined": "declined",
+    "not_shared": "not shared with you",
+    "failed": "could not answer"
   },
   "tip": {
     "act": "Ask {{name}}",

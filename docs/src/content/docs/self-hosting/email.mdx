@@ -98,7 +98,13 @@ The installer's `--wizard` can set this up.
 
 <Callout type="note" title="Sender checks with this receiver">
 
-The built-in receiver does not check senders (SPF, DKIM, DMARC), so leave `INBOUND_AUTHSERV_ID` empty with it: a DMARC verdict is then unknown and nothing is flagged on it. If a mail server of yours that does check senders relays to it, list that server's authserv-id.
+The built-in receiver does not check senders (SPF, DKIM, DMARC). Mail it takes straight from a sender's server believes no `Authentication-Results` at all, whatever `INBOUND_AUTHSERV_ID` says, because the sender wrote every header in it: its DMARC verdict is unknown and nothing is flagged on it. If a mail server of yours that does check senders relays to it, list that server's authserv-id in `INBOUND_AUTHSERV_ID` and its address in `INBOUND_SMTP_RELAYS`: only mail it hands over has those results believed.
+
+</Callout>
+
+<Callout type="note" title="Encryption on the way in">
+
+With `INBOUND_SMTP_TLS_CERT` and `INBOUND_SMTP_TLS_KEY` (PEM files for the MX host name) the receiver offers STARTTLS, so sending servers can encrypt mail on its way to you. It reads the files again when they change, so a renewed certificate needs no restart. Without them mail arrives in clear text: set them, or put a relay that offers TLS in front.
 
 </Callout>
 
@@ -110,7 +116,9 @@ Redelivery is safe: each raw message is stored once per mailbox, keyed by its `M
 
 ### Sender checks
 
-A customer is identified by the `From` address. A message whose `From` failed DMARC, as reported by a server in `INBOUND_AUTHSERV_ID` (or by Gmail or Microsoft 365 for those mailboxes), opens a ticket marked spam; on an existing conversation it is kept, flagged for agents, and changes nothing: the ticket is not reopened, and no automation, auto-reply or Ollie answer runs for it. `Reply-To` never changes who the customer is; replies go to it only when it is at the same domain as `From`. The one exception is a website contact form the mailbox trusts (Settings, the mailbox, Contact forms): when its message passed DMARC, the visitor in `Reply-To` is the customer.
+A customer is identified by the `From` address. A message whose `From` failed DMARC, as reported by a server in `INBOUND_AUTHSERV_ID` (or by Gmail or Microsoft 365 for those mailboxes), opens a ticket marked spam; on an existing conversation it is kept, flagged for agents, and changes nothing: the ticket is not reopened, and no automation, auto-reply or Ollie answer runs for it. Results count only from servers the message passed through: for mail that came by a forwarding address, Gmail's and Microsoft's own results are not believed, since they never received it.
+
+A reply joins its conversation by the `Message-ID`s it names, whoever sends it, so a colleague the customer forwarded it to can write in. Someone the team and the customer never wrote to or copied is new to the conversation: their message is there for agents to read, and no automation or Ollie answer runs for it. `Reply-To` never changes who the customer is; replies go to it only when it is at the same domain as `From`. The one exception is a website contact form the mailbox trusts (Settings, the mailbox, Contact forms): when its message passed DMARC, the visitor in `Reply-To` is the customer.
 
 ## Outbound replies
 

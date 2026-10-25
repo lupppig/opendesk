@@ -36,6 +36,7 @@ import {
   sendProviders,
   ServerSummary,
   Steps,
+  SyncStartField,
   syncOn,
   systemSendOn,
   useConnectOptions,
@@ -1079,26 +1080,6 @@ function ConnectStep({
       />
       <SyncStartField value={form.sync_start} onChange={(v) => set("sync_start", v)} />
       <AddressingFields form={form} set={set} errors={errors} compact={compact} />
-    </div>
-  );
-}
-
-/** Where reading the inbox starts: the last 7 days, or only new mail when the history came over by import. */
-function SyncStartField({ value, onChange }: { value: SyncStart; onChange: (v: SyncStart) => void }) {
-  const { t } = useTranslation("settingsChannels");
-  return (
-    <div className="flex flex-col gap-1.5">
-      <span className="text-[12.5px] font-medium">{t("wizard.syncStart")}</span>
-      <Segmented
-        value={value}
-        onChange={onChange}
-        options={[
-          { value: "recent", label: t("wizard.syncStartRecent") },
-          { value: "new", label: t("wizard.syncStartNew") },
-        ]}
-        className="self-start"
-      />
-      <p className="text-xs leading-[18px] text-fg-3">{value === "new" ? t("wizard.syncStartNewHint") : t("wizard.syncStartRecentHint")}</p>
     </div>
   );
 }

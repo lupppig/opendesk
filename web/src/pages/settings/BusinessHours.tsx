@@ -25,6 +25,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { api } from "@/lib/api/endpoints";
 import type { BusinessHours as BH, Holiday, TimeRange, Weekday } from "@/lib/api/types";
 import { cn } from "@/lib/cn";
+import { timeOfDay, twelveHour } from "@/lib/format";
 import { dur, springs } from "@/lib/motion";
 import { q, qk } from "@/lib/queries";
 import { atLeast, useRole } from "@/lib/session";
@@ -223,7 +224,7 @@ export function DayRow({
     const start = mins(last.end) + 60 <= 24 * 60 ? mins(last.end) + 60 : mins(last.end);
     onChange([...ranges, { start: hhmm(start), end: hhmm(Math.min(24 * 60, start + 120)) }]);
   };
-  const timeOptions = (filter: (m: number) => boolean) => TIMES.filter((x) => filter(mins(x))).map((x) => ({ value: x, label: x }));
+  const timeOptions = (filter: (m: number) => boolean) => TIMES.filter((x) => filter(mins(x))).map((x) => ({ value: x, label: timeOfDay(x) }));
   const dayName = t(`hours.days.${day}`);
 
   return (
@@ -254,7 +255,7 @@ export function DayRow({
               >
                 <Select
                   size="sm"
-                  className="mono w-[92px]"
+                  className={cn("mono", twelveHour() ? "w-[112px]" : "w-[92px]")}
                   aria-label={t("hours.startOf", { day: dayName, n: i + 1 })}
                   disabled={disabled}
                   value={r.start}
@@ -264,7 +265,7 @@ export function DayRow({
                 <span className="text-[12px] text-fg-4">{t("hours.to")}</span>
                 <Select
                   size="sm"
-                  className="mono w-[92px]"
+                  className={cn("mono", twelveHour() ? "w-[112px]" : "w-[92px]")}
                   aria-label={t("hours.endOf", { day: dayName, n: i + 1 })}
                   disabled={disabled}
                   value={r.end}

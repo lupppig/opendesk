@@ -17,6 +17,7 @@ import { api } from "@/lib/api/endpoints";
 import type { TemplatePreviewBody, TemplateProblem } from "@/lib/api/types";
 import { cn } from "@/lib/cn";
 import { useUser } from "@/lib/session";
+import { qk } from "@/lib/queries";
 
 function useDebounced<T>(value: T, ms: number): T {
   const [v, setV] = useState(value);
@@ -56,7 +57,7 @@ export function EmailPreview({
   const request = useMemo(() => ({ ...(JSON.parse(debounced) as TemplatePreviewBody), ticket_id: ticketId ?? undefined }), [debounced, ticketId]);
 
   const preview = useQuery({
-    queryKey: ["templates", "preview", request],
+    queryKey: qk.of("templates", "preview", request),
     queryFn: () => api.templates.preview(request),
     placeholderData: keepPreviousData,
     staleTime: 30_000,
@@ -68,7 +69,7 @@ export function EmailPreview({
   }, [preview.data, preview.isError, onProblems]);
 
   const tickets = useQuery({
-    queryKey: ["templates", "preview-tickets"],
+    queryKey: qk.of("templates", "preview-tickets"),
     queryFn: () => api.tickets.list({ limit: 25, sort: "last_message_at", order: "desc" }),
     staleTime: 60_000,
   });

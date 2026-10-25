@@ -19,6 +19,7 @@ import { CalendarDays, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { fr } from "date-fns/locale";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { cn } from "@/lib/cn";
+import { timeOfDay, twelveHour } from "@/lib/format";
 import { inputBase, TextInput } from "./input";
 import { Popover } from "./popover";
 
@@ -230,8 +231,15 @@ export function DateField({
   );
 }
 
-/** Parses "H:mm", "HH:mm" or "HHmm" into [hours, minutes]; anything else is null. */
+/** Parses "H:mm", "HH:mm", "HHmm", or a 12-hour "9:30 PM", "9pm", "12 am" into [hours, minutes]; anything else is null. */
 export function parseTime(v: string): [number, number] | null {
+  const twelve = /^(\d{1,2})(?::?(\d{2}))?\s*([ap])\.?\s*m?\.?$/i.exec(v.trim());
+  if (twelve) {
+    const h = Number(twelve[1]);
+    const min = Number(twelve[2] ?? 0);
+    if (h < 1 || h > 12 || min > 59) return null;
+    return [(h % 12) + (twelve[3].toLowerCase() === "p" ? 12 : 0), min];
+  }
   const m = /^(\d{1,2}):?(\d{2})$/.exec(v.trim());
   if (!m) return null;
   const h = Number(m[1]);
@@ -245,7 +253,7 @@ export function normalTime(v: string): string | null {
   return t ? `${String(t[0]).padStart(2, "0")}:${String(t[1]).padStart(2, "0")}` : null;
 }
 
-/** A 24-hour time typed as text: no native time control. */
+/** A time of day typed as text on the reader's clock ("9:00 AM" or "09:00"): no native time control. The value is always "HH:mm". */
 export function TimeField({
   value,
   onChange,
@@ -259,30 +267,32 @@ export function TimeField({
   className?: string;
   "aria-label"?: string;
 }) {
-  const [text, setText] = useState(value);
+  const twelve = twelveHour();
+  const shown = (v: string) => (normalTime(v) ? timeOfDay(normalTime(v)!) : v);
+  const [text, setText] = useState(() => shown(value));
   // Follow outside changes, but not the echo of what is being typed.
-  useEffect(() => setText((t) => (normalTime(t) === value ? t : value)), [value]);
+  useEffect(() => setText((t) => (normalTime(t) === value ? t : shown(value))), [value]);
   const invalid = !!text && !parseTime(text);
   return (
     <TextInput
       inputSize={size}
-      inputMode="numeric"
-      placeholder="09:00"
-      maxLength={5}
+      inputMode={twelve ? "text" : "numeric"}
+      placeholder={timeOfDay("09:00")}
+      maxLength={twelve ? 8 : 5}
       aria-label={ariaLabel}
       invalid={invalid}
       value={text}
       onChange={(e) => {
-        const t = e.target.value.replace(/[^\d:]/g, "");
+        const t = twelve ? e.target.value.replace(/[^\d:apm.\s]/gi, "") : e.target.value.replace(/[^\d:]/g, "");
         setText(t);
         const v = normalTime(t);
         if (v) onChange(v);
       }}
       onBlur={() => {
         const v = normalTime(text);
-        if (v) setText(v);
+        if (v) setText(timeOfDay(v));
       }}
-      className={cn("mono w-[64px] text-center", className)}
+      className={cn("mono text-center", twelve ? "w-[84px]" : "w-[64px]", className)}
     />
   );
 }

@@ -441,6 +441,11 @@ export function registerResources() {
     publish(ctx.ws, "mailbox.updated", { mailbox: m });
     return respond(200, m);
   });
+  get("/v1/mailboxes/:id/usage", (ctx) => {
+    const m = findMailbox(ctx);
+    const replying = ctx.ws.tickets.filter((t) => t.mailbox_id === m.id);
+    return respond(200, { tickets: replying.length, open: replying.filter((t) => t.status === "open" || t.status === "pending" || t.status === "on_hold").length });
+  });
   post("/v1/mailboxes/:id/test", (ctx) => {
     const m = findMailbox(ctx);
     // Forwarding in, SMTP out: only the SMTP server signs in, with the stored password
@@ -480,10 +485,11 @@ export function registerResources() {
     }
     const email = s(ctx, "email")?.toLowerCase() || `support@${provider === "google" ? "margin.app" : "margin.onmicrosoft.com"}`;
     // A new mailbox receives as asked; a reconnect keeps how it receives, moving to
-    // forwarding where the instance no longer receives over IMAP.
+    // forwarding where the instance no longer receives over IMAP, or to reading over IMAP
+    // when asked.
     const wasDirect = m?.config.oauth_grant === "api" && m.inbound_kind !== "forwarding";
     const direct = receive === "api" || (wasDirect && mockApiSyncOn());
-    const inbound = direct || (m ? m.inbound_kind !== "forwarding" && !wasDirect && mockImapOn() : receive === "sync") ? provider : "forwarding";
+    const inbound = direct || (m ? (m.inbound_kind !== "forwarding" || receive === "sync") && !wasDirect && mockImapOn() : receive === "sync") ? provider : "forwarding";
     const grant = direct ? "api" : inbound === provider ? "sync" : "send";
     if (!m) {
       if (ctx.ws.mailboxes.some((x) => x.email === email || x.aliases.includes(email))) throw new HttpError(409, "conflict", "A mailbox with this address already exists");

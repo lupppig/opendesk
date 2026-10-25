@@ -39,10 +39,15 @@ import { SuggestedReplyCard } from "./SuggestedReply";
 import { SharedDraftBar } from "./SharedDraft";
 import { backToNote, deliver, hold, undoSeconds as undoSecondsFor, useUnsent, type Upload } from "./outbox";
 import { addressLabel, fromLine, replyAddresses, TeamDot, useTeamsCtx, type TeamsCtx } from "../teams";
+import { AccountDot } from "@/components/collab/bits";
+import { identitySignature } from "@/lib/collab/identities";
+import { parsePersonalValue, personalFromLine, personalValue, ReplyToLine, usePersonalSenders, type PersonalFrom, type PersonalSender } from "./personalFrom";
 
 type Mode = "reply" | "note" | "thread";
 /**
  * mailboxId: this reply goes out from another address (it becomes the ticket's reply address).
+ * fromAccount: it goes out from one of my own Collab addresses instead (the reply address stays);
+ * null: the ticket's address, chosen over the one I last answered this ticket from.
  * thread*: a third-party thread (contracts/api.md "Threads"): threadId writes in an existing one,
  * else threadTo, threadCc and threadSubject start a new one, with the customer's conversation
  * (threadHistory) and the files picked from it (threadFiles) if asked for.
@@ -54,6 +59,7 @@ type Draft = {
   bcc: string[];
   showCc: boolean;
   mailboxId?: string;
+  fromAccount?: PersonalFrom | null;
   threadId?: string;
   threadTo: string[];
   threadCc: string[];
@@ -135,11 +141,12 @@ function EmailChips({ label, values, onChange, wide }: { label: string; values: 
 }
 
 /** The optimistic copy of a reply or note this agent writes, shown until the server's arrives. */
-function useTempMessage(ticket: Ticket, ctx: TeamsCtx) {
+function useTempMessage(ticket: Ticket, ctx: TeamsCtx, personal?: PersonalSender) {
   const user = useSession((s) => s.user!);
   return (body: SendMessageBody, tempId: string): Message => {
-    const mb = body.kind === "reply" ? ctx.mailbox(body.mailbox_id ?? ticket.mailbox_id) : undefined;
-    const from = mb ? fromLine(ctx, ticket, mb, user.name) : null;
+    const own = body.kind === "reply" && body.from_account ? personal : undefined;
+    const mb = body.kind === "reply" && !own ? ctx.mailbox(body.mailbox_id ?? ticket.mailbox_id) : undefined;
+    const from = own ? personalFromLine(own) : mb ? fromLine(ctx, ticket, mb, user.name) : null;
     return {
       id: tempId,
       ticket_id: ticket.id,
@@ -154,6 +161,8 @@ function useTempMessage(ticket: Ticket, ctx: TeamsCtx) {
       from_email: from?.email ?? "",
       from_name: from?.name ?? user.name,
       mailbox_id: mb?.id ?? null,
+      from_account:
+        own && body.from_account ? { account_id: own.account.id, email: own.identity.email, reply_to: body.from_account.reply_to ?? "" } : null,
       to: body.kind === "reply" && ticket.contact?.email ? [ticket.contact.email] : [],
       cc: body.cc ?? [],
       bcc: body.bcc ?? [],
@@ -324,7 +333,11 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
-  const tempMessage = useTempMessage(ticket, teams);
+  // My own Collab addresses: a reply goes from one when I pick it, or when I last answered this ticket from it.
+  const personal = usePersonalSenders(ticket, teams.mailbox(ticket.mailbox_id));
+  const personalFrom = draft.fromAccount === undefined ? personal.sticky : (draft.fromAccount ?? undefined);
+  const personalSender = personal.find(personalFrom);
+  const tempMessage = useTempMessage(ticket, teams, personalSender);
   const me = useSession((s) => s.user!.id);
   const { data: workspace } = useQuery(q.workspace());
   // Email replies wait a few seconds by default, chat replies go at once (settings).
@@ -422,7 +435,7 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
   const busyUploads = uploads.some((u) => u.status === "uploading");
   // A reply from an address that has no way to send is refused (mailbox_cannot_send): say so up front.
   const noSender =
-    (mode === "reply" && ticket.channel === "email" && teams.mailbox(draft.mailboxId ?? ticket.mailbox_id)?.sending === "system_off") ||
+    (mode === "reply" && ticket.channel === "email" && !personalSender && teams.mailbox(draft.mailboxId ?? ticket.mailbox_id)?.sending === "system_off") ||
     (mode === "thread" && teams.mailbox(thread?.mailbox_id ?? ticket.mailbox_id)?.sending === "system_off");
   const threadReady = mode !== "thread" || !!thread || (draft.threadTo.length > 0 && !!draft.threadSubject.trim());
   const canSend = !!draft.html && !busyUploads && !disabled && !ai.busy && !noSender && !filling && threadReady && !sendThread.isPending;
@@ -451,6 +464,7 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
       bcc: unsent.bcc,
       showCc: unsent.cc.length + unsent.bcc.length > 0,
       mailboxId: unsent.mailboxId,
+      fromAccount: unsent.fromAccount,
       fromNote: unsent.fromNote,
     });
     editor.current?.setHtml(html);
@@ -507,7 +521,7 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
       void backToNote(tempMessage({ kind: "note", body_html: draft.html }, `tmp-${Date.now().toString(36)}`), draft.fromNote, draft.html, attachments, me);
       uploads.forEach((u) => u.preview && URL.revokeObjectURL(u.preview));
       setUploads([]);
-      setDraft({ html: "", cc: [], bcc: [], showCc: false, mailboxId: undefined, fromNote: undefined, mode: "reply" });
+      setDraft({ html: "", cc: [], bcc: [], showCc: false, mailboxId: undefined, fromAccount: undefined, fromNote: undefined, mode: "reply" });
       editor.current?.clear();
       ai.dismissSources();
       return;
@@ -519,20 +533,31 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
       bcc: reply && draft.bcc.length ? draft.bcc : undefined,
       attachment_ids: uploads.filter((u) => u.attachment).map((u) => u.attachment!.id),
       status,
-      mailbox_id: reply && draft.mailboxId && draft.mailboxId !== ticket.mailbox_id ? draft.mailboxId : undefined,
+      mailbox_id: reply && !personalSender && draft.mailboxId && draft.mailboxId !== ticket.mailbox_id ? draft.mailboxId : undefined,
+      from_account:
+        reply && personalSender && personalFrom
+          ? { account_id: personalSender.account.id, email: personalSender.identity.email, reply_to: personalFrom.replyTo || undefined }
+          : undefined,
       from_note_id: reply ? draft.fromNote : undefined,
     };
     const tempId = `tmp-${Date.now().toString(36)}`;
     retries.current.set(tempId, body);
     const temp = tempMessage(body, tempId);
-    if (reply) hold(temp, body, { html: draft.html, cc: draft.cc, bcc: draft.bcc, mailboxId: draft.mailboxId, uploads, fromNote: draft.fromNote }, me, undoSeconds);
+    if (reply)
+      hold(
+        temp,
+        body,
+        { html: draft.html, cc: draft.cc, bcc: draft.bcc, mailboxId: draft.mailboxId, fromAccount: draft.fromAccount, uploads, fromNote: draft.fromNote },
+        me,
+        undoSeconds,
+      );
     else {
       uploads.forEach((u) => u.preview && URL.revokeObjectURL(u.preview));
       void deliver(temp, body, me);
     }
     setSent(true);
     setUploads([]);
-    setDraft({ html: "", cc: [], bcc: [], showCc: false, mailboxId: undefined, fromNote: undefined, ...(opts.as ? { mode: "reply" } : {}) });
+    setDraft({ html: "", cc: [], bcc: [], showCc: false, mailboxId: undefined, fromAccount: undefined, fromNote: undefined, ...(opts.as ? { mode: "reply" } : {}) });
     editor.current?.clear();
     ai.dismissSources();
     // A held reply's toast says what it will do; it sets the status only once it is sent.
@@ -763,8 +788,12 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
               ticket={ticket}
               ctx={teams}
               mailboxId={draft.mailboxId ?? ticket.mailbox_id}
-              chosen={!!draft.mailboxId && draft.mailboxId !== ticket.mailbox_id}
-              onChange={(id) => setDraft({ mailboxId: id === ticket.mailbox_id ? undefined : id })}
+              chosen={!personalSender && !!draft.mailboxId && draft.mailboxId !== ticket.mailbox_id}
+              onChange={(id) => setDraft({ mailboxId: id === ticket.mailbox_id ? undefined : id, fromAccount: personal.sticky ? null : undefined })}
+              senders={personal.senders}
+              personal={personalSender && personalFrom ? { sender: personalSender, replyTo: personalFrom.replyTo } : undefined}
+              defaultReplyTo={personal.defaultReplyTo}
+              onPersonal={(f) => setDraft({ fromAccount: f, mailboxId: undefined })}
             />
           )}
           <div ref={writingArea}>
@@ -874,7 +903,8 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
 /**
  * Who the customer sees the reply from, and from which address: the address's From
  * name format filled in. Click to send this reply from another of the brand's
- * addresses (it becomes the ticket's reply address).
+ * addresses (it becomes the ticket's reply address), or from one of my own Collab
+ * addresses (the reply address stays), with where the customer's answers go.
  */
 function ReplyingAs({
   ticket,
@@ -882,12 +912,22 @@ function ReplyingAs({
   mailboxId,
   chosen,
   onChange,
+  senders,
+  personal,
+  defaultReplyTo,
+  onPersonal,
 }: {
   ticket: Ticket;
   ctx: TeamsCtx;
   mailboxId: string | null;
   chosen: boolean;
   onChange: (id: string) => void;
+  /** My own Collab addresses this reply may go from. */
+  senders: PersonalSender[];
+  /** The one it goes from, with the Reply-To asked for ("" = the workspace's). */
+  personal?: { sender: PersonalSender; replyTo: string };
+  defaultReplyTo: "address" | "mailbox";
+  onPersonal: (f: PersonalFrom) => void;
 }) {
   const { t } = useTranslation("inbox");
   const user = useSession((s) => s.user!);
@@ -895,12 +935,17 @@ function ReplyingAs({
   const { data: messages } = useQuery(q.messages(ticket.id));
   const mailbox = ctx.mailbox(mailboxId);
   // The signature this reply carries, filled by the server: the team's, else the address's, else mine.
-  const { data: vars } = useQuery({ ...q.ticketVariables(ticket.id, mailboxId), enabled: !!mailbox });
+  const { data: vars } = useQuery({ ...q.ticketVariables(ticket.id, mailboxId), enabled: !!mailbox && !personal });
   const options = replyAddresses(ctx, ticket);
-  if (!mailbox || (ticket.channel !== "email" && !ticket.mailbox_id)) return null;
-  const from = fromLine(ctx, ticket, mailbox, user.name);
-  const moved = chosen ? null : movedTo(activities, messages, mailbox, ctx);
-  const canPick = options.length > 1 || (options.length === 1 && options[0].id !== mailbox.id);
+  // Without an address of its own, an email ticket still offers mine.
+  if (!mailbox && !personal && senders.length === 0) return null;
+  if (!personal && ticket.channel !== "email" && !ticket.mailbox_id) return null;
+  const team = mailbox ? fromLine(ctx, ticket, mailbox, user.name) : null;
+  const from = personal ? { ...personalFromLine(personal.sender), replyTo: null as string | null } : team;
+  const moved = chosen || personal || !mailbox ? null : movedTo(activities, messages, mailbox, ctx);
+  const canPick = senders.length > 0 || options.length > 1 || (options.length === 1 && options[0].id !== mailbox?.id);
+  const grouped = senders.length > 0;
+  const signature = personal ? identitySignature(personal.sender.identity) : vars?.signature_html;
   const chip = (
     <button
       type="button"
@@ -908,16 +953,23 @@ function ReplyingAs({
       aria-label={t("composer.changeAddress")}
       className="group flex h-6 min-w-0 max-w-full items-center gap-1.5 rounded-sm px-1.5 text-left text-[12px] outline-none transition-colors hover:bg-hover focus-visible:shadow-[0_0_0_2px_var(--focus)] disabled:pointer-events-none data-[state=open]:bg-hover"
     >
-      <span className="truncate text-fg">{from.name}</span>
-      <span className="mono min-w-0 truncate text-[11.5px] text-fg-3" data-ph-mask>
-        &lt;{from.email}&gt;
-      </span>
-      {from.replyTo && (
+      {personal && <AccountDot color={personal.sender.account.color} className="size-2 shrink-0" />}
+      {from ? (
+        <>
+          <span className="truncate text-fg">{from.name}</span>
+          <span className="mono min-w-0 truncate text-[11.5px] text-fg-3" data-ph-mask>
+            &lt;{from.email}&gt;
+          </span>
+        </>
+      ) : (
+        <span className="truncate text-fg-3">{t("composer.ticketAddress")}</span>
+      )}
+      {from?.replyTo && (
         <span className="min-w-0 shrink truncate text-[11.5px] text-fg-4" data-ph-mask>
           {t("composer.repliesTo", { address: from.replyTo })}
         </span>
       )}
-      {mailbox.private && <Lock className="size-3 shrink-0 text-fg-4" />}
+      {!personal && mailbox?.private && <Lock className="size-3 shrink-0 text-fg-4" />}
       {canPick && <ChevronDown className="size-3 shrink-0 text-fg-4 transition-colors group-hover:text-fg-2" />}
     </button>
   );
@@ -928,32 +980,67 @@ function ReplyingAs({
         <div className="flex min-w-0 flex-1 items-center">
           {canPick ? (
             <Picker
-              width={320}
-              value={mailbox.id}
+              width={340}
+              value={personal ? personalValue(personal.sender.account.id, personal.sender.identity.email) : (mailbox?.id ?? null)}
               placeholder={t("props.searchAddresses")}
-              items={options.map((m) => ({
-                value: m.id,
-                label: addressLabel(m),
-                keywords: [m.email, ...(m.aliases ?? [])],
-                icon: <TeamDot team={ctx.team(m.team_id)} />,
-                hint: m.private ? <Lock className="size-3" /> : undefined,
-              }))}
-              onSelect={onChange}
+              items={[
+                ...options.map((m) => ({
+                  value: m.id,
+                  label: addressLabel(m),
+                  keywords: [m.email, ...(m.aliases ?? [])],
+                  icon: <TeamDot team={ctx.team(m.team_id)} />,
+                  hint: m.private ? <Lock className="size-3" /> : undefined,
+                  group: grouped ? t("composer.teamAddresses") : undefined,
+                })),
+                ...senders.map((x) => {
+                  const line = personalFromLine(x);
+                  return {
+                    value: personalValue(x.account.id, x.identity.email),
+                    label: `${line.name} <${line.email}>`,
+                    keywords: [line.email, x.account.name],
+                    icon: <AccountDot color={x.account.color} className="size-2" />,
+                    hint: x.account.visibility === "shared" ? t("composer.sharedAccount") : undefined,
+                    group: t("composer.yourAddresses"),
+                  };
+                }),
+              ]}
+              onSelect={(v) => {
+                const own = parsePersonalValue(v);
+                if (own) onPersonal({ ...own, replyTo: personal?.replyTo ?? "" });
+                else onChange(v);
+              }}
               trigger={chip}
             />
           ) : (
             chip
           )}
         </div>
-        {vars?.signature_html && <SignaturePreview html={vars.signature_html} />}
+        {signature && <SignaturePreview html={signature} />}
       </div>
-      {mailbox.sending === "system_off" && (
+      {personal && (
+        <ReplyToLine
+          sender={personal.sender}
+          value={personal.replyTo}
+          fallback={defaultReplyTo}
+          mailboxAddress={team ? (team.replyTo ?? team.email) : null}
+          onChange={(replyTo) =>
+            onPersonal({ accountId: personal.sender.account.id, email: personal.sender.identity.email, replyTo })
+          }
+        />
+      )}
+      {!personal && mailbox?.sending === "system_off" && (
         <p className="flex items-start gap-1.5 px-3 pb-1.5 text-[11.5px] leading-4 text-fg-2 animate-fade-in motion-reduce:animate-none" role="status">
           <TriangleAlert className="mt-px size-3 shrink-0 text-tone-amber" aria-hidden />
           {t("composer.cannotSend")}
         </p>
       )}
-      {(moved || chosen) && (
+      {personal && (
+        <p className="flex items-center gap-1.5 px-3 pb-1.5 text-[11.5px] text-fg-3 animate-fade-in motion-reduce:animate-none">
+          <ArrowRightLeft className="size-3 shrink-0 text-fg-4" />
+          {t("composer.personalChosen")}
+        </p>
+      )}
+      {!personal && (moved || chosen) && (
         <p className="flex items-center gap-1.5 px-3 pb-1.5 text-[11.5px] text-fg-3 animate-fade-in motion-reduce:animate-none">
           <ArrowRightLeft className="size-3 shrink-0 text-fg-4" />
           {chosen ? t("composer.addressChosen") : t("composer.addressMoved", { team: moved })}

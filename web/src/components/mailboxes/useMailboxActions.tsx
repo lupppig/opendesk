@@ -41,8 +41,15 @@ export function useMailboxActions() {
     }
   };
 
-  const remove = (m: Mailbox, after?: () => void) =>
-    confirm.show(t("actions.removeBody", { email: m.email }), async () => {
+  // The confirmation says how many tickets reply from the mailbox: they stay, but lose it as
+  // their reply address. Without the count (an older API), it says what it always did.
+  const remove = async (m: Mailbox, after?: () => void) => {
+    const usage = await api.mailboxes.usage(m.id).catch(() => null);
+    const body =
+      usage && usage.tickets > 0
+        ? t("actions.removeBodyTickets", { email: m.email, count: usage.tickets, open: usage.open })
+        : t("actions.removeBody", { email: m.email });
+    confirm.show(body, async () => {
       const prev = qc.getQueryData<Mailbox[]>(qk.mailboxes);
       removeFromList(qc, qk.mailboxes, m.id);
       try {
@@ -56,6 +63,7 @@ export function useMailboxActions() {
         throw e;
       }
     }, { title: t("actions.removeTitle"), confirmLabel: t("actions.removeConfirm"), danger: true });
+  };
 
   const testDialog = testing && (
     <Dialog

@@ -17,8 +17,26 @@ defmodule Realtime.AuthTest do
                name: "Anna",
                avatar: "https://example.test/a.png",
                teams: [],
-               brand: nil
+               brand: nil,
+               sid: claims["sid"],
+               issued_ms: claims["iat_ms"],
+               workspaces: %{claims["wid"] => %{role: "admin", teams: []}}
              }
+    end
+
+    test "the issue time from iat when a token has no iat_ms" do
+      claims = Tokens.ws_claims() |> Map.delete("iat_ms")
+      assert {:ok, %{issued_ms: ms}} = Auth.verify(Tokens.sign(claims))
+      assert ms == claims["iat"] * 1000
+
+      claims = Tokens.widget_claims()
+      assert {:ok, %{issued_ms: ms, sid: nil}} = Auth.verify(Tokens.sign(claims))
+      assert ms == claims["iat"] * 1000
+    end
+
+    test "a ws token without a session (an API key's)" do
+      claims = Tokens.ws_claims(%{"kind" => "api_key"}) |> Map.delete("sid")
+      assert {:ok, %{kind: :api_key, sid: nil}} = Auth.verify(Tokens.sign(claims))
     end
 
     test "a ws token's private teams, normalized" do
@@ -30,6 +48,39 @@ defmodule Realtime.AuthTest do
     test "an api_key ws token" do
       assert {:ok, %{kind: :api_key}} =
                Auth.verify(Tokens.sign(Tokens.ws_claims(%{"kind" => "api_key"})))
+    end
+
+    test "a person's other workspaces, normalized, with the token's own one" do
+      [b, team] = [Tokens.uuid(), Tokens.uuid()]
+
+      claims =
+        Tokens.ws_claims(%{
+          "workspaces" => %{
+            String.upcase(b) => %{"role" => "viewer", "teams" => [String.upcase(team)]}
+          }
+        })
+
+      assert {:ok, %{workspaces: map} = identity} = Auth.verify(Tokens.sign(claims))
+
+      assert map == %{
+               claims["wid"] => %{role: "agent", teams: []},
+               b => %{role: "viewer", teams: [team]}
+             }
+
+      assert Auth.workspace(identity, b) == %{role: "viewer", teams: [team]}
+      assert Auth.workspace(identity, Tokens.uuid()) == nil
+    end
+
+    test "the token's own workspace over a workspaces entry for it" do
+      claims = Tokens.ws_claims(%{"role" => "viewer"})
+
+      claims =
+        Map.put(claims, "workspaces", %{
+          claims["wid"] => %{"role" => "owner", "teams" => [Tokens.uuid()]}
+        })
+
+      assert {:ok, %{workspaces: %{} = map}} = Auth.verify(Tokens.sign(claims))
+      assert map[claims["wid"]] == %{role: "viewer", teams: []}
     end
 
     test "a widget_ws token as a contact" do
@@ -61,6 +112,31 @@ defmodule Realtime.AuthTest do
       for bid <- ["nope", 1, [Tokens.uuid()]] do
         token = Tokens.sign(Tokens.widget_claims(%{"bid" => bid}))
         assert Auth.verify(token) == {:error, :invalid_claims}, inspect(bid)
+      end
+    end
+
+    test "a malformed sid claim" do
+      for sid <- ["nope", 1, ""] do
+        token = Tokens.sign(Tokens.ws_claims(%{"sid" => sid}))
+        assert Auth.verify(token) == {:error, :invalid_claims}, inspect(sid)
+      end
+    end
+
+    test "a malformed workspaces claim, or one on an API key's token" do
+      many_workspaces = for _ <- 1..51, into: %{}, do: {Tokens.uuid(), %{"role" => "agent"}}
+
+      for {workspaces, extra} <- [
+            {[Tokens.uuid()], %{}},
+            {%{"nope" => %{"role" => "agent"}}, %{}},
+            {%{Tokens.uuid() => %{"role" => "god"}}, %{}},
+            {%{Tokens.uuid() => %{"teams" => []}}, %{}},
+            {%{Tokens.uuid() => "agent"}, %{}},
+            {%{Tokens.uuid() => %{"role" => "agent", "teams" => ["nope"]}}, %{}},
+            {many_workspaces, %{}},
+            {%{Tokens.uuid() => %{"role" => "agent"}}, %{"kind" => "api_key"}}
+          ] do
+        token = Tokens.sign(Tokens.ws_claims(Map.put(extra, "workspaces", workspaces)))
+        assert Auth.verify(token) == {:error, :invalid_claims}, inspect(workspaces)
       end
     end
 

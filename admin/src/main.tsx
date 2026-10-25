@@ -19,7 +19,10 @@ if (import.meta.env.VITE_MOCK === "1") {
 
 // The session is kept alive while the operator works; an idle panel lets it lapse.
 noteActivity();
-for (const ev of ["pointerdown", "keydown"] as const) window.addEventListener(ev, () => noteActivity(), { passive: true, capture: true });
+// Reading counts as much as clicking: scrolls of any panel reach the capturing listener.
+for (const ev of ["pointerdown", "keydown", "wheel", "touchstart", "scroll"] as const) {
+  window.addEventListener(ev, () => noteActivity(), { passive: true, capture: true });
+}
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

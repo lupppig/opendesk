@@ -57,6 +57,8 @@ export type LiveHandlers = {
   onStatus?: (live: boolean) => void;
   /** The socket came back after a drop. */
   onReconnect?: () => void;
+  /** Tells the team the visitor is writing (`POST /v1/widget/conversations/{id}/typing`). */
+  sendTyping?: (ticketId: string) => Promise<unknown>;
 };
 
 export class Live {
@@ -111,11 +113,12 @@ export class Live {
     this.channel = ch;
   }
 
+  /** At most every 3 s; through the API, which checks the conversation is the visitor's. */
   typing(ticketId: string) {
     const now = Date.now();
-    if (!this.channel || now - this.lastTyping < 3000) return;
+    if (!this.channel || !this.h.sendTyping || now - this.lastTyping < 3000) return;
     this.lastTyping = now;
-    this.channel.push("typing", { ticket_id: ticketId });
+    void this.h.sendTyping(ticketId).catch(() => {});
   }
 
   typingDone() {

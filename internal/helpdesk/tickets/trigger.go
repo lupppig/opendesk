@@ -238,7 +238,7 @@ func (r *triggerRun) automations(ctx context.Context, trigger string, messageID 
 type facts struct {
 	subject, body, fromEmail, channel, mailboxID, priority, status string
 	sentiment, severity                                            string
-	teamID, brandID, widgetID, receivedAt                          string
+	assigneeID, teamID, brandID, widgetID, receivedAt              string
 	decided                                                        map[string]float64
 	tags                                                           []string
 	spam                                                           bool
@@ -254,11 +254,11 @@ func (r *triggerRun) facts(ctx context.Context, messageID *uuid.UUID) (facts, er
 		COALESCE(t.custom->>'ai_sentiment', ''),
 		COALESCE((SELECT array_agg(g.name) FROM ticket_tags tt JOIN tags g ON g.id = tt.tag_id WHERE tt.ticket_id = t.id), '{}'),
 		t.fields, COALESCE(c.fields, '{}'),
-		COALESCE(t.team_id::text, 'none'), t.brand_id::text, COALESCE(t.widget_id::text, 'none'), t.received_at
+		COALESCE(t.assignee_id::text, 'none'), COALESCE(t.team_id::text, 'none'), t.brand_id::text, COALESCE(t.widget_id::text, 'none'), t.received_at
 		FROM tickets t LEFT JOIN contacts c ON c.id = t.contact_id AND c.workspace_id = t.workspace_id
 		WHERE t.workspace_id = $1 AND t.id = $2`, r.wid, r.tid).
 		Scan(&f.subject, &f.channel, &mailbox, &f.priority, &f.severity, &f.status, &f.spam, &f.contactEmail, &f.sentiment, &f.tags,
-			&f.fields, &f.contactFields, &f.teamID, &f.brandID, &f.widgetID, &f.receivedAt)
+			&f.fields, &f.contactFields, &f.assigneeID, &f.teamID, &f.brandID, &f.widgetID, &f.receivedAt)
 	if err != nil {
 		return f, err
 	}
@@ -362,6 +362,8 @@ func match(c hd.Condition, f facts) bool {
 		v = f.status
 	case "sentiment":
 		v = f.sentiment
+	case "assignee_id":
+		v = f.assigneeID
 	case "team_id":
 		v = f.teamID
 	case "brand_id":

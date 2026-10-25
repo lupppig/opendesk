@@ -3,10 +3,14 @@ import Foundation
 import Synchronization
 
 /// A signed-in run against an in-memory backend, for screenshots and screen
-/// recordings (the QA harness in `qa/`). Debug builds only, switched on with
-/// `OPENDESK_DEMO=1` in the launch environment:
+/// recordings (the QA harness in `qa/`) and for trying a debug build on a phone
+/// with no server in reach. Debug builds only, switched on with `OPENDESK_DEMO=1`
+/// in the launch environment:
 ///
 ///     SIMCTL_CHILD_OPENDESK_DEMO=1 xcrun simctl launch <udid> sh.opendesk.app
+///
+/// or from the sign-in screen ("Explore the demo"), which `enter()`s it until
+/// sign-out `leave()`s it; that choice is kept across launches.
 ///
 /// The API answers from `DemoBackend` (the world in `DemoSeed`), realtime
 /// stays on the device, push and App Attest are skipped, and the clock,
@@ -14,11 +18,43 @@ import Synchronization
 /// same build draws the same screens. Nothing goes over the network.
 enum DemoMode {
     /// Every seam asks this first, so the first ask (building the session, before any screen) sets the run up.
-    static let isOn: Bool = {
-        guard AppInfo.debugValue("OPENDESK_DEMO") == "1" else { return false }
-        start()
-        return true
-    }()
+    static var isOn: Bool {
+        state.withLock { state in
+            if let on = state { return on }
+            let on = launchedInDemo || UserDefaults.standard.bool(forKey: chosenKey)
+            if on { start() }
+            state = on
+            return on
+        }
+    }
+
+    /// The launch environment asked for the demo, so leaving it is not offered.
+    static var launchedInDemo: Bool { AppInfo.debugValue("OPENDESK_DEMO") == "1" }
+
+    /// Switches the demo on from inside the app; the session then moves to `instance`.
+    static func enter() {
+        UserDefaults.standard.set(true, forKey: chosenKey)
+        state.withLock { state in
+            if state != true { start() }
+            state = true
+        }
+    }
+
+    /// Switches a demo entered from the app off again, back to the device's clock and Keychain.
+    static func leave() {
+        guard !launchedInDemo else { return }
+        UserDefaults.standard.removeObject(forKey: chosenKey)
+        state.withLock { state in
+            state = false
+            keychain.withLock { $0 = [:] }
+            unsetenv("TZ")
+            tzset()
+            NSTimeZone.resetSystemTimeZone()
+        }
+    }
+
+    private static let state = Mutex<Bool?>(nil)
+    private static let chosenKey = "opendesk.demo"
 
     /// The instant every demo screen is drawn at: Tuesday 16 June 2026, 09:30 UTC (11:30 in Berlin).
     static let anchor = Date(timeIntervalSince1970: 1_781_602_200)

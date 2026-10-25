@@ -23,6 +23,7 @@ const msg = (p: Partial<MailMessage>): MailMessage => ({
   folder_ids: [],
   attachments: [],
   sent_by: null,
+  outgoing: false,
   ...p,
 });
 

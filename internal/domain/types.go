@@ -222,8 +222,11 @@ type Message struct {
 	// address or one of its aliases. "" otherwise.
 	ReceivedAt string `json:"received_at"`
 	// ThreadID is the third-party thread a note belongs to (contracts/api.md "Threads"), else null.
-	ThreadID  *uuid.UUID `json:"thread_id"`
-	CreatedAt time.Time  `json:"created_at"`
+	ThreadID *uuid.UUID `json:"thread_id"`
+	// FromAccount is the member's own Collab address an email reply went out from
+	// (contracts/collab.md "Answering tickets"), else null.
+	FromAccount *FromAccount `json:"from_account"`
+	CreatedAt   time.Time    `json:"created_at"`
 	// EditedAt is set when a plain internal note was edited.
 	EditedAt *time.Time `json:"edited_at"`
 	// DeletedAt and DeletedBy mark a deleted message, kept as a marker in its conversation.
@@ -234,6 +237,14 @@ type Message struct {
 	PurgedAt *time.Time `json:"purged_at"`
 	// SentAsReplyID marks a note sent as a reply: it stays, empty, pointing at the reply.
 	SentAsReplyID *uuid.UUID `json:"sent_as_reply_id"`
+}
+
+// FromAccount is a reply's Collab address: the account, the address and the Reply-To asked for
+// ("address", "mailbox" or an address).
+type FromAccount struct {
+	AccountID uuid.UUID `json:"account_id"`
+	Email     string    `json:"email"`
+	ReplyTo   string    `json:"reply_to"`
 }
 
 // AIAction is the card on an agent message that asks the visitor to confirm a tool call.

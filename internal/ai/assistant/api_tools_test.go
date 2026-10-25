@@ -27,7 +27,8 @@ func TestAPIToolsReachTheRestOfTheApp(t *testing.T) {
 		t.Fatalf("api_get fields not applied: %s", msgs)
 	}
 	ap := approvalOf(t, evs)
-	if len(ap.Preview.Changes) != 1 || ap.Preview.Changes[0].Field != "signature_html" || !strings.Contains(ap.Preview.Changes[0].To, "Jane Doe") {
+	if len(ap.Preview.Changes) != 1 || ap.Preview.Changes[0].Field != "signature_html" || !strings.Contains(ap.Preview.Changes[0].To, "Jane Doe") ||
+		!strings.Contains(ap.Preview.Arguments, `"method": "PATCH"`) || !strings.Contains(ap.Preview.Arguments, `"signature_html": "<p>Jane Doe, Support</p>"`) {
 		t.Fatalf("preview: %+v", ap.Preview)
 	}
 	var sig string

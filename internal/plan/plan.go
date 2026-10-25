@@ -99,19 +99,20 @@ func FromCost(usd, markup float64) Micro {
 // neither the provider nor the model's price gives the cost, and it is the estimate to
 // start a call whose model price is unknown.
 var Typical = map[string]Micro{
-	"summarize":    10_000, // $0.01
-	"rewrite":      10_000,
-	"translate":    10_000,
-	"triage":       10_000, // every triage decision in one call (Jev, or the AI model)
-	"decide":       10_000, // the ai_decide automation conditions of one trigger run, in one call
-	"answer_check": 1_000,  // the widget agent's relevance check on Jev
-	"draft_reply":  30_000,
-	"answer":       30_000, // one model turn of a widget agent reply
-	"answer_email": 30_000, // one model turn of an agent email answer or suggested reply
-	"playground":   30_000, // one model turn of an agent playground reply
-	"kb_draft":     50_000, // knowledge base article draft from tickets
-	"copilot":      20_000, // free-form question about a ticket
-	"assistant":    20_000, // one model turn of the assistant (Ollie)
+	"summarize":      10_000, // $0.01
+	"rewrite":        10_000,
+	"translate":      10_000,
+	"triage":         10_000, // every triage decision in one call (Jev, or the AI model)
+	"decide":         10_000, // the ai_decide automation conditions of one trigger run, in one call
+	"answer_check":   1_000,  // the widget agent's relevance check on Jev
+	"draft_reply":    30_000,
+	"answer":         30_000, // one model turn of a widget agent reply
+	"answer_email":   30_000, // one model turn of an agent email answer or suggested reply
+	"playground":     30_000, // one model turn of an agent playground reply
+	"kb_draft":       50_000, // knowledge base article draft from tickets
+	"copilot":        20_000, // free-form question about a ticket
+	"assistant":      20_000, // one model turn of the assistant (Ollie)
+	"assistant_peer": 10_000, // one answer of a teammate's Ollie, paid by the asker's workspace
 }
 
 var (

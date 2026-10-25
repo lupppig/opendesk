@@ -6,7 +6,8 @@
 // are persisted (the active account, each account's last workspace); access
 // tokens stay in the API client's memory, refresh tokens in HttpOnly cookies.
 // Switching accounts clears the whole query cache, so data from one account
-// never renders under another.
+// never renders under another. Switching workspace within an account keeps it:
+// every workspace key starts with its workspace (lib/queries.ts).
 
 import { create } from "zustand";
 import { api } from "./api/endpoints";
@@ -22,6 +23,8 @@ import {
   setWorkspaceId,
 } from "./api/client";
 import type { Account, Me, Membership, Role, TokenResponse, User, Workspace } from "./api/types";
+import { setClock } from "./format";
+import { qk } from "./queries";
 import { queryClient } from "./queryClient";
 import { workspaceTarget } from "./workspaceParam";
 
@@ -49,6 +52,9 @@ export const useSession = create<SessionState>(() => ({
   workspaceId: null,
   accounts: [],
 }));
+
+// Times of day follow the active account's clock.
+useSession.subscribe((s) => setClock(s.user?.time_format));
 
 // ─── Persistence: ids only ─────────────────────────────────────────────────
 
@@ -206,12 +212,24 @@ export function reloadSession(preferWorkspace?: string | null) {
   return p;
 }
 
+/** Whether realtime keeps a workspace's cache current (set by the realtime manager). */
+let liveCheck: (wid: string) => boolean = () => false;
+export function setLiveCheck(fn: (wid: string) => boolean) {
+  liveCheck = fn;
+}
+
+/**
+ * Move the focus to another workspace of the active account. The cache stays: its keys
+ * carry their workspace (lib/queries.ts), so nothing of one is read for another. What
+ * realtime did not keep current is refetched in the background while it shows.
+ */
 export function selectWorkspace(id: string) {
-  const { user, memberships } = useSession.getState();
+  const { user, memberships, workspaceId } = useSession.getState();
   if (!user || !memberships.some((m) => m.workspace.id === id)) return;
   setWorkspaceId(id);
   remember(user.id, id);
   useSession.setState({ workspaceId: id });
+  if (id !== workspaceId && !liveCheck(id)) void queryClient.invalidateQueries({ queryKey: qk.scope(id) });
 }
 
 /**
@@ -227,7 +245,6 @@ export async function openLinkedWorkspace(ws: string): Promise<void> {
   }
   if (target.kind === "select") {
     selectWorkspace(ws);
-    queryClient.clear();
   } else if (target.kind === "account") {
     await switchAccount(target.userId, ws);
   }
@@ -243,7 +260,6 @@ export async function switchAccount(userId: string, workspaceId?: string | null)
   const s = useSession.getState();
   if (s.user?.id === userId) {
     if (workspaceId && workspaceId !== s.workspaceId) {
-      queryClient.clear();
       selectWorkspace(workspaceId);
     }
     return useSession.getState();

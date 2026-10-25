@@ -27,7 +27,15 @@ export type AssistantStep = {
   summary?: string;
   refs?: AssistantRef[];
   action_id?: string;
+  /** ask_teammate: whose Ollie answered, and how (contracts/ai.md "Asking a teammate"). */
+  peer?: StepPeer;
+  /** A change that ran without asking, because the workspace allows it (contracts/ai.md "Approvals"). */
+  auto?: boolean;
+  /** What a change that ran without asking ran. */
+  preview?: Preview;
 };
+export type PeerResult = "answered" | "declined" | "not_shared" | "failed";
+export type StepPeer = { user: { id: string; name: string; avatar_url?: string | null }; result: PeerResult; sources: number };
 
 export type Change = { field: string; from: string; to: string };
 export type Preview = {
@@ -40,6 +48,12 @@ export type Preview = {
   external?: boolean;
   /** The connected product the change runs in ("Linear"). */
   system?: string;
+  /** Everything the change runs with, as indented JSON; changes and body may summarize it. */
+  arguments?: string;
+  /** Fields changes and body leave out. */
+  omitted?: number;
+  /** A value shown in changes or body is cut short. */
+  clipped?: boolean;
 };
 export type Approval = { action_id: string; call_id: string; tool: string; preview: Preview; token: string; expires_at: string };
 

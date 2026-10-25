@@ -6,20 +6,24 @@ import Foundation
 /// store and screen runs its real code. Changes (replies, notes, assignment,
 /// status, priority, snooze, read notifications, Ollie's actions) update the
 /// world and publish the events a server would, through `RealtimeService`.
+///
+/// Each area answers its own routes from an extension in its own file
+/// (`DemoTickets.swift`, `DemoAccount.swift`, `DemoAssistant.swift`, `DemoDirectory.swift`,
+/// `DemoMail.swift`, `DemoKB.swift`, `DemoInbox.swift`); those run before the routes below.
 actor DemoBackend {
     static let shared = DemoBackend()
     static let refreshToken = "demo-refresh-token"
 
-    private var world = DemoSeed.world()
-    private var listener: (@Sendable (Envelope) -> Void)?
-    private var outbox: [Envelope] = []
-    private var pending: [String: PendingAction] = [:]
-    private var uploads: [String: Attachment] = [:]
+    var world = DemoSeed.world()
+    var listener: (@Sendable (Envelope) -> Void)?
+    var outbox: [Envelope] = []
+    var pending: [String: PendingAction] = [:]
+    var uploads: [String: Attachment] = [:]
     /// Seconds past the anchor for things made in this run, so they sort after the seed.
-    private var tick = 0
-    private var serial = 0
+    var tick = 0
+    var serial = 0
 
-    private struct PendingAction {
+    struct PendingAction {
         var workspace: String
         var ticketIDs: [String]
         var patch: [String: JSONValue]
@@ -27,13 +31,13 @@ actor DemoBackend {
         var step: AssistantStep
     }
 
-    private struct Failure: Error {
+    struct Failure: Error {
         var status: Int
         var code: String
         var detail: String
     }
 
-    private struct Call {
+    struct Call {
         var method: String
         var path: [String]
         var query: [String: String]
@@ -56,7 +60,7 @@ actor DemoBackend {
         func string(_ key: String) -> String? { body[key]?.string }
     }
 
-    private struct ListBody<T: Encodable>: Encodable {
+    struct ListBody<T: Encodable>: Encodable {
         var data: [T]
         var nextCursor: String?
 
@@ -67,6 +71,16 @@ actor DemoBackend {
     }
 
     // MARK: Entry points
+
+    /// The seed's world again, for a demo entered anew from the sign-in screen.
+    func restart() {
+        world = DemoSeed.world()
+        outbox = []
+        pending = [:]
+        uploads = [:]
+        tick = 0
+        serial = 0
+    }
 
     func listen(_ handler: @escaping @Sendable (Envelope) -> Void) {
         listener = handler
@@ -101,7 +115,9 @@ actor DemoBackend {
         let call = Self.call(from: request)
         let beats: [Beat]
         do {
-            if let session = call.match("POST", "assistant/sessions/*/messages")?.first {
+            if let extra = try streamRoutes(call) {
+                beats = extra
+            } else if let session = call.match("POST", "assistant/sessions/*/messages")?.first {
                 beats = try assistantRun(call, session: session)
             } else if let action = call.match("POST", "assistant/actions/*/decision")?.first {
                 beats = try assistantDecision(call, action: action)
@@ -127,7 +143,7 @@ actor DemoBackend {
         }
     }
 
-    private static func call(from request: URLRequest) -> Call {
+    static func call(from request: URLRequest) -> Call {
         let components = request.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }
         var path = (components?.path ?? "").split(separator: "/").map { String($0).removingPercentEncoding ?? String($0) }
         if path.first == "v1" { path.removeFirst() }
@@ -142,7 +158,8 @@ actor DemoBackend {
     // MARK: Routes
 
     /// The answer's body, or nil for 204.
-    private func handle(_ call: Call) throws -> Data? {
+    func handle(_ call: Call) throws -> Data? {
+        if let answer = try meRoutes(call) { return answer }
         // Signing in: any email and password open Maya's account.
         for route in ["auth/login", "auth/register", "auth/mfa", "auth/oauth/exchange", "auth/oauth/link", "auth/passkey/login/finish", "auth/refresh"] where call.match("POST", route) != nil {
             return encode(JSONValue.object([
@@ -163,7 +180,10 @@ actor DemoBackend {
         }
         if call.match("DELETE", "me") != nil || call.match("POST", "me/heartbeat") != nil { return nil }
         if call.match("GET", "me/sessions") != nil { return encode(ListBody(data: world.sessions)) }
-        if call.match("DELETE", "me/sessions/*") != nil { return nil }
+        if let id = call.match("DELETE", "me/sessions/*")?.first {
+            world.sessions.removeAll { $0.id == id }
+            return nil
+        }
         if call.match("GET", "me/devices") != nil { return encode(world.devices) }
         if call.match("POST", "me/devices") != nil { return encode(world.devices[0]) }
         if let id = call.match("PATCH", "me/devices/*")?.first, let index = world.devices.firstIndex(where: { $0.id == id }) {
@@ -183,7 +203,14 @@ actor DemoBackend {
         return try handle(call, in: &ws)
     }
 
-    private func handle(_ call: Call, in ws: inout DemoWorkspace) throws -> Data? {
+    func handle(_ call: Call, in ws: inout DemoWorkspace) throws -> Data? {
+        if let answer = try ticketRoutes(call, in: &ws) { return answer }
+        if let answer = try inboxRoutes(call, in: &ws) { return answer }
+        if let answer = try accountRoutes(call, in: &ws) { return answer }
+        if let answer = try assistantRoutes(call, in: &ws) { return answer }
+        if let answer = try directoryRoutes(call, in: &ws) { return answer }
+        if let answer = try mailRoutes(call, in: &ws) { return answer }
+        if let answer = try kbRoutes(call, in: &ws) { return answer }
         let query = call.query
         if call.match("GET", "members") != nil {
             let members = ws.members.map { member in
@@ -329,52 +356,52 @@ actor DemoBackend {
 
     // MARK: Plumbing
 
-    private var me: UserRef { UserRef(id: world.user.id, name: world.user.name, email: world.user.email, avatarURL: nil) }
+    var me: UserRef { UserRef(id: world.user.id, name: world.user.name, email: world.user.email, avatarURL: nil) }
 
-    private func encode(_ value: some Encodable) -> Data {
+    func encode(_ value: some Encodable) -> Data {
         (try? APICoding.encoder.encode(value)) ?? Data("{}".utf8)
     }
 
-    private func now() -> Date {
+    func now() -> Date {
         tick += 1
         return DemoMode.anchor.addingTimeInterval(Double(tick))
     }
 
-    private func made() -> String {
+    func made() -> String {
         serial += 1
         return demoID(.made, serial)
     }
 
-    private func notFound(_ what: String) -> Failure {
+    func notFound(_ what: String) -> Failure {
         Failure(status: 404, code: "not_found", detail: "That \(what) isn't here any more.")
     }
 
     /// A ticket by id, or by number as links may name it.
-    private func ticket(_ key: String, in ws: DemoWorkspace) throws -> Int {
+    func ticket(_ key: String, in ws: DemoWorkspace) throws -> Int {
         let number = Int(key.trimmingCharacters(in: CharacterSet(charactersIn: "#")))
         guard let index = ws.tickets.firstIndex(where: { $0.id == key || $0.number == number }) else { throw notFound("ticket") }
         return index
     }
 
-    private func publish(_ type: String, _ data: [String: JSONValue], in ws: inout DemoWorkspace) {
+    func publish(_ type: String, _ data: [String: JSONValue], in ws: inout DemoWorkspace) {
         ws.seq += 1
         outbox.append(Envelope(demoID: made(), seq: ws.seq, workspaceID: ws.id, type: type, data: data, occurredAt: DemoMode.anchor.addingTimeInterval(Double(tick))))
     }
 
     /// Hands the events of the last change to realtime, after the answer is ready.
-    private func flush() {
+    func flush() {
         let events = outbox
         outbox = []
         guard let listener else { return }
         for envelope in events { listener(envelope) }
     }
 
-    private func touched(_ index: Int, in ws: inout DemoWorkspace, changes: [String] = []) {
+    func touched(_ index: Int, in ws: inout DemoWorkspace, changes: [String] = []) {
         ws.tickets[index].updatedAt = now()
         publish("ticket.updated", ["ticket": DemoSeed.json(ws.tickets[index]), "changes": .array(changes.map(JSONValue.string))], in: &ws)
     }
 
-    private func createWorkspace(name: String) -> Data {
+    func createWorkspace(name: String) -> Data {
         let id = made()
         let slug = name.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).joined(separator: "-")
         let workspace = Workspace(id: id, name: name, slug: slug, avatarURL: nil, settings: WorkspaceSettings(brandColor: nil, timezone: DemoMode.timeZone, statusLabels: nil, priorityLabels: nil), createdAt: now())
@@ -386,7 +413,7 @@ actor DemoBackend {
 
     // MARK: Lists
 
-    private func counts(_ ws: DemoWorkspace) -> JSONValue {
+    func counts(_ ws: DemoWorkspace) -> JSONValue {
         let live = ws.tickets.filter { !$0.spam }
         let openish = live.filter { [.open, .pending, .onHold].contains($0.status) }
         var views: [String: JSONValue] = [:]
@@ -404,7 +431,7 @@ actor DemoBackend {
     }
 
     /// A saved view as list parameters.
-    private func filters(of view: SavedView) -> [String: String] {
+    func filters(of view: SavedView) -> [String: String] {
         guard let filters = view.filters else { return [:] }
         var query: [String: String] = [:]
         if let status = filters.status { query["status"] = status.joined(separator: ",") }
@@ -419,7 +446,7 @@ actor DemoBackend {
         return query
     }
 
-    private func matches(_ ticket: Ticket, _ query: [String: String], in ws: DemoWorkspace) -> Bool {
+    func matches(_ ticket: Ticket, _ query: [String: String], in ws: DemoWorkspace) -> Bool {
         if let id = query["view_id"] {
             guard let view = ws.views.first(where: { $0.id == id }) else { return false }
             var merged = filters(of: view)
@@ -452,7 +479,7 @@ actor DemoBackend {
         return true
     }
 
-    private func sorted(_ tickets: [Ticket], _ query: [String: String]) -> [Ticket] {
+    func sorted(_ tickets: [Ticket], _ query: [String: String]) -> [Ticket] {
         let ascending = query["order"] == "asc"
         switch query["sort"] {
         case "priority":
@@ -468,7 +495,7 @@ actor DemoBackend {
     // MARK: Changes
 
     /// `PATCH /v1/tickets/{id}`: applies the members present, records the activity and publishes `ticket.updated`.
-    private func update(_ index: Int, with body: [String: JSONValue], by actor: ActivityActor, in ws: inout DemoWorkspace) {
+    func update(_ index: Int, with body: [String: JSONValue], by actor: ActivityActor, in ws: inout DemoWorkspace) {
         var ticket = ws.tickets[index]
         let before = ticket
         var changes: [String] = []
@@ -563,7 +590,7 @@ actor DemoBackend {
         }
     }
 
-    private func tag(named name: String, in ws: inout DemoWorkspace) -> TagRef {
+    func tag(named name: String, in ws: inout DemoWorkspace) -> TagRef {
         if let tag = ws.tags.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) { return tag.ref }
         let tag = Tag(id: made(), name: name, color: "gray", description: nil, groupID: nil, archived: false, appliesTo: ["tickets"])
         ws.tags.append(tag)
@@ -572,7 +599,7 @@ actor DemoBackend {
     }
 
     /// A reply or note from Maya: stored, the ticket's clocks moved, `message.created` published.
-    private func send(kind: MessageKind, html: String, attachments: [Attachment], on index: Int, in ws: inout DemoWorkspace) -> Message {
+    func send(kind: MessageKind, html: String, attachments: [Attachment], on index: Int, in ws: inout DemoWorkspace) -> Message {
         let ticket = ws.tickets[index]
         let at = now()
         var message = Message(demoID: made(), ticketID: ticket.id, kind: kind, html: html, createdAt: at)
@@ -600,7 +627,7 @@ actor DemoBackend {
         return message
     }
 
-    private func upload(_ call: Call) -> Attachment {
+    func upload(_ call: Call) -> Attachment {
         let text = String(decoding: call.raw.prefix(4096), as: UTF8.self)
         func header(_ pattern: String) -> String? {
             guard let range = text.range(of: pattern, options: .regularExpression) else { return nil }
@@ -621,7 +648,7 @@ actor DemoBackend {
 
     // MARK: Ollie on a ticket
 
-    private func summarize(_ ticket: Ticket, in ws: DemoWorkspace) -> AISummary {
+    func summarize(_ ticket: Ticket, in ws: DemoWorkspace) -> AISummary {
         if let stored = ticket.custom["ai_summary"], var summary = try? stored.decode(AISummary.self) {
             summary.updatedAt = DemoMode.anchor
             return summary
@@ -637,7 +664,7 @@ actor DemoBackend {
         )
     }
 
-    private func draft(for ticket: Ticket, instructions: String?) -> String {
+    func draft(for ticket: Ticket, instructions: String?) -> String {
         let first = ticket.contact?.name.split(separator: " ").first.map(String.init) ?? "there"
         let body: String
         switch ticket.number {
@@ -656,7 +683,7 @@ actor DemoBackend {
     }
 
     /// Ollie triages again; with `apply`, its pending suggestions are written as Ollie.
-    private func triage(_ index: Int, apply: Bool, in ws: inout DemoWorkspace) -> [String] {
+    func triage(_ index: Int, apply: Bool, in ws: inout DemoWorkspace) -> [String] {
         ws.tickets[index].custom["ai_triaged_at"] = .string(DemoSeed.stamp(DemoMode.anchor))
         guard apply, let suggestions = ws.tickets[index].custom["ai_suggestions"]?.object, !suggestions.isEmpty else {
             touched(index, in: &ws, changes: ["custom"])
@@ -680,13 +707,13 @@ actor DemoBackend {
 
     // MARK: Ollie, the assistant
 
-    private struct Beat {
+    struct Beat {
         var event: String
         var data: JSONValue
         var pause: Int
     }
 
-    private func words(_ text: String) -> [Beat] {
+    func words(_ text: String) -> [Beat] {
         var beats: [Beat] = []
         var chunk = ""
         for (index, word) in text.split(separator: " ", omittingEmptySubsequences: false).enumerated() {
@@ -700,18 +727,18 @@ actor DemoBackend {
         return beats
     }
 
-    private func step(_ tool: String, running: String, done: String, summary: String?, refs: [AssistantRef] = []) -> [Beat] {
+    func step(_ tool: String, running: String, done: String, summary: String?, refs: [AssistantRef] = []) -> [Beat] {
         let id = "call_" + made().suffix(8)
         let start = AssistantStep(id: id, tool: tool, label: running, status: "running", summary: nil, refs: nil, actionID: nil)
         let end = AssistantStep(id: id, tool: tool, label: done, status: "done", summary: summary, refs: refs.isEmpty ? nil : refs)
         return [Beat(event: "tool", data: DemoSeed.json(start), pause: 120), Beat(event: "tool", data: DemoSeed.json(end), pause: 550)]
     }
 
-    private func ref(_ ticket: Ticket) -> AssistantRef {
+    func ref(_ ticket: Ticket) -> AssistantRef {
         AssistantRef(kind: "ticket", id: ticket.id, label: ticket.subject, number: ticket.number)
     }
 
-    private func assistantRun(_ call: Call, session: String) throws -> [Beat] {
+    func assistantRun(_ call: Call, session: String) throws -> [Beat] {
         guard let wid = call.workspace, let index = world.workspaces.firstIndex(where: { $0.id == wid }) else {
             throw Failure(status: 400, code: "workspace_required", detail: "Pick a workspace first.")
         }
@@ -775,7 +802,7 @@ actor DemoBackend {
         return beats + words(first.isEmpty ? "Nothing urgent right now. The queue is in good shape." : "These need a look first:\n\n\(lines.joined(separator: "\n"))\n\nWant me to find owners for the unassigned ones?")
     }
 
-    private func assistantDecision(_ call: Call, action: String) throws -> [Beat] {
+    func assistantDecision(_ call: Call, action: String) throws -> [Beat] {
         guard let job = pending.removeValue(forKey: action), call.string("token") == "demo-" + action else {
             throw Failure(status: 409, code: "approval_not_pending", detail: "That action was already decided or expired.")
         }

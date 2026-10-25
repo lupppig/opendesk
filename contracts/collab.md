@@ -11,9 +11,10 @@ member arranges their own sidebar.
 
 Collab is the `collab` plan's (contracts/billing.md "Collab"). It is not a ticket feature: a
 mail account is not a helpdesk mailbox (contracts/api.md "Mailboxes"), its mail never becomes
-tickets, and nothing about tickets or the existing plans changes. What it adds to helpdesk
-mailboxes is a way to receive: reading the inbox directly with its OAuth clients, or generic IMAP
-("Providers and scopes").
+tickets, and nothing about tickets or the existing plans changes. The one way its mail meets a
+ticket is a member's choice: a reply on a ticket sent from their own address, whose answers come back
+to that ticket ("Answering tickets"). What it adds to helpdesk mailboxes is a way to receive:
+reading the inbox directly with its OAuth clients, or generic IMAP ("Providers and scopes").
 
 ## Who has it
 
@@ -287,6 +288,15 @@ a reply in its conversation, a new message or a forward in a conversation of its
   are deleted with their mail (the job `collab.cleanup`), shared ones are kept with `owner: null`
   for admins to manage or disconnect.
 - API keys and AI clients over MCP have no access to Collab: every route needs a user session.
+  Ollie has none either: every request it makes for a user carries `ViaAssistant` (reads
+  included), and Collab refuses it.
+- The one exception is the owner's own consent: a member may let teammates' Ollie ask theirs
+  about their **own** accounts (contracts/ai.md "Asking a teammate"). It is off until the
+  workspace allows it and the member opts in, account by account (verbatim, summaries only or
+  nothing), for the people and teams they choose. The asker gets an answer written by the
+  owner's Ollie under the owner's rules, never mail, ids, addresses, links or attachments. Mail
+  the owner sees only through someone else's share is never used. Admins cannot read or change
+  anyone's choices.
 
 ## Shapes
 
@@ -432,6 +442,7 @@ interface MailMessage {
   draft_id: string | null      // drafts: the id the /v1/collab/drafts routes take (the message's id)
   in_reply_to_id: string | null  // the message of the conversation it answers (its In-Reply-To), when stored
   own_address: string | null   // the account's address (its own or an alias) it was sent from, else the first in its To, Cc, then Delivered-To / X-Original-To
+  outgoing: boolean            // mail the account wrote: sent from opendesk (sent_by), a draft, or filed by the provider in Sent or Drafts. Its From alone never makes mail outgoing, since a sender writes their own From. Mail that is not outgoing holds back its remote images until the reader loads them
 }
 
 interface MailAttachment {
@@ -441,7 +452,7 @@ interface MailAttachment {
   size: number
   inline: boolean
   content_id: string
-  url: string                  // signed, valid for an hour, works in <img> and as a download link
+  url: string                  // signed, valid for one to two hours (the expiry is rounded to the hour), works in <img> and as a download link. The link is the permission: whoever holds it can fetch the file until it expires, so a link handed out before a conversation was unshared works until then, and no new one is signed for someone who can no longer see the message
 }
 
 interface MailComment {
@@ -462,6 +473,7 @@ interface MailThreadDetail {
   comments: MailComment[]      // oldest first
   shares: Audience             // the conversation's own shares
   can_act: boolean
+  ticket: { id: string; number: number; subject: string } | null  // the ticket it answered or was answered from, when the caller sees it ("Answering tickets")
 }
 
 interface CollabStatus {
@@ -759,6 +771,62 @@ Reading: `MailThread.to_address` names the alias a conversation was written to o
 chip in the list and the conversation), and `GET /v1/collab/threads?to=` shows one address's mail
 (the mail page offers it for an account with more than one address).
 
+## Answering tickets
+
+A member may answer an email ticket from one of their own addresses here instead of the ticket's reply
+address, one reply at a time, so a customer who knows them gets mail from them. Nothing changes until
+they choose it, and it is a reply on the ticket like any other: the team reads it, the SLA counts it,
+and the customer's answers come back to the ticket.
+
+- **On or off**: the workspace setting `collab_ticket_replies` (default on; admins, contracts/api.md
+  `WorkspaceSettings`), on a workspace with Collab ("Who has it"). Users only: an API key, an AI client
+  or Ollie never sends from a member's account.
+- **Per address**: each support mailbox may set its own rules (`Mailbox.personal_replies`, contracts/api.md
+  "Mailboxes"; admins): `enabled` and `reply_to` override the workspace's (`null` follows it), and
+  `accounts` limits which addresses answer its tickets: `any` (default), `shared` (shared accounts only,
+  never someone's private mail) or `domain` (addresses at the mailbox's own domain or an alias's). The
+  rules are those of the ticket's reply address as it is now: moving the ticket moves them, and a ticket
+  without one follows the workspace. They are checked when the reply is written and again when it goes
+  out; the composer offers only what they allow and starts on their Reply-To. A refusal names the
+  address (`409 collab_ticket_replies_off`, `422 validation_failed`).
+- **From**: any address that can send of an account the member sees and acts on, their own private
+  accounts included ("Who sees what", "Addresses"), on an email ticket with a customer address. A
+  reply names it with `from_account` (contracts/api.md `POST /v1/tickets/{id}/messages`): `account_id`,
+  `email` (left out: the address this member last answered the ticket from in that account, else the
+  account's default) and `reply_to`.
+- **Reply-To**: `"address"` uses the address's own reply-to, else none, so answers come to the
+  address; `"mailbox"` names the ticket's reply address (its alias when the ticket was written to one),
+  so answers arrive at the team's address like any email; or any email address. Left out, the ticket's
+  reply address decides (`personal_replies.reply_to`), else the workspace's `collab_ticket_reply_to`
+  (`"address"` or `"mailbox"`, default `"address"`).
+- **What goes out**: personal mail, not the brand's: the address's From name and signature filled for
+  the member ("Who sends"), the signature after the reply, no email layout and no `[#n]` tag. The
+  subject is `Re: ` and the ticket's subject. It threads with the ticket's conversation (`In-Reply-To`,
+  `References`), and its Message-ID is the ticket format at the address's domain, so an answer
+  threads into the ticket even from a mail client that drops `References`. Files go as on any reply.
+- **Sending**: the job `collab.send_ticket_reply` sends it through the account's provider, retried
+  like any reply; the message's `delivery_status` goes from `pending` to `sent` or `failed` with the
+  reason. It is stored in the account's Sent and conversation (Gmail: the conversation earlier replies
+  on the ticket went into). The ticket's reply address does not change.
+- **Answers**: when the sync stores a message that names one of the ticket's messages sent from this
+  account (`In-Reply-To`, `References`) and that the account did not send, the ticket takes it in as
+  an email to its reply address (contracts/api.md "Inbound email"): a customer reply that reopens the
+  ticket, counts for the SLA and notifies as usual, once: the same email reaching the team's address
+  too (through the Reply-To or a Cc) is a duplicate. Nothing else of the account reaches the ticket,
+  and the conversation stays in the account as well.
+- **The next reply**: the ticket composer starts from the ticket's reply address. Once a member has
+  answered the ticket from one of their addresses, their next reply there starts from that address and
+  its Reply-To, for them alone. Automations, auto-replies, CSAT emails, Ollie and chat follow-ups
+  always go from the ticket's address.
+- **When it can no longer go**: the account removed or no longer seen by the member, Collab or the
+  setting off, or the address unable to send: the reply fails with the reason, and the composer goes
+  back to the ticket's address. What is already on the ticket stays; a removed account brings no more
+  answers.
+- **Linked conversations**: a conversation that answered a ticket, or was answered from one, carries
+  `ticket` (`MailThreadDetail`), shown to a caller who sees the ticket (contracts/teams.md
+  "Visibility"), and the conversation links to it. On the ticket a reply sent this way says which
+  address it went from (`Message.from_account`).
+
 ## Events
 
 Collab events carry ids only and reach only the members who see what changed: they are
@@ -805,3 +873,7 @@ in-app and push like other notifications, emailed by the member's notification p
   Gmail values (`sync_state`). It is written with `jsonb_set` under the row lock.
 - Deleting an account deletes its folders, conversations, messages, comments, shares and stored raw
   messages (`collab.cleanup` removes the storage objects).
+- `messages.collab_account_id`, `messages.collab_reply_to` and `collab_threads.ticket_id`
+  (`migrations/000663_collab_ticket_replies.up.sql`, with `mailboxes.personal_replies`): the account a
+  ticket reply went from and the Reply-To asked for, and the ticket a conversation answered. Deleting the account clears the first and
+  keeps the reply; deleting the ticket clears the last.

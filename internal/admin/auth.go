@@ -93,11 +93,14 @@ func (s *svc) me(a *Admin) AdminMe {
 			AIEnabled: cfg.AIEnabled(), AppURL: cfg.AppURL, APIURL: cfg.APIURL, SelfHosted: !cfg.BillingEnabled()}}
 }
 
-// cookie is the refresh cookie: host-only, HttpOnly, SameSite=Strict; __Host- prefixed
-// on https, otherwise scoped to the admin auth routes.
+// cookie is the refresh cookie: host-only, HttpOnly, SameSite=Lax; __Host- prefixed on
+// https, otherwise scoped to the admin auth routes. It is read only by POSTs that carry
+// the panel's Origin, so Lax refuses the same cross-site requests Strict would, and the
+// browser sends it on every load of the panel (Safari withholds a Strict cookie from a
+// page restored at launch or reached from another site).
 func (s *svc) cookie(value string, maxAge int) string {
 	c := http.Cookie{Name: RefreshCookie, Value: value, Path: "/v1/admin/auth", HttpOnly: true,
-		Secure: s.d.Cfg.CookieSecure, SameSite: http.SameSiteStrictMode, MaxAge: maxAge}
+		Secure: s.d.Cfg.CookieSecure, SameSite: http.SameSiteLaxMode, MaxAge: maxAge}
 	if s.d.Cfg.CookieSecure {
 		c.Name, c.Path = HostRefreshCookie, "/"
 	}
@@ -161,7 +164,9 @@ func (s *svc) registerAuth(api huma.API) {
 		func(ctx context.Context, _ *struct{}) (*authOut, error) {
 			out, err := s.refresh(ctx)
 			if err != nil {
-				if he, ok := err.(*httpx.Error); ok && he.Status == 401 {
+				// A refused cookie is cleared; a request that carried none leaves the
+				// browser's alone.
+				if he, ok := err.(*httpx.Error); ok && he.Status == 401 && info(ctx).Cookie != "" {
 					return nil, huma.ErrorWithHeaders(he, http.Header{"Set-Cookie": {s.cookie("", -1)}})
 				}
 				return nil, httpx.Wrap(err)

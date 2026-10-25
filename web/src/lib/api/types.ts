@@ -17,8 +17,11 @@ export type User = {
   avatar_source: AvatarSource | null;
   email_verified: boolean;
   totp_enabled: boolean;
+  /** The clock for times in the app and notification emails; "auto" follows the browser's locale in the app and 24-hour in emails. */
+  time_format: TimeFormat;
   created_at: string;
 };
+export type TimeFormat = "auto" | "12h" | "24h";
 export type UserRef = { id: string; name: string; email: string; avatar_url: string | null };
 
 export type WorkspaceSettings = {
@@ -46,6 +49,10 @@ export type WorkspaceSettings = {
   undo_send_seconds?: number;
   /** The same for chat replies. Default 0: a chat reply goes at once. */
   undo_send_chat_seconds?: number;
+  /** With Collab, members may answer email tickets from their own mail accounts. Default true. */
+  collab_ticket_replies?: boolean;
+  /** Where answers to such a reply go when it names no Reply-To: the address's own reply-to (else the address), or the ticket's reply address. Default "address". */
+  collab_ticket_reply_to?: "address" | "mailbox";
   /** Which messages agents may delete: none, their own internal notes, or any agent's notes and replies. Admins may delete any. Default "own". */
   message_delete?: "off" | "own" | "all";
   /** Display-only names and colours for the fixed statuses and priorities. */
@@ -458,6 +465,8 @@ export type Message = {
   received_at?: string;
   /** The third-party thread a note belongs to (contracts/api.md "Threads"), else null. */
   thread_id?: string | null;
+  /** An email reply sent from a member's own Collab address (contracts/collab.md "Answering tickets"), else null. */
+  from_account?: FromAccount | null;
   created_at: string;
   edited_at: string | null;
   /** A deleted message stays as a marker: who deleted it and when. Only admins get what it said. */
@@ -468,6 +477,8 @@ export type Message = {
   /** A note sent as a reply: a marker pointing at the reply (deleted_at says when). Only admins get what it said. */
   sent_as_reply_id?: string | null;
 };
+/** The Collab address a reply goes or went out from, and the Reply-To it asks for: "address" (the address's own), "mailbox" (the ticket's reply address) or an address. */
+export type FromAccount = { account_id: string; email: string; reply_to: string };
 /** A third-party thread: an email conversation on a ticket with someone outside the team (contracts/api.md "Threads"). */
 export type Thread = {
   id: string;
@@ -643,7 +654,7 @@ export type AutomationTrigger = "ticket_created" | "customer_replied" | "agent_r
 export type ConditionField =
   | "subject" | "body" | "from_email" | "channel" | "mailbox_id" | "priority" | "severity" | "status" | "tag" | "sentiment" | "ai_decide"
   /** contracts/teams.md: equals/not_equals with an id (team and widget also "none"); received_at also contains. */
-  | "team_id" | "brand_id" | "widget_id" | "received_at"
+  | "assignee_id" | "team_id" | "brand_id" | "widget_id" | "received_at"
   /** A ticket custom field, or the ticket contact's. */
   | `field.${string}` | `contact.field.${string}`;
 /** `eq` is the AI sentiment condition's operator (contracts/ai.md). */
@@ -791,6 +802,8 @@ export type ProviderSendAs = {
   addresses: { email: string; display_name: string; verified: boolean }[];
 };
 export type AliasSettingsInput = { display_name?: string; signature_html?: string; brand_id?: string | null; send_as?: AliasSendAs };
+/** accounts: any of the member's addresses, shared accounts only, or addresses at the mailbox's own domains. */
+export type MailboxPersonalReplies = { enabled: boolean | null; reply_to: "address" | "mailbox" | null; accounts: "any" | "shared" | "domain" };
 export type Mailbox = {
   id: string;
   name: string;
@@ -826,6 +839,8 @@ export type Mailbox = {
   from_name_format: string;
   /** Its team is private: only that team's members send from it. */
   private: boolean;
+  /** Replies on its tickets from members' own Collab addresses (contracts/collab.md "Answering tickets"); null follows the workspace. */
+  personal_replies?: MailboxPersonalReplies;
   /** Website contact forms (exact addresses or "@domain"); their authenticated mail is from the visitor in Reply-To. Admins only. */
   trusted_form_senders?: string[];
   signature_html: string;
@@ -915,7 +930,20 @@ export type IntegrationProvider = {
   token_url?: string;
   starters: IntegrationStarter[];
 };
-export type IntegrationTool = { name: string; title: string; description: string; read_only: boolean; enabled: boolean };
+export type IntegrationTool = {
+  name: string;
+  title: string;
+  description: string;
+  /** Runs without approval: the server marks it read-only and no admin set it to ask first. */
+  read_only: boolean;
+  /** The server marks it read-only (its own hint). */
+  read_only_hint: boolean;
+  /** An admin set it to wait for approval anyway. */
+  ask_first: boolean;
+  /** A write an admin lets run without asking (auto_tools); ask_first wins over it. */
+  auto_run: boolean;
+  enabled: boolean;
+};
 export type Integration = {
   id: string;
   /** A catalog key, or "custom". */
@@ -1184,6 +1212,9 @@ export type ReportsOverview = {
 export type ReportsGroup = { created: number; solved: number; open_now: number; first_response_p50_minutes: number | null };
 
 export type MailboxTestLeg = { ok: boolean; error: string; /** The server's reply, scrubbed. */ detail?: string };
+/** GET /v1/mailboxes/{id}/usage: the tickets that reply from a mailbox, before removing it. */
+export type MailboxUsage = { tickets: number; open: number };
+
 export type MailboxTest = {
   inbound: MailboxTestLeg;
   outbound: MailboxTestLeg;
@@ -1427,7 +1458,7 @@ export type AutoRecharge = {
 };
 export type AutoRechargePatch = Partial<Pick<AutoRecharge, "enabled" | "threshold_usd" | "amount_usd" | "monthly_limit_usd">>;
 export type AIFeature =
-  | "summarize" | "rewrite" | "translate" | "triage" | "decide" | "answer_check" | "copilot" | "draft_reply" | "answer" | "answer_email" | "playground" | "kb_draft" | "assistant";
+  | "summarize" | "rewrite" | "translate" | "triage" | "decide" | "answer_check" | "copilot" | "draft_reply" | "answer" | "answer_email" | "playground" | "kb_draft" | "assistant" | "assistant_peer";
 /**
  * GET /v1/billing/usage (contracts/billing.md). `from`/`to` are RFC 3339; `to` is exclusive.
  * Every usd value is US dollars, a number with up to 6 decimals.
@@ -1448,6 +1479,9 @@ export type BillingUsage = {
 
 // AI (contracts/ai.md).
 export type Sentiment = "positive" | "neutral" | "negative" | "frustrated";
+/** The built-in changes a workspace may let Ollie make without asking. Replies and the API's changes always ask. */
+export const ASSISTANT_AUTO_TOOLS = ["update_ticket", "bulk_update_tickets", "add_note", "create_kb_draft", "create_view", "create_automation_draft"] as const;
+export type AssistantAutoTool = (typeof ASSISTANT_AUTO_TOOLS)[number];
 export type AISettings = {
   enabled: boolean;
   auto_triage: boolean;
@@ -1455,6 +1489,10 @@ export type AISettings = {
   widget_answers: boolean;
   /** The assistant panel (Ollie). Default true. */
   assistant: boolean;
+  /** Members may let teammates' Ollie ask theirs about their own mail (contracts/ai.md "Asking a teammate"). Default false. */
+  assistant_peer?: boolean;
+  /** Built-in changes Ollie makes without asking (contracts/ai.md "Approvals"). Default empty. */
+  assistant_auto?: AssistantAutoTool[];
   tone: string;
   reply_language: "customer" | "workspace";
   instructions: string;
@@ -1473,6 +1511,40 @@ export type AISettings = {
   /** Ask for an email before handing off when the visitor has none. Default true. */
   widget_collect_email?: boolean;
 };
+// Asking a teammate's Ollie (contracts/ai.md "Asking a teammate"): the caller's own sharing.
+export type PeerMode = "verbatim" | "summary" | "none";
+export type PeerResult = "answered" | "declined" | "not_shared" | "failed";
+export type PeerPerson = { id: string; name: string; email: string; avatar_url?: string | null };
+export type PeerAccount = { id: string; email: string; name: string; provider: "google" | "microsoft" | "imap"; mode: PeerMode; chosen: boolean };
+/** GET /v1/me/assistant-peer: the caller's own settings in this workspace. */
+export type PeerSettings = {
+  /** The workspace allows it (an admin's switch, AI, Ollie and Collab on). */
+  available: boolean;
+  enabled: boolean;
+  share_with: "everyone" | "chosen";
+  audience: { users: PeerPerson[]; teams: { id: string; name: string }[] };
+  /** Every own mail account, new ones at default_mode. */
+  all_accounts: boolean;
+  default_mode: PeerMode;
+  /** The caller's own Collab accounts; mode is the effective one, chosen marks an explicit choice. */
+  accounts: PeerAccount[];
+  /** Up to 2,000 characters, added to the instructions of the caller's answering Ollie. */
+  rules: string;
+  updated_at: string | null;
+};
+/** PUT /v1/me/assistant-peer (a full replace). */
+export type PeerSettingsInput = {
+  enabled: boolean;
+  share_with: "everyone" | "chosen";
+  audience: { user_ids: string[]; team_ids: string[] };
+  all_accounts: boolean;
+  default_mode: PeerMode;
+  accounts: { id: string; mode: PeerMode }[];
+  rules: string;
+};
+/** One ask made to the caller (GET /v1/me/assistant-peer/asks), kept 90 days. */
+export type PeerAsk = { id: string; asker: PeerPerson; question: string; answer: string; result: PeerResult; sources: number; created_at: string };
+
 /** A model the instance offers (GET /v1/ai/models). */
 export type AIModel = {
   id: string;
@@ -1850,7 +1922,7 @@ export type BotBody = { name: string; role?: string; language?: string; look?: B
 export type BotDraft = { name?: string; role?: string; language?: string; personality?: Partial<BotPersonality> };
 
 // History imports (contracts/imports.md).
-export type ImportSource = "zendesk" | "helpscout" | "freshdesk" | "intercom" | "csv";
+export type ImportSource = "zendesk" | "helpscout" | "freshdesk" | "intercom" | "front" | "csv";
 export type ImportStatus = "running" | "paused" | "completed" | "failed" | "canceled" | "undoing" | "undone";
 export type ImportCounts = {
   tickets: number;
@@ -2263,6 +2335,8 @@ export type MailMessage = {
   in_reply_to_id?: string | null;
   /** The account's address (its own or an alias) it was sent from or written to; null when none. */
   own_address?: string | null;
+  /** Mail the account wrote: sent from opendesk, a draft, or in its Sent or Drafts at the provider. A From naming the account does not make mail outgoing. */
+  outgoing: boolean;
 };
 
 /** How a message came, read from its source (GET /v1/collab/messages/{id}/details). */
@@ -2319,6 +2393,8 @@ export type MailThreadDetail = {
   /** The conversation's own shares. */
   shares: MailAudience;
   can_act: boolean;
+  /** The ticket it answered or was answered from, when you see it (contracts/collab.md "Answering tickets"). */
+  ticket?: { id: string; number: number; subject: string } | null;
 };
 
 /** One address across the conversations you see (contracts/collab.md "People"). */
@@ -2405,3 +2481,38 @@ export type MailCounts = {
 
 /** `collab.changed` event data. */
 export type CollabChangedEvent = { account_id: string | null; thread_ids: string[]; folders: boolean };
+
+// Workspaces together (contracts/api.md "Workspaces together").
+export type TogetherMode = "together" | "separate";
+export type TogetherLayout = "grouped" | "mixed";
+export type WorkspacePrefs = {
+  mode: TogetherMode;
+  /** Whether the person chose the mode (false: the default, together). */
+  mode_set: boolean;
+  layout: TogetherLayout;
+  /** Workspace ids in sidebar order; the rest follow in joining order. */
+  order: string[];
+  /** Workspaces left out of the sidebar, the Everywhere lists and the bell. */
+  hidden: string[];
+  /** Folded sidebar groups: workspace ids, or "everywhere". */
+  collapsed: string[];
+  /** Sidebar items by workspace-qualified id (<workspace id>/view:<id>). */
+  items: { hidden: string[]; order: string[] };
+  /** The Everywhere lists: assigned to me and all mail, across workspaces. */
+  everywhere: boolean;
+  updated_at?: string;
+};
+export type WorkspacePrefsInput = Partial<Omit<WorkspacePrefs, "mode_set" | "updated_at" | "mode">> & { mode?: TogetherMode | "" };
+export type WorkspaceOverview = {
+  id: string;
+  name: string;
+  slug: string;
+  avatar_url: string | null;
+  role: Role;
+  suspended: boolean;
+  unread_notifications: number;
+  /** GET /v1/tickets/counts there; null while suspended. */
+  ticket_counts: TicketCounts | null;
+  /** GET /v1/collab/counts there; null without Collab. */
+  mail_counts: MailCounts | null;
+};

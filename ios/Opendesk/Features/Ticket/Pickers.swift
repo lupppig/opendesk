@@ -242,3 +242,127 @@ struct LabelPicker: View {
         dismiss()
     }
 }
+
+/// A short list of choices in a sheet, without search: status, priority, severity.
+struct ChoiceSheet<Content: View>: View {
+    let title: String
+    var footnote: String?
+    @ViewBuilder var content: () -> Content
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    Panel { content() }
+                    if let footnote {
+                        Text(footnote).font(ODFont.footnote).foregroundStyle(Theme.fg3).padding(.horizontal, 4)
+                    }
+                }
+                .padding(16)
+            }
+            .background(Theme.chrome.ignoresSafeArea())
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+            }
+        }
+    }
+}
+
+/// One row of a `ChoiceSheet`: a glyph, a title, an optional hint, and a check on the current one.
+struct ChoiceRow<Leading: View>: View {
+    let title: String
+    var hint: String?
+    var selected = false
+    let action: () -> Void
+    @ViewBuilder var leading: () -> Leading
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        Button {
+            Haptics.selection()
+            action()
+            dismiss()
+        } label: {
+            HStack(spacing: 12) {
+                leading().frame(width: 22)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title).font(ODFont.sans(15)).foregroundStyle(Theme.fg)
+                    if let hint { Text(hint).font(ODFont.footnote).foregroundStyle(Theme.fg3) }
+                }
+                Spacer()
+                if selected { Image(systemName: "checkmark").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.fg) }
+            }
+            .padding(.horizontal, 14)
+            .frame(minHeight: 48)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(RowPressStyle())
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+struct StatusPicker: View {
+    let current: TicketStatus
+    let onPick: (TicketStatus) -> Void
+
+    var body: some View {
+        ChoiceSheet(title: "Status", footnote: "Pending waits on the customer; their next message opens the ticket again.") {
+            ForEach(Array(TicketStatus.allCases.enumerated()), id: \.element) { index, status in
+                if index > 0 { Hairline(inset: 48) }
+                ChoiceRow(title: status.title, hint: status.hint, selected: status == current, action: { onPick(status) }) {
+                    StatusIcon(status: status, size: 16)
+                }
+            }
+        }
+    }
+}
+
+struct PriorityPicker: View {
+    let current: Priority
+    let onPick: (Priority) -> Void
+
+    var body: some View {
+        ChoiceSheet(title: "Priority") {
+            ForEach(Array(Priority.allCases.enumerated()), id: \.element) { index, priority in
+                if index > 0 { Hairline(inset: 48) }
+                ChoiceRow(title: priority.title, selected: priority == current, action: { onPick(priority) }) {
+                    PriorityIcon(priority: priority, size: 16)
+                }
+            }
+        }
+    }
+}
+
+struct SeverityPicker: View {
+    let current: Severity?
+    let onPick: (Severity?) -> Void
+
+    var body: some View {
+        ChoiceSheet(title: "Severity", footnote: "How much of the customer's work is affected, from a full outage to a small annoyance.") {
+            ChoiceRow(title: "No severity", selected: current == nil, action: { onPick(nil) }) {
+                Image(systemName: "minus").font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.fg4)
+            }
+            ForEach(Severity.allCases) { severity in
+                Hairline(inset: 48)
+                ChoiceRow(title: severity.title, hint: severity.hint, selected: severity == current, action: { onPick(severity) }) {
+                    SeverityChip(severity: severity)
+                }
+            }
+        }
+    }
+}
+
+extension TicketStatus {
+    var hint: String {
+        switch self {
+        case .open: "Needs an answer from the team"
+        case .pending: "Waiting on the customer"
+        case .onHold: "Waiting on someone else, or snoozed"
+        case .solved: "Answered; a reply opens it again"
+        case .closed: "Done and kept for reference"
+        }
+    }
+}

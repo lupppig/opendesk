@@ -6,25 +6,27 @@ import { AlertCircle, ExternalLink, KeyRound, Settings2 } from "lucide-react";
 import { Fragment, type ReactNode } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Segmented } from "@/components/ui/tabs";
 import { api } from "@/lib/api/endpoints";
 import { isApiError } from "@/lib/api/client";
-import type { MailDetection, MailboxCause, MailboxConnectOptions, MailboxTestLeg, MailEndpoint } from "@/lib/api/types";
+import type { MailDetection, MailboxCause, MailboxConnectOptions, MailboxTestLeg, MailEndpoint, SyncStart } from "@/lib/api/types";
 import { cn } from "@/lib/cn";
 import { config } from "@/lib/config";
 import { tone } from "@/lib/tones";
 import { ProviderLogo } from "./ProviderLogo";
+import { qk } from "@/lib/queries";
 
 const DOCS_OAUTH = "https://docs.opendesk.sh/self-hosting/configuration/#mailbox-sign-in";
 
 export function useConnectOptions() {
-  return useQuery({ queryKey: ["mailboxes", "connect-options"], queryFn: () => api.mailboxes.connectOptions(), staleTime: 5 * 60_000 });
+  return useQuery({ queryKey: qk.of("mailboxes", "connect-options"), queryFn: () => api.mailboxes.connectOptions(), staleTime: 5 * 60_000 });
 }
 
 /** Detection for an address, keyed by its domain. */
 export function useMailDetection(email: string | null) {
   const domain = email?.split("@")[1]?.toLowerCase() ?? "";
   return useQuery({
-    queryKey: ["mailboxes", "detect", domain],
+    queryKey: qk.of("mailboxes", "detect", domain),
     queryFn: () => api.mailboxes.detect(email!),
     enabled: !!domain,
     staleTime: 10 * 60_000,
@@ -71,6 +73,42 @@ export function oauthOffered(opts: MailboxConnectOptions | undefined, p: Provide
 export function sendProviders(det: MailDetection | undefined, opts: MailboxConnectOptions | undefined): Provider[] {
   const candidates: Provider[] = det?.oauth ? [det.oauth] : det?.host ? [] : ["google", "microsoft"];
   return candidates.filter((p) => oauthOffered(opts, p));
+}
+
+/**
+ * The sign-in a forwarding mailbox can start reading its inbox over IMAP with, from its own
+ * page: its connected provider, else the one its domain's mail is hosted at, while the
+ * instance syncs and offers that sign-in. None where the inbox can be read directly instead
+ * (apiOn), which the page offers in its place.
+ */
+export function syncProvider(
+  forwarding: boolean,
+  signedIn: Provider | null,
+  det: MailDetection | undefined,
+  opts: MailboxConnectOptions | undefined,
+): Provider | null {
+  const p = forwarding ? (signedIn ?? det?.oauth ?? null) : null;
+  return p && !apiOn(opts, p) && syncOn(opts) && oauthOffered(opts, p) ? p : null;
+}
+
+/** Where reading the inbox starts: the last 7 days, or only new mail when the history came over by import. */
+export function SyncStartField({ value, onChange }: { value: SyncStart; onChange: (v: SyncStart) => void }) {
+  const { t } = useTranslation("settingsChannels");
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-[12.5px] font-medium">{t("wizard.syncStart")}</span>
+      <Segmented
+        value={value}
+        onChange={onChange}
+        options={[
+          { value: "recent", label: t("wizard.syncStartRecent") },
+          { value: "new", label: t("wizard.syncStartNew") },
+        ]}
+        className="self-start"
+      />
+      <p className="text-xs leading-[18px] text-fg-3">{value === "new" ? t("wizard.syncStartNewHint") : t("wizard.syncStartRecentHint")}</p>
+    </div>
+  );
 }
 
 /** A self-host without the provider's OAuth client says how to set it up. */

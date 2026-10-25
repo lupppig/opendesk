@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/useopendesk/opendesk/internal/auth"
+	"github.com/useopendesk/opendesk/internal/collab"
 	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/deps"
 	"github.com/useopendesk/opendesk/internal/domain"
@@ -26,14 +27,23 @@ import (
 // the shared validation and delivery behavior; callers must first authorize the
 // principal for the ticket with domain.LoadVisibleTicket.
 type MessageInput struct {
-	Kind          string   `json:"kind" enum:"reply,note"`
-	BodyHTML      string   `json:"body_html" maxLength:"500000"`
-	Cc            []string `json:"cc,omitempty" maxItems:"20"`
-	Bcc           []string `json:"bcc,omitempty" maxItems:"20"`
-	AttachmentIDs []string `json:"attachment_ids,omitempty" maxItems:"20"`
-	Status        *string  `json:"status,omitempty" enum:"open,pending,on_hold,solved,closed" doc:"Applied after the message is added"`
-	MailboxID     string   `json:"mailbox_id,omitempty" doc:"Replies: send from this address of the ticket's brand (the caller must be allowed to send from it); it becomes the ticket's reply address"`
-	FromNoteID    string   `json:"from_note_id,omitempty" doc:"Replies: an internal note of yours, without files, this reply is written from. The note stays as a marker pointing at the reply; only admins read what it said"`
+	Kind          string            `json:"kind" enum:"reply,note"`
+	BodyHTML      string            `json:"body_html" maxLength:"500000"`
+	Cc            []string          `json:"cc,omitempty" maxItems:"20"`
+	Bcc           []string          `json:"bcc,omitempty" maxItems:"20"`
+	AttachmentIDs []string          `json:"attachment_ids,omitempty" maxItems:"20"`
+	Status        *string           `json:"status,omitempty" enum:"open,pending,on_hold,solved,closed" doc:"Applied after the message is added"`
+	MailboxID     string            `json:"mailbox_id,omitempty" doc:"Replies: send from this address of the ticket's brand (the caller must be allowed to send from it); it becomes the ticket's reply address"`
+	FromNoteID    string            `json:"from_note_id,omitempty" doc:"Replies: an internal note of yours, without files, this reply is written from. The note stays as a marker pointing at the reply; only admins read what it said"`
+	FromAccount   *FromAccountInput `json:"from_account,omitempty" doc:"Email replies: send from one of your own Collab addresses instead of the ticket's reply address, which stays as it is"`
+}
+
+// FromAccountInput is the Collab address a reply goes out from (contracts/collab.md
+// "Answering tickets").
+type FromAccountInput struct {
+	AccountID string `json:"account_id"`
+	Email     string `json:"email,omitempty" maxLength:"254" doc:"One of the account's addresses that can send; left out: the one you last answered this ticket from in that account, else its default"`
+	ReplyTo   string `json:"reply_to,omitempty" maxLength:"254" doc:"address (the address's own reply-to), mailbox (the ticket's reply address) or an email address; left out: the workspace's collab_ticket_reply_to"`
 }
 
 const activitySelect = `SELECT a.id, a.ticket_id, a.actor_type, a.type, a.data, a.created_at, u.id, u.name, u.email, u.avatar_url
@@ -215,10 +225,32 @@ func PostMessage(ctx context.Context, tx pgx.Tx, d *deps.Deps, p *auth.Principal
 		WHERE t.workspace_id = $1 AND t.id = $2`, wid, tid).Scan(&channel, &subject, &mailboxID, &brand, &team, &mailboxEmail, &mailboxName, &contactEmail); err != nil {
 		return domain.Message{}, err
 	}
+	// A reply from the member's own Collab address leaves the reply address as it is.
+	var personal *collab.TicketFrom
+	if b.FromAccount != nil {
+		switch {
+		case b.Kind != "reply":
+			return domain.Message{}, httpx.Validation("from_account applies to replies")
+		case strings.TrimSpace(b.MailboxID) != "":
+			return domain.Message{}, httpx.Validation("send from mailbox_id or from_account, not both")
+		case channel != domain.ChannelEmail:
+			return domain.Message{}, httpx.Validation("from_account applies to email tickets")
+		}
+		accountID, err := hd.ParseRef(b.FromAccount.AccountID, "from_account.account_id")
+		if err != nil {
+			return domain.Message{}, err
+		}
+		from, err := collab.TicketSender(ctx, d, tx, p, tid, accountID, b.FromAccount.Email, b.FromAccount.ReplyTo)
+		if err != nil {
+			return domain.Message{}, err
+		}
+		personal = &from
+	}
 	// The reply address: the one asked for (it becomes the ticket's), else the ticket's,
 	// else, for an email reply on a ticket without one, the brand's address of its team.
 	var reply *uuid.UUID
 	switch {
+	case personal != nil:
 	case strings.TrimSpace(b.MailboxID) != "":
 		if b.Kind != "reply" {
 			return domain.Message{}, httpx.Validation("mailbox_id applies to replies")
@@ -241,7 +273,7 @@ func PostMessage(ctx context.Context, tx pgx.Tx, d *deps.Deps, p *auth.Principal
 	// The address a reply actually goes out from must be one the caller may send from: a
 	// private team's address is for that team's members (contracts/teams.md "Reply address"),
 	// whether the reply names it or inherits it from the ticket.
-	if b.Kind == "reply" {
+	if b.Kind == "reply" && personal == nil {
 		from := mailboxID
 		if reply != nil {
 			from = reply
@@ -317,6 +349,10 @@ func PostMessage(ctx context.Context, tx pgx.Tx, d *deps.Deps, p *auth.Principal
 		nm.To, nm.Cc, nm.Bcc = []string{*contactEmail}, cc, bcc
 		nm.FromEmail, nm.FromName = str(mailboxEmail), str(mailboxName)
 		nm.MailboxID = mailboxID
+		if personal != nil {
+			nm.FromEmail, nm.FromName, nm.MailboxID = personal.Email, personal.Name, nil
+			nm.CollabAccountID, nm.CollabReplyTo = &personal.AccountID, personal.ReplyTo
+		}
 		nm.DeliveryStatus = "pending"
 	} else if len(b.Cc)+len(b.Bcc) > 0 {
 		return domain.Message{}, httpx.Validation("cc and bcc apply only to email replies")

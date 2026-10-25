@@ -34,7 +34,7 @@ import { LOCALE_NAMES, matchLocale, SUPPORTED } from "@/i18n";
 type DisplaySettings = { status_labels?: Overrides<TicketStatus>; priority_labels?: Overrides<Priority> };
 type Draft = {
   name: string;
-  settings: Required<Pick<WS, "timezone" | "help_center_enabled" | "help_center_title" | "csat_enabled" | "gravatar" | "domain_logos" | "undo_send_seconds" | "undo_send_chat_seconds" | "message_delete">> & {
+  settings: Required<Pick<WS, "timezone" | "help_center_enabled" | "help_center_title" | "csat_enabled" | "gravatar" | "domain_logos" | "undo_send_seconds" | "undo_send_chat_seconds" | "message_delete" | "collab_ticket_replies" | "collab_ticket_reply_to">> & {
     brand_color: string;
     locale: string;
     locale_fixed: boolean;
@@ -60,6 +60,8 @@ function toDraft(w: Workspace): Draft {
       undo_send_seconds: w.settings.undo_send_seconds ?? UNDO_SEND_DEFAULT,
       undo_send_chat_seconds: w.settings.undo_send_chat_seconds ?? UNDO_SEND_CHAT_DEFAULT,
       message_delete: w.settings.message_delete ?? "own",
+      collab_ticket_replies: w.settings.collab_ticket_replies ?? true,
+      collab_ticket_reply_to: w.settings.collab_ticket_reply_to ?? "address",
     },
   };
 }
@@ -99,6 +101,8 @@ export default function WorkspaceSettings() {
     }
   };
   const assignModeLabel = t(`workspace.assignModes.${ws?.settings.auto_assign ?? "none"}`);
+  // Replies from members' own mail accounts are Collab's (contracts/collab.md "Answering tickets").
+  const { data: collab } = useQuery(q.collabStatus());
 
   const tzItems = useMemo(() => timezones().map((t) => ({ value: t, label: t.replace(/_/g, " ") })), []);
 
@@ -287,6 +291,28 @@ export default function WorkspaceSettings() {
               ]}
             />
           </Row>
+          {collab?.enabled && (
+            <Row label={t("workspace.collabReplies")} description={t("workspace.collabRepliesHint")}>
+              <Switch
+                aria-label={t("workspace.collabReplies")}
+                checked={draft.settings.collab_ticket_replies}
+                onCheckedChange={(v) => set("collab_ticket_replies", v)}
+                disabled={!canEdit}
+              />
+            </Row>
+          )}
+          {collab?.enabled && draft.settings.collab_ticket_replies && (
+            <Row label={t("workspace.collabReplyTo")} description={t("workspace.collabReplyToHint")}>
+              <Segmented
+                value={draft.settings.collab_ticket_reply_to}
+                onChange={(v) => set("collab_ticket_reply_to", v)}
+                options={[
+                  { value: "address", label: t("workspace.collabReplyToAddress") },
+                  { value: "mailbox", label: t("workspace.collabReplyToMailbox") },
+                ]}
+              />
+            </Row>
+          )}
           <Row label={t("workspace.autoAssign")} description={assignModeLabel}>
             <Button asChild size="sm" variant="ghost" iconRight={<ArrowRight className="size-3.5" />}>
               <Link to="/settings/assignment">{t("workspace.autoAssignLink")}</Link>

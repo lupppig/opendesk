@@ -390,6 +390,26 @@ type CollabCleanupArgs struct{}
 
 func (CollabCleanupArgs) Kind() string { return "collab.cleanup" }
 
+// CollabSendTicketReplyArgs sends an email reply on a ticket from its author's own Collab
+// address (messages.collab_account_id; contracts/collab.md "Answering tickets"). Owner: collab.
+type CollabSendTicketReplyArgs struct {
+	WorkspaceID uuid.UUID `json:"workspace_id"`
+	MessageID   uuid.UUID `json:"message_id"`
+}
+
+func (CollabSendTicketReplyArgs) Kind() string { return "collab.send_ticket_reply" }
+
+// CollabTicketAnswerArgs takes a Collab message that answers a ticket reply sent from the
+// account into that ticket, as an email to its reply address (contracts/collab.md
+// "Answering tickets"). Owner: collab.
+type CollabTicketAnswerArgs struct {
+	WorkspaceID uuid.UUID `json:"workspace_id"`
+	MessageID   uuid.UUID `json:"message_id"` // collab_messages.id
+	TicketID    uuid.UUID `json:"ticket_id"`
+}
+
+func (CollabTicketAnswerArgs) Kind() string { return "collab.ticket_answer" }
+
 // SeedTestWorkspaceArgs fills a test workspace with one batch of sample data
 // (internal/sample) and records it in workspaces.sample_data (contracts/admin.md "Test
 // workspaces"). Batch numbers a workspace's batches from 1; the generator's seed comes

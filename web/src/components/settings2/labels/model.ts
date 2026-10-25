@@ -142,7 +142,7 @@ export function useLabelStructureWrites() {
       await api.tags.merge(id, into);
       qc.setQueryData<ApiTag[]>(qk.tags, (old) => old?.filter((t) => t.id !== id));
       refresh();
-      void qc.invalidateQueries({ queryKey: ["tickets"] });
+      void qc.invalidateQueries({ queryKey: qk.of("tickets") });
     },
     saveGroup: async (id: string | null, v: { name: string; color: Tone | null; exclusive: boolean }) => {
       const g = id ? await api.tagGroups.update(id, v) : await api.tagGroups.create(v);

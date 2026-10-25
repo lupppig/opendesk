@@ -149,11 +149,12 @@ workspace's chosen models.
 | Agent playground reply, and each agent test answered or graded in a test run | `playground` | $0.03 |
 | Draft a KB article from tickets | `kb_draft` | $0.05 |
 | Ollie, the assistant (each model turn of a run) | `assistant` | $0.02 |
+| A teammate's Ollie answering an ask (one call, paid by the workspace, attributed to the asker) | `assistant_peer` | $0.01 |
 
 A typical call's size (`internal/ai` `typicalTokens`, input / output tokens): summarize 3,000 / 300,
 rewrite 800 / 400, translate 800 / 500, triage 1,500 / 150, decide 1,500 / 100, copilot 4,000 / 400,
 draft_reply 4,000 / 500, answer 5,000 / 400, answer_email 5,000 / 500, playground 5,000 / 400,
-kb_draft 8,000 / 1,500, assistant 6,000 / 400. A model's `typical_reply_usd` is a draft reply of this size.
+kb_draft 8,000 / 1,500, assistant 6,000 / 400, assistant_peer 4,000 / 400. A model's `typical_reply_usd` is a draft reply of this size.
 
 Jev decisions cost a fraction of an LLM call (per input token, output free), so triage and the
 widget relevance check use only a little. Usage rows record decision calls with model `jev`.

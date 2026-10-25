@@ -47,6 +47,8 @@ type CoreWorkspaceSettings struct {
 	LocaleFixed       *bool   `json:"locale_fixed,omitempty" doc:"Customer-facing pages always use locale (a brand's own, else the workspace's), whatever the visitor's browser. Default false"`
 	LabelCreation     *string `json:"label_creation,omitempty" enum:"anyone,admins" doc:"Who may create labels by applying a new name"`
 	MessageDelete     *string `json:"message_delete,omitempty" enum:"off,own,all" doc:"Which messages agents may delete: none, their own internal notes, or any agent's notes and replies. Admins may delete any message. Default own"`
+	CollabReplies     *bool   `json:"collab_ticket_replies,omitempty" doc:"With Collab, members may answer email tickets from their own mail accounts. Default true"`
+	CollabReplyTo     *string `json:"collab_ticket_reply_to,omitempty" enum:"address,mailbox" doc:"Where answers to a reply sent from a member's own address go when it names no Reply-To: the address's own reply-to (else the address), or the ticket's reply address. Default address"`
 	UndoSendSeconds   *int    `json:"undo_send_seconds,omitempty" enum:"0,5,10,20,30" doc:"Seconds the app holds an agent's reply on an email (or any other non-chat) ticket, with a way to take it back or make it a note, before sending it. Default 5; 0 sends at once"`
 	UndoSendChatSecs  *int    `json:"undo_send_chat_seconds,omitempty" enum:"0,5,10,20,30" doc:"The same for replies on chat tickets. Default 0: a chat reply goes at once"`
 	// StatusLabels and PriorityLabels rename and recolour the fixed values for display only.
@@ -257,6 +259,15 @@ func validateSettings(s *CoreWorkspaceSettings) (map[string]any, error) {
 	}
 	if s.DomainLogos != nil {
 		out["domain_logos"] = *s.DomainLogos
+	}
+	if s.CollabReplies != nil {
+		out["collab_ticket_replies"] = *s.CollabReplies
+	}
+	if s.CollabReplyTo != nil {
+		if !slices.Contains([]string{"address", "mailbox"}, *s.CollabReplyTo) {
+			return nil, httpx.Validation("collab_ticket_reply_to must be address or mailbox.")
+		}
+		out["collab_ticket_reply_to"] = *s.CollabReplyTo
 	}
 	return out, nil
 }

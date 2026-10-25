@@ -49,7 +49,8 @@ Self-hosted = `opendesk` + `realtime` + `postgres` behind Caddy on one domain: `
   (Slack, Discord and Telegram threads where agents work tickets; `contracts/support-channels.md`), `internal/admin`
   (the instance admin API `/v1/admin/*`, its own sessions and audit log; `contracts/admin.md`),
   and `internal/collab` (Collab: members' own mail accounts, private or shared, synced both ways
-  with Gmail, Microsoft Graph or IMAP; never tickets; `contracts/collab.md`). Plan limits and AI usage go
+  with Gmail, Microsoft Graph or IMAP; never tickets, except answers to a ticket reply a member
+  sent from their own address; `contracts/collab.md`). Plan limits and AI usage go
   through `d.Plan` (`internal/plan`, `contracts/billing.md`); AI through `internal/ai`
   (`contracts/ai.md`). Each exposes `Register`, `RegisterWorkers`, `Periodic`,
   `Background` (see `internal/app`). Shared ticket writes live in `internal/domain`:
@@ -177,6 +178,8 @@ Input and output
   Collab mail is inbound email: the same sanitizing before storage and the same frame.
 - A private Collab account and its mail are visible to the member who connected it alone,
   admins included; Collab events go only to the people who see what changed (`events.Event.Users`).
+  Its mail reaches a ticket only by the member's choice: answers to a ticket reply sent from their
+  address are copied to that ticket (contracts/collab.md "Answering tickets").
 - Events carry only what every receiver may read: a notification goes to its recipient
   (`Users`), settings whose reads need admin to admins (`events.Event.Admins`).
 - Webhook and other outbound URLs are HTTPS and refuse private, loopback and link-local

@@ -186,8 +186,33 @@ function storeToken(userId: string | null, token: string | null, expiresIn = 900
 export function setWorkspaceId(id: string | null) {
   state.workspaceId = id;
 }
+/** The focus workspace: the one pages work in and requests go to by default. */
 export function getWorkspaceId() {
   return state.workspaceId;
+}
+
+// Every request targets exactly one workspace (contracts/tokens.md "Requests"). It is the
+// focus workspace unless something on the stack runs inside `inWorkspace`: a query of
+// another workspace's cache key, a realtime event of another workspace, a sidebar group.
+// Only the synchronous part of `fn` sees it, which is where requests read it: `raw`
+// takes the workspace before its first await.
+let ambient: string | null = null;
+
+/** Run fn with requests and query keys aimed at workspace `wid` (synchronously). */
+export function inWorkspace<T>(wid: string | null | undefined, fn: () => T): T {
+  if (!wid) return fn();
+  const prev = ambient;
+  ambient = wid;
+  try {
+    return fn();
+  } finally {
+    ambient = prev;
+  }
+}
+
+/** The workspace a request or query key made right now belongs to. */
+export function scopeWorkspace(): string | null {
+  return ambient ?? state.workspaceId;
 }
 
 export function apiUrl(path: string) {
@@ -243,16 +268,17 @@ export type RequestOptions = {
   query?: Record<string, string | number | boolean | null | undefined | string[]>;
   body?: unknown;
   headers?: Record<string, string>;
-  /** Send OD-Workspace. Default true. */
-  workspace?: boolean;
+  /**
+   * OD-Workspace: true (default) sends the workspace in scope (see inWorkspace), false
+   * none, and an id that workspace (with `as`, one of that account's).
+   */
+  workspace?: boolean | string;
   /** Send the bearer token and refresh on 401. Default true. */
   auth?: boolean;
   /** Attach an Idempotency-Key (POST creates). Reused on the retry after refresh. */
   idempotent?: boolean;
   /** Send as this signed-in account (user id) rather than the active one. */
   as?: string;
-  /** Send OD-Workspace with this workspace rather than the selected one (with `as`, that account's). */
-  workspaceId?: string;
   signal?: AbortSignal;
   /** Let the request outlive the page (sent while it unloads). Bodies over KEEPALIVE_MAX go without. */
   keepalive?: boolean;
@@ -322,7 +348,8 @@ async function raw(method: string, path: string, opts: RequestOptions = {}): Pro
   // A request belongs to the account (and workspace) it started under, even if
   // the person switches while it is in flight.
   let account = opts.as ?? state.userId;
-  const workspaceId = opts.workspaceId ?? (opts.as && opts.as !== state.userId ? null : state.workspaceId);
+  const workspaceId =
+    typeof opts.workspace === "string" ? opts.workspace : opts.as && opts.as !== state.userId ? null : scopeWorkspace();
 
   // Refresh ahead of expiry rather than eating a 401 on every 15-minute boundary.
   const tok = tokenFor(account);
@@ -487,6 +514,7 @@ export function __resetClientForTests() {
   state.workspaceId = null;
   state.userId = null;
   state.baseUrl = "";
+  ambient = null;
   parked.clear();
   refreshing.clear();
   sessionListeners.clear();

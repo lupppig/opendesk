@@ -310,7 +310,8 @@
     "received_at": "Address written to",
     "team_id": "Team",
     "brand_id": "Brand",
-    "widget_id": "Chat widget"
+    "widget_id": "Chat widget",
+    "assignee_id": "Assignee"
   },
   "ops": {
     "contains": "contains",

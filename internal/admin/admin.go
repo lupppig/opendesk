@@ -175,6 +175,9 @@ type reqInfo struct {
 	Origin    string
 	Cookie    string // the od_admin refresh cookie
 	admin     *Admin
+	// resolveErr is why a Bearer token could not be checked (the database did not
+	// answer): the request fails with it instead of reading as signed out.
+	resolveErr error
 }
 
 func info(ctx context.Context) reqInfo {
@@ -208,39 +211,45 @@ func (s *svc) resolve(ctx huma.Context, next func(huma.Context)) {
 		}
 		scheme, cred, ok := strings.Cut(r.Header.Get("Authorization"), " ")
 		if ok && strings.EqualFold(scheme, "Bearer") && cred != "" {
-			ri.admin = s.adminFromToken(r.Context(), cred, ri)
+			ri.admin, ri.resolveErr = s.adminFromToken(r.Context(), cred, ri)
 		}
 	}
 	next(huma.WithValue(ctx, reqKey{}, ri))
 }
 
-func (s *svc) adminFromToken(ctx context.Context, token string, ri reqInfo) *Admin {
+// adminFromToken is the admin behind an access token, or nil when it does not open a live
+// session. An error means the session could not be checked.
+func (s *svc) adminFromToken(ctx context.Context, token string, ri reqInfo) (*Admin, error) {
 	c, err := s.d.Tokens.Verify(token, auth.PurposeAdmin)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 	uid, err1 := uuid.Parse(c.Subject)
 	sid, err2 := uuid.Parse(c.SessionID)
 	if err1 != nil || err2 != nil {
-		return nil
+		return nil, nil
 	}
 	a := &Admin{UserID: uid, SessionID: sid, IP: ri.IP, UserAgent: ri.UserAgent}
 	err = s.d.DB.Pool.QueryRow(ctx, `SELECT u.email, u.name, a.role FROM admin_sessions s
 		JOIN users u ON u.id = s.user_id AND u.suspended_at IS NULL AND u.totp_enabled
 		JOIN instance_admins a ON a.user_id = s.user_id
 		WHERE s.id = $1 AND s.user_id = $2 AND s.revoked_at IS NULL AND s.expires_at > now()`, sid, uid).Scan(&a.Email, &a.Name, &a.Role)
-	if err != nil {
-		if !db.IsNotFound(err) {
-			s.d.Log.Error("admin: resolve session", "err", err)
-		}
-		return nil
+	if db.IsNotFound(err) {
+		return nil, nil
 	}
-	return a
+	if err != nil {
+		return nil, err
+	}
+	return a, nil
 }
 
 // require demands an admin with permission perm.
 func require(ctx context.Context, perm string) (*Admin, error) {
-	a := info(ctx).admin
+	ri := info(ctx)
+	if ri.resolveErr != nil {
+		return nil, httpx.Wrap(ri.resolveErr)
+	}
+	a := ri.admin
 	if a == nil {
 		return nil, httpx.E(401, "unauthenticated", "Sign in to the admin panel again.")
 	}

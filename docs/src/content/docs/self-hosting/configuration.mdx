@@ -167,7 +167,9 @@ How often notification emails may go to one person (see [How emails are paced](/
 | `INBOUND_DOMAIN` | `in.localhost` | Forwarding addresses are `<token>@INBOUND_DOMAIN`. |
 | `INBOUND_SECRET` | | Signs `POST /v1/inbound/email` (the `OD-Inbound-Signature` header, an HMAC-SHA256 with a timestamp). Empty turns the endpoint off. |
 | `INBOUND_SMTP_ADDR` | empty (off) | Address for the built-in SMTP receiver, such as `:2525` or `:25`. |
-| `INBOUND_AUTHSERV_ID` | empty | Comma-separated authserv-ids of the receiving servers whose `Authentication-Results` are believed, such as `mx.cloudflare.net` for the Cloudflare Email Worker. Only the first such header from the top counts. Gmail and Microsoft 365 mailboxes always trust their own provider. Leave empty with the built-in SMTP receiver: it does not check senders, so their DMARC result is unknown. |
+| `INBOUND_SMTP_RELAYS` | empty | Comma-separated IP addresses or CIDR ranges of mail servers that relay to the built-in receiver after checking senders. Only mail they hand over has its `INBOUND_AUTHSERV_ID` results believed; mail straight from a sender's server believes none. |
+| `INBOUND_SMTP_TLS_CERT`, `INBOUND_SMTP_TLS_KEY` | empty | PEM certificate and key files for the MX host name. With both, the built-in receiver offers STARTTLS (TLS 1.2 or newer) and reads the files again when they change. |
+| `INBOUND_AUTHSERV_ID` | empty | Comma-separated authserv-ids of the receiving servers whose `Authentication-Results` are believed, such as `mx.cloudflare.net` for the Cloudflare Email Worker. Only the first such header from the top counts. Gmail and Microsoft 365 mailboxes always trust their own provider. With the built-in SMTP receiver they count only for mail from a relay in `INBOUND_SMTP_RELAYS`: the receiver does not check senders, so mail straight from a sender's server has an unknown DMARC result. |
 
 See [Email setup](/self-hosting/email/).
 

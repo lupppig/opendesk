@@ -49,6 +49,14 @@ struct DemoWorkspace: Sendable {
     var notifications: [AppNotification] = []
     var presence: [String: [PresenceViewer]] = [:]
     var seq = 0
+    // Each area's own data, defined and seeded in its file (`DemoTickets.swift` and the rest).
+    var ticketExtras = DemoTicketExtras()
+    var inboxExtras = DemoInboxExtras()
+    var accountExtras = DemoAccountWorkspace()
+    var assistantExtras = DemoAssistantExtras()
+    var directory = DemoDirectory()
+    var mail = DemoMail()
+    var kb = DemoKB()
 
     var id: String { workspace.id }
 }
@@ -58,6 +66,7 @@ struct DemoWorld: Sendable {
     var workspaces: [DemoWorkspace]
     var devices: [PushDevice]
     var sessions: [SessionInfo]
+    var account = DemoAccount()
 }
 
 /// The people of Margin.
@@ -128,13 +137,28 @@ enum DemoSeed {
             SessionInfo(id: demoID(.session, 2), userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_6) AppleWebKit/605.1.15 Chrome/141.0 Safari/537.36", ip: "84.152.33.17", createdAt: ago(3 * 1440), lastUsedAt: ago(1), current: false, client: "web"),
             SessionInfo(id: demoID(.session, 3), userAgent: "opendesk-desktop/1.4.0", ip: "62.214.8.201", createdAt: ago(40 * 1440), lastUsedAt: ago(9 * 1440), current: false, client: "desktop"),
         ]
-        return DemoWorld(user: user, workspaces: [margin(), lumen()], devices: [device], sessions: sessions)
+        var workspaces = [margin(), lumen()]
+        for index in workspaces.indices { seedAreas(&workspaces[index]) }
+        var world = DemoWorld(user: user, workspaces: workspaces, devices: [device], sessions: sessions)
+        world.account = DemoAccount.seed(user: user)
+        return world
+    }
+
+    /// Fills each area's data once the workspace's people, labels and tickets exist.
+    static func seedAreas(_ ws: inout DemoWorkspace) {
+        ws.ticketExtras = DemoTicketExtras.seed(ws)
+        ws.inboxExtras = DemoInboxExtras.seed(ws)
+        ws.accountExtras = DemoAccountWorkspace.seed(ws)
+        ws.assistantExtras = DemoAssistantExtras.seed(ws)
+        ws.directory = DemoDirectory.seed(ws)
+        ws.mail = DemoMail.seed(ws)
+        ws.kb = DemoKB.seed(ws)
     }
 }
 
 // MARK: - Margin
 
-private extension DemoSeed {
+extension DemoSeed {
     static func margin() -> DemoWorkspace {
         let workspace = Workspace(
             id: marginID, name: "Margin", slug: "margin", avatarURL: nil,
@@ -245,7 +269,7 @@ private extension DemoSeed {
 
 // MARK: - Lumen Labs
 
-private extension DemoSeed {
+extension DemoSeed {
     static func lumen() -> DemoWorkspace {
         let workspace = Workspace(
             id: lumenID, name: "Lumen Labs", slug: "lumen", avatarURL: nil,
@@ -287,7 +311,7 @@ private extension DemoSeed {
 
 // MARK: - Margin's tickets
 
-private extension DemoSeed {
+extension DemoSeed {
     static func contact(_ n: Int, _ name: String, _ email: String) -> ContactRef {
         ContactRef(id: demoID(.contact, n), email: email, name: name, avatarURL: nil)
     }
@@ -335,7 +359,7 @@ private extension DemoSeed {
         .object(["value": value, "confidence": .number(confidence), "probability": .number(min(0.99, confidence + 0.08)), "model": .string("jev"), "decided_at": .string(stamp(ago(minutes)))])
     }
 
-    static func marginTickets() -> [Spec] {
+    fileprivate static func marginTickets() -> [Spec] {
         [
             // Mine.
             Spec(number: 1072, subject: "SSO login loops back to sign-in page", contact: dana, status: .open, priority: .urgent, severity: .sev1, assignee: .maya, team: support, tags: ["SSO", "Escalated", "Problem"], ollieRaised: true,

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { errorMessage, getActiveAccount, getWorkspaceId, jsonBytes, KEEPALIVE_MAX } from "@/lib/api/client";
+import { errorMessage, getActiveAccount, getWorkspaceId, inWorkspace, jsonBytes, KEEPALIVE_MAX } from "@/lib/api/client";
 import { api, type SendMessageBody } from "@/lib/api/endpoints";
 import type { Attachment, Channel, Message, Ticket, TicketDraft, WorkspaceSettings } from "@/lib/api/types";
 import { qk } from "@/lib/queries";
@@ -10,6 +10,7 @@ import { i18n } from "@/i18n";
 import { toast } from "@/components/ui/toast";
 import { statusLabel } from "../bits";
 import { applyPatch } from "../useTicketActions";
+import type { PersonalFrom } from "./personalFrom";
 
 // A reply waits out the workspace's undo window here, in the app and not on the server:
 // nothing of it reaches the customer, an automation or a channel until it is sent. It lives
@@ -38,6 +39,8 @@ export type Unsent = {
   cc: string[];
   bcc: string[];
   mailboxId?: string;
+  /** Sent from one of my own Collab addresses (Draft.fromAccount). */
+  fromAccount?: PersonalFrom | null;
   uploads: Upload[];
   /** The note this reply was made from (body.from_note_id): it stays as a marker pointing at the reply. */
   fromNote?: string;
@@ -83,42 +86,51 @@ type DeliverOpts = {
 export async function deliver(temp: Message, body: SendMessageBody, me: string, opts: DeliverOpts = {}): Promise<boolean> {
   const tid = temp.ticket_id;
   const origin = opts.origin ?? currentOrigin();
-  qc.setQueryData<Message[]>(qk.messages(tid), (old) => old && [...old.filter((x) => x.id !== temp.id), temp]);
-  const prevTicket = qc.getQueryData<Ticket>(qk.ticket(tid));
-  if ((body.status || body.mailbox_id) && prevTicket)
-    patchTicketEverywhere(qc, applyPatch(qc, prevTicket, { status: body.status, mailbox_id: body.mailbox_id }), me);
-  // A reply going out clears the ticket's shared draft (contracts/api.md "Drafts").
-  const prevDraft = body.kind === "reply" ? qc.getQueryData<TicketDraft | null>(qk.ticketDraft(tid)) : undefined;
-  if (prevDraft) qc.setQueryData(qk.ticketDraft(tid), null);
+  // The cache it touches is its workspace's, even when another is in focus by the time it goes.
+  const here = <T>(fn: () => T) => inWorkspace(origin.workspace, fn);
+  const { prevTicket, prevDraft } = here(() => {
+    qc.setQueryData<Message[]>(qk.messages(tid), (old) => old && [...old.filter((x) => x.id !== temp.id), temp]);
+    const prevTicket = qc.getQueryData<Ticket>(qk.ticket(tid));
+    if ((body.status || body.mailbox_id) && prevTicket)
+      patchTicketEverywhere(qc, applyPatch(qc, prevTicket, { status: body.status, mailbox_id: body.mailbox_id }), me);
+    // A reply going out clears the ticket's shared draft (contracts/api.md "Drafts").
+    const prevDraft = body.kind === "reply" ? qc.getQueryData<TicketDraft | null>(qk.ticketDraft(tid)) : undefined;
+    if (prevDraft) qc.setQueryData(qk.ticketDraft(tid), null);
+    return { prevTicket, prevDraft };
+  });
   try {
     const m = await api.tickets.send(tid, body, {
       keepalive: !!opts.keepalive,
       as: origin.account ?? undefined,
-      workspaceId: origin.workspace ?? undefined,
+      workspace: origin.workspace ?? undefined,
     });
-    qc.setQueryData<Message[]>(qk.messages(tid), (old) => {
-      if (!old) return old;
-      // The note it was written from stays as a marker pointing at it; only admins read what it said.
-      if (body.from_note_id)
-        old = old.map((x) => (x.id === body.from_note_id ? { ...x, sent_as_reply_id: m.id, deleted_at: x.deleted_at ?? m.created_at } : x));
-      // The socket may have delivered this message (and its delivery status) before
-      // the response arrived; that copy is newer than the response.
-      const live = old.find((x) => x.id === m.id);
-      const rest = old.filter((x) => x.id !== temp.id && x.id !== m.id);
-      return [...rest, live ?? m].sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
+    here(() => {
+      qc.setQueryData<Message[]>(qk.messages(tid), (old) => {
+        if (!old) return old;
+        // The note it was written from stays as a marker pointing at it; only admins read what it said.
+        if (body.from_note_id)
+          old = old.map((x) => (x.id === body.from_note_id ? { ...x, sent_as_reply_id: m.id, deleted_at: x.deleted_at ?? m.created_at } : x));
+        // The socket may have delivered this message (and its delivery status) before
+        // the response arrived; that copy is newer than the response.
+        const live = old.find((x) => x.id === m.id);
+        const rest = old.filter((x) => x.id !== temp.id && x.id !== m.id);
+        return [...rest, live ?? m].sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
+      });
+      if (body.from_note_id) void qc.invalidateQueries({ queryKey: qk.activities(tid) });
     });
-    if (body.from_note_id) void qc.invalidateQueries({ queryKey: qk.activities(tid) });
     return true;
   } catch (e) {
-    qc.setQueryData<Message[]>(qk.messages(tid), (old) =>
-      old?.map((x) => (x.id === temp.id ? { ...x, delivery_status: "failed", delivery_error: errorMessage(e, "Not sent") } : x)),
-    );
-    if (prevTicket) patchTicketEverywhere(qc, prevTicket, me);
-    if (prevDraft) qc.setQueryData(qk.ticketDraft(tid), prevDraft);
+    here(() => {
+      qc.setQueryData<Message[]>(qk.messages(tid), (old) =>
+        old?.map((x) => (x.id === temp.id ? { ...x, delivery_status: "failed", delivery_error: errorMessage(e, "Not sent") } : x)),
+      );
+      if (prevTicket) patchTicketEverywhere(qc, prevTicket, me);
+      if (prevDraft) qc.setQueryData(qk.ticketDraft(tid), prevDraft);
+    });
     if (opts.warn) toast.error(e, i18n.getFixedT(null, "inbox")("outbox.notSent"));
     return false;
   } finally {
-    void qc.invalidateQueries({ queryKey: qk.counts });
+    void here(() => qc.invalidateQueries({ queryKey: qk.counts }));
   }
 }
 

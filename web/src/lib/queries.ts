@@ -3,122 +3,301 @@
 // its component reads.
 
 import { infiniteQueryOptions, queryOptions, type QueryClient } from "@tanstack/react-query";
+import { scopeWorkspace } from "./api/client";
 import { api, rows, type CollabThreadQuery, type TicketListQuery } from "./api/endpoints";
 import type { Page, ReportsQuery, ReportsRange } from "./api/types";
 
+// Workspace-owned keys start with `ws:<workspace id>`: the cache holds several
+// workspaces at once (Together, contracts/api.md "Workspaces together") and a key of
+// one is never read for another. A key is made for the workspace in scope when it is
+// built: the focus workspace, or the one `inWorkspace` names. So a key is built where
+// it is used, never kept in a module constant. User-level keys (the account, its
+// sessions, public lookups) carry no workspace.
+
+const SCOPE = "ws:";
+
+/** The first element of every key of workspace `wid` (default: the one in scope). */
+export function scopeKey(wid: string | null = scopeWorkspace()): string {
+  return `${SCOPE}${wid ?? "none"}`;
+}
+
+const w = <T extends readonly unknown[]>(k: T) => [scopeKey(), ...k] as const;
+
+/** The workspace a key belongs to, or null for a user-level key. */
+export function keyWorkspace(key: readonly unknown[]): string | null {
+  const head = key[0];
+  return typeof head === "string" && head.startsWith(SCOPE) ? head.slice(SCOPE.length) : null;
+}
+
+/** The key without its workspace: what it names inside the workspace. */
+export function keyBody(key: readonly unknown[]): readonly unknown[] {
+  return keyWorkspace(key) === null ? key : key.slice(1);
+}
+
+/** The roots a user-level key may start with (src/lib/queryKeys.test.ts holds every literal key to it). */
+export const USER_ROOTS = new Set(["auth-config", "me", "public", "invitation-lookup", "oauth", "totp-setup"]);
+
 export const qk = {
+  /** Every key of one workspace (default: the one in scope). */
+  scope: (wid?: string | null) => [scopeKey(wid === undefined ? scopeWorkspace() : wid)] as const,
+  /** An ad hoc workspace key: [scope, ...parts]. Prefer a named key below. */
+  of: <T extends readonly unknown[]>(...parts: T) => w(parts),
+  /** The person's Together settings (contracts/api.md "Workspaces together"). */
+  workspacePrefs: ["me", "workspace-prefs"] as const,
+  /** Every workspace's sidebar numbers in one answer (GET /v1/me/overview). */
+  overview: ["me", "overview"] as const,
   authConfig: ["auth-config"] as const,
-  workspace: ["workspace"] as const,
+  get workspace() {
+    return w(["workspace"] as const);
+  },
   sessions: ["me", "sessions"] as const,
-  counts: ["tickets", "counts"] as const,
-  ticketLists: ["tickets", "list"] as const,
-  tickets: (q: TicketListQuery) => ["tickets", "list", q] as const,
-  ticket: (id: string) => ["tickets", "detail", id] as const,
-  messages: (id: string) => ["tickets", "messages", id] as const,
-  activities: (id: string) => ["tickets", "activities", id] as const,
+  get counts() {
+    return w(["tickets", "counts"] as const);
+  },
+  get ticketLists() {
+    return w(["tickets", "list"] as const);
+  },
+  tickets: (q: TicketListQuery) => w(["tickets", "list", q] as const),
+  ticket: (id: string) => w(["tickets", "detail", id] as const),
+  messages: (id: string) => w(["tickets", "messages", id] as const),
+  activities: (id: string) => w(["tickets", "activities", id] as const),
   /** Third-party threads (contracts/api.md "Threads"). */
-  threads: (id: string) => ["tickets", "threads", id] as const,
+  threads: (id: string) => w(["tickets", "threads", id] as const),
   /** Ollie's pending suggested reply on an email ticket. */
-  suggestedReply: (id: string) => ["tickets", "suggested-reply", id] as const,
+  suggestedReply: (id: string) => w(["tickets", "suggested-reply", id] as const),
   /** The ticket's shared draft (contracts/api.md "Drafts"). */
-  ticketDraft: (id: string) => ["tickets", "draft", id] as const,
-  contactLists: ["contacts", "list"] as const,
-  contacts: (q: { q?: string; company_id?: string }) => ["contacts", "list", q] as const,
-  contact: (id: string) => ["contacts", "detail", id] as const,
-  contactTickets: (id: string) => ["contacts", "tickets", id] as const,
-  contactPicker: (q: string) => ["contacts", "picker", q] as const,
-  companyLists: ["companies", "list"] as const,
-  companies: (q: { q?: string }) => ["companies", "list", q] as const,
-  company: (id: string) => ["companies", "detail", id] as const,
-  tags: ["tags"] as const,
-  tagGroups: ["tag-groups"] as const,
+  ticketDraft: (id: string) => w(["tickets", "draft", id] as const),
+  get contactLists() {
+    return w(["contacts", "list"] as const);
+  },
+  contacts: (q: { q?: string; company_id?: string }) => w(["contacts", "list", q] as const),
+  contact: (id: string) => w(["contacts", "detail", id] as const),
+  contactTickets: (id: string) => w(["contacts", "tickets", id] as const),
+  contactPicker: (q: string) => w(["contacts", "picker", q] as const),
+  get companyLists() {
+    return w(["companies", "list"] as const);
+  },
+  companies: (q: { q?: string }) => w(["companies", "list", q] as const),
+  company: (id: string) => w(["companies", "detail", id] as const),
+  get tags() {
+    return w(["tags"] as const);
+  },
+  get tagGroups() {
+    return w(["tag-groups"] as const);
+  },
   /** Every entity's custom fields, archived included; filter by `entity` when reading. */
-  customFields: ["custom-fields"] as const,
-  savedReplies: ["saved-replies"] as const,
-  templateVariables: ["templates", "variables"] as const,
-  emailTemplates: (brandId: string) => ["email-templates", brandId] as const,
-  ticketVariables: (id: string, mailboxId: string | null) => ["tickets", "variables", id, mailboxId] as const,
-  views: ["views"] as const,
-  slaPolicies: ["sla-policies"] as const,
-  automations: ["automations"] as const,
-  mailboxes: ["mailboxes"] as const,
-  members: ["members"] as const,
-  invitations: ["invitations"] as const,
-  teams: ["teams"] as const,
-  brands: ["brands"] as const,
-  widgets: ["widgets"] as const,
-  bots: ["bots"] as const,
-  routingRules: ["routing-rules"] as const,
-  apiKeys: ["api-keys"] as const,
-  webhooks: ["webhooks"] as const,
-  webhookDeliveries: (id: string) => ["webhooks", "deliveries", id] as const,
-  integrations: ["integrations"] as const,
-  integrationCatalog: ["integrations", "catalog"] as const,
-  supportChannelProviders: ["support-channels", "providers"] as const,
-  supportChannelConnections: ["support-channels", "connections"] as const,
-  supportChannelDestinations: ["support-channels", "destinations"] as const,
-  supportChannelAvailableDestinations: (id: string) => ["support-channels", "connections", id, "destinations"] as const,
-  imports: ["imports"] as const,
-  ticketLinks: (id: string) => ["tickets", "links", id] as const,
-  auditLogs: ["audit-logs"] as const,
-  notifications: ["notifications"] as const,
+  get customFields() {
+    return w(["custom-fields"] as const);
+  },
+  get savedReplies() {
+    return w(["saved-replies"] as const);
+  },
+  get templateVariables() {
+    return w(["templates", "variables"] as const);
+  },
+  emailTemplates: (brandId: string) => w(["email-templates", brandId] as const),
+  ticketVariables: (id: string, mailboxId: string | null) => w(["tickets", "variables", id, mailboxId] as const),
+  get views() {
+    return w(["views"] as const);
+  },
+  get slaPolicies() {
+    return w(["sla-policies"] as const);
+  },
+  get automations() {
+    return w(["automations"] as const);
+  },
+  get mailboxes() {
+    return w(["mailboxes"] as const);
+  },
+  get members() {
+    return w(["members"] as const);
+  },
+  get invitations() {
+    return w(["invitations"] as const);
+  },
+  get teams() {
+    return w(["teams"] as const);
+  },
+  get brands() {
+    return w(["brands"] as const);
+  },
+  get widgets() {
+    return w(["widgets"] as const);
+  },
+  get bots() {
+    return w(["bots"] as const);
+  },
+  get routingRules() {
+    return w(["routing-rules"] as const);
+  },
+  get apiKeys() {
+    return w(["api-keys"] as const);
+  },
+  get webhooks() {
+    return w(["webhooks"] as const);
+  },
+  webhookDeliveries: (id: string) => w(["webhooks", "deliveries", id] as const),
+  get integrations() {
+    return w(["integrations"] as const);
+  },
+  get integrationCatalog() {
+    return w(["integrations", "catalog"] as const);
+  },
+  get supportChannelProviders() {
+    return w(["support-channels", "providers"] as const);
+  },
+  get supportChannelConnections() {
+    return w(["support-channels", "connections"] as const);
+  },
+  get supportChannelDestinations() {
+    return w(["support-channels", "destinations"] as const);
+  },
+  supportChannelAvailableDestinations: (id: string) => w(["support-channels", "connections", id, "destinations"] as const),
+  get imports() {
+    return w(["imports"] as const);
+  },
+  ticketLinks: (id: string) => w(["tickets", "links", id] as const),
+  get auditLogs() {
+    return w(["audit-logs"] as const);
+  },
+  get notifications() {
+    return w(["notifications"] as const);
+  },
   /** The caller's notification preferences in the current workspace (the cache is cleared on a workspace switch). */
-  notificationPreferences: ["me", "notification-preferences"] as const,
-  kbCollections: ["kb", "collections"] as const,
-  kbArticleLists: ["kb", "articles"] as const,
-  kbArticles: (q: { collection_id?: string; status?: string; q?: string; for_brand_id?: string }) => ["kb", "articles", q] as const,
-  kbArticle: (id: string) => ["kb", "article", id] as const,
-  search: (q: string) => ["search", q] as const,
-  reports: (r: ReportsQuery) => ["reports", r] as const,
-  widgetSettings: ["widget-settings"] as const,
+  get notificationPreferences() {
+    return w(["me", "notification-preferences"] as const);
+  },
+  /** What teammates' Ollie may ask the caller's, and the asks made (contracts/ai.md "Asking a teammate"). */
+  get assistantPeer() {
+    return w(["me", "assistant-peer"] as const);
+  },
+  get assistantPeerAsks() {
+    return w(["me", "assistant-peer", "asks"] as const);
+  },
+  get kbCollections() {
+    return w(["kb", "collections"] as const);
+  },
+  get kbArticleLists() {
+    return w(["kb", "articles"] as const);
+  },
+  kbArticles: (q: { collection_id?: string; status?: string; q?: string; for_brand_id?: string }) => w(["kb", "articles", q] as const),
+  kbArticle: (id: string) => w(["kb", "article", id] as const),
+  search: (q: string) => w(["search", q] as const),
+  reports: (r: ReportsQuery) => w(["reports", r] as const),
+  get widgetSettings() {
+    return w(["widget-settings"] as const);
+  },
   csat: (token: string) => ["public", "csat", token] as const,
   invitationLookup: (token: string) => ["invitation-lookup", token] as const,
-  billing: ["billing"] as const,
-  billingUsage: (r: { from: string; to: string }) => ["billing", "usage", r] as const,
-  billingInvoices: ["billing", "invoices"] as const,
-  aiConfig: ["ai", "config"] as const,
-  aiSearch: (q: string) => ["ai", "search", q] as const,
-  aiModels: ["ai", "models"] as const,
-  aiProvider: ["ai", "provider"] as const,
-  agentReport: (r: ReportsRange) => ["ai", "agent", "report", r] as const,
-  agentSetup: ["ai", "agent", "setup"] as const,
-  aiClientServer: ["ai-clients", "server"] as const,
-  aiClientConnections: ["ai-clients", "connections"] as const,
+  get billing() {
+    return w(["billing"] as const);
+  },
+  billingUsage: (r: { from: string; to: string }) => w(["billing", "usage", r] as const),
+  get billingInvoices() {
+    return w(["billing", "invoices"] as const);
+  },
+  get aiConfig() {
+    return w(["ai", "config"] as const);
+  },
+  aiSearch: (q: string) => w(["ai", "search", q] as const),
+  get aiModels() {
+    return w(["ai", "models"] as const);
+  },
+  get aiProvider() {
+    return w(["ai", "provider"] as const);
+  },
+  agentReport: (r: ReportsRange) => w(["ai", "agent", "report", r] as const),
+  get agentSetup() {
+    return w(["ai", "agent", "setup"] as const);
+  },
+  get aiClientServer() {
+    return w(["ai-clients", "server"] as const);
+  },
+  get aiClientConnections() {
+    return w(["ai-clients", "connections"] as const);
+  },
   oauthRequest: (id: string) => ["oauth", "request", id] as const,
-  mcpServers: ["ai", "mcp-servers"] as const,
-  knowledge: ["ai", "knowledge"] as const,
-  knowledgeDocs: (id: string) => ["ai", "knowledge", "docs", id] as const,
-  agentTests: ["ai", "agent", "tests"] as const,
-  agentTestRuns: ["ai", "agent", "test-runs"] as const,
-  agentTestRun: (id: string) => ["ai", "agent", "test-runs", id] as const,
-  agentReview: ["ai", "agent", "review"] as const,
-  assignment: ["assignment"] as const,
-  triage: ["triage"] as const,
-  businessHours: ["business-hours"] as const,
-  onboarding: ["onboarding"] as const,
+  get mcpServers() {
+    return w(["ai", "mcp-servers"] as const);
+  },
+  get knowledge() {
+    return w(["ai", "knowledge"] as const);
+  },
+  knowledgeDocs: (id: string) => w(["ai", "knowledge", "docs", id] as const),
+  get agentTests() {
+    return w(["ai", "agent", "tests"] as const);
+  },
+  get agentTestRuns() {
+    return w(["ai", "agent", "test-runs"] as const);
+  },
+  agentTestRun: (id: string) => w(["ai", "agent", "test-runs", id] as const),
+  get agentReview() {
+    return w(["ai", "agent", "review"] as const);
+  },
+  get assignment() {
+    return w(["assignment"] as const);
+  },
+  get triage() {
+    return w(["triage"] as const);
+  },
+  get businessHours() {
+    return w(["business-hours"] as const);
+  },
+  get onboarding() {
+    return w(["onboarding"] as const);
+  },
   // Collab (contracts/collab.md): everything under "collab", so a workspace switch or a refetch reaches it all.
-  collab: ["collab"] as const,
-  collabStatus: ["collab", "status"] as const,
-  mailAccounts: ["collab", "accounts"] as const,
+  get collab() {
+    return w(["collab"] as const);
+  },
+  get collabStatus() {
+    return w(["collab", "status"] as const);
+  },
+  get mailAccounts() {
+    return w(["collab", "accounts"] as const);
+  },
   /** With the shared accounts of people who left, for admins (settings). */
-  mailAccountsManage: ["collab", "accounts", "manage"] as const,
-  mailFolders: (accountId: string) => ["collab", "folders", accountId] as const,
-  mailCounts: ["collab", "counts"] as const,
-  mailSidebar: ["collab", "sidebar"] as const,
-  mailThreadLists: ["collab", "threads"] as const,
-  mailThreads: (q: CollabThreadQuery) => ["collab", "threads", q] as const,
-  mailThread: (id: string) => ["collab", "thread", id] as const,
-  mailPeople: ["collab", "person"] as const,
-  mailPerson: (email: string, exclude: string) => ["collab", "person", email, exclude] as const,
+  get mailAccountsManage() {
+    return w(["collab", "accounts", "manage"] as const);
+  },
+  mailFolders: (accountId: string) => w(["collab", "folders", accountId] as const),
+  get mailCounts() {
+    return w(["collab", "counts"] as const);
+  },
+  get mailSidebar() {
+    return w(["collab", "sidebar"] as const);
+  },
+  get mailThreadLists() {
+    return w(["collab", "threads"] as const);
+  },
+  mailThreads: (q: CollabThreadQuery) => w(["collab", "threads", q] as const),
+  mailThread: (id: string) => w(["collab", "thread", id] as const),
+  get mailPeople() {
+    return w(["collab", "person"] as const);
+  },
+  mailPerson: (email: string, exclude: string) => w(["collab", "person", email, exclude] as const),
   // Outside "collab": a message's source never changes, and reading it is a call to the provider.
-  mailMessageDetails: (id: string) => ["collabMessageDetails", id] as const,
+  mailMessageDetails: (id: string) => w(["collabMessageDetails", id] as const),
 };
 
 const list = <R>(key: readonly unknown[], fn: () => Promise<R[] | Page<R> | { data: R[] }>, opts: { staleTime?: number } = {}) =>
   queryOptions({ queryKey: key, queryFn: async () => rows(await fn()), ...opts });
 
+async function allPages<R>(fn: (q: { limit: number; cursor: string | null }) => Promise<Page<R>>) {
+  const all: R[] = [];
+  let cursor: string | null = null;
+  do {
+    const page = await fn({ limit: 100, cursor });
+    all.push(...page.data);
+    cursor = page.next_cursor;
+  } while (cursor);
+  return all;
+}
+
 export const q = {
   authConfig: () => queryOptions({ queryKey: qk.authConfig, queryFn: api.auth.config, staleTime: 5 * 60_000 }),
+  workspacePrefs: () => queryOptions({ queryKey: qk.workspacePrefs, queryFn: api.me.workspacePrefs, staleTime: 5 * 60_000 }),
+  overview: () => queryOptions({ queryKey: qk.overview, queryFn: async () => (await api.me.overview()).workspaces, staleTime: 30_000 }),
   workspace: () => queryOptions({ queryKey: qk.workspace, queryFn: api.workspaces.current }),
   sessions: () => list(qk.sessions, api.me.sessions),
   counts: () => queryOptions({ queryKey: qk.counts, queryFn: api.tickets.counts, staleTime: 30_000 }),
@@ -166,7 +345,7 @@ export const q = {
   slaPolicies: () => list(qk.slaPolicies, () => api.slaPolicies.list({ limit: 100 })),
   automations: () => list(qk.automations, () => api.automations.list({ limit: 100 })),
   mailboxes: () => list(qk.mailboxes, () => api.mailboxes.list({ limit: 100 })),
-  members: () => list(qk.members, () => api.members.list()),
+  members: () => queryOptions({ queryKey: qk.members, queryFn: () => allPages(api.members.list) }),
   invitations: () => list(qk.invitations, () => api.invitations.list()),
   teams: () => list(qk.teams, () => api.teams.list({ limit: 100 })),
   brands: () => list(qk.brands, () => api.brands.list({ limit: 100 })),
@@ -194,6 +373,14 @@ export const q = {
     }),
   notifications: () => list(qk.notifications, () => api.notifications.list({ limit: 50 })),
   notificationPreferences: () => queryOptions({ queryKey: qk.notificationPreferences, queryFn: api.notifications.preferences }),
+  assistantPeer: () => queryOptions({ queryKey: qk.assistantPeer, queryFn: api.assistantPeer.get, retry: false }),
+  assistantPeerAsks: () =>
+    infiniteQueryOptions({
+      queryKey: qk.assistantPeerAsks,
+      queryFn: ({ pageParam }) => api.assistantPeer.asks({ limit: 20, cursor: pageParam }),
+      initialPageParam: null as string | null,
+      getNextPageParam: (last) => last.next_cursor,
+    }),
   kbCollections: () => list(qk.kbCollections, () => api.kb.collections.list({ limit: 100 })),
   kbArticles: (query: { collection_id?: string; status?: "draft" | "published"; q?: string; for_brand_id?: string }) =>
     list(qk.kbArticles(query), () => api.kb.articles.search({ ...query, limit: 100 })),

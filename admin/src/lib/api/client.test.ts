@@ -176,6 +176,33 @@ describe("auth requests", () => {
   });
 });
 
+describe("refresh another tab answered first", () => {
+  it("tries again with the cookie that tab received", async () => {
+    vi.useFakeTimers();
+    const calls = fake((_url, _init, n) => (n === 1 ? json(409, { status: 409, code: "refresh_in_progress" }) : json(200, auth("after"))));
+    const r = refreshSession();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect((await r)?.access_token).toBe("after");
+    expect(calls).toHaveLength(2);
+    expect(getAccessToken()).toBe("after");
+  });
+
+  it("keeps the session when the conflict outlasts the retries", async () => {
+    vi.useFakeTimers();
+    setSession(auth("current"));
+    const ended = vi.fn();
+    onSession((s) => s === null && ended());
+    const calls = fake(() => json(409, { status: 409, code: "refresh_in_progress" }));
+    const r = refreshSession();
+    const done = expect(r).rejects.toMatchObject({ code: "refresh_in_progress" });
+    await vi.advanceTimersByTimeAsync(3_000);
+    await done;
+    expect(calls).toHaveLength(3);
+    expect(ended).not.toHaveBeenCalled();
+    expect(getAccessToken()).toBe("current");
+  });
+});
+
 describe("proactive refresh", () => {
   it("refreshes before expiry only when the admin was active", async () => {
     vi.useFakeTimers();

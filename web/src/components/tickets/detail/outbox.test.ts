@@ -13,11 +13,11 @@ const error = vi.fn();
 vi.mock("@/components/ui/toast", () => ({ toast: { held: () => "toast", dismiss: () => {}, info: (...a: unknown[]) => info(...a), error: (...a: unknown[]) => error(...a) } }));
 
 const { asNote, hold, release, undo, undoSeconds, useHeld, useUnsent } = await import("./outbox");
-const { setActiveAccount, setWorkspaceId } = await import("@/lib/api/client");
+const { inWorkspace, setActiveAccount, setWorkspaceId } = await import("@/lib/api/client");
 const { runBeforeSignOut, useSession } = await import("@/lib/session");
 
 /** What a request sent with no account or workspace pinned carries. */
-const plain = { keepalive: false, as: undefined, workspaceId: undefined };
+const plain = { keepalive: false, as: undefined, workspace: undefined };
 
 const temp = (id: string): Message =>
   ({
@@ -138,16 +138,21 @@ describe("outbox", () => {
     expect(undoSeconds({}, "portal")).toBe(5);
   });
 
-  it("sends a held reply at once, where it was written, when the workspace changes", () => {
+  it("sends a held reply at once, where it was written, when the workspace changes", async () => {
     setActiveAccount("u1");
     setWorkspaceId("w1");
     useSession.setState({ workspaceId: "w1" });
+    queryClient.setQueryData<Message[]>(qk.messages("t1"), []);
     hold(temp("tmp-j"), body, unsent, "u1", 30);
     expect(send).not.toHaveBeenCalled();
     setWorkspaceId("w2");
     useSession.setState({ workspaceId: "w2" });
-    expect(send).toHaveBeenCalledWith("t1", body, { keepalive: false, as: "u1", workspaceId: "w1" });
+    expect(send).toHaveBeenCalledWith("t1", body, { keepalive: false, as: "u1", workspace: "w1" });
     expect(useHeld.getState()["tmp-j"]).toBeUndefined();
+    // What it sent lands in the workspace it was written in, not the one in focus.
+    await vi.advanceTimersByTimeAsync(0);
+    expect(inWorkspace("w1", list).map((m) => m.id)).toEqual(["m1"]);
+    expect(queryClient.getQueryData(qk.messages("t1"))).toBeUndefined();
   });
 
   it("sends held replies before signing out, and warns when one fails", async () => {
@@ -156,7 +161,7 @@ describe("outbox", () => {
     send.mockImplementation(() => Promise.reject(new Error("gone")));
     hold(temp("tmp-k"), body, unsent, "u1", 30);
     await runBeforeSignOut();
-    expect(send).toHaveBeenCalledWith("t1", body, { keepalive: false, as: "u1", workspaceId: "w1" });
+    expect(send).toHaveBeenCalledWith("t1", body, { keepalive: false, as: "u1", workspace: "w1" });
     expect(error).toHaveBeenCalledTimes(1);
   });
 

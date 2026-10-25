@@ -6,14 +6,17 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/subtle"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/emersion/go-smtp"
@@ -119,7 +122,7 @@ func (s *service) inboundHTTP(w http.ResponseWriter, r *http.Request) {
 	if vals, ok := r.Header[http.CanonicalHeaderKey(EnvelopeFromHeader)]; ok && len(vals) > 0 {
 		envFrom = &vals[0]
 	}
-	id, dup, err := s.ingest(r.Context(), m, body, rcpt, envFrom)
+	id, dup, err := s.ingest(r.Context(), m, body, rcpt, envFrom, viaForward)
 	if err != nil {
 		s.log.Error("inbound ingest", "mailbox_id", m.ID, "err", err)
 		writeProblem(w, http.StatusServiceUnavailable, "unavailable", "Try again later.")
@@ -146,11 +149,16 @@ func (b *smtpBackend) NewSession(c *smtp.Conn) (smtp.Session, error) {
 	if b.s.d.Limiter != nil && !b.s.d.Limiter.Allow("smtp-in:"+ip, 300, time.Minute) {
 		return nil, &smtp.SMTPError{Code: 421, EnhancedCode: smtp.EnhancedCode{4, 7, 0}, Message: "Too many connections, try later"}
 	}
-	return &smtpSession{s: b.s}, nil
+	via := viaDirect
+	if b.s.relayed(c.Conn().RemoteAddr()) {
+		via = viaForward
+	}
+	return &smtpSession{s: b.s, via: via}, nil
 }
 
 type smtpSession struct {
 	s       *service
+	via     string // viaForward from a listed relay (INBOUND_SMTP_RELAYS), else viaDirect
 	envFrom string
 	rcpts   []string
 	boxes   []*mailboxRow
@@ -196,7 +204,7 @@ func (ss *smtpSession) Data(r io.Reader) error {
 	defer cancel()
 	for i, m := range ss.boxes {
 		envFrom := ss.envFrom
-		if _, _, err := ss.s.ingest(ctx, m, raw, ss.rcpts[i], &envFrom); err != nil {
+		if _, _, err := ss.s.ingest(ctx, m, raw, ss.rcpts[i], &envFrom, ss.via); err != nil {
 			ss.s.log.Error("smtp ingest", "mailbox_id", m.ID, "err", err)
 			return &smtp.SMTPError{Code: 451, EnhancedCode: smtp.EnhancedCode{4, 3, 0}, Message: "Temporary failure, try later"}
 		}
@@ -205,7 +213,8 @@ func (ss *smtpSession) Data(r io.Reader) error {
 }
 
 // newSMTPServer builds the receiver. It advertises no AUTH: it only accepts mail
-// addressed to forwarding tokens.
+// addressed to forwarding tokens. With INBOUND_SMTP_TLS_CERT and INBOUND_SMTP_TLS_KEY it
+// offers STARTTLS (TLS 1.2 or newer), so sending servers can encrypt mail on its way here.
 func (s *service) newSMTPServer(addr string) *smtp.Server {
 	srv := smtp.NewServer(&smtpBackend{s: s})
 	srv.Addr = addr
@@ -215,7 +224,56 @@ func (s *service) newSMTPServer(addr string) *smtp.Server {
 	srv.ReadTimeout = 60 * time.Second
 	srv.WriteTimeout = 60 * time.Second
 	srv.ErrorLog = smtpLogger{s}
+	if s.d.Cfg.InboundSMTPTLSCert != "" {
+		f := &certFiles{cert: s.d.Cfg.InboundSMTPTLSCert, key: s.d.Cfg.InboundSMTPTLSKey}
+		srv.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12, GetCertificate: f.get}
+	}
 	return srv
+}
+
+// certFiles is a certificate read from PEM files, read again when either changes, so a
+// renewed certificate needs no restart. Until the new files load, the last good one stays.
+type certFiles struct {
+	cert, key string
+	mu        sync.Mutex
+	mod       time.Time
+	c         *tls.Certificate
+}
+
+func (f *certFiles) get(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+	var mod time.Time
+	for _, p := range []string{f.cert, f.key} {
+		st, err := os.Stat(p)
+		if err != nil {
+			return f.last(err)
+		}
+		if st.ModTime().After(mod) {
+			mod = st.ModTime()
+		}
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.c != nil && !mod.After(f.mod) {
+		return f.c, nil
+	}
+	c, err := tls.LoadX509KeyPair(f.cert, f.key)
+	if err != nil {
+		if f.c != nil {
+			return f.c, nil
+		}
+		return nil, err
+	}
+	f.c, f.mod = &c, mod
+	return f.c, nil
+}
+
+func (f *certFiles) last(err error) (*tls.Certificate, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.c != nil {
+		return f.c, nil
+	}
+	return nil, err
 }
 
 type smtpLogger struct{ s *service }
@@ -226,11 +284,16 @@ func (l smtpLogger) Println(v ...any)               { l.s.log.Debug("smtp receiv
 // runSMTP serves until ctx ends.
 func (s *service) runSMTP(ctx context.Context, addr string) {
 	srv := s.newSMTPServer(addr)
+	if srv.TLSConfig != nil {
+		if _, err := srv.TLSConfig.GetCertificate(nil); err != nil {
+			s.log.Error("smtp receiver certificate", "err", err)
+		}
+	}
 	go func() {
 		<-ctx.Done()
 		_ = srv.Close()
 	}()
-	s.log.Info("smtp receiver listening", "addr", addr, "domain", srv.Domain)
+	s.log.Info("smtp receiver listening", "addr", addr, "domain", srv.Domain, "starttls", srv.TLSConfig != nil)
 	if err := srv.ListenAndServe(); err != nil && ctx.Err() == nil && !errors.Is(err, smtp.ErrServerClosed) {
 		s.log.Error("smtp receiver stopped", "err", err)
 	}

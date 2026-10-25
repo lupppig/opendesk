@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, ArrowDown, Check, CheckCheck, Download, FileText, Globe, ImageOff, Lock, MessagesSquare, MoreHorizontal, Pencil, Quote, Reply, RotateCcw, RotateCw, Send, ShieldAlert, Trash2, Undo2 } from "lucide-react";
+import { AlertCircle, ArrowDown, Check, CheckCheck, Download, FileText, Globe, ImageOff, Lock, Mail, MessagesSquare, MoreHorizontal, Pencil, Quote, Reply, RotateCcw, RotateCw, Send, ShieldAlert, Trash2, Undo2 } from "lucide-react";
 import { memo, useMemo, useRef, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { tone } from "@/lib/tones";
@@ -75,7 +75,7 @@ function HeldImages({ onLoad }: { onLoad: () => void }) {
 
 function Original({ id, inbound, remote, onLoadImages }: { id: string; inbound: boolean; remote: boolean; onLoadImages: () => void }) {
   const { t } = useTranslation("inbox");
-  const { data, isPending, isError } = useQuery({ queryKey: ["message-original", id], queryFn: () => api.messages.original(id), staleTime: Infinity });
+  const { data, isPending, isError } = useQuery({ queryKey: qk.of("message-original", id), queryFn: () => api.messages.original(id), staleTime: Infinity });
   const body = useBody(data?.full_html ?? "", inbound, inbound, remote);
   if (isPending)
     return (
@@ -362,10 +362,29 @@ function UnverifiedSender() {
   );
 }
 
+/** A reply sent from its author's own mail address (contracts/collab.md "Answering tickets"). */
+function OwnAddress() {
+  const { t } = useTranslation("inbox");
+  return (
+    <Tooltip content={<span className="block max-w-[260px] font-normal leading-snug">{t("message.ownAddressHint")}</span>}>
+      <span
+        tabIndex={0}
+        aria-label={t("message.ownAddress")}
+        className="inline-flex h-[18px] min-w-[18px] shrink items-center gap-1 self-center overflow-hidden rounded-sm bg-hover px-1 text-[11px] font-medium text-fg-2 outline-none focus-visible:shadow-[0_0_0_2px_var(--focus)]"
+      >
+        <Mail className="size-3 shrink-0" />
+        <span className="truncate">{t("message.ownAddress")}</span>
+      </span>
+    </Tooltip>
+  );
+}
+
 /** Which of our addresses a message went through, when the workspace has more than one. */
 function useMessageAddress(m: Message, receivedAt?: string | null) {
   const { data: mailboxes } = useQuery(q.mailboxes());
   const multi = (mailboxes ?? []).reduce((n, x) => n + 1 + (x.aliases?.length ?? 0), 0) > 1;
+  // A reply from a member's own address always says which one it went from.
+  if (m.from_account) return m.from_email || m.from_account.email;
   if (!multi || receivedAt === null) return null;
   const mb = m.mailbox_id ? mailboxes?.find((x) => x.id === m.mailbox_id) : undefined;
   if (m.direction === "inbound") {
@@ -582,6 +601,7 @@ export const MessageItem = memo(function MessageItem({
           </span>
           <AiAuthorLabel m={m} />
           {inbound && m.auth_failed && <UnverifiedSender />}
+          {outbound && m.from_account && <OwnAddress />}
           {note ? (
             <span className="flex shrink-0 items-center gap-1 text-[11.5px] text-fg-3">
               <Lock className="size-3" /> {t("message.internalNote")}

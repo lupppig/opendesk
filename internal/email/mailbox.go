@@ -170,6 +170,43 @@ func (c MailboxConfig) withoutTidy() MailboxConfig {
 	return c
 }
 
+// PersonalReplies are an address's rules for replies on its tickets sent from members' own
+// Collab addresses (contracts/collab.md "Answering tickets"). Enabled and ReplyTo nil follow
+// the workspace's collab_ticket_replies and collab_ticket_reply_to; Accounts limits which
+// addresses: any, shared (shared accounts only) or domain (addresses at one of this
+// address's domains, its own or an alias's).
+type PersonalReplies struct {
+	Enabled  *bool   `json:"enabled"`
+	ReplyTo  *string `json:"reply_to" enum:"address,mailbox"`
+	Accounts string  `json:"accounts" enum:"any,shared,domain"`
+}
+
+// Personal-reply address limits (PersonalReplies.Accounts).
+const (
+	PersonalAny    = "any"
+	PersonalShared = "shared"
+	PersonalDomain = "domain"
+)
+
+// Normalized is p with Accounts set ("any" when empty or unknown) and an unknown ReplyTo dropped.
+func (p PersonalReplies) Normalized() PersonalReplies {
+	switch p.Accounts {
+	case PersonalShared, PersonalDomain:
+	default:
+		p.Accounts = PersonalAny
+	}
+	if p.ReplyTo != nil && *p.ReplyTo != "address" && *p.ReplyTo != "mailbox" {
+		p.ReplyTo = nil
+	}
+	return p
+}
+
+func samePersonalReplies(a, b PersonalReplies) bool {
+	same := func(x, y *string) bool { return x == nil && y == nil || x != nil && y != nil && *x == *y }
+	sameB := a.Enabled == nil && b.Enabled == nil || a.Enabled != nil && b.Enabled != nil && *a.Enabled == *b.Enabled
+	return sameB && same(a.ReplyTo, b.ReplyTo) && a.Accounts == b.Accounts
+}
+
 // Mailbox is the API shape. Credentials are never part of it.
 type Mailbox struct {
 	ID                uuid.UUID     `json:"id"`
@@ -208,6 +245,8 @@ type Mailbox struct {
 	BotID *uuid.UUID `json:"bot_id"`
 	// Private is true when its team is private: only that team's members send from it.
 	Private bool `json:"private"`
+	// PersonalReplies: replies from members' own addresses on its tickets.
+	PersonalReplies PersonalReplies `json:"personal_replies"`
 	// Receiving is imap_off when the mailbox receives over IMAP and that is off for its
 	// workspace (MAILBOX_IMAP, or Collab for generic IMAP): it is kept but not polled
 	// until it switches to forwarding.
@@ -264,7 +303,7 @@ const mailboxColumns = `id, workspace_id, name, email, display_name, inbound_kin
 	status, last_error, last_synced_at, imap_uid_validity, imap_last_uid, sync_failures, created_at,
 	ai_answers, ai_answers_mode, ai_answers_outside_hours, brand_id, aliases, from_name_format,
 	EXISTS (SELECT 1 FROM teams pt WHERE pt.id = mailboxes.team_id AND pt.private), trusted_form_senders, bot_id, alias_teams,
-	last_received_at, alias_settings, provider_send_as`
+	last_received_at, alias_settings, provider_send_as, personal_replies`
 
 func scanMailbox(row pgx.Row) (*mailboxRow, error) {
 	var m mailboxRow
@@ -273,10 +312,11 @@ func scanMailbox(row pgx.Row) (*mailboxRow, error) {
 		&m.AutoReplySubject, &m.AutoReplyHTML, &m.Status, &m.LastError, &m.LastSyncedAt, &m.UIDValidity, &m.LastUID,
 		&m.SyncFailures, &m.CreatedAt, &m.AIAnswers, &m.AIAnswersMode, &m.AIAnswersOutsideHours, &m.BrandID, &m.Aliases,
 		&m.FromNameFormat, &m.Private, &m.TrustedFormSenders, &m.BotID, &m.AliasTeams, &m.LastReceivedAt,
-		&m.AliasSettings, &m.sendAs)
+		&m.AliasSettings, &m.sendAs, &m.PersonalReplies)
 	if err != nil {
 		return nil, err
 	}
+	m.PersonalReplies = m.PersonalReplies.Normalized()
 	if m.Aliases == nil {
 		m.Aliases = []string{}
 	}

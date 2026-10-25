@@ -13,7 +13,8 @@
     "answer_email": "Answer email",
     "playground": "Test the agent in the playground",
     "kb_draft": "Draft a help article",
-    "assistant": "Assistant messages"
+    "assistant": "Assistant messages",
+    "assistant_peer": "Ollie asking a teammate's Ollie"
   },
   "sentiment": {
     "positive": "Positive",
@@ -51,7 +52,28 @@
     "assistant_section": "{{name}}",
     "assistant_section_hint": "{{name}} is the assistant in the header. It works with each teammate's own permissions.",
     "assistant": "Let teammates ask {{name}}",
-    "assistant_hint": "Answers questions about the queue, finds tickets and prepares changes. Nothing changes until the teammate approves it. Each message is charged to the AI balance.",
+    "assistant_hint": "Answers questions about the queue, finds tickets and prepares changes. Nothing changes until the teammate approves it, except the changes you let it make without asking below. Each message is charged to the AI balance.",
+    "assistant_peer": "Let teammates' {{name}} ask each other",
+    "assistant_peer_hint": "Members choose for themselves whether their {{name}} answers, who may ask, and what it shares from their mail. Off by default.",
+    "auto_run": "Changes {{name}} makes without asking",
+    "auto_run_hint": "Off by default. {{name}} makes the changes you switch on here as soon as it decides to, with the teammate's own permissions, and marks each one as made without asking.",
+    "auto_run_always": "Replies, messages to people outside the team and changes to other settings always ask first, whatever you choose here.",
+    "auto_run_tools": {
+      "update_ticket": "Update a ticket",
+      "bulk_update_tickets": "Update several tickets",
+      "add_note": "Add an internal note",
+      "create_kb_draft": "Save a draft article",
+      "create_view": "Save a personal view",
+      "create_automation_draft": "Save an automation, switched off"
+    },
+    "auto_run_tools_hint": {
+      "update_ticket": "Assignee, status, priority, labels and fields of one ticket.",
+      "bulk_update_tickets": "The same change on up to 50 tickets at once.",
+      "add_note": "Notes are seen by the team only.",
+      "create_kb_draft": "Drafts stay unpublished until someone publishes them.",
+      "create_view": "Saved for the teammate who asked.",
+      "create_automation_draft": "Admins only. It stays off until someone turns it on."
+    },
     "automatic": "Automatic",
     "automatic_hint": "These run without anyone asking, and are charged to the AI balance each time.",
     "auto_triage": "Triage new tickets",

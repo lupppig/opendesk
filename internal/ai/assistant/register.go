@@ -57,7 +57,7 @@ type Service struct {
 // New builds the service. api is the public API handler the tools call.
 func New(d *deps.Deps, svc *ai.Service, api http.Handler) *Service {
 	s := &Service{d: d, ai: svc, api: api, tools: map[string]*tool{}, running: map[uuid.UUID]bool{}}
-	for _, t := range append(append(readTools(), writeTools()...), apiTools()...) {
+	for _, t := range append(append(append(readTools(), writeTools()...), apiTools()...), peerTools()...) {
 		s.tools[t.Name] = t
 		s.order = append(s.order, t)
 	}
@@ -241,6 +241,8 @@ func (s *Service) register(api huma.API) {
 			}
 			return nil, nil
 		})
+
+	s.registerPeer(api)
 
 	streamDoc := " Send `Accept: text/event-stream` to stream events (session, text, tool, approval, done, error); without it, the response is the collected result."
 

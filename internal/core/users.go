@@ -22,14 +22,15 @@ type CoreUser struct {
 	AvatarSource  *string       `json:"avatar_source" enum:"upload,oauth"`
 	EmailVerified bool          `json:"email_verified"`
 	TOTPEnabled   bool          `json:"totp_enabled"`
+	TimeFormat    string        `json:"time_format" enum:"auto,12h,24h" doc:"The clock times are shown in: auto follows the browser's language and region in the app and is 24-hour in emails"`
 	CreatedAt     time.Time     `json:"created_at"`
 }
 
-const userCols = `id, email, name, avatar_url, avatar_source, email_verified_at IS NOT NULL, totp_enabled, created_at`
+const userCols = `id, email, name, avatar_url, avatar_source, email_verified_at IS NOT NULL, totp_enabled, time_format, created_at`
 
 func scanUser(row pgx.Row) (CoreUser, error) {
 	var u CoreUser
-	err := row.Scan(&u.ID, &u.Email, &u.Name, &u.AvatarURL, &u.AvatarSource, &u.EmailVerified, &u.TOTPEnabled, &u.CreatedAt)
+	err := row.Scan(&u.ID, &u.Email, &u.Name, &u.AvatarURL, &u.AvatarSource, &u.EmailVerified, &u.TOTPEnabled, &u.TimeFormat, &u.CreatedAt)
 	return u, err
 }
 

@@ -1,9 +1,13 @@
 // Display formatting. Dates and numbers go through Intl with the active locale
 // (`intlLocale()`: the page language on customer-facing pages, the browser's
 // locale in the agent app), so a German visitor reads "11. Okt." and 24-hour
-// times while an American agent reads "Oct 11" and "2:05 PM".
+// times while an American agent reads "Oct 11" and "2:05 PM". In the agent app,
+// the signed-in person's clock (`setClock`, from their profile) picks 12 or 24
+// hour times; "auto" keeps the locale's own. Customer-facing pages always use
+// the page language's clock.
 
-import { intlLocale } from "@/i18n";
+import { intlLocale, pageLanguage } from "@/i18n";
+import type { TimeFormat } from "@/lib/api/types";
 
 const cache = new Map<string, Intl.DateTimeFormat | Intl.NumberFormat | Intl.RelativeTimeFormat>();
 function memo<T extends Intl.DateTimeFormat | Intl.NumberFormat | Intl.RelativeTimeFormat>(key: string, make: () => T): T {
@@ -15,9 +19,24 @@ function memo<T extends Intl.DateTimeFormat | Intl.NumberFormat | Intl.RelativeT
   return f;
 }
 
+let agentClock: TimeFormat = "auto";
+
+/** The agent app's clock for times of day: "12h", "24h", or "auto" for the locale's own. */
+export function setClock(tf: TimeFormat | null | undefined) {
+  agentClock = tf === "12h" || tf === "24h" ? tf : "auto";
+}
+
+/** The hour cycle times of day follow: the person's clock in the agent app, the locale's on customer pages. */
+function hourCycle(): Intl.DateTimeFormatOptions["hourCycle"] | undefined {
+  if (pageLanguage() || agentClock === "auto") return undefined;
+  return agentClock === "12h" ? "h12" : "h23";
+}
+
 function dtf(opts: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
   const loc = intlLocale();
-  return memo(`d|${loc}|${JSON.stringify(opts)}`, () => new Intl.DateTimeFormat(loc, opts));
+  const hc = opts.hour ? hourCycle() : undefined;
+  const o = hc ? { ...opts, hourCycle: hc } : opts;
+  return memo(`d|${loc}|${JSON.stringify(o)}`, () => new Intl.DateTimeFormat(loc, o));
 }
 function nf(opts: Intl.NumberFormatOptions = {}): Intl.NumberFormat {
   const loc = intlLocale();
@@ -103,9 +122,27 @@ export function dayLabel(iso: string, now = Date.now()): string {
     : dtf({ month: "short", day: "numeric", year: "numeric" }).format(d);
 }
 
-/** Time of day, with the locale's 12 or 24 hour clock. */
+/** Time of day, on the 12 or 24 hour clock (the person's choice in the agent app, else the locale's). */
 export function clock(iso: string): string {
   return dtf({ hour: "numeric", minute: "2-digit" }).format(new Date(iso));
+}
+
+/** Weekday and time of day: "Mon 9:00 AM" / "Mon 09:00", for times within the coming week. */
+export function weekdayClock(d: Date | string): string {
+  return dtf({ weekday: "short", hour: "numeric", minute: "2-digit" }).format(new Date(d));
+}
+
+/** Whether times of day read on the 12-hour clock (the person's choice in the agent app, else the locale's). */
+export function twelveHour(): boolean {
+  const hc = dtf({ hour: "numeric", minute: "2-digit" }).resolvedOptions().hourCycle;
+  return hc === "h12" || hc === "h11";
+}
+
+/** A stored "HH:mm" time of day on the reader's clock: "9:00 AM" / "09:00". "24:00", the end of a day, reads "12:00 AM" on a 12-hour clock. */
+export function timeOfDay(hhmm: string): string {
+  const m = /^(\d{2}):(\d{2})$/.exec(hhmm);
+  if (!m || !twelveHour()) return hhmm;
+  return dtf({ hour: "numeric", minute: "2-digit" }).format(new Date(2000, 0, 1, Number(m[1]) % 24, Number(m[2])));
 }
 
 /** "Oct 6", or "Oct 6, 2024" outside the current year. */

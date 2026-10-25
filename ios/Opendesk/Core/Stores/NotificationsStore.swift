@@ -15,12 +15,16 @@ final class NotificationsStore {
     private(set) var items: [AppNotification] = []
     private(set) var nextCursor: String?
     private(set) var loading = false
+    private(set) var loadingMore = false
     private(set) var error: String?
     private(set) var loadedOnce = false
     /// Unread here (the tab badge).
     private(set) var unread = 0
     /// Unread across the user's workspaces (the app icon badge).
     private(set) var badge = 0
+    /// Who hears about what in this workspace, and how email is paced.
+    private(set) var preferences: NotificationPreferences?
+    private(set) var preferencesError: String?
     var filter: Filter = .all {
         didSet { if filter != oldValue { Task { await load() } } }
     }
@@ -39,6 +43,8 @@ final class NotificationsStore {
         items = []
         nextCursor = nil
         loadedOnce = false
+        preferences = nil
+        preferencesError = nil
         Task {
             await load()
             await refreshBadge()
@@ -47,6 +53,7 @@ final class NotificationsStore {
 
     func stop() {
         api = nil
+        preferences = nil
         items = []
         unread = 0
         badge = 0
@@ -72,7 +79,9 @@ final class NotificationsStore {
     }
 
     func loadMore() async {
-        guard let api, let cursor = nextCursor else { return }
+        guard let api, let cursor = nextCursor, !loadingMore else { return }
+        loadingMore = true
+        defer { loadingMore = false }
         var query = [URLQueryItem(name: "limit", value: "50"), URLQueryItem(name: "cursor", value: cursor)]
         if filter == .unread { query.append(URLQueryItem(name: "unread", value: "true")) }
         guard let page: Page<AppNotification> = try? await api.get("v1/notifications", query: query) else { return }
@@ -152,6 +161,56 @@ final class NotificationsStore {
         }
         unread = max(0, unread - changed)
         scheduleBadge()
+    }
+
+    // MARK: Preferences
+
+    func loadPreferences() async {
+        guard let api else { return }
+        do {
+            preferences = try await api.get("v1/me/notification-preferences")
+            preferencesError = nil
+        } catch {
+            if !error.isCancellation { preferencesError = error.userMessage }
+        }
+    }
+
+    /// Shows `change` at once and saves `patch`; puts things back if the save fails.
+    func updatePreferences(_ patch: NotificationPreferencesPatch, change: (inout NotificationPreferences) -> Void) async throws {
+        guard let api, var next = preferences else { return }
+        let before = next
+        change(&next)
+        preferences = next
+        do {
+            preferences = try await api.patch("v1/me/notification-preferences", body: patch)
+        } catch {
+            preferences = before
+            throw error
+        }
+    }
+
+    func setPreference(_ type: String, channel: NotificationChannel, on: Bool) async throws {
+        var change = NotificationPreferencesPatch.TypeChange(type: type)
+        switch channel {
+        case .email: change.email = on
+        case .push: change.push = on
+        case .desktop: change.desktop = on
+        }
+        try await updatePreferences(NotificationPreferencesPatch(types: [change])) { prefs in
+            if let index = prefs.types.firstIndex(where: { $0.type == type }) { prefs.types[index].set(channel, on) }
+        }
+    }
+
+    /// `POST /v1/me/notification-preferences/test` (a few an hour).
+    func sendTestEmail() async throws {
+        guard let api else { return }
+        let _: EmptyBody = try await api.post("v1/me/notification-preferences/test")
+    }
+
+    /// Undoes an unsubscribe link: email comes back with the choices from before.
+    func resubscribe() async throws {
+        guard let api else { return }
+        preferences = try await api.post("v1/me/notification-preferences/resubscribe")
     }
 
     // MARK: Realtime

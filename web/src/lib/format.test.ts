@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { i18n, resetLocale, setLocale } from "@/i18n";
-import { bytes, clock, compact, currency, dayLabel, formatUsd, fullDate, minutes, number, percent, relLong, relShort, shortDate } from "./format";
+import { bytes, clock, compact, currency, dayLabel, formatUsd, fullDate, minutes, number, percent, relLong, relShort, setClock, shortDate, timeOfDay, twelveHour, weekdayClock } from "./format";
 
 const NOW = Date.parse("2026-10-11T12:00:00Z");
 const ago = (ms: number) => new Date(NOW - ms).toISOString();
@@ -13,7 +13,10 @@ const sp = (s: string) => s.replace(/[\u00a0\u202f]/g, " ");
 beforeAll(async () => {
   await i18n.changeLanguage("en");
 });
-afterEach(() => resetLocale());
+afterEach(() => {
+  resetLocale();
+  setClock("auto");
+});
 
 describe("format, English", () => {
   it("keeps the compact agent-app ages", () => {
@@ -94,5 +97,60 @@ describe("format, German page", () => {
     resetLocale();
     expect(document.documentElement.dir).toBe("ltr");
     expect(document.documentElement.lang).toBe("en");
+  });
+});
+
+describe("format, the person's clock", () => {
+  const AFTERNOON = "2026-10-11T14:05:00";
+  const MIDNIGHT = "2026-10-11T00:05:00";
+  it("keeps the locale's clock on auto", async () => {
+    await i18n.changeLanguage("de");
+    expect(clock(AFTERNOON)).toBe("14:05");
+    await i18n.changeLanguage("en");
+  });
+  it("writes 12-hour times when chosen", async () => {
+    await i18n.changeLanguage("de");
+    setClock("12h");
+    expect(sp(clock(AFTERNOON))).toBe("2:05 PM");
+    expect(sp(clock(MIDNIGHT))).toBe("12:05 AM");
+    await i18n.changeLanguage("en");
+  });
+  it("writes 24-hour times when chosen", async () => {
+    await i18n.changeLanguage("en-US");
+    setClock("24h");
+    expect(clock(AFTERNOON)).toBe("14:05");
+    expect(clock(MIDNIGHT)).toBe("00:05");
+    expect(sp(fullDate(`${AFTERNOON}`))).toMatch(/Oct 11, 2026, 14:05$/);
+    expect(sp(weekdayClock(AFTERNOON))).toBe("Sun 14:05");
+    await i18n.changeLanguage("en");
+  });
+  it("leaves dates without a time alone", () => {
+    setClock("24h");
+    expect(sp(shortDate("2020-03-04T12:00:00Z"))).toMatch(/Mar 4, 2020/);
+  });
+  it("keeps the page language's clock on customer-facing pages", async () => {
+    setClock("12h");
+    await setLocale("de", ["common"]);
+    expect(clock(AFTERNOON)).toBe("14:05");
+  });
+});
+
+describe("stored times of day", () => {
+  it("reads HH:mm on the person's clock", () => {
+    setClock("12h");
+    expect(twelveHour()).toBe(true);
+    expect(sp(timeOfDay("09:00"))).toBe("9:00 AM");
+    expect(sp(timeOfDay("17:30"))).toBe("5:30 PM");
+    expect(sp(timeOfDay("00:00"))).toBe("12:00 AM");
+    expect(sp(timeOfDay("24:00"))).toBe("12:00 AM");
+    setClock("24h");
+    expect(twelveHour()).toBe(false);
+    expect(timeOfDay("09:00")).toBe("09:00");
+    expect(timeOfDay("24:00")).toBe("24:00");
+  });
+  it("follows the locale on auto", async () => {
+    await setLocale("de", ["common"]);
+    expect(twelveHour()).toBe(false);
+    expect(timeOfDay("17:30")).toBe("17:30");
   });
 });

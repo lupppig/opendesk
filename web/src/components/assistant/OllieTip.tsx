@@ -13,6 +13,7 @@ import { tone } from "@/lib/tones";
 import { assistantApi, type Tip } from "./api";
 import { useAssistantName } from "./name";
 import { ollie, useOllie } from "./store";
+import { qk } from "@/lib/queries";
 
 const KEY = "od-ollie-tips";
 const GAP = 20 * 60_000;
@@ -51,7 +52,7 @@ export function OllieTip({ enabled }: { enabled: boolean }) {
   const open = useOllie((s) => s.open);
   const [tip, setTip] = useState<Tip | null>(null);
   const { data } = useQuery({
-    queryKey: ["assistant", "tips"],
+    queryKey: qk.of("assistant", "tips"),
     queryFn: assistantApi.tips,
     enabled,
     staleTime: 5 * 60_000,

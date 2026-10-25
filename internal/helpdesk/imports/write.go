@@ -22,6 +22,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/displayname"
 	"github.com/useopendesk/opendesk/internal/domain"
+	"github.com/useopendesk/opendesk/internal/email"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
 	"github.com/useopendesk/opendesk/internal/helpdesk/imports/source"
 	"github.com/useopendesk/opendesk/internal/httpx"
@@ -478,6 +479,11 @@ const (
 // Ticket writes share a transaction with the import's progress.
 func (w *writer) writeTicket(ctx context.Context, t *source.Ticket) (outcome, error) {
 	if t.Skip {
+		// A sync hears of a ticket the source has since trashed or merged away: the
+		// copy an earlier run made is closed, not left open.
+		if w.x.UpdatedSince != nil {
+			return outcomeSkipped, w.retire(ctx, t)
+		}
 		return outcomeSkipped, nil
 	}
 	prev, err := w.lookup(ctx, w.s.d.DB.Pool, "ticket", t.ID)
@@ -493,6 +499,9 @@ func (w *writer) writeTicket(ctx context.Context, t *source.Ticket) (outcome, er
 		}
 	}
 	if t.Skip {
+		if prev != nil {
+			return outcomeSkipped, w.retire(ctx, t)
+		}
 		return outcomeSkipped, nil
 	}
 	scrubTicket(t)
@@ -616,7 +625,7 @@ func (w *writer) writeTicketTx(ctx context.Context, tx pgx.Tx, t *source.Ticket,
 				continue
 			}
 		}
-		nm, ok, err := w.message(ctx, tx, ticketID, contactID, requesterEmail, m, files[m.ID])
+		nm, ok, err := w.message(ctx, tx, ticketID, contactID, requesterEmail, m, files[m.ID], t.Subject, t.Channel == "email")
 		if err != nil {
 			return 0, err
 		}
@@ -640,6 +649,16 @@ func (w *writer) writeTicketTx(ctx context.Context, tx pgx.Tx, t *source.Ticket,
 	}
 	w.x.Counts.Messages += added
 
+	if prev != nil {
+		// The source may have assigned the ticket since an earlier run; one it leaves
+		// unassigned keeps whoever has it here.
+		if a := w.agentUser(t.AssigneeID, ""); a != nil {
+			if _, err := tx.Exec(ctx, `UPDATE tickets SET assignee_id = $3 WHERE workspace_id = $1 AND id = $2 AND assignee_id IS DISTINCT FROM $3`,
+				wid, ticketID, *a); err != nil {
+				return 0, err
+			}
+		}
+	}
 	if err := w.settle(ctx, tx, ticketID, t); err != nil {
 		return 0, err
 	}
@@ -671,8 +690,8 @@ func inlineIDs(cs []copied) []uuid.UUID {
 // message turns a source message into a quiet one for AddMessage. ok is false for a
 // message with nothing in it.
 func (w *writer) message(ctx context.Context, tx pgx.Tx, ticketID uuid.UUID, requester *uuid.UUID, requesterEmail string,
-	m source.Message, files []copied) (domain.NewMessage, bool, error) {
-	body, text := w.body(m, files)
+	m source.Message, files []copied, subject string, emailTicket bool) (domain.NewMessage, bool, error) {
+	body, full, text := w.body(m, files, subject, emailTicket && !m.Note)
 	if text == "" && len(files) == 0 && !strings.Contains(body, "<img") {
 		return domain.NewMessage{}, false, nil
 	}
@@ -684,7 +703,7 @@ func (w *writer) message(ctx context.Context, tx pgx.Tx, ticketID uuid.UUID, req
 	if !looksLikeEmail(email) {
 		email = ""
 	}
-	nm := domain.NewMessage{WorkspaceID: w.x.WorkspaceID, TicketID: ticketID, Kind: "reply", BodyHTML: body, BodyText: text,
+	nm := domain.NewMessage{WorkspaceID: w.x.WorkspaceID, TicketID: ticketID, Kind: "reply", BodyHTML: body, BodyText: text, FullHTML: full,
 		FromEmail: email, FromName: displayname.CleanOr(m.Author.Name, displayname.Person, ""), To: recipients(m.To), Cc: recipients(m.Cc),
 		CreatedAt: created, Imported: true, InReplyTo: m.InReplyTo, References: m.References}
 	if m.MessageID != "" {
@@ -745,8 +764,11 @@ func (w *writer) message(ctx context.Context, tx pgx.Tx, ticketID uuid.UUID, req
 }
 
 // body is a message's sanitized HTML and its text, with the source's links to copied
-// files pointing at the copies.
-func (w *writer) body(m source.Message, files []copied) (string, string) {
+// files pointing at the copies. For an email reply (quote) whose quoted history or
+// signature can be cut, the way an inbound email's is, body and text are what the author
+// wrote and full is the whole original, so the ticket shows the reply with the rest a
+// click away; otherwise full is "".
+func (w *writer) body(m source.Message, files []copied, subject string, quote bool) (body, full, text string) {
 	raw := m.HTML
 	if strings.TrimSpace(raw) == "" {
 		raw = hd.TextToHTML(m.Text)
@@ -761,15 +783,20 @@ func (w *writer) body(m source.Message, files []copied) (string, string) {
 			raw = strings.ReplaceAll(raw, esc, html.EscapeString(u))
 		}
 	}
-	body := hd.SanitizeEmailHTML(raw)
-	text := hd.HTMLToText(body)
+	body = hd.SanitizeEmailHTML(raw)
+	text = hd.HTMLToText(body)
 	if strings.TrimSpace(m.HTML) == "" {
 		text = strings.TrimSpace(m.Text)
+	}
+	if quote {
+		if visible, f, plain := email.SplitQuoted(raw, m.Text, subject); f != "" {
+			body, full, text = visible, f, plain
+		}
 	}
 	if len(body) > maxBodyHTML {
 		body = hd.SanitizeEmailHTML(hd.TextToHTML(hd.Truncate(text, maxBodyHTML/4)))
 	}
-	return body, hd.Truncate(text, maxBodyText)
+	return body, full, hd.Truncate(text, maxBodyText)
 }
 
 func recipients(in []string) []string {
@@ -784,6 +811,21 @@ func recipients(in []string) []string {
 		}
 	}
 	return out
+}
+
+// retire closes the copy of a ticket the source has since left out (trashed, spam, or
+// merged into another). A ticket never imported, or already solved or closed, is left be.
+func (w *writer) retire(ctx context.Context, t *source.Ticket) error {
+	prev, err := w.lookup(ctx, w.s.d.DB.Pool, "ticket", t.ID)
+	if err != nil || prev == nil {
+		return err
+	}
+	_, err = w.s.d.DB.Pool.Exec(ctx, `UPDATE tickets SET status = 'closed',
+		solved_at = COALESCE(solved_at, now()), closed_at = COALESCE(closed_at, now()),
+		waiting_since = NULL, unanswered_count = 0, snoozed_until = NULL, updated_at = now()
+		WHERE workspace_id = $1 AND id = $2 AND deleted_at IS NULL AND status NOT IN ('solved', 'closed')`,
+		w.x.WorkspaceID, prev.localID)
+	return err
 }
 
 // settle sets what history says about a ticket once its messages are in: its status

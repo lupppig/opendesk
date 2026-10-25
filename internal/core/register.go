@@ -27,6 +27,7 @@ func Register(d *deps.Deps, api huma.API, r chi.Router) {
 	s.registerTOTP(api)
 	s.registerPasskeys(api)
 	s.registerMe(api)
+	s.registerTogether(api)
 	s.registerAvatars(api)
 	s.registerOnboarding(api)
 	installImageHooks()

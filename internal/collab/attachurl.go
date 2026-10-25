@@ -12,8 +12,9 @@ import (
 	"github.com/useopendesk/opendesk/internal/crypto"
 )
 
-// Attachment links (contracts/collab.md "MailAttachment"): signed, valid for an hour,
-// usable in <img> and as a download link without a bearer token.
+// Attachment links (contracts/collab.md "MailAttachment"): signed, valid for one to two
+// hours, usable in <img> and as a download link without a bearer token. The link is the
+// permission until it expires; links are signed only into what a reader may see.
 
 // attachmentKey signs attachment links; it is derived from AUTH_SECRET and differs from
 // the key of ticket attachment links.
@@ -26,8 +27,8 @@ func (s *service) attachmentSig(messageID uuid.UUID, index int, exp string) stri
 }
 
 // attachmentPath is the API path of an attachment with a fresh signature. The expiry is
-// rounded to the hour so a body renders with the same links for a while (browser cache),
-// and is at least an hour away.
+// rounded to the hour so a body renders with the same links for a while (browser cache):
+// between one and two hours away.
 func (s *service) attachmentPath(messageID uuid.UUID, index int) string {
 	exp := strconv.FormatInt(time.Now().Add(2*time.Hour).Truncate(time.Hour).Unix(), 10)
 	return "/v1/collab/attachments/" + messageID.String() + "/" + strconv.Itoa(index) +

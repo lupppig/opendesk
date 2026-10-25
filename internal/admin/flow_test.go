@@ -284,7 +284,7 @@ func TestAdminSignIn(t *testing.T) {
 	if mr.Body["refresh_token"] != nil || panel.cookie(RefreshCookie, "/v1/admin/auth/refresh") == "" {
 		t.Fatalf("the refresh token is a cookie only: %s", mr.Raw)
 	}
-	if strings.Contains(mr.Header.Get("Set-Cookie"), "Domain=") || !strings.Contains(mr.Header.Get("Set-Cookie"), "SameSite=Strict") {
+	if strings.Contains(mr.Header.Get("Set-Cookie"), "Domain=") || !strings.Contains(mr.Header.Get("Set-Cookie"), "SameSite=Lax") {
 		t.Fatalf("cookie attributes: %s", mr.Header.Get("Set-Cookie"))
 	}
 	panel.token = mr.str("access_token")
@@ -320,6 +320,13 @@ func TestAdminSignIn(t *testing.T) {
 	want(t, "replay in grace", replay.do("POST", "/v1/admin/auth/refresh", nil), 409, "refresh_in_progress")
 	panel.token = rr.str("access_token")
 
+	// A refresh that carried no cookie leaves the browser's cookie alone.
+	bare := e.client(panelOrigin).do("POST", "/v1/admin/auth/refresh", nil)
+	want(t, "refresh without a cookie", bare, 401, "unauthenticated")
+	if sc := bare.Header.Get("Set-Cookie"); sc != "" {
+		t.Fatalf("a refresh without a cookie set one: %s", sc)
+	}
+
 	// Losing the admin role ends access at once.
 	err := e.d.DB.Tx(context.Background(), func(tx pgx.Tx) error { return Revoke(context.Background(), tx, owner.id, CLIActor) })
 	if err != nil {
@@ -327,6 +334,9 @@ func TestAdminSignIn(t *testing.T) {
 	}
 	want(t, "revoked admin", panel.do("GET", "/v1/admin/me", nil), 401)
 	want(t, "revoked refresh", panel.do("POST", "/v1/admin/auth/refresh", nil), 401)
+	if panel.cookie(RefreshCookie, "/v1/admin/auth/refresh") != "" {
+		t.Fatal("a refused refresh cookie was kept")
+	}
 
 	audit := e.signInAs(t, RoleViewer).do("GET", "/v1/admin/audit?limit=100", nil)
 	for _, a := range []string{`"login"`, `"login.failed"`, `"admin.granted"`, `"admin.revoked"`} {

@@ -137,9 +137,13 @@ ticket.join().receive('ok', () => ticket.push('presence', { state: 'viewing' }))
 
 // When the agent starts writing:
 ticket.push('presence', { state: 'replying' });
-// While typing (throttle this). Include contact_id on chat tickets so the customer sees it:
-ticket.push('typing', { contact_id: contactId });
+// While typing (throttle this, for example to once every 2.5 seconds):
+ticket.push('typing', {});
+// On a chat ticket, also tell the customer:
+fetch(`${API}/tickets/${ticketId}/typing`, { method: 'POST', headers });
 ```
+
+Typing pushed on the socket reaches the other agents on the ticket. The customer sees an agent typing only through `POST /v1/tickets/{id}/typing`, which checks the ticket is a chat you may see and tells that chat's visitor. It answers `204` and needs a user who can reply.
 
 Presence updates are rate limited, so send them when the state changes, not on every keystroke. Leave the channel (`ticket.leave()`) when the agent closes the ticket.
 
@@ -190,7 +194,11 @@ Make `apply` idempotent (for example, keyed by `envelope.id` or by resource `upd
 
 ## Being disconnected
 
-The gateway closes a user's sockets when they log out, change their password, have a session revoked or are removed from the workspace. Fetching a new token then fails, and the client should sign in again.
+The gateway closes a user's sockets when they log out, change their password, have a session revoked or are removed from the workspace. Fetching a new token then fails, and the client should sign in again. A token fetched before that moment no longer connects either.
+
+When your role or private teams change, the gateway also closes your sockets: reconnect with a fresh token, which carries the new ones.
+
+An agent socket also closes on its own after about an hour (`MAX_SOCKET_AGE` on a self-hosted gateway), with close code 1001. The `phoenix` client reconnects by itself; fetch a fresh token for it, as on any reconnect.
 
 ## The chat widget
 
@@ -206,4 +214,4 @@ conversation.on('event', (envelope) => showMessage(envelope));
 conversation.on('typing', ({ ticket_id, user }) => showAgentTyping(user.name));
 conversation.join();
 ```
- It receives `"event"` for public events about its conversations (agent replies on chat tickets) and `"typing"` from agents. It can push `"typing"` with `{ ticket_id }`, which agents see as `"customer_typing"`. Internal notes and every other event are never sent to it.
+ It receives `"event"` for public events about its conversations (agent replies on chat tickets) and `"typing"` from agents. While the visitor types, the widget calls `POST /v1/widget/conversations/{id}/typing` (at most every few seconds), which agents on that conversation see as `"customer_typing"`. Internal notes and every other event are never sent to it.

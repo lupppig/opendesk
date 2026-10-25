@@ -449,6 +449,12 @@ func (p *pass) insert(ctx context.Context, tx pgx.Tx, in *newMessage) (uuid.UUID
 	if err := setMessageFolders(ctx, tx, id, nonNil(in.State.FolderIDs)); err != nil {
 		return uuid.Nil, err
 	}
+	if !in.State.Draft {
+		// An answer to a ticket reply sent from the account goes to the ticket too ("Answering tickets").
+		if err := p.answeredTicket(ctx, tx, id, threadID, from.Email, append(append([]string{}, refs...), inReplyTo)); err != nil {
+			return uuid.Nil, err
+		}
+	}
 	p.touch(threadID)
 	p.foldersChanged = true
 	p.imported++

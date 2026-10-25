@@ -147,6 +147,7 @@ const MessageSelect = `SELECT m.id, m.ticket_id, m.kind, m.direction, m.author_t
 	m.full_html <> '', m.subject, m.from_email, m.from_name, m.to_emails, m.cc_emails, m.bcc_emails,
 	m.delivery_status, m.delivery_error, m.ai, m.ai_action, m.ai_rating, m.mailbox_id, m.reply_to, m.auth_failed,
 	m.form_sender, m.received_at, m.thread_id, m.created_at, m.edited_at, m.deleted_at, m.purged_at, m.sent_as_reply_id,
+	m.collab_account_id, m.collab_reply_to,
 	du.id, du.name, du.email, du.avatar_url,
 	u.id, u.name, u.email, u.avatar_url,
 	c.id, c.email, c.name, c.avatar_url,
@@ -170,14 +171,19 @@ func ScanMessage(row pgx.Row) (Message, error) {
 	var bLook []byte
 	var dID *uuid.UUID
 	var dName, dEmail, dAvatar *string
+	var collabAccount *uuid.UUID
+	var collabReplyTo string
 	err := row.Scan(&m.ID, &m.TicketID, &m.Kind, &m.Direction, &m.Author.Type, &m.BodyHTML, &m.BodyText,
 		&m.HasQuoted, &m.Subject, &m.FromEmail, &m.FromName, &m.To, &m.Cc, &m.Bcc,
 		&m.DeliveryStatus, &m.DeliveryError, &m.AI, &m.AIAction, &m.AIRating, &m.MailboxID, &m.ReplyTo, &m.AuthFailed,
 		&m.FormSender, &m.ReceivedAt, &m.ThreadID, &m.CreatedAt, &m.EditedAt, &m.DeletedAt, &m.PurgedAt, &m.SentAsReplyID,
-		&dID, &dName, &dEmail, &dAvatar,
+		&collabAccount, &collabReplyTo, &dID, &dName, &dEmail, &dAvatar,
 		&uID, &uName, &uEmail, &uAvatar, &cID, &cEmail, &cName, &cAvatar, &bID, &bName, &bAvatar, &bLook, &atts)
 	if err != nil {
 		return m, err
+	}
+	if collabAccount != nil {
+		m.FromAccount = &FromAccount{AccountID: *collabAccount, Email: m.FromEmail, ReplyTo: collabReplyTo}
 	}
 	if dID != nil {
 		m.DeletedBy = &UserRef{ID: *dID, Name: deref(dName), Email: deref(dEmail), AvatarURL: Avatar(deref(dAvatar))}
@@ -325,6 +331,7 @@ func PublicMessage(m Message) Message {
 	m.MailboxID = nil
 	m.ReplyTo, m.AuthFailed, m.FormSender, m.ReceivedAt = "", false, "", ""
 	m.ThreadID = nil
+	m.FromAccount = nil
 	if m.Direction == "outbound" {
 		m.FromEmail = ""
 	}

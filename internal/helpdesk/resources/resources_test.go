@@ -536,6 +536,7 @@ func TestAutomations(t *testing.T) {
 		{"name": "x", "trigger": "ticket_created", "conditions": []map[string]any{{"field": "colour", "op": "equals", "value": "x"}}, "actions": []map[string]any{{"type": "add_tag", "value": "a"}}},
 		{"name": "x", "trigger": "ticket_created", "conditions": []map[string]any{{"field": "status", "op": "equals", "value": "lost"}}, "actions": []map[string]any{{"type": "add_tag", "value": "a"}}},
 		{"name": "x", "trigger": "ticket_created", "conditions": []map[string]any{{"field": "mailbox_id", "op": "equals", "value": ids.New().String()}}, "actions": []map[string]any{{"type": "add_tag", "value": "a"}}},
+		{"name": "x", "trigger": "ticket_created", "conditions": []map[string]any{{"field": "assignee_id", "op": "equals", "value": other.Agent.ID.String()}}, "actions": []map[string]any{{"type": "add_tag", "value": "a"}}},
 		{"trigger": "ticket_created", "actions": []map[string]any{{"type": "add_tag", "value": "a"}}},
 	}
 	for i, b := range bad {

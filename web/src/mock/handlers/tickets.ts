@@ -371,6 +371,13 @@ export function registerTickets() {
     return into;
   });
 
+  // The visitor's widget is not simulated: the mock only answers like the API does.
+  post("/v1/tickets/:id/typing", (ctx) => {
+    ticket(ctx);
+    if ((ctx.ws.members.find((m) => m.user_id === db.meId)?.role ?? "viewer") === "viewer") throw forbidden("Viewers can't change tickets");
+    return respond(204);
+  });
+
   get("/v1/tickets/:id/messages", (ctx) => {
     const t = ticket(ctx);
     const role = ctx.ws.members.find((m) => m.user_id === db.meId)?.role;

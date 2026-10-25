@@ -116,6 +116,9 @@ func Previews(s Site, now time.Time) []Preview {
 	out = append(out,
 		Preview{Name: "digest-daily", Title: "Daily digest (more than 20)", Mail: Notifications(s, batch("daily", day, 7))},
 	)
+	clock12 := batch("instant", cooldown, 0)
+	clock12.Clock = "12h"
+	out = append(out, Preview{Name: "notify-after-cooldown-12h", Title: "Five that waited out a cooldown, on a 12-hour clock", Mail: Notifications(s, clock12)})
 	test := batch("instant", SampleNotes(now), 0)
 	test.Test = true
 	out = append(out, Preview{Name: "notify-test", Title: "Test email from settings", Mail: Notifications(s, test)})

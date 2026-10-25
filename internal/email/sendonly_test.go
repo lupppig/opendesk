@@ -384,6 +384,53 @@ func TestConnectProviderToForwardingMailbox(t *testing.T) {
 	}
 }
 
+// TestSendOnlyMailboxStartsReading: a forwarding mailbox that sends through Google starts
+// reading its inbox over IMAP when its page asks (receive sync on a reconnect). It stays the
+// same mailbox, with its address and its tickets; a plain reconnect stays send-only
+// (TestGoogleSendOnlyConnect).
+func TestSendOnlyMailboxStartsReading(t *testing.T) {
+	w := newWorld(t)
+	f := newFakeProvider(t)
+	f.handler = func(rw http.ResponseWriter, r *http.Request) bool {
+		if r.URL.Path == "/userinfo" {
+			_, _ = rw.Write([]byte(`{"email":"support@acme.test","email_verified":true}`))
+			return true
+		}
+		return false
+	}
+	p := w.s.providers[KindGoogle]
+	p.tokenURL, p.userinfoURL = f.srv.URL+"/token", f.srv.URL+"/userinfo"
+	w.s.gmailBase = f.srv.URL
+	srv := w.api(w.admin)
+	m := w.mailbox(InboundForwarding, OutboundSystem, func(m *mailboxRow, _ *credentials) { m.Email = "support@acme.test" })
+	u, cookie := startOAuth(t, srv.URL, "google", map[string]any{"mailbox_id": m.ID.String()})
+	callback(t, srv.URL, "google", u.Query().Get("state"), "code-1", cookie)
+	tk, _ := firstTicket(t, w, m, customer())
+
+	u, cookie = startOAuth(t, srv.URL, "google", map[string]any{"mailbox_id": m.ID.String(), "receive": "sync", "sync_start": "new"})
+	if !strings.Contains(u.Query().Get("scope"), googleIMAPScope) {
+		t.Fatalf("scope %q", u.Query().Get("scope"))
+	}
+	loc := callback(t, srv.URL, "google", u.Query().Get("state"), "code-2", cookie)
+	if loc.Query().Get("error") != "" {
+		t.Fatalf("redirect %s", loc)
+	}
+	got, _ := loadMailbox(w.ctx, w.d.DB.Pool, w.wid, m.ID)
+	if got.Email != "support@acme.test" || got.InboundKind != KindGoogle || got.OutboundKind != KindGoogle ||
+		got.Config.OAuthGrant != GrantSync || got.Config.IMAPHost != "imap.gmail.com" || got.Config.SyncStart != "new" {
+		t.Fatalf("mailbox %+v %+v", got.Mailbox, got.Config)
+	}
+	if n := w.count(`SELECT count(*) FROM mailboxes WHERE workspace_id = $1`, w.wid); n != 1 {
+		t.Fatalf("%d mailboxes, want the same one", n)
+	}
+	if n := w.count(`SELECT count(*) FROM tickets WHERE id = $1 AND mailbox_id = $2`, tk.ID, m.ID); n != 1 {
+		t.Fatal("the ticket left the mailbox")
+	}
+	if w.jobCount("email.sync_mailbox", "mailbox_id", m.ID.String()) != 1 {
+		t.Fatal("no sync queued")
+	}
+}
+
 // TestSystemSendOff: with MAILBOX_SYSTEM_SEND off no mailbox starts sending through the
 // platform mailer, and one that already does sends nothing until it connects a way to send.
 func TestSystemSendOff(t *testing.T) {

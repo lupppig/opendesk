@@ -83,10 +83,16 @@ GET  /v1/admin/me           → AdminMe
   the session). A session ends **1 hour after its last refresh and 12 hours after sign-in**, whichever
   is first.
 - Refresh cookie `__Host-od_admin` on https (`Path=/`, as the prefix requires; plain http:
-  `od_admin`, `Path=/v1/admin/auth`): HttpOnly, Secure (https), **SameSite=Strict**, host-only (no `Domain`). A response body never carries the refresh token.
+  `od_admin`, `Path=/v1/admin/auth`): HttpOnly, Secure (https), SameSite=Lax, host-only (no `Domain`). A response body never carries the refresh token.
+  Only an auth POST with the panel's `Origin` reads it. A refresh that carried no cookie
+  answers `401` without clearing anything; a refused one clears it.
 - Access token: purpose `admin` (contracts/tokens.md), `sub` the user, `sid` the admin session,
   10 minutes, kept in memory by the panel. Every admin route checks that the session is live, the
-  user is not suspended and is still an admin, then the route's permission.
+  user is not suspended and is still an admin, then the route's permission. When that check
+  cannot run (the database did not answer), the route is a `500`, never a `401`.
+- The panel refreshes ahead of expiry while the operator works (a click, a key, a scroll or a
+  touch since the last token) and lets an idle panel's session lapse. A `409 refresh_in_progress`
+  is tried again after 1 s and 2 s, with the cookie the other tab received.
 - Signing in, an admin's failed sign-in and signing out are in the admin audit log; a failed
   sign-in to an account that is not an admin is a log line without the address.
 

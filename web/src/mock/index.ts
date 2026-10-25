@@ -10,6 +10,7 @@ import { registerAi } from "./handlers/ai";
 import { registerAiClients } from "./handlers/aiClients";
 import { registerAiTicket } from "./handlers/aiTicket";
 import { registerAssistant } from "./handlers/assistant";
+import { registerAssistantPeer } from "./handlers/assistantPeer";
 import { registerAgent } from "./handlers/agent";
 import { registerAgentQuality } from "./handlers/agentQuality";
 import { registerEmailAnswers } from "./handlers/emailAnswers";
@@ -17,6 +18,7 @@ import { registerAuth, setSignedIn } from "./handlers/auth";
 import { registerBilling } from "./handlers/billing";
 import { registerBots } from "./handlers/bots";
 import { registerCollab } from "./handlers/collab";
+import { registerTogether } from "./handlers/together";
 import { registerDrafts, stageDraft } from "./handlers/drafts";
 import { registerKnowledge } from "./handlers/knowledge";
 import { registerImports } from "./handlers/imports";
@@ -80,6 +82,7 @@ export function installMock(): void {
   registerAi();
   registerAiTicket();
   registerAssistant();
+  registerAssistantPeer();
   registerAgent();
   registerAgentQuality();
   registerEmailAnswers();
@@ -94,6 +97,7 @@ export function installMock(): void {
   registerSupportChannels();
   registerTemplates();
   registerCollab();
+  registerTogether();
 
   setTransport((input, init) => dispatch(input, init));
   setSocketFactory(socketFactory);

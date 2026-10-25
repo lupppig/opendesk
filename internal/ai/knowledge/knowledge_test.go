@@ -34,7 +34,7 @@ func TestMain(m *testing.M) {
 	if os.Getenv("TEST_DATABASE_URL") == "" {
 		os.Setenv("TEST_DATABASE_URL", testDSN)
 	}
-	os.Exit(m.Run())
+	hdtest.Main(m)
 }
 
 var (

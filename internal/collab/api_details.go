@@ -3,7 +3,6 @@ package collab
 import (
 	"context"
 	"net/http"
-	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -43,7 +42,6 @@ func (s *service) registerDetailRoutes(api huma.API) {
 				s.log.Warn("collab message source", "message_id", m.ID, "err", err)
 				return nil, httpx.E(http.StatusBadGateway, "provider_error", "The message could not be read from the mail provider. Try again.")
 			}
-			fromAccount := m.SentBy != nil || strings.EqualFold(m.From.Email, a.Email)
-			return &struct{ Body MessageDetails }{messageDetails(raw, a.Provider, m.From.Email, fromAccount)}, nil
+			return &struct{ Body MessageDetails }{messageDetails(raw, a.Provider, m.From.Email, m.outgoing())}, nil
 		})
 }

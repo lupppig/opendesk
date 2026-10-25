@@ -22,7 +22,7 @@ func TestMain(m *testing.M) {
 	if os.Getenv("TEST_DATABASE_URL") == "" {
 		os.Setenv("TEST_DATABASE_URL", "postgres://opendesk:opendesk@localhost:55432/opendesk_integrations?sslmode=disable")
 	}
-	os.Exit(m.Run())
+	hdtest.Main(m)
 }
 
 func apiEnv(t *testing.T) (*hdtest.Env, hdtest.WS) {
@@ -90,13 +90,79 @@ func TestConnectListUpdateDisconnect(t *testing.T) {
 	if err != nil || len(got) != 1 || got[0].Remote != "search_issues" || !got[0].ReadOnly {
 		t.Fatalf("offered = %+v %v", got, err)
 	}
-	if _, err := For(e.D).Call(e.Ctx, ws.ID, x.ID, "create_issue", json.RawMessage(`{}`)); err == nil {
+	if _, err := For(e.D).Call(e.Ctx, ws.ID, x.ID, "create_issue", json.RawMessage(`{}`), CallApproved); err == nil {
 		t.Fatal("a turned off tool ran")
 	}
-	res, err := For(e.D).Call(e.Ctx, ws.ID, x.ID, "search_issues", json.RawMessage(`{"title":"x"}`))
+	res, err := For(e.D).Call(e.Ctx, ws.ID, x.ID, "search_issues", json.RawMessage(`{"title":"x"}`), CallRead)
 	if err != nil || !strings.Contains(res.Text(), "linear.app") {
 		t.Fatalf("call = %v %v", res, err)
 	}
+
+	// Ask first: a tool its server marks read-only waits for approval, and its own hint stays visible.
+	e.Do("PATCH", path, agent, map[string]any{"ask_tools": []string{"search_issues"}}).Want(t, 403)
+	e.Do("PATCH", path, admin, map[string]any{"ask_tools": []string{"search_issues", "unknown", "search_issues"}}).Want(t, 200).JSON(t, &upd)
+	for _, tl := range upd.Tools {
+		if tl.Name == "search_issues" && (tl.ReadOnly || !tl.ReadOnlyHint || !tl.AskFirst || !tl.Enabled) {
+			t.Fatalf("ask first tool = %+v", tl)
+		}
+	}
+	var asks []string
+	e.Scalar(`SELECT ask_tools FROM integrations WHERE id = $1`, &asks, x.ID)
+	if !slices.Equal(asks, []string{"search_issues"}) {
+		t.Fatalf("ask_tools = %v", asks)
+	}
+	if got, err = For(e.D).Tools(e.Ctx, ws.ID); err != nil || len(got) != 1 || got[0].ReadOnly {
+		t.Fatalf("offered with ask first = %+v %v", got, err)
+	}
+	if _, err := For(e.D).Call(e.Ctx, ws.ID, x.ID, "search_issues", json.RawMessage(`{}`), CallRead); err == nil {
+		t.Fatal("an ask first tool ran without approval")
+	}
+	if _, err := For(e.D).Call(e.Ctx, ws.ID, x.ID, "search_issues", json.RawMessage(`{}`), CallApproved); err != nil {
+		t.Fatalf("approved call: %v", err)
+	}
+	// Other updates leave the list alone; an empty list clears it.
+	e.Do("PATCH", path, admin, map[string]any{"name": "Tracker"}).Want(t, 200).JSON(t, &upd)
+	if !slices.ContainsFunc(upd.Tools, func(tl ToolInfo) bool { return tl.AskFirst }) {
+		t.Fatalf("rename cleared ask first: %+v", upd.Tools)
+	}
+	e.Do("PATCH", path, admin, map[string]any{"ask_tools": []string{}}).Want(t, 200).JSON(t, &upd)
+	if slices.ContainsFunc(upd.Tools, func(tl ToolInfo) bool { return tl.AskFirst }) {
+		t.Fatalf("ask first not cleared: %+v", upd.Tools)
+	}
+
+	// Runs without asking: only a write counts, ask first wins, and Call checks it as it runs.
+	autoOf := func(name string) ToolInfo {
+		i := slices.IndexFunc(upd.Tools, func(tl ToolInfo) bool { return tl.Name == name })
+		return upd.Tools[i]
+	}
+	e.Do("PATCH", path, agent, map[string]any{"auto_tools": []string{"create_issue"}}).Want(t, 403)
+	e.Do("PATCH", path, admin, map[string]any{"disabled_tools": []string{}, "auto_tools": []string{"create_issue", "search_issues", "unknown"}}).
+		Want(t, 200).JSON(t, &upd)
+	var autos []string
+	e.Scalar(`SELECT auto_tools FROM integrations WHERE id = $1`, &autos, x.ID)
+	if !slices.Equal(autos, []string{"create_issue", "search_issues"}) {
+		t.Fatalf("auto_tools = %v", autos)
+	}
+	if !autoOf("create_issue").AutoRun || autoOf("search_issues").AutoRun {
+		t.Fatalf("auto run = %+v", upd.Tools)
+	}
+	if _, err := For(e.D).Call(e.Ctx, ws.ID, x.ID, "create_issue", json.RawMessage(`{}`), CallAuto); err != nil {
+		t.Fatalf("auto call: %v", err)
+	}
+	if ok, _ := For(e.D).AutoRun(e.Ctx, ws.ID, x.ID, "create_issue"); !ok {
+		t.Fatal("AutoRun = false")
+	}
+	e.Do("PATCH", path, admin, map[string]any{"ask_tools": []string{"create_issue"}}).Want(t, 200).JSON(t, &upd)
+	if autoOf("create_issue").AutoRun {
+		t.Fatal("ask first did not win over runs without asking")
+	}
+	if _, err := For(e.D).Call(e.Ctx, ws.ID, x.ID, "create_issue", json.RawMessage(`{}`), CallAuto); err != ErrNeedsApproval {
+		t.Fatalf("auto call with ask first = %v", err)
+	}
+	if ok, _ := For(e.D).AutoRun(e.Ctx, ws.ID, x.ID, "create_issue"); ok {
+		t.Fatal("AutoRun with ask first = true")
+	}
+	e.Do("PATCH", path, admin, map[string]any{"ask_tools": []string{}, "auto_tools": []string{}}).Want(t, 200)
 
 	// A wrong new token is refused and leaves the working connection alone.
 	e.Do("PATCH", path, admin, map[string]any{"token": "wrong"}).Want(t, 422)

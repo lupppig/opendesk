@@ -67,7 +67,7 @@ export default function NewTicketDialog() {
   const noSender = kind === "reply" && teams.mailbox(mailbox)?.sending === "system_off";
 
   const contacts = useQuery({
-    queryKey: ["contacts", "pick", toQuery],
+    queryKey: qk.of("contacts", "pick", toQuery),
     queryFn: () => api.contacts.search({ q: toQuery, limit: 8 }),
     enabled: toQuery.trim().length > 0,
   });

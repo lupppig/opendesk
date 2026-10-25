@@ -427,6 +427,11 @@
       "lookup": "Looks up",
       "asks": "Asks first",
       "toggle": "Let Ollie use {{name}}",
+      "askFirst": "Ask first",
+      "askFirstFor": "Ask for approval before Ollie uses {{name}}",
+      "auto": "Runs without asking",
+      "autoRun": "Runs without asking",
+      "autoRunFor": "Let Ollie use {{name}} without asking for approval",
       "more_one": "Show {{count}} more",
       "more_other": "Show {{count}} more",
       "fewer": "Show fewer"

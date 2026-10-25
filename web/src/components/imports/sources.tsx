@@ -7,13 +7,14 @@ import { AppMark } from "@/components/appmark";
 import type { ItemState } from "@/components/settings2/bits";
 import type { Tone } from "@/lib/tones";
 
-export const SOURCES: ImportSource[] = ["zendesk", "helpscout", "freshdesk", "intercom", "csv"];
+export const SOURCES: ImportSource[] = ["zendesk", "helpscout", "freshdesk", "intercom", "front", "csv"];
 
 export const sourceName: Record<ImportSource, string> = {
   zendesk: "Zendesk",
   helpscout: "Help Scout",
   freshdesk: "Freshdesk",
   intercom: "Intercom",
+  front: "Front",
   csv: "CSV file",
 };
 
@@ -91,11 +92,20 @@ export const credentialFields: Record<Exclude<ImportSource, "csv">, CredentialFi
       help: "https://developers.intercom.com/docs/build-an-integration/learn-more/authentication",
     },
   ],
+  front: [
+    {
+      key: "token",
+      label: "API token",
+      hint: "An admin opens Settings, then Developers and API Tokens, and creates a token that can read shared resources in all shared workspaces.",
+      secret: true,
+      help: "https://dev.frontapp.com/docs/create-and-revoke-api-tokens",
+    },
+  ],
 };
 
 export const defaultCredentials = (src: ImportSource): Record<string, string> => (src === "intercom" ? { region: "us" } : {});
 
-const markTone: Record<ImportSource, Tone> = { zendesk: "green", helpscout: "blue", freshdesk: "teal", intercom: "indigo", csv: "gray" };
+const markTone: Record<ImportSource, Tone> = { zendesk: "green", helpscout: "blue", freshdesk: "teal", intercom: "indigo", front: "purple", csv: "gray" };
 
 /** A source's logo, or a sheet for a CSV file. */
 export function SourceMark({ source, size = "md", className }: { source: ImportSource; size?: "sm" | "md" | "lg"; className?: string }) {

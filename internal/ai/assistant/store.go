@@ -60,6 +60,12 @@ type Step struct {
 	Summary  string     `json:"summary,omitempty"`
 	Refs     []Ref      `json:"refs,omitempty"`
 	ActionID *uuid.UUID `json:"action_id,omitempty"`
+	// Peer is set on an ask of a teammate's Ollie: whose, and how it went.
+	Peer *PeerStep `json:"peer,omitempty"`
+	// Auto marks a change that ran without asking, because the workspace allows it;
+	// Preview is what it ran.
+	Auto    bool     `json:"auto,omitempty"`
+	Preview *Preview `json:"preview,omitempty"`
 }
 
 // Ref is a clickable reference to something in the workspace.
@@ -172,6 +178,28 @@ func insertAction(ctx context.Context, q db.Querier, wid, uid uuid.UUID, a *acti
 	_, err := q.Exec(ctx, `INSERT INTO assistant_actions (id, workspace_id, user_id, session_id, turn_seq, call_id, tool, args, preview, expires_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`, a.ID, wid, uid, a.SessionID, a.TurnSeq, a.CallID, a.Tool, a.Args, a.Preview, a.ExpiresAt)
 	return err
+}
+
+// insertAutoAction records a change that runs without asking, as it starts: never
+// pending, so no decision can claim it. finishAction ends it done or failed.
+func insertAutoAction(ctx context.Context, q db.Querier, wid, uid uuid.UUID, a *action) error {
+	a.ID = ids.New()
+	a.Status = "approved"
+	a.ExpiresAt = time.Now()
+	_, err := q.Exec(ctx, `INSERT INTO assistant_actions (id, workspace_id, user_id, session_id, turn_seq, call_id, tool, args, preview,
+		status, auto, decided_at, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'approved', true, now(), $10)`,
+		a.ID, wid, uid, a.SessionID, a.TurnSeq, a.CallID, a.Tool, a.Args, a.Preview, a.ExpiresAt)
+	return err
+}
+
+// autoActionsSince counts the changes that ran without asking since the session's
+// latest message from the user.
+func autoActionsSince(ctx context.Context, q db.Querier, wid, sid uuid.UUID) (int, error) {
+	var n int
+	err := q.QueryRow(ctx, `SELECT count(*) FROM assistant_actions WHERE workspace_id = $1 AND session_id = $2 AND auto
+		AND turn_seq > COALESCE((SELECT max(seq) FROM assistant_turns WHERE session_id = $2 AND role = 'user' AND body ? 'text'), 0)`,
+		wid, sid).Scan(&n)
+	return n, err
 }
 
 // claimAction moves a pending, unexpired action of this user to decision, once. It is

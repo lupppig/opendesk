@@ -49,6 +49,8 @@ type fake struct {
 	// updatedSince is what each Tickets call was asked.
 	updatedSince []*time.Time
 	checkErr     error
+	// loaded counts Load calls by ticket id.
+	loaded map[string]int
 }
 
 func (f *fake) factory(c source.Credentials, _ source.Options) (source.Source, error) {
@@ -101,6 +103,10 @@ func (f *fake) Tickets(_ context.Context, cursor string, since, updatedSince *ti
 func (f *fake) Load(_ context.Context, t *source.Ticket) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.loaded == nil {
+		f.loaded = map[string]int{}
+	}
+	f.loaded[t.ID]++
 	t.Messages, t.Loaded = slices.Clone(f.loads[t.ID]), true
 	if f.skipOnLoad[t.ID] {
 		t.Skip = true
@@ -854,6 +860,28 @@ func TestSync(t *testing.T) {
 	}
 	e.quietly(t, seq)
 
+	// 104 is assigned in the source since, and 102 is trashed there: the sync assigns
+	// 104 here and closes 102.
+	later := now.Add(time.Minute)
+	e.f.mu.Lock()
+	e.f.tickets[3].AssigneeID, e.f.tickets[3].UpdatedAt = "a1", later
+	e.f.tickets[1].Skip, e.f.tickets[1].UpdatedAt, e.f.tickets[1].Loaded = true, later, true
+	e.f.mu.Unlock()
+	e.Do("POST", "/v1/imports/"+x.ID.String()+"/sync", e.admin, nil).Want(t, 200)
+	if moved := e.drive(t, x.ID); moved.Status != StatusCompleted {
+		t.Fatalf("sync %s %s", moved.Status, moved.LastError)
+	}
+	var assignee *uuid.UUID
+	e.D.DB.Pool.QueryRow(e.Ctx, `SELECT assignee_id FROM tickets WHERE id = $1`, e.ticketByRef(t, "104")).Scan(&assignee)
+	if assignee == nil || *assignee != e.ws.Agent.ID {
+		t.Errorf("104 assignee after sync: %v", assignee)
+	}
+	var closed *time.Time
+	e.D.DB.Pool.QueryRow(e.Ctx, `SELECT status, closed_at FROM tickets WHERE id = $1`, e.ticketByRef(t, "102")).Scan(&status, &closed)
+	if status != "closed" || closed == nil {
+		t.Errorf("102 after the source trashed it: %s closed %v", status, closed)
+	}
+
 	// Without credentials there is nothing to sync from.
 	var gone Import
 	e.Do("DELETE", "/v1/imports/"+x.ID.String()+"/credentials", e.admin, nil).Want(t, 200).JSON(t, &gone)
@@ -1222,6 +1250,34 @@ func TestOneBadTicketDoesNotStopTheRest(t *testing.T) {
 	}
 	if n := e.count(t, `SELECT count(*) FROM tickets WHERE workspace_id = $1 AND contact_id IS NOT NULL`, e.ws.ID); n != 1 {
 		t.Errorf("tickets with their contact %d", n)
+	}
+}
+
+// A source that lists one ticket twice (Front lists inbox by inbox, and a conversation
+// can sit in two) gets one ticket, loaded once.
+func TestTicketListedTwice(t *testing.T) {
+	e := newEnv(t)
+	bob := &source.Person{ID: "u1", Email: "bob@customer.test", Name: "Bob"}
+	e.f.articles = nil
+	e.f.pageSize = 1
+	twice := source.Ticket{ID: "7", Ref: "#7", Subject: "In two inboxes", Status: "open", Requester: bob, CreatedAt: base, UpdatedAt: base}
+	again := twice
+	again.GroupID = "g2"
+	e.f.tickets = []source.Ticket{twice, again}
+	e.f.loads = map[string][]source.Message{"7": {{ID: "7-1", Author: *bob, Text: "Hello", CreatedAt: base}}}
+	x := e.start(t, e.zendeskBody())
+	done := e.drive(t, x.ID)
+	if done.Status != StatusCompleted {
+		t.Fatalf("status %s %s", done.Status, done.LastError)
+	}
+	if done.Counts.Tickets != 1 || done.Counts.Messages != 1 || done.Counts.Failed != 0 {
+		t.Errorf("counts %+v problems %+v", done.Counts, done.Problems)
+	}
+	if n := e.count(t, `SELECT count(*) FROM tickets WHERE workspace_id = $1`, e.ws.ID); n != 1 {
+		t.Errorf("tickets %d", n)
+	}
+	if e.f.loaded["7"] != 1 {
+		t.Errorf("loaded %d times", e.f.loaded["7"])
 	}
 }
 

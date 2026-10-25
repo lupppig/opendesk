@@ -231,7 +231,9 @@
     "draftTo": "To {{who}}",
     "draftNoRecipients": "No recipients yet",
     "toAlias": "To {{email}}",
-    "toAliasHint": "Written to this address. Show its mail"
+    "toAliasHint": "Written to this address. Show its mail",
+    "onTicket": "On ticket #{{number}}",
+    "ticketHint": "Answered from a ticket: {{subject}}. Open the ticket"
   },
   "composer": {
     "to": "To",

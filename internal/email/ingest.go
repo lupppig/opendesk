@@ -82,14 +82,15 @@ func msgIDList(vals ...string) []string {
 // message is a duplicate only when its Message-ID and its content both match one seen
 // before at this mailbox, so a redelivery dedupes and a different message reusing the id
 // does not. envFrom is the SMTP envelope sender when the transport reports it, else nil.
-// It returns dup=true for a message seen before.
-func (s *service) ingest(ctx context.Context, m *mailboxRow, raw []byte, rcpt string, envFrom *string) (uuid.UUID, bool, error) {
-	return s.ingestRef(ctx, m, raw, rcpt, envFrom, nil)
+// via is the route it arrived by (viaMailbox, viaForward, viaDirect). It returns dup=true
+// for a message seen before.
+func (s *service) ingest(ctx context.Context, m *mailboxRow, raw []byte, rcpt string, envFrom *string, via string) (uuid.UUID, bool, error) {
+	return s.ingestRef(ctx, m, raw, rcpt, envFrom, nil, via)
 }
 
 // ingestRef is ingest of a message read through the provider's API, recording where it
 // lives there (ref; nil for mail from anywhere else).
-func (s *service) ingestRef(ctx context.Context, m *mailboxRow, raw []byte, rcpt string, envFrom *string, ref *providerRef) (uuid.UUID, bool, error) {
+func (s *service) ingestRef(ctx context.Context, m *mailboxRow, raw []byte, rcpt string, envFrom *string, ref *providerRef, via string) (uuid.UUID, bool, error) {
 	msgID := headerMessageID(raw)
 	hash := contentHash(raw)
 	var exists bool
@@ -111,9 +112,9 @@ func (s *service) ingestRef(ctx context.Context, m *mailboxRow, raw []byte, rcpt
 	}
 	inserted := false
 	err := s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, `INSERT INTO inbound_emails (id, workspace_id, mailbox_id, message_id_hdr, raw_storage_key, rcpt_to, content_hash, envelope_from, provider_ref)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (mailbox_id, message_id_hdr, content_hash) DO NOTHING`,
-			id, m.WorkspaceID, m.ID, msgID, key, truncate(strings.ToLower(rcpt), 320), hash, envFrom, ref)
+		tag, err := tx.Exec(ctx, `INSERT INTO inbound_emails (id, workspace_id, mailbox_id, message_id_hdr, raw_storage_key, rcpt_to, content_hash, envelope_from, provider_ref, via)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT (mailbox_id, message_id_hdr, content_hash) DO NOTHING`,
+			id, m.WorkspaceID, m.ID, msgID, key, truncate(strings.ToLower(rcpt), 320), hash, envFrom, ref, via)
 		if err != nil {
 			return err
 		}

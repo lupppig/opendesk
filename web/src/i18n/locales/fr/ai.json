@@ -51,7 +51,26 @@
     "assistant_section": "{{name}}",
     "assistant_section_hint": "{{name}} est l’assistant dans l’en-tête. Il respecte les autorisations de chaque collègue.",
     "assistant": "Permettre aux collègues d’interroger {{name}}",
-    "assistant_hint": "Répond aux questions sur la file, trouve des tickets et prépare des modifications. Rien ne change tant que le collègue ne l’a pas approuvé. Chaque message est facturé sur le solde IA.",
+    "assistant_hint": "Répond aux questions sur la file, trouve des tickets et prépare des modifications. Rien ne change tant que le collègue ne l’a pas approuvé, sauf les modifications que vous lui laissez faire sans demander ci-dessous. Chaque message est facturé sur le solde IA.",
+    "auto_run": "Modifications faites par {{name}} sans demander",
+    "auto_run_hint": "Désactivé par défaut. {{name}} effectue les modifications activées ici dès qu’il les décide, avec les permissions du collègue, et marque chacune comme faite sans demander.",
+    "auto_run_always": "Les réponses, les messages aux personnes extérieures à l’équipe et les modifications des autres réglages demandent toujours une approbation, quoi que vous choisissiez ici.",
+    "auto_run_tools": {
+      "update_ticket": "Modifier un ticket",
+      "bulk_update_tickets": "Modifier plusieurs tickets",
+      "add_note": "Ajouter une note interne",
+      "create_kb_draft": "Enregistrer un brouillon d’article",
+      "create_view": "Enregistrer une vue personnelle",
+      "create_automation_draft": "Enregistrer une automatisation désactivée"
+    },
+    "auto_run_tools_hint": {
+      "update_ticket": "Responsable, statut, priorité, étiquettes et champs d’un ticket.",
+      "bulk_update_tickets": "La même modification sur 50 tickets au plus.",
+      "add_note": "Les notes ne sont vues que par l’équipe.",
+      "create_kb_draft": "Les brouillons restent non publiés jusqu’à ce que quelqu’un les publie.",
+      "create_view": "Enregistrée pour le collègue qui l’a demandée.",
+      "create_automation_draft": "Administrateurs uniquement. Elle reste désactivée jusqu’à ce que quelqu’un l’active."
+    },
     "automatic": "Automatique",
     "automatic_hint": "Ces actions s’exécutent sans demande et sont facturées sur le solde IA à chaque fois.",
     "auto_triage": "Trier les nouveaux tickets",

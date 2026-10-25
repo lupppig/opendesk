@@ -22,6 +22,7 @@ import type {
   TicketLink,
   Workspace,
 } from "../api/types";
+import { inWorkspace, scopeWorkspace } from "../api/client";
 import { qk, removeFromList, upsertInList } from "../queries";
 import { applyAgentQualityEvent } from "../agentTests";
 import { updateWorkspace, useSession } from "../session";
@@ -54,47 +55,59 @@ export type ApplyContext = {
 };
 
 // Settings-style resources: event prefix -> [list key, payload field].
-const simpleLists: Record<string, { key: readonly unknown[]; field: string }> = {
-  tag: { key: qk.tags, field: "tag" },
-  tag_group: { key: qk.tagGroups, field: "tag_group" },
-  custom_field: { key: qk.customFields, field: "custom_field" },
-  mailbox: { key: qk.mailboxes, field: "mailbox" },
-  saved_reply: { key: qk.savedReplies, field: "saved_reply" },
-  view: { key: qk.views, field: "view" },
-  automation: { key: qk.automations, field: "automation" },
-  sla_policy: { key: qk.slaPolicies, field: "sla_policy" },
-  kb_collection: { key: qk.kbCollections, field: "kb_collection" },
-  team: { key: qk.teams, field: "team" },
-  brand: { key: qk.brands, field: "brand" },
-  widget: { key: qk.widgets, field: "widget" },
-  routing_rule: { key: qk.routingRules, field: "routing_rule" },
-  webhook: { key: qk.webhooks, field: "webhook" },
-  integration: { key: qk.integrations, field: "integration" },
-  support_channel_connection: { key: qk.supportChannelConnections, field: "support_channel_connection" },
-  support_channel_destination: { key: qk.supportChannelDestinations, field: "support_channel_destination" },
+const simpleLists: Record<string, { key: () => readonly unknown[]; field: string }> = {
+  tag: { key: () => qk.tags, field: "tag" },
+  tag_group: { key: () => qk.tagGroups, field: "tag_group" },
+  custom_field: { key: () => qk.customFields, field: "custom_field" },
+  mailbox: { key: () => qk.mailboxes, field: "mailbox" },
+  saved_reply: { key: () => qk.savedReplies, field: "saved_reply" },
+  view: { key: () => qk.views, field: "view" },
+  automation: { key: () => qk.automations, field: "automation" },
+  sla_policy: { key: () => qk.slaPolicies, field: "sla_policy" },
+  kb_collection: { key: () => qk.kbCollections, field: "kb_collection" },
+  team: { key: () => qk.teams, field: "team" },
+  brand: { key: () => qk.brands, field: "brand" },
+  widget: { key: () => qk.widgets, field: "widget" },
+  routing_rule: { key: () => qk.routingRules, field: "routing_rule" },
+  webhook: { key: () => qk.webhooks, field: "webhook" },
+  integration: { key: () => qk.integrations, field: "integration" },
+  support_channel_connection: { key: () => qk.supportChannelConnections, field: "support_channel_connection" },
+  support_channel_destination: { key: () => qk.supportChannelDestinations, field: "support_channel_destination" },
 };
 
 /** What an import has written so far, to tell whether lists have news. */
 const landed = (x: Import) => x.counts.tickets + x.counts.updated + x.counts.articles + x.counts.contacts;
 
-let importTimer: ReturnType<typeof setTimeout> | null = null;
-/** Refetch what imports and undos write: tickets, people, labels and the knowledge base. */
-function refreshImported(qc: QueryClient) {
-  if (importTimer) return;
-  importTimer = setTimeout(() => {
-    importTimer = null;
-    for (const key of [["tickets"], ["contacts"], ["companies"], qk.tags, ["kb"]]) void qc.invalidateQueries({ queryKey: key });
-  }, 6000);
+// Coalescing timers, one per workspace and kind: events of several workspaces arrive
+// together (Together), and a timer runs later, outside the event's scope.
+const timers = new Map<string, ReturnType<typeof setTimeout>>();
+function later(kind: string, ms: number, fn: () => void) {
+  const wid = scopeWorkspace() ?? "none";
+  const id = `${kind}:${wid}`;
+  if (timers.has(id)) return;
+  timers.set(
+    id,
+    setTimeout(() => {
+      timers.delete(id);
+      inWorkspace(wid, fn);
+    }, ms),
+  );
 }
 
-let countsTimer: ReturnType<typeof setTimeout> | null = null;
-/** Coalesce bursts (bulk edits) into one counts refetch. */
+/** Refetch what imports and undos write: tickets, people, labels and the knowledge base. */
+function refreshImported(qc: QueryClient) {
+  later("import", 6000, () => {
+    for (const key of [qk.of("tickets"), qk.of("contacts"), qk.of("companies"), qk.tags, qk.of("kb")]) void qc.invalidateQueries({ queryKey: key });
+  });
+}
+
+/** Coalesce bursts (bulk edits) into one counts refetch, the sidebar's numbers of every workspace with it. */
 function refreshCounts(qc: QueryClient) {
-  if (countsTimer) return;
-  countsTimer = setTimeout(() => {
-    countsTimer = null;
+  later("counts", 250, () => {
     void qc.invalidateQueries({ queryKey: qk.counts });
-  }, 250);
+    void qc.invalidateQueries({ queryKey: qk.of("tickets", "everywhere") });
+    void qc.invalidateQueries({ queryKey: qk.overview });
+  });
 }
 
 function appendUnique<R extends { id: string }>(qc: QueryClient, key: readonly unknown[], row: R) {
@@ -170,7 +183,15 @@ function patchContactLists(qc: QueryClient, c: Contact | null, removeId?: string
   }
 }
 
+/**
+ * Applies an envelope to the cache of its own workspace: every key built and request
+ * made while it applies is that workspace's, whichever one has the focus.
+ */
 export function applyEnvelope(qc: QueryClient, env: Envelope, ctx: ApplyContext): void {
+  inWorkspace(env.workspace_id || null, () => applyInScope(qc, env, ctx));
+}
+
+function applyInScope(qc: QueryClient, env: Envelope, ctx: ApplyContext): void {
   const d = env.data as Record<string, unknown>;
   const [resource, verb] = splitType(env.type);
   if (onboardingResources.has(resource) && verb !== "deleted") void qc.invalidateQueries({ queryKey: qk.onboarding });
@@ -180,7 +201,7 @@ export function applyEnvelope(qc: QueryClient, env: Envelope, ctx: ApplyContext)
   if (limitEvents.has(env.type)) void qc.invalidateQueries({ queryKey: qk.billing, exact: true });
   if (resource === "bot") return;
   // What templates fill in (contracts/templates.md): signatures, profiles, fields and designs.
-  if (templateResources.has(resource)) void qc.invalidateQueries({ queryKey: ["tickets", "variables"] });
+  if (templateResources.has(resource)) void qc.invalidateQueries({ queryKey: qk.of("tickets", "variables") });
   if (resource === "custom_field") void qc.invalidateQueries({ queryKey: qk.templateVariables });
   if (env.type === "email_template.updated") {
     void qc.invalidateQueries({ queryKey: qk.emailTemplates(d.brand_id as string) });
@@ -391,7 +412,7 @@ export function applyEnvelope(qc: QueryClient, env: Envelope, ctx: ApplyContext)
         return i >= 0 ? old.map((x, j) => (j === i ? m : x)) : [...old, m];
       });
       // Assignees embed the member's picture.
-      if (before && before.user.avatar_url !== m.user.avatar_url) void qc.invalidateQueries({ queryKey: ["tickets"] });
+      if (before && before.user.avatar_url !== m.user.avatar_url) void qc.invalidateQueries({ queryKey: qk.of("tickets") });
       if (m.user.id === ctx.me) {
         const roleChanged = verb !== "updated" || !before || before.role !== m.role;
         if (roleChanged) ctx.onSelfMembershipChanged?.();
@@ -421,7 +442,7 @@ export function applyEnvelope(qc: QueryClient, env: Envelope, ctx: ApplyContext)
     if (verb === "deleted") removeFromList(qc, qk.teams, d.team_id as string);
     else if (d.team) upsertInList(qc, qk.teams, d.team as Team);
     const after = teamsOf(qc.getQueryData<Team[]>(qk.teams), ctx.me).join(",");
-    if (before !== after || verb === "deleted") void qc.invalidateQueries({ queryKey: ["tickets"] });
+    if (before !== after || verb === "deleted") void qc.invalidateQueries({ queryKey: qk.of("tickets") });
     // Addresses, widgets and aliases of a deleted team moved with it.
     if (verb === "deleted") {
       void qc.invalidateQueries({ queryKey: qk.mailboxes });
@@ -451,10 +472,10 @@ export function applyEnvelope(qc: QueryClient, env: Envelope, ctx: ApplyContext)
 
   const simple = simpleLists[resource];
   if (simple) {
-    if (verb === "deleted") removeFromList(qc, simple.key, d[`${simple.field}_id`] as string);
+    if (verb === "deleted") removeFromList(qc, simple.key(), d[`${simple.field}_id`] as string);
     else {
       const row = d[simple.field] as { id: string } | undefined;
-      if (row) upsertInList(qc, simple.key, row);
+      if (row) upsertInList(qc, simple.key(), row);
     }
     if (resource === "support_channel_connection" && verb === "deleted") {
       const id = d.support_channel_connection_id as string;
@@ -468,7 +489,7 @@ export function applyEnvelope(qc: QueryClient, env: Envelope, ctx: ApplyContext)
     if (resource === "tag_group") void qc.invalidateQueries({ queryKey: qk.tags });
     if (resource === "custom_field" && verb !== "created") {
       void qc.invalidateQueries({ queryKey: qk.ticketLists });
-      void qc.invalidateQueries({ queryKey: ["tickets", "detail"] });
+      void qc.invalidateQueries({ queryKey: qk.of("tickets", "detail") });
     }
     return;
   }

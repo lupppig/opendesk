@@ -7,6 +7,7 @@ import { queryClient } from "@/lib/queryClient";
 import { errorMessage } from "@/lib/api/client";
 import { assistantApi, type Approval, type AssistantStep, type PageContext, type RunEvent, type Transcript } from "./api";
 import { pageContext } from "./context";
+import { qk } from "@/lib/queries";
 
 export type Block = { kind: "text"; text: string } | { kind: "step"; step: AssistantStep };
 export type Entry = { id: string; role: "user" | "assistant"; text: string; blocks: Block[]; error?: string };
@@ -76,7 +77,8 @@ let seq = 0;
 const uid = () => `e${Date.now().toString(36)}${(seq++).toString(36)}`;
 let controller: AbortController | null = null;
 
-export const sessionsKey = ["assistant", "sessions"] as const;
+/** The assistant's conversations in the workspace in scope (built when used, never kept). */
+export const sessionsKey = () => qk.of("assistant", "sessions");
 
 /** Transcript items to entries: consecutive assistant items merge into one. */
 export function toEntries(tr: Transcript): Entry[] {
@@ -111,7 +113,7 @@ function apply(e: RunEvent) {
   switch (e.type) {
     case "session":
       useOllie.setState({ title: e.session.title });
-      void queryClient.invalidateQueries({ queryKey: sessionsKey });
+      void queryClient.invalidateQueries({ queryKey: sessionsKey() });
       break;
     case "text":
       patchLast((en) => {
@@ -153,7 +155,7 @@ async function run(go: (signal: AbortSignal) => Promise<void>) {
     if (controller === c) controller = null;
     useOllie.setState({ running: false });
     // Tool writes went through the API: refresh what they may have changed.
-    void queryClient.invalidateQueries({ queryKey: sessionsKey });
+    void queryClient.invalidateQueries({ queryKey: sessionsKey() });
   }
 }
 
@@ -222,7 +224,7 @@ export const ollie = {
     });
     await run((signal) => assistantApi.decide(a.action_id, decision, a.token, apply, signal));
     // The approved change went through the API: show it everywhere at once.
-    if (decision === "approve") void queryClient.invalidateQueries({ queryKey: ["tickets"] });
+    if (decision === "approve") void queryClient.invalidateQueries({ queryKey: qk.of("tickets") });
   },
 
   stop: () => controller?.abort(),

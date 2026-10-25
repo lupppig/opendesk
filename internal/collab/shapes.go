@@ -360,9 +360,9 @@ func (s *service) messageOut(a *accountRow, m *messageRow, sentBy *domain.UserRe
 		From: m.From, To: m.To, Cc: m.Cc, Bcc: []Address{}, ReplyTo: m.ReplyTo, Subject: m.Subject, Snippet: m.Snippet,
 		BodyHTML: s.resignAttachmentLinks(m.ID, m.BodyHTML), BodyText: m.BodyText, SentAt: m.SentAt, Unread: m.Unread,
 		Starred: m.Starred, Draft: m.Draft, FolderIDs: m.FolderIDs, Attachments: make([]MailAttachment, 0, len(m.Attachments)),
-		SentBy: sentBy}
+		SentBy: sentBy, Outgoing: m.outgoing()}
 	// Bcc is only ever shown on mail the account sent.
-	if m.SentBy != nil || strings.EqualFold(m.From.Email, a.Email) {
+	if out.Outgoing {
 		out.Bcc = m.Bcc
 	}
 	for _, at := range m.Attachments {

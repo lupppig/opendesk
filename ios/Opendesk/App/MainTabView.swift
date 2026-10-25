@@ -39,6 +39,7 @@ struct MainTabView: View {
                     onReselect: { tab in
                         if tab == .inbox { router.inboxPath = [] }
                         if tab == .notifications { router.notificationsPath = [] }
+                        if tab == .account { router.accountPath = [] }
                     }
                 )
                 .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -47,7 +48,7 @@ struct MainTabView: View {
         .motion(Motion.snappy, value: tabBar.isHidden)
         .environment(tabBar)
         .sheet(isPresented: $router.showOllie) {
-            AssistantView(context: AssistantPageContext(page: "inbox", path: env.inbox.scope.webPath()))
+            AssistantView(context: router.assistantContext)
                 .presentationDetents([.large])
                 .presentationCornerRadius(Theme.Radius.sheet)
         }

@@ -60,7 +60,7 @@ const install = [
   ['✓', 'opendesk is up'],
 ];
 ---
-<Layout cta={{ command: true }} preload={{ name: 'roadside', sizes: '100vw' }} title="opendesk · The open-source helpdesk" jsonLd={[softwareJsonLd, { '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: faq.map((f) => ({ '@type': 'Question', name: f.q, acceptedAnswer: { '@type': 'Answer', text: f.a } })) }]}>
+<Layout cta={{ command: true }} preload={{ name: 'roadside', sizes: '100vw' }} title="opendesk · The open-source helpdesk and team inbox" jsonLd={[softwareJsonLd, { '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: faq.map((f) => ({ '@type': 'Question', name: f.q, acceptedAnswer: { '@type': 'Answer', text: f.a } })) }]}>
   <!-- Hero: the app standing in a painted landscape. -->
   <section class="px-2 pt-2 md:px-3 md:pt-3" data-hero>
     <div class="relative isolate overflow-hidden rounded-[22px] md:rounded-[28px]">
@@ -75,9 +75,9 @@ const install = [
           Cloud or your own servers
           <Icon name="arrowUpRight" size={12} class="text-white/60 transition-transform group-hover:-translate-y-px group-hover:translate-x-px" />
         </a>
-        <h1 class="mx-auto mt-7 max-w-[15ch] text-balance text-[44px] lg:max-w-none font-semibold leading-[1] tracking-[-0.045em] [text-shadow:0_2px_30px_rgb(10_30_80/0.35)] sm:text-[68px] lg:text-[92px]">Every customer conversation, <br class="hidden sm:block" />in one place.</h1>
+        <h1 class="mx-auto mt-7 max-w-[15ch] text-balance text-[44px] lg:max-w-none font-semibold leading-[1] tracking-[-0.045em] [text-shadow:0_2px_30px_rgb(10_30_80/0.35)] sm:text-[68px] lg:text-[92px]">Every conversation, <br class="hidden sm:block" />shared with your team.</h1>
         <p class="mx-auto mt-6 max-w-[840px] text-balance text-[18px] leading-[1.5] text-white [text-shadow:0_1px_2px_rgb(10_30_80/0.35),0_2px_24px_rgb(10_30_80/0.5)] md:text-[22px]">
-          Email, live chat and your help center in one shared inbox. Ollie drafts replies in any language, and your team sees every change the moment it happens.
+          Support email, live chat, your help center and your team's own mail accounts, in one inbox. Assign any conversation, talk it through together, and let Ollie draft the reply in any language.
         </p>
         <div class="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <a href={LINKS.signup} class="btn btn-lg bg-white text-[#0a0a0a] shadow-[0_10px_30px_-10px_rgb(10_30_80/0.5)] hover:bg-white/90">Start free<Icon name="arrowRight" size={15} /></a>

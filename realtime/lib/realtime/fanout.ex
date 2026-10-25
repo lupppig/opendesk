@@ -36,7 +36,14 @@ defmodule Realtime.Fanout do
   team (`team_id`); the ticket topic's copy keeps it so
   `RealtimeWeb.TicketChannel` pushes it only to sockets with that team. Its
   `brand_id` stays on the contact topic's copy for `RealtimeWeb.ContactChannel`. They
-  carry no `seq` and are never deduplicated or replayed.
+  carry no `seq` and are never deduplicated or replayed. Typing between an agent and
+  a visitor is a live event too, published by the API once it has checked the ticket
+  (`live/2`): an agent's goes only to the contact topic as `"typing"`, a visitor's
+  only to the ticket topic as `"customer_typing"`.
+
+  `od.control.disconnect` `{user_id, session_id?, at?}` closes the subject's sockets on
+  this node and records the revocation (`Realtime.Revocations`), so a token issued
+  before it cannot open a new one.
   """
 
   require Logger
@@ -44,11 +51,13 @@ defmodule Realtime.Fanout do
   alias Realtime.Fanout.Dedupe
   alias Realtime.Ids
   alias Realtime.Metrics
+  alias Realtime.Revocations
 
   @events_prefix "od.events."
   @live_prefix "od.live."
   @disconnect "od.control.disconnect"
   @live_types ~w(ai.reply.started ai.reply.delta ai.reply.tool ai.reply.ended)
+  @typing_types ~w(agent.typing customer.typing)
 
   @doc "NATS subjects the gateway subscribes to."
   def subjects, do: [@events_prefix <> ">", @live_prefix <> ">", @disconnect]
@@ -62,9 +71,11 @@ defmodule Realtime.Fanout do
   def handle(subject, body, broadcast \\ &RealtimeWeb.Endpoint.local_broadcast/3)
 
   def handle(@disconnect, body, broadcast) do
-    with {:ok, %{"user_id" => user_id}} <- decode(body),
+    with {:ok, %{"user_id" => user_id} = msg} <- decode(body),
          true <- Ids.uuid?(user_id) do
-      topic = "user_socket:" <> Ids.normalize(user_id)
+      sub = Ids.normalize(user_id)
+      Revocations.record(revoked_key(sub, msg["session_id"]), revoked_at(msg["at"]))
+      topic = "user_socket:" <> sub
       broadcast.(topic, "disconnect", %{})
       Metrics.incr(:disconnects)
       {:ok, [topic]}
@@ -98,7 +109,7 @@ defmodule Realtime.Fanout do
     with true <- Ids.uuid?(wid),
          {:ok, event} <- decode(body),
          {:ok, routes} <- live(Ids.normalize(wid), event) do
-      Enum.each(routes, fn {topic, payload} -> broadcast.(topic, "live", payload) end)
+      Enum.each(routes, fn {topic, name, payload} -> broadcast.(topic, name, payload) end)
       Metrics.incr(:live)
       {:ok, Enum.map(routes, &elem(&1, 0))}
     else
@@ -109,11 +120,26 @@ defmodule Realtime.Fanout do
 
   def handle(_subject, _body, _broadcast), do: reject(:unknown_subject)
 
+  # A session's revocation is keyed by the session; anything else revokes the whole subject.
+  defp revoked_key(sub, session) do
+    if Ids.uuid?(session), do: {:sid, Ids.normalize(session)}, else: {:sub, sub}
+  end
+
+  # The API's revocation time; without one (an older API), when this node received it.
+  defp revoked_at(at) when is_integer(at) and at > 0, do: at
+  defp revoked_at(_at), do: System.system_time(:millisecond)
+
   @doc """
-  The `{topic, payload}` pairs of a live preview from workspace `wid`. The
-  ticket topic's payload carries the preview's `team_id` when it has one.
+  The `{topic, event, payload}` triples of a live event from workspace `wid`.
+
+  A reply preview goes to both topics as `"live"`. Typing, which the API sends only
+  after checking the ticket, goes to one topic in the shape clients know: an agent's
+  (`agent.typing`) to the contact topic as `"typing"` `{ticket_id, user}`, a visitor's
+  (`customer.typing`) to the ticket topic as `"customer_typing"` `{ticket_id, contact_id}`.
+  A ticket topic's payload carries the event's `team_id` and a contact topic's its
+  `brand_id`, for the channels to filter on and strip.
   """
-  @spec live(String.t(), map()) :: {:ok, [{String.t(), map()}]} | {:error, atom()}
+  @spec live(String.t(), map()) :: {:ok, [{String.t(), String.t(), map()}]} | {:error, atom()}
   def live(
         wid,
         %{
@@ -124,25 +150,59 @@ defmodule Realtime.Fanout do
           "data" => data
         } = event
       )
-      when is_binary(event_wid) and is_binary(tid) and is_binary(cid) and type in @live_types and
-             is_map(data) do
-    with :ok <- same_workspace(event_wid, wid),
+      when is_binary(event_wid) and is_binary(tid) and is_binary(cid) and is_map(data) do
+    with :ok <- live_type(type),
+         :ok <- same_workspace(event_wid, wid),
          :ok <- live_ids(tid, cid),
          {:ok, team} <- live_team(Map.get(event, "team_id")),
          {:ok, brand} <- live_team(Map.get(event, "brand_id")) do
-      payload = %{"type" => type, "data" => data}
-      ticket_payload = if team, do: Map.put(payload, "team_id", team), else: payload
-      contact_payload = if brand, do: Map.put(payload, "brand_id", brand), else: payload
-
-      {:ok,
-       [
-         {"ticket:#{wid}:#{Ids.normalize(tid)}", ticket_payload},
-         {"contact:#{wid}:#{Ids.normalize(cid)}", contact_payload}
-       ]}
+      tid = Ids.normalize(tid)
+      cid = Ids.normalize(cid)
+      ticket = {"ticket:#{wid}:#{tid}", team}
+      contact = {"contact:#{wid}:#{cid}", brand}
+      live_routes(type, data, tid, cid, ticket, contact)
     end
   end
 
   def live(_wid, _event), do: {:error, :invalid_live}
+
+  defp live_routes("agent.typing", data, tid, _cid, _ticket, contact) do
+    with {:ok, user} <- typing_user(data) do
+      {:ok, [scoped(contact, "typing", %{"ticket_id" => tid, "user" => user})]}
+    end
+  end
+
+  defp live_routes("customer.typing", _data, tid, cid, ticket, _contact),
+    do: {:ok, [scoped(ticket, "customer_typing", %{"ticket_id" => tid, "contact_id" => cid})]}
+
+  defp live_routes(type, data, _tid, _cid, ticket, contact) do
+    payload = %{"type" => type, "data" => data}
+    {:ok, [scoped(ticket, "live", payload), scoped(contact, "live", payload)]}
+  end
+
+  defp live_type(type) when type in @live_types or type in @typing_types, do: :ok
+  defp live_type(_type), do: {:error, :invalid_live}
+
+  # The scope (team or brand) rides on the payload under its topic's key.
+  defp scoped({"ticket:" <> _ = topic, team}, name, payload),
+    do: {topic, name, put_scope(payload, "team_id", team)}
+
+  defp scoped({"contact:" <> _ = topic, brand}, name, payload),
+    do: {topic, name, put_scope(payload, "brand_id", brand)}
+
+  defp put_scope(payload, _key, nil), do: payload
+  defp put_scope(payload, key, value), do: Map.put(payload, key, value)
+
+  defp typing_user(%{"user" => %{"id" => id} = user}) do
+    name = user["name"]
+    name = if is_binary(name) and byte_size(name) <= 200, do: name
+
+    if Ids.uuid?(id),
+      do: {:ok, %{"id" => Ids.normalize(id), "name" => name}},
+      else: {:error, :invalid_live}
+  end
+
+  defp typing_user(_data), do: {:error, :invalid_live}
 
   defp same_workspace(event_wid, wid) do
     if Ids.uuid?(event_wid) and Ids.normalize(event_wid) == wid,

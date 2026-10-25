@@ -186,7 +186,7 @@ export default function Mailboxes() {
                           {m.status === "disabled" ? t("list.enable") : t("list.disable")}
                         </MenuItem>
                         <MenuSeparator />
-                        <MenuItem danger icon={<Trash2 />} onSelect={() => remove(m)}>
+                        <MenuItem danger icon={<Trash2 />} onSelect={() => void remove(m)}>
                           {t("list.remove")}
                         </MenuItem>
                       </MenuContent>

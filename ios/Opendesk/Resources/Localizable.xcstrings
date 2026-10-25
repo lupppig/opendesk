@@ -1,6 +1,66 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "push.action.assign_me": {
+      "comment": "Notification action that assigns the ticket to the signed-in person.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Assign to me"
+          }
+        }
+      }
+    },
+    "push.action.mark_read": {
+      "comment": "Notification action that marks the notification read.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mark as read"
+          }
+        }
+      }
+    },
+    "push.action.reply": {
+      "comment": "Notification action that opens a reply field.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reply"
+          }
+        }
+      }
+    },
+    "push.action.reply_placeholder": {
+      "comment": "Placeholder of the reply field in a notification.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reply to the customer"
+          }
+        }
+      }
+    },
+    "push.action.send": {
+      "comment": "Button that sends the reply typed in a notification.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send"
+          }
+        }
+      }
+    },
     "push.ai_balance_low.body": {
       "comment": "Push notification body for ai_balance_low.",
       "extractionState": "manual",

@@ -262,6 +262,20 @@ const inboxRoute = createRoute({
   staticData: { title: "inbox" },
 });
 
+// The Everywhere lists (contracts/api.md "Workspaces together"): every workspace's, one request each.
+const everywhereRoute = createRoute({
+  getParentRoute: () => appLayout,
+  path: "/everywhere/$list",
+  beforeLoad: ({ params }) => {
+    if (params.list !== "mine" && params.list !== "mail") throw redirect({ to: "/everywhere/$list", params: { list: "mine" } });
+  },
+  loader: ({ context }) => {
+    void context.queryClient.prefetchQuery(q.overview());
+  },
+  component: page(() => import("./pages/everywhere/EverywherePage")),
+  staticData: { title: "everywhere" },
+});
+
 const viewRoute = createRoute({
   getParentRoute: () => appLayout,
   path: "/views/$viewId/{-$ticketId}",
@@ -487,6 +501,18 @@ const sProfile = settingsPage("/profile", "profile", () => import("./pages/setti
 const sSecurity = settingsPage("/security", "security", () => import("./pages/settings/Security"), (qc) => qc.ensureQueryData(q.sessions()));
 const sNotifications = settingsPage("/notifications", "notifications", () => import("./pages/settings/Notifications"), (qc) =>
   qc.ensureQueryData(q.notificationPreferences()),
+);
+// What teammates' Ollie may ask the member's (contracts/ai.md "Asking a teammate"); Collab's mail only.
+const sAgentToAgent = settingsPage("/agent-to-agent", "agentToAgent", () => import("./pages/settings/AgentToAgent"), async (qc) => {
+  const status = await qc.ensureQueryData(q.collabStatus());
+  if (!status?.enabled) throw redirect({ to: "/settings/profile" });
+  void qc.prefetchQuery(q.members());
+  void qc.prefetchQuery(q.teams());
+  void qc.prefetchInfiniteQuery(q.assistantPeerAsks());
+  return qc.ensureQueryData(q.assistantPeer()).catch(() => null);
+});
+const sWorkspaces = settingsPage("/workspaces", "workspaces", () => import("./pages/settings/Workspaces"), (qc) =>
+  Promise.all([qc.ensureQueryData(q.workspacePrefs()), qc.prefetchQuery(q.overview())]),
 );
 const sWorkspace = settingsPage("/workspace", "general", () => import("./pages/settings/WorkspaceSettings"), (qc) =>
   Promise.all([qc.ensureQueryData(q.workspace()), qc.ensureQueryData(q.members())]),
@@ -819,6 +845,7 @@ const routeTree = rootRoute.addChildren([
   appLayout.addChildren([
     indexRoute,
     inboxRoute,
+    everywhereRoute,
     viewRoute,
     teamRoute,
     mailIndexRoute,
@@ -833,6 +860,8 @@ const routeTree = rootRoute.addChildren([
       sProfile,
       sSecurity,
       sNotifications,
+      sAgentToAgent,
+      sWorkspaces,
       sWorkspace,
       sMembers,
       sTeams,

@@ -11,8 +11,19 @@ enum AuthRoute: Hashable {
 /// passkeys on Cloud, email and password), then 2FA or account linking.
 struct AuthFlowView: View {
     @Environment(AppEnvironment.self) private var env
-    @State private var path: [AuthRoute] = []
+    @State private var path: [AuthRoute] = Self.debugPath
     @State private var showServer = false
+
+    /// Debug builds open a step with `OPENDESK_DEBUG_AUTH=register|forgot|mfa`, for screenshots.
+    private static var debugPath: [AuthRoute] {
+        switch AppInfo.debugValue("OPENDESK_DEBUG_AUTH") {
+        case "register": [.register]
+        case "forgot": [.forgot]
+        case "mfa": [.mfa(token: "")]
+        case "link": [.link(token: "", email: "[EMAIL]")]
+        default: []
+        }
+    }
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -35,40 +46,6 @@ struct AuthFlowView: View {
     }
 }
 
-/// The page frame every auth step shares: chrome behind, content centred and calm.
-struct AuthPage<Content: View>: View {
-    var title: String
-    var subtitle: String?
-    @ViewBuilder var content: () -> Content
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(title)
-                        .font(ODFont.sans(27, weight: .semibold))
-                        .tracking(-0.7)
-                        .foregroundStyle(Theme.fg)
-                    if let subtitle {
-                        Text(subtitle)
-                            .font(ODFont.callout)
-                            .foregroundStyle(Theme.fg3)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                content()
-            }
-            .padding(.horizontal, 24)
-            .padding(.top, 12)
-            .padding(.bottom, 40)
-            .frame(maxWidth: 480)
-            .frame(maxWidth: .infinity)
-        }
-        .scrollDismissesKeyboard(.interactively)
-        .background(Theme.surface.ignoresSafeArea())
-    }
-}
-
 struct SignInView: View {
     @Environment(AppEnvironment.self) private var env
     @Binding var path: [AuthRoute]
@@ -84,82 +61,165 @@ struct SignInView: View {
     private var session: SessionStore { env.session }
     private var config: AuthConfig? { session.authConfig }
 
+    @State private var emailOpen = false
+
+    /// Ways in besides email: the server's providers, and passkeys on Cloud.
+    private func hasChoices(_ config: AuthConfig) -> Bool {
+        !config.providers.isEmpty || (config.passkeys && session.instance.passkeysSupported)
+    }
+
     var body: some View {
-        AuthPage(title: "Sign in", subtitle: "Pick up where your team is.") {
-            serverChip
-
-            if let config {
-                if !config.providers.isEmpty || (config.passkeys && session.instance.passkeysSupported) {
-                    VStack(spacing: 10) {
-                        ForEach(config.providers) { provider in
-                            Button {
-                                Task { await oauthSignIn(provider) }
-                            } label: {
-                                HStack(spacing: 10) {
-                                    ProviderGlyph(id: provider.id)
-                                    Text("Continue with \(provider.name)")
-                                }
-                                .opacity(busy == provider.id ? 0 : 1)
-                                .overlay { if busy == provider.id { ProgressView().controlSize(.small) } }
-                            }
-                            .buttonStyle(OutlineButtonStyle())
-                            .disabled(busy != nil)
-                        }
-                        if config.passkeys && session.instance.passkeysSupported {
-                            Button {
-                                Task { await passkeySignIn() }
-                            } label: {
-                                HStack(spacing: 10) {
-                                    Image(systemName: "person.badge.key")
-                                    Text("Sign in with a passkey")
-                                }
-                                .opacity(busy == "passkey" ? 0 : 1)
-                                .overlay { if busy == "passkey" { ProgressView().controlSize(.small) } }
-                            }
-                            .buttonStyle(OutlineButtonStyle())
-                            .disabled(busy != nil)
-                        }
-                    }
-                    if config.passwordLogin { OrDivider() }
-                }
-
-                if config.emailSignInAvailable {
-                    emailForm(config)
-                } else if config.passwordLogin {
-                    Notice(
-                        text: config.providers.isEmpty
-                            ? "This server checks sign-ins with a captcha the app can't show. Sign in on the web, or ask your admin to turn on App Attest."
-                            : "Email sign-in needs the web on this server. Use one of the options above.",
-                        tone: .amber,
-                        symbol: "exclamationmark.triangle"
-                    )
-                }
-
-                FormError(text: error)
-
-                if config.signupEnabled {
-                    HStack(spacing: 4) {
-                        Text("New here?").foregroundStyle(Theme.fg3)
-                        Button("Create an account") { path.append(.register) }
-                            .foregroundStyle(Theme.fg)
-                            .fontWeight(.medium)
-                    }
-                    .font(ODFont.callout)
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 4)
-                }
-            } else if let failure = session.authConfigError {
-                ErrorState(title: "Can't reach \(session.instance.displayHost)", message: failure) {
-                    Task { await session.loadAuthConfig() }
-                }
-            } else {
-                ProgressView().frame(maxWidth: .infinity).padding(.vertical, 40)
-            }
+        AuthScene(painting: .roadside) {
+            hero
+        } decoration: {
+            if !emailOpen { HeroCards() }
+        } panel: {
+            panel
         }
+        .toolbar(.hidden, for: .navigationBar)
         .motion(Motion.fade, value: error)
+        .motion(Motion.smooth, value: emailOpen)
         .task {
             if session.authConfig == nil { await session.loadAuthConfig() }
         }
+    }
+
+    private var hero: some View {
+        VStack(alignment: .leading, spacing: 26) {
+            serverChip
+            VStack(alignment: .leading, spacing: 14) {
+                ODWordmark(size: 22, color: .white)
+                HeroTitle(
+                    title: "Every conversation, shared with your team.",
+                    subtitle: emailOpen ? nil : "Support email, live chat and your team's own mail in one inbox, with Ollie drafting replies.",
+                    size: 31
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var panel: some View {
+        if let config {
+            if hasChoices(config), emailOpen {
+                Button {
+                    emailOpen = false
+                    error = nil
+                } label: {
+                    Label("All sign-in options", systemImage: "chevron.left")
+                        .font(ODFont.sans(13.5, weight: .medium))
+                        .foregroundStyle(Theme.fg3)
+                }
+                .buttonStyle(.plain)
+            }
+            Text("Sign in")
+                .font(ODFont.sans(21, weight: .semibold))
+                .tracking(-0.4)
+                .foregroundStyle(Theme.fg)
+
+            if hasChoices(config), !emailOpen {
+                choices(config)
+            } else if config.emailSignInAvailable {
+                emailForm(config)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+
+            if !config.emailSignInAvailable, config.passwordLogin {
+                Notice(
+                    text: config.providers.isEmpty
+                        ? "This server checks sign-ins with a captcha the app can't show. Sign in on the web, or ask your admin to turn on App Attest."
+                        : "Email sign-in needs the web on this server. Use one of the options above.",
+                    tone: .amber,
+                    symbol: "exclamationmark.triangle"
+                )
+            }
+
+            FormError(text: error)
+
+            if config.signupEnabled {
+                HStack(spacing: 4) {
+                    Text("New here?").foregroundStyle(Theme.fg3)
+                    Button("Create an account") { path.append(.register) }
+                        .foregroundStyle(Theme.fg)
+                        .fontWeight(.medium)
+                }
+                .font(ODFont.callout)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 2)
+            }
+            demoButton
+        } else if let failure = session.authConfigError {
+            ErrorState(title: "Can't reach \(session.instance.displayHost)", message: failure) {
+                Task { await session.loadAuthConfig() }
+            }
+            demoButton
+        } else {
+            ProgressView().frame(maxWidth: .infinity).padding(.vertical, 40)
+        }
+    }
+
+    private func choices(_ config: AuthConfig) -> some View {
+        VStack(spacing: 10) {
+            ForEach(config.providers) { provider in
+                Button {
+                    Task { await oauthSignIn(provider) }
+                } label: {
+                    HStack(spacing: 10) {
+                        ProviderGlyph(id: provider.id)
+                        Text("Continue with \(provider.name)")
+                    }
+                    .opacity(busy == provider.id ? 0 : 1)
+                    .overlay { if busy == provider.id { ProgressView().controlSize(.small) } }
+                }
+                .buttonStyle(OutlineButtonStyle(height: 50))
+                .disabled(busy != nil)
+            }
+            if config.passkeys && session.instance.passkeysSupported {
+                Button {
+                    Task { await passkeySignIn() }
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "person.badge.key")
+                        Text("Sign in with a passkey")
+                    }
+                    .opacity(busy == "passkey" ? 0 : 1)
+                    .overlay { if busy == "passkey" { ProgressView().controlSize(.small) } }
+                }
+                .buttonStyle(OutlineButtonStyle(height: 50))
+                .disabled(busy != nil)
+            }
+            if config.emailSignInAvailable {
+                Button {
+                    emailOpen = true
+                    error = nil
+                } label: {
+                    ButtonLabel(title: "Continue with email", symbol: "envelope")
+                }
+                .buttonStyle(InkButtonStyle(height: 50))
+                .disabled(busy != nil)
+            }
+        }
+    }
+
+    /// Debug builds: the demo workspace, for a phone with no server in reach.
+    @ViewBuilder
+    private var demoButton: some View {
+        #if DEBUG
+        Button {
+            Haptics.tap()
+            Task { await session.enterDemo() }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "play.rectangle").font(.system(size: 13, weight: .semibold))
+                Text("No server handy? Explore the demo")
+            }
+            .font(ODFont.sans(13.5, weight: .medium))
+            .foregroundStyle(Theme.fg3)
+            .frame(maxWidth: .infinity)
+            .frame(height: 36)
+        }
+        .buttonStyle(.plain)
+        #endif
     }
 
     private var serverChip: some View {
@@ -167,22 +227,18 @@ struct SignInView: View {
             showServer = true
         } label: {
             HStack(spacing: 8) {
-                ODLogoMark().fill(Theme.fg).frame(width: 16, height: 16)
+                ODLogoMark().fill(.white).frame(width: 15, height: 15)
                 Text(session.instance.displayHost)
                     .font(ODFont.sans(14, weight: .medium))
-                    .foregroundStyle(Theme.fg)
                 Text(session.instance.isCloud ? "Cloud" : "Self-hosted")
                     .font(ODFont.sans(11.5, weight: .medium))
-                    .foregroundStyle(Theme.fg3)
-                    .padding(.horizontal, 6)
-                    .frame(height: 18)
-                    .background(Theme.sunken, in: RoundedRectangle(cornerRadius: 4))
-                Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.fg3)
+                    .foregroundStyle(.white.opacity(0.78))
+                Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold)).foregroundStyle(.white.opacity(0.78))
             }
-            .padding(.horizontal, 12)
-            .frame(height: 36)
-            .background(Theme.surface, in: Capsule())
-            .overlay(Capsule().strokeBorder(Theme.line, lineWidth: 1))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 14)
+            .frame(height: 38)
+            .glassEffect(.clear.interactive(), in: Capsule())
         }
         .buttonStyle(TapScaleStyle())
         .accessibilityLabel("Server: \(session.instance.displayHost). Change server")
@@ -281,12 +337,14 @@ struct OrDivider: View {
     }
 }
 
-/// A provider's mark: a symbol where the system has one, else its initial.
+/// A provider's mark: its own logo, a symbol where the system has one, else its initial.
 struct ProviderGlyph: View {
     let id: String
 
     var body: some View {
         switch id {
+        case "google":
+            Image("provider-google").resizable().frame(width: 17, height: 17)
         case "github":
             Image(systemName: "chevron.left.forwardslash.chevron.right").font(.system(size: 13, weight: .semibold))
         case "oidc":
@@ -378,7 +436,7 @@ struct LinkAccountView: View {
     @State private var error: String?
 
     var body: some View {
-        AuthPage(title: "Link your account", subtitle: "\(email) already has a password on this server. Enter it once to sign in this way from now on.") {
+        AuthPage(title: "Link your account", subtitle: "\(email) already has a password on this server. Enter it once to sign in this way from now on.", painting: .skyFields) {
             ODTextField(label: "Password", text: $password, secure: true, contentType: .password, submitLabel: .go) {
                 Task { await link() }
             }
@@ -427,7 +485,7 @@ struct RegisterView: View {
     }
 
     var body: some View {
-        AuthPage(title: "Create your account", subtitle: "On \(env.session.instance.displayHost).") {
+        AuthPage(title: "Create your account", subtitle: "Your team's inbox on \(env.session.instance.displayHost).", painting: .meadow) {
             if env.session.authConfig?.emailSignInAvailable == false {
                 Notice(text: "This server checks new accounts with a captcha the app can't show. Create your account on the web.", tone: .amber, symbol: "exclamationmark.triangle")
             }
@@ -483,7 +541,8 @@ struct ForgotPasswordView: View {
             title: sent ? "Check your email" : "Reset your password",
             subtitle: sent
                 ? "If \(email) has an account, a reset link is on its way. Open it on this phone or any browser to choose a new password."
-                : "We'll email you a link to choose a new one."
+                : "We'll email you a link to choose a new one.",
+            painting: .bigCloud
         ) {
             if !sent {
                 ODTextField(label: "Email", text: $email, prompt: "you@company.com", contentType: .username, keyboard: .emailAddress, submitLabel: .send) {

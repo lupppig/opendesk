@@ -22,7 +22,8 @@ URL, where proxies and access logs keep it. A token in the query string is not r
    `POST /v1/widget/session` (purpose `widget_ws`; its response also carries
    `gateway_url` = `GATEWAY_URL + "/widget"`, i.e. `wss://gateway.opendesk.sh/socket/widget`,
    which the widget passes to `new Socket(gateway_url, ...)`). Tokens live 5 minutes; they only
-   need to be valid at connect. On reconnect the client fetches a fresh one.
+   need to be valid at connect. On every reconnect the client fetches a fresh one (a token issued
+   before a revocation of its user or session is refused, below).
 2. Gateway verifies HS256 with `AUTH_SECRET`, checks `exp` and that the `purpose` is the
    one that socket accepts; the agents' socket also checks the browser `Origin` against
    `CHECK_ORIGINS` (comma-separated). A token on the wrong socket is refused (HTTP 403).
@@ -30,17 +31,34 @@ URL, where proxies and access logs keep it. A token in the query string is not r
 4. The `ws` token's `teams` claim (at most 200 uuids; a malformed claim refuses the token) is kept
    for the socket's life. A change to someone's private teams disconnects them, and the reconnect
    fetches a token with the new list. Tokens are at most 8 KB.
+5. Revocations reach tokens already issued. A user's `ws` token carries its session (`sid`) and its
+   issue time in ms (`iat_ms`, taken before the API reads anything the claims say; a token without
+   it counts as issued at `iat * 1000`). Every gateway node records each `od.control.disconnect`
+   (its `at`, or when the node received it) for the token lifetime plus a minute: under the
+   subject for a user-wide one (no `session_id`; API keys too), under the session for a session's.
+   A token whose `sub`, or `sid`, was revoked at or after its issue time is refused (HTTP 403),
+   so a token fetched before a logout, a role or team change or a removal cannot open a socket
+   after it, and the client's next token carries what the API says now.
+6. An agents' socket (users and API keys) lives at most `MAX_SOCKET_AGE` seconds (default 3600;
+   each socket takes a random 80 to 100 % of it). The gateway then closes it with code 1001, and the
+   client reconnects with a fresh token, so the claims a socket holds are never older than that.
+   The widget's socket has no such limit.
+7. A person's token may also carry `workspaces` (contracts/tokens.md): the other workspaces it
+   covers, each with the role and private teams there. "The token covers `wid`" below means
+   `wid` is the token's own or one of those; every join checks the topic's workspace with the
+   role and teams the token gives in that workspace. A malformed claim, or one on an API key's
+   token, refuses the token.
 
 ## Channels
 
 | topic                         | who may join                                   | server pushes |
 | ----------------------------- | ---------------------------------------------- | ------------- |
-| `workspace:<wid>`             | `ws` token with that `wid`                     | `"event"` with every envelope for that workspace (visibility `agents` or `public`); for an event of a private team's ticket, or one scoped to people (`private` in `topics`, contracts/events.md), only the stand-in `{id, seq, workspace_id, type: "event.hidden", visibility: "agents", data: {}, occurred_at}`, so `seq` stays contiguous |
+| `workspace:<wid>`             | `ws` token that covers `wid`                   | `"event"` with every envelope for that workspace (visibility `agents` or `public`); for an event of a private team's ticket, or one scoped to people (`private` in `topics`, contracts/events.md), only the stand-in `{id, seq, workspace_id, type: "event.hidden", visibility: "agents", data: {}, occurred_at}`, so `seq` stays contiguous |
 | | | Pushed envelopes omit `topics`: per-user events (`notification.created`) are told apart by the channel they arrive on (`user:<uid>`), not by `topics` |
-| `team:<wid>:<tid>`            | `ws` token with that `wid` and `tid` in its `teams` claim | `"event"` envelopes of a private team's tickets in full (contracts/teams.md "Visibility"); `workspace:<wid>` gets their stand-in. They may arrive before or after the stand-in: apply them when they arrive, track `seq` on the workspace channel |
+| `team:<wid>:<tid>`            | `ws` token that covers `wid` with `tid` among its private teams there | `"event"` envelopes of a private team's tickets in full (contracts/teams.md "Visibility"); `workspace:<wid>` gets their stand-in. They may arrive before or after the stand-in: apply them when they arrive, track `seq` on the workspace channel |
 | `user:<uid>`                  | `ws` token, `kind=user`, `sub == uid`          | `"event"` envelopes whose topics include `user:<uid>`, in full (their notifications and assignments, which go only to users who can see the ticket) |
-| `ticket:<wid>:<ticket_id>`    | `ws` token, `kind=user`, same `wid`; with `team_id` in the join params, that team in its `teams` claim | Presence (`presence_state`, `presence_diff`), `"typing"` and `"live"`; those of a private team's ticket only to sockets with the team (below) |
-| `contact:<wid>:<contact_id>`  | widget socket: `widget_ws` token with `sub == contact_id`, same `wid` | `"event"` for public envelopes with that topic, `"typing"` from agents and `"live"`. Envelopes list `contact:<wid>:<contact_id>:<brand_id>` (the chat's brand) and live previews carry `brand_id`: they are pushed only to sockets whose token's `bid` is that brand, without `brand_id`, so a visitor's chats of another brand never reach this widget (a token without `bid` gets every brand's) |
+| `ticket:<wid>:<ticket_id>`    | `ws` token, `kind=user`, that covers `wid`; with `team_id` in the join params, that team among its private teams there. The channel acts with the role the token gives in `wid` | Presence (`presence_state`, `presence_diff`), `"typing"`, `"customer_typing"` and `"live"`; those of a private team's ticket only to sockets with the team (below) |
+| `contact:<wid>:<contact_id>`  | widget socket: `widget_ws` token with `sub == contact_id`, same `wid` | `"event"` for public envelopes with that topic, `"typing"` from agents and `"live"`. Envelopes list `contact:<wid>:<contact_id>:<brand_id>` (the chat's brand) and live events carry `brand_id`: they are pushed only to sockets whose token's `bid` is that brand, without `brand_id`, so a visitor's chats of another brand never reach this widget (a token without `bid` gets every brand's) |
 
 Join params on `ticket:<wid>:<tid>`: `{"watch": true}` watches a ticket (the inbox list
 shows who is on it): the joiner receives `presence_state`/`presence_diff` but is **not**
@@ -50,12 +68,11 @@ names the ticket's team when it is private: `tid` must be in the token's `teams`
 `forbidden`), and it is required to see anything of that ticket here.
 
 A private team's ticket reaches only that team on this topic. The joiner's Presence meta and its
-`"typing"` carry the `team_id` it joined with, and live previews carry the ticket's private team
-(set by the API, "Live events"); the gateway pushes each of them only to sockets whose `teams`
-claim lists that team, and strips `team_id` from what it pushes. A socket that joins without
-`team_id` (any user of the workspace may) sees only what is not scoped to a team: clients join a
-private team's ticket with its `team_id`. `"customer_typing"` carries ids only and goes to every
-joiner.
+`"typing"` carry the `team_id` it joined with, and live previews and `"customer_typing"` carry the
+ticket's private team (set by the API, "Live events"); the gateway pushes each of them only to
+sockets whose `teams` claim lists that team, and strips `team_id` from what it pushes. A socket
+that joins without `team_id` (any user of the workspace may) sees only what is not scoped to a
+team: clients join a private team's ticket with its `team_id`.
 
 Join replies `{"ok": {"server_time": "..."}}`. Unauthorized joins reply `{"error": {"reason": "forbidden"}}`.
 
@@ -64,31 +81,45 @@ Join replies `{"ok": {"server_time": "..."}}`. Unauthorized joins reply `{"error
 On `ticket:<wid>:<tid>`:
 - `"presence"` `{ "state": "viewing" | "replying" | "idle" }` updates the caller's Presence
   meta (`{user_id, name, avatar, state, online_at}`). Rate limited.
-- `"typing"` `{ "contact_id": "..."? }` broadcasts `"typing"` `{user_id, name}` to other
-  agents on the ticket topic, and when `contact_id` is given, to `contact:<wid>:<contact_id>`
-  as `{ "ticket_id", "user": {id, name} }` (chat tickets only).
+- `"typing"` `{}` broadcasts `"typing"` `{user_id, name}` to the other agents on the ticket topic,
+  and nowhere else (a `contact_id` in the payload is ignored).
 
 On `contact:<wid>:<cid>`:
-- `"typing"` `{ "ticket_id": "..." }` broadcasts `"customer_typing"` `{ticket_id, contact_id}` to that ticket topic; `contact_id` comes from the token, and clients show it only when it is the ticket's contact
-  to `ticket:<wid>:<ticket_id>`.
+- `"typing"` is accepted and does nothing.
+
+Typing that crosses between agents and a visitor goes through the API, which checks the ticket,
+and arrives as a live event ("Live events"): an agent calls `POST /v1/tickets/{id}/typing`
+(the visitor of that chat gets `"typing"`), the widget calls
+`POST /v1/widget/conversations/{id}/typing` (agents on that ticket get `"customer_typing"`).
+Clients send them at most every 2.5 s (agents) or 3 s (the widget) while typing.
 
 Clients send messages through REST, never through the socket.
 
 ## Live events
 
-Short-lived previews that are never stored or replayed: the widget agent's reply as it is generated
-(`contracts/agent.md`). The API publishes them on NATS subject **`od.live.<wid>`**:
+Short-lived events that are never stored or replayed: the widget agent's reply as it is generated
+(`contracts/agent.md`), and typing between agents and a chat's visitor. The API publishes them on
+NATS subject **`od.live.<wid>`**:
 
 ```jsonc
 { "workspace_id": "…", "ticket_id": "…", "contact_id": "…", "team_id": "…" /* only when the ticket's team is private */,
   "brand_id": "…" /* the chat's brand: the contact topic's copy goes only to widget sockets of that brand */,
-  "type": "ai.reply.started" | "ai.reply.delta" | "ai.reply.tool" | "ai.reply.ended", "data": { /* below */ } }
+  "type": "ai.reply.started" | "ai.reply.delta" | "ai.reply.tool" | "ai.reply.ended" | "agent.typing" | "customer.typing",
+  "data": { /* below */ } }
 ```
 
 The gateway checks that `workspace_id` matches the subject and that the ids are uuids, then pushes
-`"live"` with `{type, data}` to `contact:<wid>:<contact_id>` and `ticket:<wid>:<ticket_id>` (watchers
-included); with a `team_id`, the ticket topic's copy goes only to sockets with that team in `teams`. There is no `seq` and no catch-up: a client that misses them still gets the posted
-message as `message.created`.
+a reply preview as `"live"` with `{type, data}` to `contact:<wid>:<contact_id>` and
+`ticket:<wid>:<ticket_id>` (watchers included); with a `team_id`, the ticket topic's copy goes only to
+sockets with that team in `teams`. There is no `seq` and no catch-up: a client that misses them still
+gets the posted message as `message.created`.
+
+Typing is pushed to one topic only, in the shape clients already handle:
+
+| type | published by | pushed |
+| --- | --- | --- |
+| `agent.typing` | `POST /v1/tickets/{id}/typing`, for a chat ticket with a contact the caller may see; `data: {user: {id, name}}` | `"typing"` `{ticket_id, user: {id, name}}` to `contact:<wid>:<contact_id>` (that brand's widget sockets) |
+| `customer.typing` | `POST /v1/widget/conversations/{id}/typing`, for the visitor's own conversation; `data: {}` | `"customer_typing"` `{ticket_id, contact_id}` to `ticket:<wid>:<ticket_id>` (with a `team_id`, only sockets with that team) |
 
 | type | data |
 | --- | --- |
@@ -101,10 +132,12 @@ message as `message.created`.
 
 ## Missed events
 
-Each `"event"` carries `seq`. The web app tracks the last `seq` it applied for its
-workspace. On reconnect, or when `seq` is not `last + 1`, it calls
+Each `"event"` carries `seq`, counted per workspace. The web app tracks the last `seq` it
+applied for each workspace it follows (one socket joins `workspace:<wid>` for each workspace its
+token covers). On reconnect, or when `seq` is not `last + 1`, it calls
 `GET /v1/events?since=<last>` and applies those first. If that returns
-`{"resync": true}` (gap older than retention), it invalidates all queries.
+`{"resync": true}` (gap older than retention), it invalidates that workspace's queries. The replay of
+another workspace than the focus sends that workspace's `OD-Workspace`.
 
 ## Ops
 
@@ -113,4 +146,5 @@ workspace. On reconnect, or when `seq` is not `last + 1`, it calls
 - Clustering: `libcluster` with DNS polling (`CLUSTER_DNS`) so Presence spans nodes; a
   single node needs nothing.
 - Env: `PORT` (4000), `AUTH_SECRET`, `NATS_URL`, `NATS_TOKEN`, `CHECK_ORIGINS`,
-  `SECRET_KEY_BASE`, `CLUSTER_DNS`, `POSTHOG_KEY`, `POSTHOG_HOST`.
+  `SECRET_KEY_BASE`, `CLUSTER_DNS`, `POSTHOG_KEY`, `POSTHOG_HOST`, `MAX_SOCKETS_PER_SUB`,
+  `MAX_SOCKETS_PER_IP`, `MAX_SOCKET_AGE` (3600), `TRUSTED_PROXY_HOPS` (`realtime/README.md`).

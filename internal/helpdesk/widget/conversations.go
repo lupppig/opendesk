@@ -18,6 +18,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/auth"
 	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/domain"
+	"github.com/useopendesk/opendesk/internal/events"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
 	"github.com/useopendesk/opendesk/internal/helpdesk/routing"
 	"github.com/useopendesk/opendesk/internal/httpx"
@@ -303,6 +304,39 @@ func (h *handler) registerConversations(api huma.API) {
 			if err := h.seen(ctx, p); err != nil {
 				return nil, httpx.Wrap(err)
 			}
+			return nil, nil
+		})
+
+	huma.Register(api, huma.Operation{OperationID: "widget-typing", Method: http.MethodPost, Path: "/v1/widget/conversations/{id}/typing",
+		Summary: "Show the team the visitor is writing", Tags: []string{"Widget"}, DefaultStatus: http.StatusNoContent,
+		Description: "The widget calls this at most every few seconds while the visitor types. Agents on the ticket who may see it " +
+			"get \"customer_typing\" on the realtime gateway."},
+		func(ctx context.Context, in *struct {
+			ID     string `path:"id"`
+			Origin string `header:"Origin"`
+		}) (*hd.Empty, error) {
+			p, err := h.visitor(ctx, in.Origin)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			if err := h.allowWrite(p, "typing", visitorWrites); err != nil {
+				return nil, err
+			}
+			c, err := loadConversation(ctx, h.d.DB.Pool, p, in.ID)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			if h.d.NATS == nil {
+				return nil, nil
+			}
+			// The ticket's private team keeps it from agents outside the team.
+			ev := events.LiveEvent{WorkspaceID: p.WorkspaceID, TicketID: c.ID, ContactID: p.ContactID, Type: "customer.typing", Data: map[string]any{}}
+			if err := h.d.DB.Pool.QueryRow(ctx, `SELECT t.brand_id, tm.id FROM tickets t
+				LEFT JOIN teams tm ON tm.id = t.team_id AND tm.private
+				WHERE t.workspace_id = $1 AND t.id = $2`, p.WorkspaceID, c.ID).Scan(&ev.BrandID, &ev.TeamID); err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			events.PublishLive(h.d.NATS.Conn, ev)
 			return nil, nil
 		})
 

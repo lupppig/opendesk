@@ -156,7 +156,7 @@ export function registerAuth() {
     if (signedInUsers().length >= MAX_ACCOUNTS)
       throw new HttpError(409, "too_many_accounts", "You're signed in to the most accounts this browser can hold. Log out of one, then try again.");
     // A new account has no workspace yet: it goes through onboarding.
-    const u: User = { id: uuid(), email, name, avatar_url: null, avatar_source: null, email_verified: false, totp_enabled: false, created_at: nowIso() };
+    const u: User = { id: uuid(), email, name, avatar_url: null, avatar_source: null, email_verified: false, totp_enabled: false, time_format: "auto", created_at: nowIso() };
     db.users.push(u);
     return signInAs(u);
   });
@@ -263,6 +263,11 @@ export function registerAuth() {
       if (avatar && !/^https:\/\/\S+$/i.test(avatar)) throw invalid("Use an https URL for the picture");
       u.avatar_url = avatar || null;
       u.avatar_source = avatar ? "upload" : null;
+    }
+    const clock = s(ctx, "time_format");
+    if (clock !== undefined) {
+      if (clock !== "auto" && clock !== "12h" && clock !== "24h") throw invalid("time_format must be auto, 12h or 24h");
+      u.time_format = clock;
     }
     return u;
   });

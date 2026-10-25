@@ -190,11 +190,31 @@ struct AssistantStep: Codable, Hashable, Sendable, Identifiable {
     var summary: String?
     var refs: [AssistantRef]?
     var actionID: String?
+    /// An `ask_teammate` step: whose Ollie answered, and how.
+    var peer: AssistantStepPeer?
 
     enum CodingKeys: String, CodingKey {
-        case id, tool, label, status, summary, refs
+        case id, tool, label, status, summary, refs, peer
         case actionID = "action_id"
     }
+}
+
+struct AssistantStepPeer: Codable, Hashable, Sendable {
+    struct Person: Codable, Hashable, Sendable {
+        var id: String
+        var name: String
+        var avatarURL: String?
+
+        enum CodingKeys: String, CodingKey {
+            case id, name
+            case avatarURL = "avatar_url"
+        }
+    }
+
+    var user: Person
+    /// `answered`, `declined`, `not_shared` or `failed`.
+    var result: String
+    var sources: Int?
 }
 
 struct PreviewChange: Codable, Hashable, Sendable {
@@ -236,6 +256,23 @@ struct AssistantItem: Codable, Hashable, Sendable {
     var role: String
     var text: String
     var steps: [AssistantStep]?
+    var context: AssistantPageContext?
+}
+
+/// `GET /v1/assistant/tips`: a nudge from a count query, never the model.
+struct AssistantTip: Codable, Hashable, Sendable, Identifiable {
+    var key: String
+    var text: String
+    var prompt: String
+    /// `high`, `medium` or `low`.
+    var severity: String
+    var count: Int?
+
+    var id: String { key }
+}
+
+struct AssistantTips: Codable, Sendable {
+    var tips: [AssistantTip]
 }
 
 struct AssistantTranscript: Decodable, Sendable {
@@ -253,7 +290,7 @@ struct AssistantRunResult: Decodable, Sendable {
     var status: String?
 }
 
-struct AssistantPageContext: Encodable, Sendable {
+struct AssistantPageContext: Codable, Hashable, Sendable {
     var page: String
     var path: String?
     var ticketID: String?

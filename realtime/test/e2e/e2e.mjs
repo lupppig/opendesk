@@ -87,8 +87,9 @@ const tid = randomUUID();
 const ana = { sub: randomUUID(), name: "Ana" };
 const ben = { sub: randomUUID(), name: "Ben" };
 const cid = randomUUID();
+// iat_ms as the API sets it: revocations are compared with it.
 const ws = (u) =>
-  jwt({ purpose: "ws", kind: "user", wid, role: "agent", avatar: "https://e.test/a.png", ...u });
+  jwt({ purpose: "ws", kind: "user", wid, role: "agent", avatar: "https://e.test/a.png", iat_ms: Date.now(), ...u });
 
 // 1. Tokens the gateway must refuse.
 for (const [label, token] of [
@@ -170,21 +171,14 @@ ok(
   await until(() => bTicket.inbox.some((m) => m.ev === "typing" && m.payload.user_id === ana.sub && m.payload.name === "Ana")),
   "agent typing reaches the other agent on the ticket",
 );
-ok(
-  await until(() =>
-    kContact.inbox.some((m) => m.ev === "typing" && m.payload.ticket_id === tid && m.payload.user?.id === ana.sub),
-  ),
-  "agent typing with contact_id reaches the widget as {ticket_id, user}",
-);
 ok(!aTicket.inbox.some((m) => m.ev === "typing"), "typing is not echoed to the sender");
+// Typing between agents and the visitor goes through the API (POST .../typing), which checks the ticket.
 kContact.channel.push("typing", { ticket_id: tid });
+await sleep(300);
+ok(!kContact.inbox.some((m) => m.ev === "typing"), "an agent's typing push with contact_id reaches no widget");
 ok(
-  await until(() =>
-    [aTicket, bTicket].every((t) =>
-      t.inbox.some((m) => m.ev === "customer_typing" && m.payload.contact_id === cid && m.payload.ticket_id === tid),
-    ),
-  ),
-  "widget typing reaches both agents as customer_typing",
+  ![aTicket, bTicket].some((t) => t.inbox.some((m) => m.ev === "customer_typing")),
+  "a widget's typing push reaches no agent",
 );
 
 // 6. Events through the Go outbox -> relay -> NATS -> gateway.
@@ -207,12 +201,21 @@ ok(events(aUser).length === 1, "public event without user topic does not reach u
 // 7. Disconnect control message closes Ana's sockets only.
 const a2 = connect(ws(ana), GATEWAY_URL_B);
 ok(await until(() => a2.state.opened), "Ana opens a second socket");
+const before = ws(ana);
+await sleep(5);
 console.log("     ", publish(["-disconnect", ana.sub]));
 ok(await until(() => a.state.closed && a2.state.closed), "od.control.disconnect closes all of Ana's sockets");
 await sleep(300);
 ok(!b.state.closed && b.socket.isConnected(), "Ben stays connected");
 ok(await until(() => !bSeen[ana.sub] && bSeen[ben.sub]), "Ben sees Ana leave the ticket after the disconnect");
 
-for (const c of [a, a2, b, k]) c.socket.disconnect();
+// 8. A token issued before the revocation no longer connects, on either node; a fresh one does.
+const stale = [connect(before), connect(before, GATEWAY_URL_B)];
+await until(() => stale.every((c) => c.state.errored || c.state.opened), 2000);
+ok(stale.every((c) => !c.state.opened), "a token issued before the disconnect is refused");
+const a3 = connect(ws(ana), GATEWAY_URL_B);
+ok(await until(() => a3.state.opened), "a token issued after it connects");
+
+for (const c of [a, a2, a3, b, k, ...stale]) c.socket.disconnect();
 console.log(failures === 0 ? "\nALL PASSED" : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);

@@ -48,8 +48,9 @@ func (s *svc) registerMe(api huma.API) {
 		Summary: "Update your profile", Tags: tags},
 		func(ctx context.Context, in *struct {
 			Body struct {
-				Name      *string `json:"name,omitempty" maxLength:"200"`
-				AvatarURL *string `json:"avatar_url,omitempty" maxLength:"2000" doc:"An https picture URL to copy (fetched and processed server-side), or empty to remove the picture"`
+				Name       *string `json:"name,omitempty" maxLength:"200"`
+				AvatarURL  *string `json:"avatar_url,omitempty" maxLength:"2000" doc:"An https picture URL to copy (fetched and processed server-side), or empty to remove the picture"`
+				TimeFormat *string `json:"time_format,omitempty" enum:"auto,12h,24h" doc:"The clock times are shown in, in the app and in notification emails"`
 			}
 		}) (*struct{ Body CoreUser }, error) {
 			p, err := auth.RequireUser(ctx)
@@ -70,7 +71,8 @@ func (s *svc) registerMe(api huma.API) {
 			var oldPrefix string
 			var u CoreUser
 			err = s.tx(ctx, func(tx pgx.Tx) error {
-				if _, err := tx.Exec(ctx, `UPDATE users SET name = COALESCE($2, name), updated_at = now() WHERE id = $1`, p.UserID, name); err != nil {
+				if _, err := tx.Exec(ctx, `UPDATE users SET name = COALESCE($2, name), time_format = COALESCE($3, time_format), updated_at = now() WHERE id = $1`,
+					p.UserID, name, in.Body.TimeFormat); err != nil {
 					return err
 				}
 				if a := in.Body.AvatarURL; a != nil {

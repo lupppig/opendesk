@@ -228,6 +228,7 @@
     "playground": "Agent playground",
     "kb_draft": "Article drafts",
     "assistant": "Assistant",
+    "assistant_peer": "Asking a teammate's Ollie",
     "other": "Other"
   },
   "dialog": {

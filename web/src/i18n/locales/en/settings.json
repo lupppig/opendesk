@@ -274,6 +274,16 @@
       "light": "Light",
       "dark": "Dark",
       "system": "System"
+    },
+    "clock": {
+      "title": "Time",
+      "hint": "Applies to your account, in every browser.",
+      "label": "Time format",
+      "labelHint": "For times in the app and in your notification emails. Automatic follows your browser's language and region in the app and uses 24-hour in emails.",
+      "auto": "Automatic",
+      "h12": "12-hour (2:05 PM)",
+      "h24": "24-hour (14:05)",
+      "saved": "Time format saved"
     }
   },
   "saveBar": {
@@ -340,7 +350,13 @@
     "messageDeleteHint": "Own notes: agents delete their own internal notes. Any agent’s: also every agent’s notes and replies. A deleted message stays as a marker. Admins can delete any message, read deleted ones and restore them, and give an agent another rule in Members.",
     "messageDeleteOff": "Off",
     "messageDeleteOwn": "Own notes",
-    "messageDeleteAll": "Any agent’s"
+    "messageDeleteAll": "Any agent’s",
+    "collabReplies": "Reply from your own mail",
+    "collabRepliesHint": "Members can answer an email ticket from one of their connected mail accounts instead of the ticket's address, one reply at a time. The customer's answers still come back to the ticket. Each mailbox can set its own rules.",
+    "collabReplyTo": "Where answers go",
+    "collabReplyToHint": "The Reply-To of such a reply, unless the member picks another. Their address: answers go to the address it was sent from and come back to the ticket from there. The ticket's address: answers go to the team's address like any email.",
+    "collabReplyToAddress": "Their address",
+    "collabReplyToMailbox": "The ticket's address"
   },
   "display": {
     "title": "Statuses and priorities",
@@ -643,5 +659,58 @@
     "remove": "Remove signature",
     "preview": "Preview",
     "none": "No signature"
+  },
+  "peer": {
+    "title": "Agent-to-agent",
+    "description": "Let teammates' {{name}} ask yours about your mail when they need something only you can see.",
+    "enabled": "Let teammates' {{name}} ask mine",
+    "enabledHint": "Your {{name}} answers from your own mail accounts, following your rules. They get an answer, never your mail.",
+    "offTitle": "Your workspace has not turned this on",
+    "offHint": "An admin can allow it in Settings, AI.",
+    "offAdmin": "Allow it in Settings, AI, with \"Let teammates' {{name}} ask each other\". Each member then chooses for their own mail.",
+    "openAi": "Open AI settings",
+    "unavailable": "Agent-to-agent is not available",
+    "people": "People",
+    "peopleHint": "Who may ask your {{name}}. Changes apply to the next question.",
+    "shareWith": "Share with",
+    "everyone": "Everyone",
+    "everyoneHint": "Every member of this workspace.",
+    "chosen": "Chosen people and teams",
+    "chosenHint": "Only the people and teams you pick.",
+    "accounts": "Accounts",
+    "accountsHint": "Which of your own mail accounts your {{name}} may draw on. Mail others share with you is never used.",
+    "useFrom": "Use information from",
+    "modesHint": "Verbatim may quote your mail. Summaries only answers in its own words. Nothing leaves an account out.",
+    "allAccounts": "All accounts",
+    "chosenAccounts": "Chosen accounts",
+    "modeFor": "What {{account}} may share",
+    "newAccounts": "New accounts",
+    "newAccountsHint": "Accounts you connect later start with this.",
+    "noAccounts": "No mail accounts of your own",
+    "noAccountsHint": "Connect one in Mail accounts, then choose here what it may share.",
+    "connect": "Connect an account",
+    "mode": {
+      "verbatim": "Verbatim",
+      "summary": "Summaries only",
+      "none": "Nothing"
+    },
+    "rules": "Sharing rules",
+    "rulesHint": "Your {{name}} follows these when it answers. It also uses common sense and keeps private matters private.",
+    "rulesSuggestion": "Share dates, decisions and next steps. Never share prices, contracts, personal matters or anything marked confidential.",
+    "useSuggestion": "Use a suggestion",
+    "asks": "Recent asks",
+    "asksHint": "Questions teammates asked your {{name}}, and what it answered. Kept for 90 days.",
+    "noAsks": "No one has asked yet",
+    "noAsksHint": "When a teammate's {{name}} asks yours, the question and the answer show up here.",
+    "showMore": "Show more",
+    "result": {
+      "answered_zero": "Answered",
+      "answered_one": "Answered from 1 conversation",
+      "answered_other": "Answered from {{count}} conversations",
+      "declined": "Declined",
+      "not_shared": "Not shared",
+      "failed": "Could not answer"
+    },
+    "saveFailed": "Could not save your agent-to-agent settings."
   }
 }

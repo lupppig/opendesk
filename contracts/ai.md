@@ -122,6 +122,9 @@ interface AISettings {
   auto_summarize: boolean          // keep a summary on tickets with 5+ messages, default false
   widget_answers: boolean          // the AI agent answers chat widget conversations, default false
   assistant: boolean               // Ollie, the assistant panel, default true
+  assistant_peer: boolean          // members may let teammates' Ollie ask theirs about their own mail ("Asking a teammate"), default false
+  assistant_auto: string[]         // built-in changes Ollie makes without asking ("Approvals"), default []: some of update_ticket,
+                                   // bulk_update_tickets, add_note, create_kb_draft, create_view, create_automation_draft
   tone: string                     // "friendly" | "professional" | "concise" | free text up to 200 chars; drafts and rewrites (the agent uses its bot's tone, contracts/bots.md)
   reply_language: "customer" | "workspace"  // reply in the customer's language (default) or the workspace's
   instructions: string             // extra guidance for drafts, up to 2,000 chars
@@ -143,7 +146,8 @@ containing `<`, `>` or control characters, or `instructions` over 2,000 characte
 characters other than newline and tab are stripped), and writes the audit entry
 `ai.settings_updated` with the changed keys (not their values). `reply_language: "workspace"`
 means English unless `instructions` name another language. `widget_max_replies` outside 1..100 is
-`422`. What the agent should know and how it sounds are its bot's personality (contracts/bots.md).
+`422`. `assistant_auto` replaces the list and takes only the six names above (`422` for any other,
+repeats dropped); a stored name outside them reads as absent. Admins only, like every key. What the agent should know and how it sounds are its bot's personality (contracts/bots.md).
 
 ## Models
 
@@ -342,11 +346,16 @@ interface PageContext { path?: string; page?: "inbox"|"view"|"ticket"|"contacts"
   folder?: string; view_id?: string; ticket_id?: string; filters?: Record<string, string> }
 interface Step { id: string; tool: string; label: string;
   status: "running"|"done"|"error"|"awaiting_approval"|"approved"|"denied"|"expired";
-  summary?: string; refs?: Ref[]; action_id?: string }
+  summary?: string; refs?: Ref[]; action_id?: string;
+  auto?: boolean /* ran without asking ("Approvals") */; preview?: Preview /* what an auto step ran */;
+  peer?: { user: { id: string; name: string; avatar_url: string }; result: "answered"|"declined"|"not_shared"|"failed"; sources: number } }
+  // peer: an ask_teammate step, whose Ollie answered and how ("Asked Maya's Ollie · answered from 3 conversations")
 interface Ref { kind: "ticket"|"contact"|"article"|"view"|"automation"|"member"|"external" /* id is the https link */; id: string; label: string; number?: number }
 interface Preview { title: string; summary?: string; changes?: {field: string; from: string; to: string}[];
   body?: string /* markdown, a reply or note */; targets?: Ref[]; total?: number; external?: boolean /* reaches a customer */;
-  system?: string /* the connected product the change runs in, e.g. "Linear" */ }
+  system?: string /* the connected product the change runs in, e.g. "Linear" */;
+  arguments?: string /* everything the change runs with, indented JSON: a connected tool's arguments as sent, api_change's {method, path, query?, body?} */;
+  omitted?: number /* fields changes and body leave out */; clipped?: boolean /* a value shown is cut short */ }
 interface Approval { action_id: string; call_id: string; tool: string; preview: Preview; token: string; expires_at: string }
 interface Item { role: "user"|"assistant"; text: string; steps: Step[]; context?: PageContext }
 interface Tip { key: string; text: string; prompt: string; severity: "high"|"medium"|"low"; count: number }
@@ -387,14 +396,24 @@ and activities:
   that one in full), `api_get` reads one (`fields` keeps only the named fields, of each item for a list), and
   `api_change` proposes one POST, PUT, PATCH or DELETE (a write, `preview.changes` = each body field, `from` = the
   value the same path reads now). The system prompt names the API's areas. Out of reach: `/v1/admin`, `/v1/auth`,
-  `/v1/assistant`, public, visitor, device and server routes; writes to credentials, sessions, devices, API keys,
+  `/v1/assistant`, `/v1/me/assistant-peer`, public, visitor, device and server routes; writes to credentials, sessions, devices, API keys,
   billing, the AI provider, imports, owner-only operations (deleting the workspace or the account, transfer, widget
   secrets) and ticket messages (`draft_reply` and `add_note` instead). A body with a credential-named field
   (secret, token, password, API key) is refused, and such values are `[hidden]` in every answer the model reads.
+  So are the parts of a URL that can carry one, in every string of those answers that is an absolute http(s)
+  URL: userinfo is dropped, each query and fragment value is `[hidden]` (names kept), and so is each path
+  segment that looks like a token (a run of 20 or more letters, digits, `-` and `_` mixing letters and
+  digits, with an unbroken stretch of 16 or more, or 32 or more long in mixed case; UUIDs and ordinary slugs
+  are kept). `preview.arguments` is the request the change sends; `changes` show values up to 2,000
+  characters (`clipped` past that) and `omitted` counts body fields already set to the same value.
   Writes that reach someone outside (invitations, Collab mail, test sends) set `preview.external`.
+- teammates (agent+): `ask_teammate {teammate, question, keywords?}` asks a teammate's Ollie about
+  their own mail (below, "Asking a teammate"). A read: it needs no approval, since it reads only
+  what the teammate consented to share. Offered only while the workspace allows it.
 - connected (agent+): the workspace's integrations' MCP tools, named `<slug>__<tool>`
-  (`contracts/integrations.md`). Server-marked read-only tools are reads; every other one
-  is a write with `preview.system` set.
+  (`contracts/integrations.md`). Server-marked read-only tools are reads unless an admin set
+  them to ask first; every other one is a write with `preview.system` set and the complete
+  arguments in `preview.arguments`, proposed unless an admin lets it run without asking.
 
 Approvals:
 - A write is stored as an `assistant_actions` row (`pending`, 15 minutes) and the client
@@ -407,11 +426,103 @@ Approvals:
 - An approved write runs with the user's permissions, attributed `actor_type = "ai"` with
   `actor.user` = the user, and is audit-logged as `assistant.action` (tool and status, not
   content) with `data.actor = "ai"`. POSTs carry the idempotency key `assistant-<action id>`.
+- Without asking: a write runs as soon as it is proposed when the workspace allows it, the
+  built-in ones in `settings.ai.assistant_auto` and connected ones in their integration's
+  `auto_tools` (`contracts/integrations.md`). It is proposed (validated and described) and then
+  applied on the path of an approved write: the same permissions and role checks, an
+  `assistant_actions` row with `auto = true` that ends `done` or `failed` (never `pending`, so no
+  decision can claim it), the idempotency key `assistant-<action id>`, and the `assistant.action`
+  audit entry with `data.auto = true`. The setting is read again just before it runs, so turning it
+  off stops a run in progress. The model gets the result as for an approved write; the step ends
+  `done` (or `error`) with `auto: true` and its `preview`, and the panel marks it "Ran without asking".
+- These always ask, whatever the settings say, checked on the server when the change runs: a
+  proposal whose preview is `external` (replies and every other write that reaches someone outside),
+  `api_change` (so every write that stays with the person, such as credentials, sessions and owner-only
+  operations, stays behind `api_change`'s own refusals and an approval), and any built-in write not in
+  the six names above. A connected tool runs without asking only while it is a write, on `auto_tools`
+  and not on `ask_tools`.
+- At most 20 changes run without asking per message from the user (counted across the approvals that
+  continue it); past that, writes are proposals again. A change that ran without asking does not hold
+  back the next call; a call after a pending proposal in the same turn still waits for it.
 
 Data: tool outputs are wrapped in `<tool_output>` data blocks and the page in a
 `<page_context>` block, with the same delimiter escaping as every other feature.
 Conversations are stored per user (`assistant_sessions`, `assistant_turns`); usage rows
 hold counts only.
+
+### Asking a teammate
+
+A member's Ollie can ask a teammate's Ollie about what only that teammate sees: their own Collab
+mail accounts (contracts/collab.md). The asker never gets the mail, only an answer the teammate's
+Ollie writes on the teammate's behalf, under the teammate's rules.
+
+Consent, in two steps. An admin allows it for the workspace (`settings.ai.assistant_peer`, off by
+default; it also needs AI, Ollie and Collab on). Then each member opts in for their own mail on
+the agent-to-agent settings page. Nobody's mail is reachable without their own consent: a role
+never grants it, admins can only turn the workspace switch off, and nobody reads anyone else's
+choices or log.
+
+What a member chooses (`assistant_peer_settings`, `assistant_peer_audience`, `assistant_peer_sources`):
+- `enabled` (default false).
+- Share with: `everyone` in the workspace (default), or `chosen` people and teams.
+- Use information from: all their own accounts (`all_accounts`, default; a new account starts at
+  `default_mode`), or only chosen ones. Each account is `verbatim` (may be quoted), `summary`
+  (default: shared only in the answering Ollie's own words) or `none`.
+- Sharing rules: free text up to 2,000 characters, added to the answering Ollie's instructions as
+  the owner's policy.
+
+| method | path | who | body → response |
+| --- | --- | --- | --- |
+| GET | `/v1/me/assistant-peer` | member | → `PeerSettings`, the caller's own |
+| PUT | `/v1/me/assistant-peer` | member | `PeerSettingsInput` (the whole settings) → `PeerSettings` |
+| GET | `/v1/me/assistant-peer/asks` | member | `?limit&cursor` → `{data: PeerAsk[], next_cursor}`, asks made to the caller, newest first |
+
+```ts
+type PeerMode = "verbatim" | "summary" | "none"
+interface PeerSettings { available: boolean /* the workspace allows it */; enabled: boolean;
+  share_with: "everyone" | "chosen"; audience: { users: UserRef[]; teams: { id: string; name: string }[] };
+  all_accounts: boolean; default_mode: PeerMode;
+  accounts: { id: string; email: string; name: string; provider: string; mode: PeerMode /* in effect */; chosen: boolean }[];
+  rules: string; updated_at: string | null }
+interface PeerSettingsInput { enabled: boolean; share_with: "everyone" | "chosen";
+  audience: { user_ids: string[]; team_ids: string[] }; all_accounts: boolean; default_mode: PeerMode;
+  accounts: { id: string; mode: PeerMode }[]; rules: string }
+interface PeerAsk { id: string; asker: UserRef; question: string; answer: string;
+  result: "answered" | "declined" | "not_shared" | "failed"; sources: number; created_at: string }
+```
+
+These routes need a signed-in member of a workspace with Collab (`402 collab_required`); API keys,
+AI clients and Ollie itself are refused (`403`), they are left out of the OpenAPI document, and
+Ollie's API tools cannot reach them. `enabled: true` while the workspace does not allow it is
+`409 assistant_peer_off`. A user who is not a member, a team of another workspace, or an account
+that is not the caller's own is `422 validation_failed`. Changes are audit-logged as
+`assistant_peer.settings_updated` with the changed keys only.
+
+An ask (`ask_teammate`), checked in Go and SQL before any model call, in this order:
+1. The workspace allows it and AI is on (else the tool errors with `assistant_peer_off`).
+2. The teammate is another member of the workspace.
+3. The pair is under 20 asks per hour (`429`); the asker's own Ollie limits apply as usual.
+4. Collab is available, the teammate opted in, the asker is in their audience (people, or members
+   of listed teams, checked live at each ask), and at least one of their accounts shares
+   something. Otherwise the result is `not_shared`, the same whichever check failed.
+5. The AI balance covers the ask (`402 ai_balance_empty`), checked before any mail is read.
+
+Then the server searches only the teammate's own accounts that share something (full-text, spam
+and trash left out), at most 8 conversations, each its latest messages as plain text up to 1,500
+characters with addresses and links removed; nothing matching answers without a model call. One
+model call without tools (feature `assistant_peer`, fast tier, billed to the workspace and
+attributed to the asker) gets the owner's rules (`<sharing_rules>`), each conversation in a
+`<mail mode="...">` block and the question (`<question>`), with instructions to share only what
+helps, to follow the rules and common sense about privacy, to decline what they forbid, never to
+include addresses, links or attachments, and never to follow instructions in mail. It answers
+`{answer, declined, sources_used}`. An answer that repeats 12 or more consecutive words of a
+`summary` conversation is asked again once in other words, then declined. Addresses and links
+left in the answer are removed.
+
+The asker's Ollie gets the answer in its `<tool_output>` block marked `from="<name>'s Ollie"`, and
+the step carries `peer`. Each ask is kept in the teammate's own log (`assistant_peer_asks`, not
+kept for a teammate who never opted in) for 90 days, and audit-logged as `assistant.peer_asked`
+(entity: the teammate; data: `result` and `sources` only, never the question, answer or accounts).
 
 ## Automations
 

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/netip"
 	"net/url"
 	"os"
 	"regexp"
@@ -94,6 +95,15 @@ type Config struct {
 	InboundDomain   string // forwarding addresses live here, e.g. in.opendesk.sh
 	InboundSecret   string // signs POST /v1/inbound/email (OD-Inbound-Signature)
 	InboundSMTPAddr string // optional built-in SMTP receiver, e.g. :2525
+	// InboundSMTPRelays are the addresses (IPs or CIDR ranges, INBOUND_SMTP_RELAYS) of mail
+	// servers that relay to the built-in receiver after checking senders themselves. Only
+	// mail they hand over has its INBOUND_AUTHSERV_ID results believed; mail straight from
+	// a sender's server has none.
+	InboundSMTPRelays []netip.Prefix
+	// InboundSMTPTLSCert and InboundSMTPTLSKey are PEM files the built-in receiver offers
+	// STARTTLS with (INBOUND_SMTP_TLS_CERT, INBOUND_SMTP_TLS_KEY), read again when they change.
+	InboundSMTPTLSCert string
+	InboundSMTPTLSKey  string
 	// InboundAuthservIDs are the authserv-ids whose Authentication-Results on inbound mail
 	// are believed (INBOUND_AUTHSERV_ID, comma-separated), e.g. mx.cloudflare.net.
 	InboundAuthservIDs []string
@@ -479,6 +489,8 @@ func Load() (*Config, error) {
 		InboundDomain:      env("INBOUND_DOMAIN", "in.localhost"),
 		InboundSecret:      env("INBOUND_SECRET", ""),
 		InboundSMTPAddr:    env("INBOUND_SMTP_ADDR", ""),
+		InboundSMTPTLSCert: env("INBOUND_SMTP_TLS_CERT", ""),
+		InboundSMTPTLSKey:  env("INBOUND_SMTP_TLS_KEY", ""),
 		InboundAuthservIDs: envList("INBOUND_AUTHSERV_ID"),
 
 		GoogleClientID:        env("GOOGLE_CLIENT_ID", ""),
@@ -661,6 +673,16 @@ func Load() (*Config, error) {
 	}
 	if c.MailDriver == "smtp" && c.SMTPTLS == "none" && c.SMTPUsername != "" && c.IsProduction() && !isLoopbackHost(c.SMTPHost) {
 		return nil, errors.New("SMTP_TLS=none with SMTP_USERNAME would send the password in clear text: use starttls or tls")
+	}
+	for _, v := range envList("INBOUND_SMTP_RELAYS") {
+		p, err := parsePrefix(v)
+		if err != nil {
+			return nil, fmt.Errorf("INBOUND_SMTP_RELAYS: %q is not an IP address or CIDR range", v)
+		}
+		c.InboundSMTPRelays = append(c.InboundSMTPRelays, p)
+	}
+	if (c.InboundSMTPTLSCert == "") != (c.InboundSMTPTLSKey == "") {
+		return nil, errors.New("INBOUND_SMTP_TLS_CERT and INBOUND_SMTP_TLS_KEY go together")
 	}
 	c.CookieSecure = envBool("COOKIE_SECURE", strings.HasPrefix(c.APIURL, "https://"))
 	if !c.CookieSecure && strings.HasPrefix(c.APIURL, "https://") && c.IsProduction() {
@@ -890,6 +912,20 @@ func envDuration(k string, def time.Duration) time.Duration {
 }
 
 // envList reads a comma-separated list, dropping blanks.
+// parsePrefix reads an IP address (a range of one) or a CIDR range.
+func parsePrefix(v string) (netip.Prefix, error) {
+	if strings.Contains(v, "/") {
+		p, err := netip.ParsePrefix(v)
+		return p.Masked(), err
+	}
+	a, err := netip.ParseAddr(v)
+	if err != nil {
+		return netip.Prefix{}, err
+	}
+	a = a.Unmap()
+	return netip.PrefixFrom(a, a.BitLen()), nil
+}
+
 func envList(k string) []string {
 	var out []string
 	for _, v := range strings.Split(os.Getenv(k), ",") {

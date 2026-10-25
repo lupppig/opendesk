@@ -1,13 +1,13 @@
 import SwiftUI
 
 /// Choose the server: opendesk Cloud, a self-hosted address, or (debug
-/// builds) this Mac's dev stack. Checks `/config.json` and `/v1/auth/config`
+/// builds) this Mac's dev stack or the demo workspace. Checks `/config.json` and `/v1/auth/config`
 /// and says plainly when push or App Attest isn't available there.
 struct ServerSheet: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.dismiss) private var dismiss
 
-    enum Choice: Hashable { case cloud, selfHosted, local }
+    enum Choice: Hashable { case cloud, selfHosted, local, demo }
 
     @State private var choice: Choice = .cloud
     @State private var address = ""
@@ -30,6 +30,8 @@ struct ServerSheet: View {
                         #if DEBUG
                         Hairline(inset: 50)
                         option(.local, title: "Local development", subtitle: "localhost:8080 on this Mac", symbol: "hammer")
+                        Hairline(inset: 50)
+                        option(.demo, title: "Demo workspace", subtitle: "Sample data on this phone, nothing sent", symbol: "play.rectangle")
                         #endif
                     }
 
@@ -49,11 +51,18 @@ struct ServerSheet: View {
 
                     Button {
                         Task {
+                            #if DEBUG
+                            if choice == .demo {
+                                dismiss()
+                                await env.session.enterDemo()
+                                return
+                            }
+                            #endif
                             if found == nil { await check() }
                             if let found { use(found) }
                         }
                     } label: {
-                        ButtonLabel(title: found == nil ? "Connect" : "Use this server", busy: checking)
+                        ButtonLabel(title: choice == .demo ? "Explore the demo" : found == nil ? "Connect" : "Use this server", busy: checking)
                     }
                     .buttonStyle(InkButtonStyle())
                     .disabled(checking || (choice == .selfHosted && address.trimmingCharacters(in: .whitespaces).isEmpty))
@@ -122,6 +131,8 @@ struct ServerSheet: View {
                 #if DEBUG
                 found = (Instance.localDev, try await InstanceResolver().authConfig(for: Instance.localDev.apiURL))
                 #endif
+            case .demo:
+                break
             }
         } catch {
             Haptics.error()

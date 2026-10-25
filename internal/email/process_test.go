@@ -49,10 +49,10 @@ func TestProcessNewTicketPlain(t *testing.T) {
 	}
 	// The same message again is deduped at ingest.
 	raw := fixture(t, "new_plain.eml", "{{FROM}}", from, "{{TO}}", w.forwardAddr(m, ""), "{{ID}}", "x")
-	if _, dup, _ := w.s.ingest(w.ctx, m, []byte(raw), "", nil); dup {
+	if _, dup, _ := w.s.ingest(w.ctx, m, []byte(raw), "", nil, viaMailbox); dup {
 		t.Fatal("different id should not be a dup")
 	}
-	if _, dup, _ := w.s.ingest(w.ctx, m, []byte(raw), "", nil); !dup {
+	if _, dup, _ := w.s.ingest(w.ctx, m, []byte(raw), "", nil, viaMailbox); !dup {
 		t.Fatal("redelivery should dedupe")
 	}
 }

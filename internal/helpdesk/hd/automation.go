@@ -21,7 +21,7 @@ import (
 var (
 	AutomationTriggers = []string{jobs.TriggerTicketCreated, jobs.TriggerCustomerReplied, jobs.TriggerAgentReplied, jobs.TriggerTicketUpdated}
 	ConditionFields    = []string{"subject", "body", "from_email", "channel", "mailbox_id", "priority", "severity", "status", "tag", "sentiment", "ai_decide",
-		"team_id", "brand_id", "widget_id", "received_at"}
+		"assignee_id", "team_id", "brand_id", "widget_id", "received_at"}
 	ConditionOps = []string{"contains", "not_contains", "equals", "not_equals"}
 	ActionTypes  = []string{"set_status", "set_priority", "set_severity", "assign_user", "assign_team", "add_tag", "remove_tag", "send_reply", "add_note", "mark_spam", "ai_triage", "set_field", "set_reply_address"}
 	// Sentiments are the values triage writes to custom.ai_sentiment (contracts/ai.md).
@@ -36,7 +36,7 @@ const (
 )
 
 type Condition struct {
-	Field string `json:"field" maxLength:"60" doc:"subject, body, from_email, channel, mailbox_id, priority, severity, status, tag, sentiment, ai_decide, team_id, brand_id, widget_id, received_at, field.<key> (ticket custom field) or contact.field.<key>"`
+	Field string `json:"field" maxLength:"60" doc:"subject, body, from_email, channel, mailbox_id, priority, severity, status, tag, sentiment, ai_decide, assignee_id, team_id, brand_id, widget_id, received_at, field.<key> (ticket custom field) or contact.field.<key>"`
 	Op    string `json:"op" enum:"contains,not_contains,equals,not_equals,eq,ne,gt,gte,lt,lte,any,all,none,set,not_set" doc:"eq is an alias of equals, ne of not_equals; custom fields take the ops of their type"`
 	Value string `json:"value" maxLength:"500"`
 	// Question is the yes/no question of an ai_decide condition (contracts/ai.md "Automations").
@@ -151,7 +151,7 @@ func ValidateConditions(ctx context.Context, q db.Querier, wid uuid.UUID, cs []C
 				}
 				c.Value = id.String()
 			}
-		case "team_id", "brand_id", "widget_id":
+		case "assignee_id", "team_id", "brand_id", "widget_id":
 			// The ticket's team, brand or widget: an id of the workspace, or "none".
 			if !exact {
 				return nil, httpx.Validation(c.Field + " conditions use equals or not_equals")
@@ -168,7 +168,11 @@ func ValidateConditions(ctx context.Context, q db.Querier, wid uuid.UUID, cs []C
 			if err != nil {
 				return nil, err
 			}
-			if err := CheckRef(ctx, q, wid, kind, id); err != nil {
+			if kind == "assignee" {
+				if err := CheckMember(ctx, q, wid, id); err != nil {
+					return nil, err
+				}
+			} else if err := CheckRef(ctx, q, wid, kind, id); err != nil {
 				return nil, err
 			}
 			c.Value = id.String()

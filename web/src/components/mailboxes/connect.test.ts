@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { MailboxConnectOptions } from "@/lib/api/types";
 import { config } from "@/lib/config";
-import { apiOn, imapOn, syncOn } from "./connect";
+import type { MailDetection } from "@/lib/api/types";
+import { apiOn, imapOn, syncOn, syncProvider } from "./connect";
 
 const opts = (o: Partial<MailboxConnectOptions> & { api?: boolean } = {}): MailboxConnectOptions => ({
   google: { configured: true, oauth: true, api_sync: o.api ?? false },
@@ -37,5 +38,33 @@ describe("what a workspace can receive with", () => {
     config.mailboxImap = true;
     expect([imapOn(opts({ mailbox_imap: true })), syncOn(opts({ mailbox_imap: true }))]).toEqual([true, true]);
     expect(imapOn(undefined)).toBe(true);
+  });
+});
+
+describe("a forwarding mailbox starting to read its inbox", () => {
+  afterEach(() => {
+    config.mailboxImap = true;
+  });
+  const gmail = { oauth: "google" } as MailDetection;
+  const on = opts({ mailbox_imap: true, instance_imap: true });
+
+  it("offers its connected provider, else the one its domain is hosted at", () => {
+    config.mailboxImap = true;
+    expect(syncProvider(true, "microsoft", gmail, on)).toBe("microsoft");
+    expect(syncProvider(true, null, gmail, on)).toBe("google");
+    expect(syncProvider(true, null, undefined, on)).toBe(null);
+  });
+
+  it("is not offered to a mailbox that already reads, or while the instance doesn't sync", () => {
+    config.mailboxImap = true;
+    expect(syncProvider(false, "google", gmail, on)).toBe(null);
+    expect(syncProvider(true, "google", gmail, opts({ mailbox_imap: false, instance_imap: false }))).toBe(null);
+    config.mailboxImap = false;
+    expect(syncProvider(true, "google", gmail, on)).toBe(null);
+  });
+
+  it("leaves the place to reading directly when the workspace can", () => {
+    config.mailboxImap = true;
+    expect(syncProvider(true, "google", gmail, opts({ mailbox_imap: true, instance_imap: true, api: true }))).toBe(null);
   });
 });

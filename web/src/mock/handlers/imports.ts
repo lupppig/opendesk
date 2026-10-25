@@ -21,12 +21,13 @@ import { HttpError, del, forbidden, get, invalid, notFound, post, respond, type 
 import { ensureTags, newTicket } from "../tickets";
 import { nowIso, pick, uuid } from "../util";
 
-const names: Record<ImportSource, string> = { zendesk: "Zendesk", helpscout: "Help Scout", freshdesk: "Freshdesk", intercom: "Intercom", csv: "CSV" };
+const names: Record<ImportSource, string> = { zendesk: "Zendesk", helpscout: "Help Scout", freshdesk: "Freshdesk", intercom: "Intercom", front: "Front", csv: "CSV" };
 const required: Record<Exclude<ImportSource, "csv">, string[]> = {
   zendesk: ["subdomain", "email", "token"],
   helpscout: ["app_id", "app_secret"],
   freshdesk: ["domain", "api_key"],
   intercom: ["token"],
+  front: ["token"],
 };
 
 type Upload = CsvUpload & { header: string[]; data: string[][] };
@@ -58,6 +59,8 @@ function account(src: ImportSource, creds: Record<string, string>) {
       return { name: "Acme Inc.", url: "https://secure.helpscout.net" };
     case "intercom":
       return { name: "Acme", url: "https://app.intercom.com" };
+    case "front":
+      return { name: "Acme", url: "https://app.frontapp.com" };
     default:
       return { name: "tickets.csv", url: "" };
   }
@@ -135,7 +138,7 @@ function check(ws: WsData, b: ImportCheckBody): ImportCheck {
     ...ws.teams.slice(0, 2).map((t, i) => ({ id: `g${i}`, name: t.name, team_id: t.id })),
     { id: "g8", name: "Tier 2", team_id: null },
   ];
-  const hasArticles = b.source !== "freshdesk" || !/nokb/i.test(b.credentials?.domain ?? "");
+  const hasArticles = b.source !== "front" && (b.source !== "freshdesk" || !/nokb/i.test(b.credentials?.domain ?? ""));
   return {
     account: account(b.source, b.credentials ?? {}),
     totals: { tickets: b.source === "intercom" ? null : 1_284, articles: hasArticles ? 46 : null },

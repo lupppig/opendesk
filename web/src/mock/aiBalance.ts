@@ -38,6 +38,7 @@ export const TYPICAL_TOKENS: Record<AIFeature, [number, number]> = {
   playground: [5000, 400],
   kb_draft: [8000, 1500],
   assistant: [6000, 400],
+  assistant_peer: [4000, 400],
 };
 
 /** What a call costs when no price gives it (contracts/billing.md "Typical costs"), in US dollars. */
@@ -55,6 +56,7 @@ export const FALLBACK_USD: Record<AIFeature, number> = {
   playground: 0.03,
   kb_draft: 0.05,
   assistant: 0.02,
+  assistant_peer: 0.01,
 };
 
 export const DEFAULT_MODEL = "anthropic/claude-sonnet-5.5";
@@ -137,6 +139,7 @@ export function modelFor(ws: WsData, feature: AIFeature): string {
       return JEV;
     case "rewrite":
     case "translate":
+    case "assistant_peer":
       return m.fast;
     case "answer":
     case "answer_email":

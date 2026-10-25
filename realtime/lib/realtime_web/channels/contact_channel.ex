@@ -2,24 +2,24 @@ defmodule RealtimeWeb.ContactChannel do
   @moduledoc """
   `contact:<wid>:<contact_id>`: the chat widget's channel. Joined only by a
   `widget_ws` token for that contact in that workspace. Receives public events,
-  agents' `"typing"` and the widget agent's live reply previews (`"live"`).
+  agents' `"typing"` `{ticket_id, user}` and the widget agent's live reply
+  previews (`"live"`), all from `Realtime.Fanout`.
 
-  Client push `"typing"` `{ticket_id}` sends `"customer_typing"`
-  `{ticket_id, contact_id}` to `ticket:<wid>:<ticket_id>`.
+  The visitor's typing goes through the API (`POST /v1/widget/conversations/{id}/typing`),
+  which checks the conversation is theirs. A `"typing"` push here is accepted and
+  does nothing, for widgets from before that route.
 
-  `"event"` and `"live"` pushes that name a chat's brand (`brand_id`) reach
-  only sockets whose token is for that brand (its `bid`); `brand_id` is
+  `"event"`, `"live"` and `"typing"` pushes that name a chat's brand (`brand_id`)
+  reach only sockets whose token is for that brand (its `bid`); `brand_id` is
   stripped from what is pushed. A visitor's chats of another brand never
   reach this widget.
   """
 
   use Phoenix.Channel, log_join: false, log_handle_in: false
 
-  intercept ["event", "live"]
+  intercept ["event", "live", "typing"]
 
-  alias Realtime.Ids
   alias RealtimeWeb.Channels.Guard
-  alias RealtimeWeb.Endpoint
 
   @impl true
   def join(
@@ -66,21 +66,7 @@ defmodule RealtimeWeb.ContactChannel do
     end
   end
 
-  defp handle_push("typing", %{"ticket_id" => ticket_id}, socket) do
-    if Ids.uuid?(ticket_id) do
-      %{wid: wid, sub: sub} = socket.assigns
-      ticket_id = Ids.normalize(ticket_id)
-
-      Endpoint.broadcast!("ticket:#{wid}:#{ticket_id}", "customer_typing", %{
-        ticket_id: ticket_id,
-        contact_id: sub
-      })
-
-      {:noreply, socket}
-    else
-      Guard.invalid(socket)
-    end
-  end
+  defp handle_push("typing", _payload, socket), do: {:noreply, socket}
 
   defp handle_push(_event, _payload, socket), do: Guard.invalid(socket)
 end

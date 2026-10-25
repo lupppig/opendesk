@@ -225,6 +225,11 @@ type NewMessage struct {
 	// outbound one with DeliveryStatus "pending" is emailed to the thread's recipients;
 	// an inbound one is a reply from them.
 	ThreadID *uuid.UUID
+	// CollabAccountID sends an outbound email reply from the author's own Collab address
+	// (FromEmail) instead of a mailbox, with CollabReplyTo as its Reply-To ("address",
+	// "mailbox" or an address; contracts/collab.md "Answering tickets").
+	CollabAccountID *uuid.UUID
+	CollabReplyTo   string
 }
 
 // ErrCannotSend answers an email reply from a mailbox that sends through the platform
@@ -277,7 +282,7 @@ func AddMessage(ctx context.Context, tx pgx.Tx, jc Jobs, nm NewMessage) (Message
 			return Message{}, err
 		}
 	}
-	if nm.Kind == "reply" && nm.Direction == "outbound" && channel == ChannelEmail && nm.DeliveryStatus == "pending" {
+	if nm.Kind == "reply" && nm.Direction == "outbound" && channel == ChannelEmail && nm.DeliveryStatus == "pending" && nm.CollabAccountID == nil {
 		from := nm.MailboxID
 		if from == nil {
 			from = ticketMailbox
@@ -301,13 +306,13 @@ func AddMessage(ctx context.Context, tx pgx.Tx, jc Jobs, nm NewMessage) (Message
 	_, err := tx.Exec(ctx, `INSERT INTO messages (id, workspace_id, ticket_id, kind, direction, author_type, author_user_id,
 		author_contact_id, body_html, body_text, full_html, subject, from_email, from_name, to_emails, cc_emails, bcc_emails,
 		email_message_id, in_reply_to, "references", inbound_email_id, delivery_status, created_at, ai, ai_action, mailbox_id,
-		reply_to, auth_failed, no_auto_reply, form_sender, bot_id, received_at, thread_id)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33)`,
+		reply_to, auth_failed, no_auto_reply, form_sender, bot_id, received_at, thread_id, collab_account_id, collab_reply_to)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35)`,
 		id, nm.WorkspaceID, nm.TicketID, nm.Kind, nm.Direction, nm.AuthorType, nm.AuthorUserID, nm.AuthorContactID,
 		nm.BodyHTML, nm.BodyText, nm.FullHTML, truncateRunes(nm.Subject, 500), nm.FromEmail, nm.FromName, nm.To, nm.Cc, nm.Bcc,
 		nm.EmailMessageID, nm.InReplyTo, nm.References, nm.InboundEmailID, nm.DeliveryStatus, nm.CreatedAt, nm.AI, nm.AIAction, nm.MailboxID,
 		truncateRunes(nm.ReplyTo, 320), nm.AuthFailed, nm.NoAutoReply, truncateRunes(nm.FormSender, 320), nm.BotID,
-		truncateRunes(strings.ToLower(strings.TrimSpace(nm.ReceivedAt)), 320), nm.ThreadID)
+		truncateRunes(strings.ToLower(strings.TrimSpace(nm.ReceivedAt)), 320), nm.ThreadID, nm.CollabAccountID, truncateRunes(nm.CollabReplyTo, 320))
 	if err != nil {
 		return Message{}, fmt.Errorf("insert message: %w", err)
 	}
@@ -427,8 +432,12 @@ func AddMessage(ctx context.Context, tx pgx.Tx, jc Jobs, nm NewMessage) (Message
 	}
 
 	if sendThread || nm.Kind == "reply" && nm.Direction == "outbound" && channel == ChannelEmail && nm.DeliveryStatus == "pending" {
-		if _, err := jc.InsertTx(ctx, tx, jobs.SendMessageArgs{WorkspaceID: nm.WorkspaceID, MessageID: id},
-			&river.InsertOpts{Queue: jobs.QueueEmail, MaxAttempts: 8}); err != nil {
+		var args river.JobArgs = jobs.SendMessageArgs{WorkspaceID: nm.WorkspaceID, MessageID: id}
+		if nm.CollabAccountID != nil && !sendThread {
+			// Sent through the member's own account (contracts/collab.md "Answering tickets").
+			args = jobs.CollabSendTicketReplyArgs{WorkspaceID: nm.WorkspaceID, MessageID: id}
+		}
+		if _, err := jc.InsertTx(ctx, tx, args, &river.InsertOpts{Queue: jobs.QueueEmail, MaxAttempts: 8}); err != nil {
 			return Message{}, fmt.Errorf("queue send: %w", err)
 		}
 	}

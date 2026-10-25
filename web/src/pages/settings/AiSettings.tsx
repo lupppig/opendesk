@@ -23,11 +23,12 @@ import { IconTile } from "@/components/settings2/bits";
 import { ASSISTANT_NAME } from "@/components/assistant/name";
 import { ModelPicker } from "@/components/ai/ModelPicker";
 import { ProviderSection } from "@/components/ai/ProviderSection";
+import { AutoRunSettings } from "@/components/ai/AutoRunSettings";
 
 const PRESET_TONES = ["friendly", "professional", "concise"] as const;
 type ToneChoice = (typeof PRESET_TONES)[number] | "custom";
 
-const FEATURE_ORDER: AIFeature[] = ["summarize", "rewrite", "translate", "triage", "copilot", "draft_reply", "answer", "kb_draft", "assistant"];
+const FEATURE_ORDER: AIFeature[] = ["summarize", "rewrite", "translate", "triage", "copilot", "draft_reply", "answer", "kb_draft", "assistant", "assistant_peer"];
 
 const DEFAULTS: AISettings = {
   enabled: true,
@@ -35,6 +36,7 @@ const DEFAULTS: AISettings = {
   auto_summarize: false,
   widget_answers: false,
   assistant: true,
+  assistant_peer: false,
   tone: "friendly",
   reply_language: "customer",
   instructions: "",
@@ -45,6 +47,12 @@ const INSTRUCTIONS_MAX = 2000;
 
 function toneChoice(tone: string): ToneChoice {
   return (PRESET_TONES as readonly string[]).includes(tone) ? (tone as ToneChoice) : "custom";
+}
+
+/** The settings the page saves with its save bar; changes Ollie makes without asking save on their own. */
+function drafted(s: AISettings): Omit<AISettings, "assistant_auto"> {
+  const { assistant_auto: _auto, ...rest } = s;
+  return rest;
 }
 
 export default function AiSettings() {
@@ -60,14 +68,18 @@ export default function AiSettings() {
   const base = config?.features ?? DEFAULTS;
   const [draft, setDraft] = useState<AISettings>(base);
   const [custom, setCustom] = useState(toneChoice(base.tone) === "custom");
+  // Reset the draft only when what it holds changed, so a switch that saves on its own
+  // (AutoRunSettings) keeps the unsaved edits.
+  const baseKey = JSON.stringify(drafted(base));
   useEffect(() => {
     if (config?.features) {
       setDraft(config.features);
       setCustom(toneChoice(config.features.tone) === "custom");
     }
-  }, [config?.features]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- baseKey stands for config.features
+  }, [baseKey]);
 
-  const dirty = JSON.stringify(draft) !== JSON.stringify(base);
+  const dirty = JSON.stringify(drafted(draft)) !== baseKey;
   const toneTooLong = draft.tone.length > TONE_MAX;
   const instructionsTooLong = draft.instructions.length > INSTRUCTIONS_MAX;
   const invalid = toneTooLong || instructionsTooLong || (custom && !draft.tone.trim());
@@ -75,11 +87,12 @@ export default function AiSettings() {
   const save = useMutation({
     mutationFn: (d: AISettings) => {
       const patch: Partial<AISettings> = {};
-      for (const k of Object.keys(d) as (keyof AISettings)[]) if (d[k] !== base[k]) (patch as Record<string, unknown>)[k] = d[k];
+      for (const k of Object.keys(drafted(d)) as (keyof AISettings)[]) if (d[k] !== base[k]) (patch as Record<string, unknown>)[k] = d[k];
       return api.ai.updateSettings(patch);
     },
     onSuccess: (features) => {
-      qc.setQueryData<AIConfig | null>(qk.aiConfig, (old) => (old ? { ...old, features } : old));
+      // What this save did not send keeps its latest value in the cache.
+      qc.setQueryData<AIConfig | null>(qk.aiConfig, (old) => (old ? { ...old, features: { ...features, assistant_auto: old.features?.assistant_auto ?? features.assistant_auto } } : old));
       toast.success(t("settings.saved"));
     },
     onError: (e) => toast.error(errorMessage(e, t("settings.save_failed"))),
@@ -125,7 +138,17 @@ export default function AiSettings() {
             disabled={off}
             onChange={(assistant) => set({ assistant })}
           />
+          <FeatureRow
+            label={t("settings.assistant_peer", { name: assistantName })}
+            description={t("settings.assistant_peer_hint", { name: assistantName })}
+            cost={config?.costs?.assistant_peer}
+            checked={draft.assistant && !!draft.assistant_peer}
+            disabled={off || !draft.assistant}
+            onChange={(assistant_peer) => set({ assistant_peer })}
+          />
         </Section>
+
+        <AutoRunSettings name={assistantName} disabled={off || !draft.assistant} />
 
         <Section title={t("settings.automatic")} description={t("settings.automatic_hint")}>
           <FeatureRow

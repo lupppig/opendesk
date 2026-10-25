@@ -21,7 +21,8 @@ import (
 // caller runs the assistant's tools through the public API itself, in process, as the
 // user: every tool gets exactly the role checks, validation, events, activities and
 // audit entries the same request from the web app would. Writes carry the Assistant
-// flag so they are attributed to ai on the user's behalf.
+// flag so they are attributed to ai on the user's behalf. Every request, reads included,
+// carries ViaAssistant, which the person's own routes (Collab mail) refuse.
 type caller struct {
 	h http.Handler
 	p *auth.Principal
@@ -30,6 +31,7 @@ type caller struct {
 func newCaller(h http.Handler, p *auth.Principal, write bool) *caller {
 	cp := *p
 	cp.Assistant = write
+	cp.ViaAssistant = true
 	return &caller{h: h, p: &cp}
 }
 

@@ -45,6 +45,9 @@ type Batch struct {
 	More  int
 	// Location formats times; UTC when nil.
 	Location *time.Location
+	// Clock is the recipient's time format (users.time_format): "12h" reads 2:05 PM,
+	// anything else 14:05.
+	Clock string
 	// Now is the send time, for formatting; time.Now when zero.
 	Now time.Time
 	// UnsubscribeToken is a notification_unsubscribe token for the recipient and workspace.
@@ -268,7 +271,7 @@ var summaryLabels = map[string][2]string{
 }
 
 // summary is "Since 14:05: 2 assigned, 1 mention, 3 replies".
-func summary(notes []Note, now time.Time, loc *time.Location) string {
+func summary(notes []Note, now time.Time, loc *time.Location, clock string) string {
 	if len(notes) < 2 {
 		return ""
 	}
@@ -303,7 +306,7 @@ func summary(notes []Note, now time.Time, loc *time.Location) string {
 		}
 		parts = append(parts, fmt.Sprintf("%d %s", n, label))
 	}
-	return "Since " + when(oldest, now, loc) + ": " + strings.Join(parts, ", ")
+	return "Since " + when(oldest, now, loc, clock) + ": " + strings.Join(parts, ", ")
 }
 
 func list(s Site, b Batch) mailer.Email {
@@ -353,7 +356,7 @@ func list(s Site, b Batch) mailer.Email {
 		e.Heading = fmt.Sprintf("%d new %s", count, noun)
 		e.Intro = []string{fmt.Sprintf("Waiting for you in %s, unread in the app.", b.Workspace)}
 	}
-	e.Summary = summary(b.Notes, b.Now, b.Location)
+	e.Summary = summary(b.Notes, b.Now, b.Location, b.Clock)
 
 	compact := len(groups) > compactAfter
 	var now, tickets, other []mailer.Item
@@ -395,7 +398,7 @@ func list(s Site, b Batch) mailer.Email {
 // groupItem is one list line: what happened, the ticket, the newest excerpt and a link.
 func (s Site) groupItem(b Batch, g group, compact bool) mailer.Item {
 	n := g.latest()
-	it := mailer.Item{Title: groupTitle(g), Time: when(n.CreatedAt, b.Now, b.Location), Tone: groupTone(g, b.Urgent)}
+	it := mailer.Item{Title: groupTitle(g), Time: when(n.CreatedAt, b.Now, b.Location, b.Clock), Tone: groupTone(g, b.Urgent)}
 	if g.bulk {
 		refs := make([]string, 0, 3)
 		for i, x := range g.notes {
@@ -807,13 +810,19 @@ func mailDomain(s Site) string {
 	return "opendesk.local"
 }
 
-func when(t, now time.Time, loc *time.Location) string {
+// when is a time in a list line: the time of day today, the weekday and time this week,
+// else the date. clock "12h" reads 2:05 PM; anything else 14:05.
+func when(t, now time.Time, loc *time.Location, clock string) string {
 	t, now = t.In(loc), now.In(loc)
+	hm := "15:04"
+	if clock == "12h" {
+		hm = "3:04 PM"
+	}
 	if t.Year() == now.Year() && t.YearDay() == now.YearDay() {
-		return t.Format("15:04")
+		return t.Format(hm)
 	}
 	if now.Sub(t) < 6*24*time.Hour {
-		return t.Format("Mon 15:04")
+		return t.Format("Mon " + hm)
 	}
 	return t.Format("Jan 2")
 }

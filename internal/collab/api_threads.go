@@ -2,6 +2,7 @@ package collab
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -15,6 +16,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/audit"
 	"github.com/useopendesk/opendesk/internal/auth"
 	"github.com/useopendesk/opendesk/internal/db"
+	"github.com/useopendesk/opendesk/internal/domain"
 	"github.com/useopendesk/opendesk/internal/events"
 	"github.com/useopendesk/opendesk/internal/httpx"
 )
@@ -562,8 +564,31 @@ func (s *service) threadDetail(ctx context.Context, q db.Querier, p *auth.Princi
 	if account.Identities, account.DefaultFrom, err = identitiesOut(ctx, s.fillerFor(q, p.WorkspaceID, p.UserID), a, idents); err != nil {
 		return out, err
 	}
+	ticket, err := threadTicket(ctx, q, p, t.ID)
+	if err != nil {
+		return out, err
+	}
 	return MailThreadDetail{Thread: threads[0], Messages: messages, Comments: comments, Shares: shares, CanAct: canAct(p),
-		Account: account}, nil
+		Account: account, Ticket: ticket}, nil
+}
+
+// threadTicket is the conversation's ticket when p sees it, else nil.
+func threadTicket(ctx context.Context, q db.Querier, p *auth.Principal, threadID uuid.UUID) (*ThreadTicket, error) {
+	var id *uuid.UUID
+	if err := q.QueryRow(ctx, `SELECT ticket_id FROM collab_threads WHERE workspace_id = $1 AND id = $2`, p.WorkspaceID, threadID).Scan(&id); err != nil {
+		return nil, err
+	}
+	if id == nil {
+		return nil, nil
+	}
+	t, err := domain.LoadVisibleTicket(ctx, q, p, *id)
+	if db.IsNotFound(err) || errors.Is(err, domain.ErrNotVisible) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &ThreadTicket{ID: t.ID, Number: t.Number, Subject: t.Subject}, nil
 }
 
 func (s *service) detailResponse(ctx context.Context, p *auth.Principal, id uuid.UUID) (*detailBody, error) {

@@ -49,6 +49,8 @@ import type { SearchResults } from "@/lib/api/types";
 import { useCollab, useMailAccounts } from "@/lib/collab/hooks";
 import { compose } from "@/lib/collab/compose";
 import { AccountDot } from "@/components/collab/bits";
+import { WorkspaceBadge } from "@/components/workspaces/WorkspaceBadge";
+import { useTogether } from "@/lib/together";
 
 const itemCls =
   "flex h-9 cursor-default select-none items-center gap-2.5 rounded-md px-2.5 text-[13px] text-fg transition-colors duration-100 animate-item-in motion-reduce:animate-none data-[selected=true]:bg-hover [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-fg-3";
@@ -89,6 +91,8 @@ export function CommandPalette() {
   const collab = useCollab();
   const { data: mailAccounts } = useMailAccounts();
   const { t: tCollab } = useTranslation("collab");
+  const { t: tTogether } = useTranslation("together");
+  const together = useTogether().active;
   const aiQuery = useDebounced(query.trim(), 300);
   const aiSearch = useQuery({ ...q.aiSearch(aiQuery), enabled: open && aiMode && ai.enabled && aiQuery.length > 1 });
 
@@ -171,7 +175,7 @@ export function CommandPalette() {
                   </Item>
                 </Command.Group>
               )}
-              {!(ai.enabled && query.trim().length > 2) && (
+              {!hasResults && !(ai.enabled && query.trim().length > 2) && (
                 <Command.Empty>
                   {deferred.length > 1 && search.isFetching ? (
                     <p className="py-10 text-center text-[13px] text-fg-3">{tNav("command.searching")}</p>
@@ -392,14 +396,27 @@ export function CommandPalette() {
                       <Item
                         key={`${account.user.id}:${m.workspace.id}`}
                         value={`switch workspace ${m.workspace.name}${other ? ` account ${account.user.email}` : ""}`}
-                        icon={<ArrowRight />}
+                        icon={other ? <ArrowRight /> : <WorkspaceBadge name={m.workspace.name} logo={m.workspace.avatar_url} size="sm" decorative />}
                         onSelect={() => go(() => void switchTo(account.user.id, m.workspace.id))}
                       >
                         {other ? tShell("accounts.paletteSwitch", { workspace: m.workspace.name, email: account.user.email }) : tNav("command.switchWorkspace", { workspace: m.workspace.name })}
                       </Item>
                     );
                   })}
-                <Item value="add account sign in another switch account" keywords={[tShell("accounts.paletteAdd")]} icon={<UserPlus />} onSelect={() => go(addAccount)}>
+                {together && (
+                  <>
+                    <Item value="everywhere assigned to me all workspaces" icon={<User />} onSelect={() => go(() => void navigate({ to: "/everywhere/$list", params: { list: "mine" } }))}>
+                      {tTogether("everywhere.mineTitle")}
+                    </Item>
+                    <Item value="everywhere all mail all workspaces" icon={<Mail />} onSelect={() => go(() => void navigate({ to: "/everywhere/$list", params: { list: "mail" } }))}>
+                      {tTogether("everywhere.mailTitle")}
+                    </Item>
+                    <Item value="arrange workspaces sidebar together separate" icon={<Layers />} onSelect={() => go(() => void navigate({ to: "/settings/workspaces" }))}>
+                      {tTogether("customize.arrange")}
+                    </Item>
+                  </>
+                )}
+                                <Item value="add account sign in another switch account" keywords={[tShell("accounts.paletteAdd")]} icon={<UserPlus />} onSelect={() => go(addAccount)}>
                   {tShell("accounts.paletteAdd")}
                 </Item>
               </Command.Group>

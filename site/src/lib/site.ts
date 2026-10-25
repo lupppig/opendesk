@@ -2,9 +2,9 @@
 export const SITE = {
   name: 'opendesk',
   url: 'https://opendesk.sh',
-  tagline: 'The open-source helpdesk',
+  tagline: 'The open-source helpdesk and team inbox',
   description:
-    'opendesk is the open-source helpdesk: shared email inboxes, live chat in 14 languages, AI drafts and translation, a knowledge base, automations, SLAs, reports and a public API, all updating live across your team. Free to start, or self-host it in one command.',
+    'opendesk is the open-source helpdesk and team inbox: shared support inboxes, team mail with private and shared accounts, live chat in 14 languages, AI drafts and translation, a knowledge base, automations, SLAs, reports and a public API, all updating live across your team. Free to start, or self-host it in one command.',
 } as const;
 
 export const LINKS = {

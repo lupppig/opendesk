@@ -60,7 +60,19 @@
     "field": "Champ",
     "before": "Actuellement",
     "after": "Après",
-    "of": "{{shown}} sur {{total}} correspondances"
+    "of": "{{shown}} sur {{total}} correspondances",
+    "moreFields_one": "1 champ de plus",
+    "moreFields_many": "{{count}} champs de plus",
+    "moreFields_other": "{{count}} champs de plus",
+    "clipped": "Certaines valeurs sont tronquées",
+    "showArguments": "Afficher tous les arguments",
+    "hideArguments": "Masquer les arguments",
+    "arguments": "Tout ce que cette modification envoie"
+  },
+  "step": {
+    "auto": "Fait sans demander",
+    "showRan": "Voir ce qui a été fait",
+    "hideRan": "Masquer ce qui a été fait"
   },
   "status": {
     "running": "En cours",

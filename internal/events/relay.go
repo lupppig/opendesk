@@ -170,10 +170,21 @@ func supportChannelEvent(typ string) bool {
 	}
 }
 
-// Disconnect asks the gateway to close a user's sockets (all, or one session's).
+// Disconnect asks the gateway to close a user's sockets (all, or one session's). Until
+// they expire, the gateway also refuses that user's (or session's) ws tokens issued at or
+// before the time the message carries (contracts/realtime.md "Connect").
 func Disconnect(nc *nats.Conn, userID string, sessionID string) {
-	payload, _ := json.Marshal(map[string]string{"user_id": userID, "session_id": sessionID})
-	_ = nc.Publish(DisconnectSubject, payload)
+	_ = nc.Publish(DisconnectSubject, disconnectPayload(userID, sessionID, time.Now()))
+}
+
+// disconnectPayload is the od.control.disconnect body: `at` is the revocation time in ms.
+func disconnectPayload(userID, sessionID string, at time.Time) []byte {
+	payload, _ := json.Marshal(struct {
+		UserID    string `json:"user_id"`
+		SessionID string `json:"session_id"`
+		At        int64  `json:"at"`
+	}{userID, sessionID, at.UnixMilli()})
+	return payload
 }
 
 // LiveSubjectPrefix + workspace id is the NATS subject for live previews: short-lived

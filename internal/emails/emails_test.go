@@ -161,3 +161,44 @@ func TestLegalLineOnlyWhenSet(t *testing.T) {
 		t.Error("company line missing")
 	}
 }
+
+// Times read on the recipient's clock: 24-hour unless they chose 12-hour, in their zone.
+func TestWhenFollowsClock(t *testing.T) {
+	loc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Skip("no tzdata")
+	}
+	now := time.Date(2026, 10, 13, 18, 30, 0, 0, time.UTC) // 14:30 in New York
+	cases := []struct {
+		clock string
+		at    time.Time
+		want  string
+	}{
+		{"", now.Add(-25 * time.Minute), "14:05"},
+		{"auto", now.Add(-25 * time.Minute), "14:05"},
+		{"24h", now.Add(-25 * time.Minute), "14:05"},
+		{"12h", now.Add(-25 * time.Minute), "2:05 PM"},
+		{"12h", now.Add(-14*time.Hour - 25*time.Minute), "12:05 AM"},
+		{"24h", now.Add(-26 * time.Hour), "Mon 12:30"},
+		{"12h", now.Add(-26 * time.Hour), "Mon 12:30 PM"},
+		{"12h", now.Add(-10 * 24 * time.Hour), "Oct 3"},
+	}
+	for _, c := range cases {
+		if got := when(c.at, now, loc, c.clock); got != c.want {
+			t.Errorf("when(%v, %q) = %q, want %q", c.at, c.clock, got, c.want)
+		}
+	}
+	tid := uuid.New()
+	notes := []Note{
+		{Type: "assigned", TicketID: &tid, TicketNumber: 1, TicketSubject: "a", CreatedAt: now.Add(-5 * time.Minute)},
+		{Type: "assigned", TicketID: &tid, TicketNumber: 1, TicketSubject: "a", CreatedAt: now.Add(-25 * time.Minute)},
+	}
+	b := Batch{WorkspaceID: uuid.New(), Workspace: "Margin", Notes: notes, Location: loc, Now: now}
+	if m := Notifications(Site{AppURL: "https://app.example"}, b); !strings.Contains(m.Text, "Since 14:05:") {
+		t.Errorf("default clock summary:\n%s", m.Text)
+	}
+	b.Clock = "12h"
+	if m := Notifications(Site{AppURL: "https://app.example"}, b); !strings.Contains(m.Text, "Since 2:05 PM:") || !strings.Contains(m.Text, "2:25 PM") {
+		t.Errorf("12-hour summary:\n%s", m.Text)
+	}
+}

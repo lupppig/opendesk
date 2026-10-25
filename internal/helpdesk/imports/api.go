@@ -63,14 +63,14 @@ func notFound(err error) error {
 
 // importCheckBody names a source and what reads it: credentials, or a CSV upload and its mapping.
 type importCheckBody struct {
-	Source      string            `json:"source" enum:"zendesk,helpscout,freshdesk,intercom,csv"`
+	Source      string            `json:"source" enum:"zendesk,helpscout,freshdesk,intercom,front,csv"`
 	Credentials map[string]string `json:"credentials,omitempty" doc:"The source's fields (contracts/imports.md); never stored by a check"`
 	UploadID    *uuid.UUID        `json:"upload_id,omitempty" doc:"CSV only"`
 	Mapping     *ImportCSVMapping `json:"mapping,omitempty" doc:"CSV only; default the mapping guessed from the headers"`
 }
 
 type importCreateBody struct {
-	Source      string            `json:"source" enum:"zendesk,helpscout,freshdesk,intercom,csv"`
+	Source      string            `json:"source" enum:"zendesk,helpscout,freshdesk,intercom,front,csv"`
 	Credentials map[string]string `json:"credentials,omitempty"`
 	UploadID    *uuid.UUID        `json:"upload_id,omitempty" doc:"CSV only"`
 	Options     *ImportOptions    `json:"options,omitempty"`
@@ -336,7 +336,7 @@ func (s *Service) registerRoutes(api huma.API, _ chi.Router) {
 func (s *Service) build(src string, creds map[string]string) (source.Source, error) {
 	f, ok := s.Factories[src]
 	if !ok {
-		return nil, httpx.Validation("source must be zendesk, helpscout, freshdesk, intercom or csv")
+		return nil, httpx.Validation("source must be zendesk, helpscout, freshdesk, intercom, front or csv")
 	}
 	if len(creds) > 10 {
 		return nil, httpx.Validation("credentials has too many fields")

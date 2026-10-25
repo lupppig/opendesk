@@ -76,8 +76,8 @@ func (c *Client) URL(path string, q url.Values) (string, error) {
 		return "", err
 	}
 	base, _ := url.Parse(c.Base)
-	if base == nil || !strings.EqualFold(u.Host, base.Host) {
-		return "", fmt.Errorf("refusing a link off the API host")
+	if base == nil || !strings.EqualFold(u.Host, base.Host) || u.Scheme != base.Scheme {
+		return "", fmt.Errorf("refusing a link off the API origin")
 	}
 	if len(q) > 0 {
 		v := u.Query()

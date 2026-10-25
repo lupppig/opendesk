@@ -28,7 +28,7 @@ export const triggerTone: Record<AutomationTrigger, Tone> = {
   ticket_updated: "amber",
 };
 
-const plainFields = ["subject", "body", "from_email", "channel", "mailbox_id", "received_at", "team_id", "brand_id", "widget_id", "priority", "severity", "status", "tag"] as const;
+const plainFields = ["subject", "body", "from_email", "channel", "mailbox_id", "received_at", "assignee_id", "team_id", "brand_id", "widget_id", "priority", "severity", "status", "tag"] as const;
 
 /** Fields that only make sense once the workspace has teams, or a second brand (contracts/teams.md). */
 export const teamFields: ReadonlySet<ConditionField> = new Set(["team_id"]);

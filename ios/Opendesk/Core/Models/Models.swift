@@ -458,9 +458,12 @@ struct TicketPatch: Encodable, Sendable {
     var tags: [String]?
     var addTags: [String]?
     var removeTags: [String]?
+    var subject: String?
+    /// Custom field values, merged; `.null` clears one.
+    var fields: [String: JSONValue]?
 
     enum CodingKeys: String, CodingKey {
-        case status, priority, severity, spam, tags
+        case status, priority, severity, spam, tags, subject, fields
         case assigneeID = "assignee_id"
         case teamID = "team_id"
         case snoozedUntil = "snoozed_until"
@@ -480,6 +483,8 @@ struct TicketPatch: Encodable, Sendable {
         try c.encodeIfPresent(tags, forKey: .tags)
         try c.encodeIfPresent(addTags, forKey: .addTags)
         try c.encodeIfPresent(removeTags, forKey: .removeTags)
+        try c.encodeIfPresent(subject, forKey: .subject)
+        try c.encodeIfPresent(fields, forKey: .fields)
     }
 
     private static func encode<V>(_ value: Reference<V>?, forKey key: CodingKeys, in c: inout KeyedEncodingContainer<CodingKeys>) throws {
@@ -523,6 +528,10 @@ struct TicketPatch: Encodable, Sendable {
         case nil: break
         }
         if let spam { next.spam = spam }
+        if let subject { next.subject = subject }
+        for (key, value) in fields ?? [:] {
+            next.fields[key] = value.isNull ? nil : value
+        }
         return next
     }
 }
@@ -536,10 +545,19 @@ struct TicketCounts: Codable, Hashable, Sendable {
     var solved: Int
     var spam: Int
     var views: [String: Int]
+    /// Open and unassigned tickets per team the caller can see, and summed over the caller's teams.
+    var teams: [String: TeamCount] = [:]
+    var myTeams: TeamCount?
+
+    struct TeamCount: Codable, Hashable, Sendable {
+        var open: Int
+        var unassigned: Int
+    }
 
     enum CodingKeys: String, CodingKey {
-        case unassigned, mine, open, pending, solved, spam, views
+        case unassigned, mine, open, pending, solved, spam, views, teams
         case onHold = "on_hold"
+        case myTeams = "my_teams"
     }
 
     init(from decoder: Decoder) throws {
@@ -552,6 +570,8 @@ struct TicketCounts: Codable, Hashable, Sendable {
         solved = c.lenient(Int.self, forKey: .solved) ?? 0
         spam = c.lenient(Int.self, forKey: .spam) ?? 0
         views = c.lenient([String: Int].self, forKey: .views) ?? [:]
+        teams = c.lenient([String: TeamCount].self, forKey: .teams) ?? [:]
+        myTeams = c.lenient(TeamCount.self, forKey: .myTeams)
     }
 }
 
@@ -572,11 +592,17 @@ struct TicketFilters: Codable, Hashable, Sendable {
     var channel: String?
     var q: String?
     var fields: [FieldFilter]?
+    var receivedAt: String?
+    var brandID: String?
+    var widgetID: String?
 
     enum CodingKeys: String, CodingKey {
         case status, priority, severity, assignee, tag, channel, q, fields
         case teamID = "team_id"
         case mailboxID = "mailbox_id"
+        case receivedAt = "received_at"
+        case brandID = "brand_id"
+        case widgetID = "widget_id"
     }
 }
 
@@ -723,6 +749,10 @@ struct Message: Codable, Hashable, Sendable, Identifiable {
     var isPartial = false
     /// A deleted message, or a note sent as a reply: a marker the app does not show yet.
     var isHidden = false
+    /// Set on the messages of a side conversation (a third-party thread).
+    var threadID: String?
+    /// When the author last edited a note.
+    var editedAt: Date?
 
     enum CodingKeys: String, CodingKey {
         case id, kind, direction, author, subject, to, cc, attachments, ai
@@ -735,12 +765,16 @@ struct Message: Codable, Hashable, Sendable, Identifiable {
         case deliveryStatus = "delivery_status"
         case deliveryError = "delivery_error"
         case createdAt = "created_at"
+        case threadID = "thread_id"
+        case editedAt = "edited_at"
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
         ticketID = c.lenient(String.self, forKey: .ticketID) ?? ""
+        threadID = c.lenient(String.self, forKey: .threadID)
+        editedAt = c.lenient(Date.self, forKey: .editedAt)
         kind = c.lenient(MessageKind.self, forKey: .kind) ?? .reply
         direction = c.lenient(String.self, forKey: .direction) ?? "inbound"
         let author = c.lenient(MessageAuthor.self, forKey: .author)
@@ -825,6 +859,7 @@ struct Message: Codable, Hashable, Sendable, Identifiable {
         if update.attachments.isEmpty { next.attachments = attachments }
         if update.author.user == nil, update.author.contact == nil, update.author.bot == nil { next.author = author }
         if update.fromEmail.isEmpty { next.fromEmail = fromEmail }
+        if update.threadID == nil { next.threadID = threadID }
         next.isPartial = false
         return next
     }
@@ -885,6 +920,9 @@ enum NotificationKind: String, CaseIterable, Sendable, Identifiable {
     case autoRechargeFailed = "auto_recharge_failed"
     case teamJoined = "team_joined"
     case importFinished = "import_finished"
+    case threadReplied = "thread_replied"
+    case collabAssigned = "collab_assigned"
+    case collabMention = "collab_mention"
 
     var id: String { rawValue }
 
@@ -904,6 +942,9 @@ enum NotificationKind: String, CaseIterable, Sendable, Identifiable {
         case .autoRechargeFailed: "Auto-recharge failed"
         case .teamJoined: "Team joins"
         case .importFinished: "Imports"
+        case .threadReplied: "Side conversation answers"
+        case .collabAssigned: "Mail assigned to you"
+        case .collabMention: "Mail comment mentions"
         }
     }
 
@@ -922,6 +963,9 @@ enum NotificationKind: String, CaseIterable, Sendable, Identifiable {
         case .autoRechargeFailed: "Owners and admins"
         case .teamJoined: "An admin joins a team you lead"
         case .importFinished: "An import you started ends or needs new credentials"
+        case .threadReplied: "Someone outside your team answers a side conversation on your ticket"
+        case .collabAssigned: "A teammate assigns you a mail conversation"
+        case .collabMention: "Someone mentions you in a comment on a mail conversation"
         }
     }
 
@@ -937,6 +981,9 @@ enum NotificationKind: String, CaseIterable, Sendable, Identifiable {
         case .aiBalanceLow, .aiBalanceOut, .autoRechargeFailed: "creditcard"
         case .teamJoined: "person.2"
         case .importFinished: "square.and.arrow.down"
+        case .threadReplied: "bubble.left.and.bubble.right"
+        case .collabAssigned: "envelope.badge.person.crop"
+        case .collabMention: "at"
         }
     }
 
@@ -999,6 +1046,11 @@ struct AppNotification: Codable, Hashable, Sendable, Identifiable {
             return data["reason"]?.string == "no_funds"
                 ? "Your AI provider account is out of funds"
                 : "Your AI provider rejected the workspace's key"
+        case .threadReplied:
+            let from = data["from"]?["name"]?.string.flatMap { $0.isEmpty ? nil : $0 } ?? data["from"]?["email"]?.string.flatMap { $0.isEmpty ? nil : $0 }
+            return from.map { "\($0) answered your side conversation" } ?? "Someone answered your side conversation"
+        case .collabAssigned: return who.map { "\($0) assigned you a conversation" } ?? "A conversation was assigned to you"
+        case .collabMention: return who.map { "\($0) mentioned you in a comment" } ?? "You were mentioned in a comment"
         case .teamJoined:
             let joiner = data["user"]?["name"]?.string.flatMap { $0.isEmpty ? nil : $0 } ?? "Someone"
             guard let team = data["team"]?["name"]?.string, !team.isEmpty else { return "\(joiner) joined a team you lead" }

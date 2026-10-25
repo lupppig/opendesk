@@ -40,7 +40,7 @@ The connection is shared by the workspace, so an admin signs in once and everyon
 </Step>
 <Step title="Choose its tools">
 
-Open a connected integration to see its tools. Each one is marked **Looks up** (runs on its own) or **Asks first** (waits for approval). Switch off any tool you don't want Ollie to use, or switch the whole integration off.
+Open a connected integration to see its tools. Each one is marked **Looks up** (runs on its own) or **Asks first** (waits for approval). The product itself says which of its tools only look things up. If you'd rather approve one of those too, switch on its **Ask first**. A tool that changes something can instead be set to **Runs without asking**, so Ollie uses it as soon as it decides to; **Ask first** wins if both are on. Switch off any tool you don't want Ollie to use, or switch the whole integration off.
 
 <Screenshot src="/guides/integrations/tools" alt="The Linear integration opened: a Looks up tool ringed as 1, an Asks first tool ringed as 2, a tool's switch ringed as 3, and the integration's own switch and actions menu ringed as 4" />
 
@@ -70,7 +70,7 @@ On a ticket, Ollie's section shows shortcuts for your connected tools under **In
 </Step>
 <Step title="Approve the change">
 
-Anything that creates or changes something shows an approval card first, marked **Runs in Linear** (or the product it runs in), with the exact title, fields and text. Nothing happens until the person who asked approves it.
+Anything that creates or changes something shows an approval card first, marked **Runs in Linear** (or the product it runs in), with the title, fields and text. When there is more than the card can show, it says so ("3 more fields", or that some values are cut short), and **Show all arguments** opens everything the change will send, exactly as it is sent. Nothing happens until the person who asked approves it, except with a tool set to **Runs without asking**: then the step in Ollie's panel is marked **Ran without asking** and shows what it sent.
 
 <Screenshot src="/guides/integrations/approval" alt="Ollie's approval card for a Linear issue: Runs in Linear ringed as 1, the title, team and priority ringed as 2, and Deny and Approve ringed as 3" />
 

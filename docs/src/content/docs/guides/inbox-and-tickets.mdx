@@ -147,6 +147,18 @@ A ticket's timeline holds its messages and its activity:
 - **Turn into internal note**: on chat tickets, a reply already sent can still leave the customer's chat and stay as a note, though they may have read it. Email is delivered at once, so it cannot be taken back, nor can a chat reply already emailed to the customer because they had left.
 - **Delete**: a deleted message leaves a marker saying who deleted it. Admins can read it and open its files, restore it, or delete it permanently, which removes its text and files for good (the ticket's subject stays). By default agents delete their own internal notes, and only admins delete replies. **Settings → Workspace** sets it for agents: off, their own notes, or any agent's notes and replies. An admin can give one agent a different rule from their menu in **Settings → Members**.
 
+### Reply from your own address
+
+With Collab, you can answer an email ticket from one of your own connected mail accounts instead of the support address, so a customer who knows you gets mail from you. Nothing changes until you choose it.
+
+1. Above the reply box, click the address next to **Replying as** and pick one of **Your addresses**. Your private accounts are listed, along with shared accounts you can send from.
+2. **Answers go to** sets the Reply-To: the address itself (or its own reply-to), the ticket's address, or any address you type. **Settings → Workspace** sets which one is the default.
+3. Send as usual.
+
+It goes out as your own mail, with that address's From name and signature, no email layout and no ticket number in the subject. It also shows in the account's Sent folder. The ticket keeps its reply address, and the reply is marked **Own address** in the timeline. When the customer answers your address, the answer comes back to this ticket like any customer reply: it reopens the ticket, counts for SLA targets and notifies the assignee. Only answers to these replies reach the ticket, never any other mail in your account. Your next reply on the ticket starts from the same address. Automations, auto-replies, CSAT emails and Ollie always use the ticket's address.
+
+Admins set the defaults in **Settings → Workspace**, and each mailbox can set its own under **Replies from members' own addresses** in its settings: whether it is allowed, where answers go by default, and which addresses (any, shared accounts only, or only addresses at the mailbox's own domain). The rules of the ticket's current address apply, and the reply box offers only the addresses they allow. If the account is disconnected, no longer shared with you, or the rules change before the reply goes out, it fails and shows why.
+
 ### Ask someone outside your team
 
 Some tickets need an answer from someone else first: a supplier, a logistics partner, a payment provider. Start a **side conversation** from the ticket instead of writing from your own inbox:

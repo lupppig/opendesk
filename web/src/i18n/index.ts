@@ -160,6 +160,11 @@ export function resetLocale() {
 
 resetLocale();
 
+/** The language a customer-facing page chose, or null in the agent app. */
+export function pageLanguage(): string | null {
+  return pageLocale;
+}
+
 /**
  * The active locale for Intl formatting: the page language on public pages, the
  * agent app's language in the app. A browser locale of that same language

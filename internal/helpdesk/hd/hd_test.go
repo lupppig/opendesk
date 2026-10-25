@@ -74,6 +74,9 @@ body{margin:0} .x td{color:#333 !important;behavior:url(x.htc)} a{background:url
 	if got := hd.SanitizeEmailHTML(`<style>p{color:red}</style><p>Hi</p>`); hd.SanitizeEmailHTML(got) != got {
 		t.Errorf("not stable: %s", got)
 	}
+	if got := hd.SanitizeEmailHTML(`<style>.a{color:red};.b{color:blue}</style><p>Hi</p>`); got != `<style>.a{color:red}.b{color:blue}</style><p>Hi</p>` {
+		t.Errorf("stray stylesheet semicolon: %s", got)
+	}
 }
 
 func TestHTMLToText(t *testing.T) {

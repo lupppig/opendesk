@@ -899,3 +899,36 @@ func (w *world) threadOf(mid uuid.UUID) uuid.UUID {
 	}
 	return id
 }
+
+// TestOutgoingFromProvenance: mail is the account's own by where the provider filed it or
+// who sent it, never by its From, which a sender writes themselves.
+func TestOutgoingFromProvenance(t *testing.T) {
+	w := newWorld(t)
+	a := w.account(w.agent, ProviderGoogle, VisibilityPrivate, Audience{})
+	srv := w.api(w.agent)
+	outgoing := func(tid uuid.UUID) (bool, []Address) {
+		t.Helper()
+		var d MailThreadDetail
+		if st := doJSON(t, "GET", srv.URL+"/v1/collab/threads/"+tid.String(), nil, &d); st != 200 || len(d.Messages) != 1 {
+			t.Fatalf("thread: %d %d messages", st, len(d.Messages))
+		}
+		return d.Messages[0].Outgoing, d.Messages[0].Bcc
+	}
+	self := Address{Name: "Me", Email: a.Email}
+	bcc := []Address{{Email: "hidden@example.com"}}
+	inbox, mid := w.seedThread(a, "Forged", w.folder(a, RoleInbox))
+	mustExec(t, w.d, `UPDATE collab_messages SET from_addr = $2, bcc_addrs = $3 WHERE id = $1`, mid, self, bcc)
+	if out, b := outgoing(inbox); out || len(b) != 0 {
+		t.Fatalf("mail in the inbox claiming the account's From: outgoing %v, bcc %v", out, b)
+	}
+	sent, mid := w.seedThread(a, "Sent", w.folder(a, RoleSent))
+	mustExec(t, w.d, `UPDATE collab_messages SET from_addr = $2, bcc_addrs = $3 WHERE id = $1`, mid, self, bcc)
+	if out, b := outgoing(sent); !out || len(b) != 1 {
+		t.Fatalf("mail in Sent: outgoing %v, bcc %v", out, b)
+	}
+	fromApp, mid := w.seedThread(a, "From opendesk", w.folder(a, RoleInbox))
+	mustExec(t, w.d, `UPDATE collab_messages SET sent_by = $2 WHERE id = $1`, mid, w.agent.UserID)
+	if out, _ := outgoing(fromApp); !out {
+		t.Fatal("mail sent from opendesk is not outgoing")
+	}
+}

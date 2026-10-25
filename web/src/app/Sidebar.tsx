@@ -67,6 +67,9 @@ import { useCollab, useSidebarPrefs } from "@/lib/collab/hooks";
 import { ticketRowNumbers } from "@/lib/collab/badges";
 import { badgeFor, hid, pickCount, visibleSections, type BadgeNumbers } from "@/lib/collab/sidebarPrefs";
 import { collabUi } from "@/lib/collab/ui";
+import { useTogether } from "@/lib/together";
+import { TogetherNav } from "./TogetherNav";
+import { WorkspaceBadge } from "@/components/workspaces/WorkspaceBadge";
 
 // Collab's sections load with Collab: a workspace without it never downloads them.
 const MailSections = lazy(() => import("@/components/collab/MailNav"));
@@ -326,7 +329,12 @@ export function Sidebar({ drawer }: { drawer?: boolean }) {
   // sidebar is exactly the classic one.
   const collab = useCollab();
   const prefs = useSidebarPrefs(collab.enabled);
-  const hidden: ReadonlySet<string> = collab.enabled ? new Set(prefs.hidden) : NONE;
+  const together = useTogether();
+  // Rows the person hid for this workspace in the Together settings hide here too.
+  const focusPrefix = `${together.focus}/`;
+  const togetherHidden = together.active ? together.prefs.items.hidden.filter((x) => x.startsWith(focusPrefix)).map((x) => x.slice(focusPrefix.length)) : [];
+  const hidden: ReadonlySet<string> =
+    collab.enabled || togetherHidden.length ? new Set([...(collab.enabled ? prefs.hidden : []), ...togetherHidden]) : NONE;
   const order = collab.enabled ? visibleSections(prefs) : CLASSIC;
   const firstId = order[0];
   const rp: RowPrefs = { collab: collab.enabled, prefs };
@@ -479,18 +487,19 @@ export function Sidebar({ drawer }: { drawer?: boolean }) {
     }
   };
   const classic = order.map((id) => <Fragment key={id}>{section(id)}</Fragment>);
+  const focusContent = collab.enabled ? (
+    <Suspense fallback={classic}>
+      <MailSections order={order} prefs={prefs} rail={rail} drawer={drawer} renderSection={section} />
+    </Suspense>
+  ) : (
+    classic
+  );
 
   return (
     <PillCtx.Provider value={drawer ? "nav-pill-drawer" : "nav-pill"}>
     <nav aria-label={t("nav.main")} className="flex h-full w-full flex-col">
       <div className={cn("flex-1 overflow-y-auto overflow-x-hidden pb-3 pt-1", collab.enabled && "[&>*:first-child]:!mt-0")}>
-        {collab.enabled ? (
-          <Suspense fallback={classic}>
-            <MailSections order={order} prefs={prefs} rail={rail} drawer={drawer} renderSection={section} />
-          </Suspense>
-        ) : (
-          classic
-        )}
+        {together.active ? <TogetherNav rail={rail} focusContent={focusContent} /> : focusContent}
       </div>
 
       <div className="flex shrink-0 flex-col gap-px py-1.5">
@@ -537,6 +546,7 @@ export function WorkspaceSwitcher() {
   const navigate = useNavigate();
   const { switchTo, addAccount } = useAccountActions();
   const { t } = useTranslation("shell");
+  const together = useTogether().active;
   useQuickSwitch();
   if (!ws || !user) return null;
   const grouped = accounts.length > 1;
@@ -553,7 +563,7 @@ export function WorkspaceSwitcher() {
           type="button"
           className="group flex h-8 min-w-0 max-w-[220px] items-center gap-2 rounded-md pl-1 pr-1.5 text-left outline-none transition-colors hover:bg-chrome-hover focus-visible:shadow-[0_0_0_2px_var(--focus)] data-[state=open]:bg-chrome-hover"
         >
-          <WorkspaceGlyph name={ws.name} />
+          {together ? <WorkspaceBadge name={ws.name} logo={ws.avatar_url} size="lg" decorative /> : <WorkspaceGlyph name={ws.name} />}
           <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-fg">{ws.name}</span>
           <ChevronsUpDown className="size-3.5 shrink-0 text-fg-4 transition-colors group-hover:text-fg-2" />
         </button>
@@ -573,7 +583,7 @@ export function WorkspaceSwitcher() {
               return (
                 <MenuItem
                   key={`${account.user.id}:${m.workspace.id}`}
-                  icon={<WorkspaceGlyph name={m.workspace.name} small />}
+                  icon={together && account.user.id === user.id ? <WorkspaceBadge name={m.workspace.name} logo={m.workspace.avatar_url} size="sm" decorative /> : <WorkspaceGlyph name={m.workspace.name} small />}
                   onSelect={() => void switchTo(account.user.id, m.workspace.id)}
                 >
                   <span className="flex items-center gap-2">
@@ -693,6 +703,8 @@ function UserMenu({ rail }: { rail: boolean }) {
   const setAvailability = useSetAvailability();
   const collab = useCollab();
   const { t: tc } = useTranslation("collab");
+  const { t: tw } = useTranslation("together");
+  const workspaces = useSession((s) => s.memberships.length);
   if (!user) return null;
   const name = user.name || user.email;
   const me = members?.find((m) => m.user.id === user.id);
@@ -747,6 +759,11 @@ function UserMenu({ rail }: { rail: boolean }) {
         {collab.enabled && (
           <MenuItem icon={<SlidersHorizontal />} onSelect={() => collabUi.customize(true)}>
             {tc("nav.customize")}
+          </MenuItem>
+        )}
+        {workspaces > 1 && (
+          <MenuItem icon={<Layers />} onSelect={() => void navigate({ to: "/settings/workspaces" })}>
+            {collab.enabled ? tw("customize.arrange") : tw("customize.menu")}
           </MenuItem>
         )}
         <MenuItem icon={<Keyboard />} onSelect={() => shell.shortcuts()}>

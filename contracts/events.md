@@ -55,8 +55,11 @@ view to its owner.
 2. The Elixir gateway subscribes to `od.events.>` and pushes to Phoenix channels.
 3. Live previews (the widget agent's streamed reply) go straight to NATS on **`od.live.<workspace_id>`**,
    outside the outbox: no `seq`, not stored, not replayed, not sent to webhooks (`contracts/realtime.md`).
-4. Control messages on **`od.control.disconnect`**: `{"user_id": "...", "session_id": "..."?}`
-   tells the gateway to close that user's sockets (logout, password change, removal).
+4. Control messages on **`od.control.disconnect`**: `{"user_id": "...", "session_id": "..."?, "at": <ms>}`
+   tells the gateway to close that user's sockets (logout, password change, removal, a role or team
+   change, an API key revoked; `user_id` is the key's id), and to refuse that user's (or, with a
+   `session_id`, that session's) `ws` tokens issued at or before `at`, the revocation time in ms
+   (contracts/realtime.md "Connect").
 5. Rows are kept 7 days for replay, then pruned. A replay (`GET /v1/events`) shows a message deleted since (or a
    note since sent as a reply) as its marker in every event about it, notifications about it without their preview,
    and a ticket with a deleted reply with its current preview (`domain.RedactReplay`).

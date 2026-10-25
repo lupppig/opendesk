@@ -1,6 +1,7 @@
 package assistant
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -20,8 +21,9 @@ import (
 )
 
 // Connected tools come from the workspace's integrations (MCP servers). They run as
-// the workspace's connection; anything that is not marked read-only by its server is
-// a write and waits for the user's approval like every other change.
+// the workspace's connection; a tool runs as a read only while its server marks it
+// read-only and no admin set it to ask first. Every other tool is a write and waits for
+// the user's approval like every other change.
 
 // toolFailure is a tool that ran and failed: Summary is safe for the panel, Content
 // (already inside a data block) is what the model reads.
@@ -32,13 +34,27 @@ type toolFailure struct {
 
 func (e *toolFailure) Error() string { return e.Summary }
 
-// externalArgs are a proposed connected tool call as stored with the action.
+// externalArgs are a proposed connected tool call as stored with the action. Args is
+// the arguments' JSON text, kept as a string so storage never reorders or re-encodes
+// it: Apply sends exactly the text the preview showed.
 type externalArgs struct {
 	IntegrationID uuid.UUID       `json:"integration_id"`
 	Remote        string          `json:"remote"`
-	Input         json.RawMessage `json:"input"`
+	Args          string          `json:"args,omitempty"`
+	Input         json.RawMessage `json:"input,omitempty"` // proposals stored before Args
 	TicketID      string          `json:"ticket_id,omitempty"`
 }
+
+// input is the arguments the call sends.
+func (a externalArgs) input() json.RawMessage {
+	if a.Args != "" {
+		return json.RawMessage(a.Args)
+	}
+	return a.Input
+}
+
+// maxExternalArgs bounds a proposed connected tool call's arguments.
+const maxExternalArgs = 64 << 10
 
 // external loads the run's connected tools once. A failure leaves the run with the
 // built-in tools only.
@@ -75,38 +91,57 @@ func (rc *runCtx) lookup(ctx context.Context, name string) *tool {
 
 func externalTool(x integrations.Tool) *tool {
 	t := &tool{Name: x.Name, Description: x.Description, Schema: x.Schema, Write: !x.ReadOnly, MinRole: auth.RoleAgent,
-		Active: "Checking " + x.Integration, Done: "Checked " + x.Integration}
+		Active: "Checking " + x.Integration, Done: "Checked " + x.Integration, ext: &x}
 	if x.ReadOnly {
 		t.Read = func(ctx context.Context, rc *runCtx, in json.RawMessage) (output, error) {
-			text, err := callExternal(ctx, rc, x, x.IntegrationID, x.Remote, in)
+			text, err := callExternal(ctx, rc, x, x.IntegrationID, x.Remote, in, integrations.CallRead)
 			if err != nil {
 				return output{}, err
 			}
 			return output{Content: block(x.Name, clip(text, 20000)), Summary: "Read from " + x.Integration, Refs: linkRefs(text, x.Hosts, 3)}, nil
 		}
+		// Apply stays: a call the user approved while the tool asked first still runs.
+		t.Apply = applyExternal(x)
 		return t
 	}
 	t.Active, t.Done = "Working in "+x.Integration, "Done in "+x.Integration
+	t.Apply = applyExternal(x)
 	t.Propose = func(ctx context.Context, rc *runCtx, in json.RawMessage) (any, Preview, error) {
 		var fields map[string]any
-		if len(in) == 0 {
+		if len(in) == 0 || string(in) == "null" {
 			in = json.RawMessage(`{}`)
 		}
-		if err := json.Unmarshal(in, &fields); err != nil {
+		if err := json.Unmarshal(in, &fields); err != nil || fields == nil {
 			return nil, Preview{}, httpx.Validation("the tool arguments must be a JSON object")
 		}
-		args := externalArgs{IntegrationID: x.IntegrationID, Remote: x.Remote, Input: in}
+		if len(in) > maxExternalArgs {
+			return nil, Preview{}, httpx.Validation("the tool arguments are larger than 64 KB")
+		}
+		if k := repeatedKey(in); k != "" {
+			return nil, Preview{}, httpx.Validation(fmt.Sprintf("the tool arguments name %q twice", k))
+		}
+		args := externalArgs{IntegrationID: x.IntegrationID, Remote: x.Remote, Args: string(in)}
 		if rc.page != nil && uuidOK(rc.page.TicketID) {
 			args.TicketID = rc.page.TicketID
 		}
-		return args, externalPreview(x, fields), nil
+		return args, externalPreview(x, fields, in), nil
 	}
-	t.Apply = func(ctx context.Context, rc *runCtx, w *caller, raw json.RawMessage, key string) (output, error) {
+	return t
+}
+
+// applyExternal runs an approved connected tool call, or one that runs without asking
+// (autoRunning), with its stored arguments.
+func applyExternal(x integrations.Tool) func(ctx context.Context, rc *runCtx, w *caller, raw json.RawMessage, key string) (output, error) {
+	return func(ctx context.Context, rc *runCtx, w *caller, raw json.RawMessage, key string) (output, error) {
 		a, err := decode[externalArgs](raw)
 		if err != nil {
 			return output{}, err
 		}
-		text, err := callExternal(ctx, rc, x, a.IntegrationID, a.Remote, a.Input)
+		mode := integrations.CallApproved
+		if autoRunning(ctx) {
+			mode = integrations.CallAuto
+		}
+		text, err := callExternal(ctx, rc, x, a.IntegrationID, a.Remote, a.input(), mode)
 		if err != nil {
 			return output{}, err
 		}
@@ -117,7 +152,7 @@ func externalTool(x integrations.Tool) *tool {
 		// Something made from a ticket is linked back to it.
 		first := out.Refs[0]
 		var in map[string]any
-		_ = json.Unmarshal(a.Input, &in)
+		_ = json.Unmarshal(a.input(), &in)
 		title := firstString(in, "title", "name", "summary", "subject")
 		body := map[string]any{"url": first.ID, "title": title, "integration_id": a.IntegrationID}
 		if err := w.do(ctx, http.MethodPost, "/v1/tickets/"+a.TicketID+"/links", nil, body, nil, key+"-link"); err == nil {
@@ -129,16 +164,16 @@ func externalTool(x integrations.Tool) *tool {
 		}
 		return out, nil
 	}
-	return t
 }
 
 // callExternal runs one connected tool and returns its text. The server's own words
-// stay inside a data block, both for results and for errors.
-func callExternal(ctx context.Context, rc *runCtx, x integrations.Tool, iid uuid.UUID, remote string, in json.RawMessage) (string, error) {
+// stay inside a data block, both for results and for errors. mode says why it may run;
+// the integration checks it against how the workspace has the tool now.
+func callExternal(ctx context.Context, rc *runCtx, x integrations.Tool, iid uuid.UUID, remote string, in json.RawMessage, mode integrations.CallMode) (string, error) {
 	if len(in) == 0 || string(in) == "null" {
 		in = json.RawMessage(`{}`)
 	}
-	res, err := integrations.For(rc.svc.d).Call(ctx, rc.p.WorkspaceID, iid, remote, in)
+	res, err := integrations.For(rc.svc.d).Call(ctx, rc.p.WorkspaceID, iid, remote, in, mode)
 	if err != nil {
 		var re *integrations.RemoteError
 		if errors.As(err, &re) {
@@ -158,28 +193,99 @@ func callExternal(ctx context.Context, rc *runCtx, x integrations.Tool, iid uuid
 	return text, nil
 }
 
-func externalPreview(x integrations.Tool, fields map[string]any) Preview {
-	pv := Preview{Title: x.Integration + ": " + x.Title, System: x.Integration}
+// externalPreview summarizes a connected tool call (at most 12 fields, values cut
+// short) and carries its complete arguments, raw being the JSON text Apply sends.
+// Omitted counts the fields the summary leaves out and Clipped marks a value cut short.
+func externalPreview(x integrations.Tool, fields map[string]any, raw json.RawMessage) Preview {
+	pv := Preview{Title: x.Integration + ": " + x.Title, System: x.Integration, Arguments: indentJSON(raw)}
 	keys := make([]string, 0, len(fields))
 	for k := range fields {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
+	shown := 0
 	for _, k := range keys {
 		v := previewValue(fields[k])
 		if v == "" {
 			continue
 		}
 		if pv.Body == "" && (strings.Contains(v, "\n") || len([]rune(v)) > 160) {
-			pv.Body = clip(v, 6000)
+			pv.Body = clipped(&pv, v, 6000)
+			shown++
 			continue
 		}
-		pv.Changes = append(pv.Changes, Change{Field: humanizeKey(k), To: clip(v, 300)})
 		if len(pv.Changes) == 12 {
-			break
+			continue
+		}
+		pv.Changes = append(pv.Changes, Change{Field: humanizeKey(k), To: clipped(&pv, v, 300)})
+		shown++
+	}
+	pv.Omitted = len(keys) - shown
+	return pv
+}
+
+// clipped is clip, marking the preview when the value was cut short.
+func clipped(pv *Preview, v string, n int) string {
+	out := clip(v, n)
+	if out != strings.TrimSpace(v) {
+		pv.Clipped = true
+	}
+	return out
+}
+
+// indentJSON is raw indented as it is: json.Indent changes only the whitespace, so
+// nothing is reordered or re-encoded.
+func indentJSON(raw []byte) string {
+	var b bytes.Buffer
+	if json.Indent(&b, raw, "", "  ") != nil {
+		return string(raw)
+	}
+	return b.String()
+}
+
+// repeatedKey is a key an object in raw names twice, at any depth, or "". A repeated
+// key means different things to different readers, so such arguments are refused
+// instead of shown one way and read another.
+func repeatedKey(raw []byte) string {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	// One frame per open object (seen != nil) or array; key: the object's next token is a key.
+	type frame struct {
+		seen map[string]bool
+		key  bool
+	}
+	var stack []*frame
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			return ""
+		}
+		if n := len(stack); n > 0 && stack[n-1].seen != nil && stack[n-1].key {
+			if k, ok := tok.(string); ok {
+				if stack[n-1].seen[k] {
+					return k
+				}
+				stack[n-1].seen[k] = true
+				stack[n-1].key = false
+				continue
+			}
+		}
+		if d, ok := tok.(json.Delim); ok {
+			switch d {
+			case '{':
+				stack = append(stack, &frame{seen: map[string]bool{}, key: true})
+				continue
+			case '[':
+				stack = append(stack, &frame{})
+				continue
+			default: // a '}' or ']' closes a value
+				stack = stack[:len(stack)-1]
+			}
+		}
+		// A value ended: an enclosing object expects a key next.
+		if n := len(stack); n > 0 && stack[n-1].seen != nil {
+			stack[n-1].key = true
 		}
 	}
-	return pv
 }
 
 func previewValue(v any) string {

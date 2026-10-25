@@ -16,6 +16,7 @@ import { toast } from "@/components/ui/toast";
 import { StatusIcon } from "../bits";
 import { useMergeTicket } from "../useTicketActions";
 import { EmptyState } from "@/components/ui/empty";
+import { qk } from "@/lib/queries";
 
 export function MergeDialog({ ticket, open, onOpenChange }: { ticket: Ticket; open: boolean; onOpenChange: (o: boolean) => void }) {
   const { t: tr } = useTranslation("inbox");
@@ -29,7 +30,7 @@ export function MergeDialog({ ticket, open, onOpenChange }: { ticket: Ticket; op
 
   // Default to the same customer's other tickets; search everything when typing.
   const results = useQuery({
-    queryKey: ["merge-search", ticket.id, deferred],
+    queryKey: qk.of("merge-search", ticket.id, deferred),
     queryFn: () =>
       deferred
         ? api.tickets.list({ q: deferred, limit: 10 })

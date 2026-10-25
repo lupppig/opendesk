@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "big-cloud.jpg",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

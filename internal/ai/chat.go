@@ -84,14 +84,39 @@ func (s *Service) Models() (def, fast string) { return s.models.Default, s.model
 // ai_disabled, 403 ai_off).
 func (s *Service) WorkspaceAI(ctx context.Context, wid uuid.UUID) (AISettingsView, error) {
 	a, err := s.workspaceAI(ctx, wid)
-	return AISettingsView{Enabled: a.Enabled, Assistant: a.Assistant}, err
+	return AISettingsView{Enabled: a.Enabled, Assistant: a.Assistant, AssistantPeer: a.AssistantPeer, AssistantAuto: a.AssistantAuto}, err
 }
 
 // AISettingsView is the part of settings.ai other packages read.
 type AISettingsView struct {
 	Enabled   bool
 	Assistant bool
+	// AssistantPeer: members' Ollie may ask a teammate's (contracts/ai.md "Asking a teammate").
+	AssistantPeer bool
+	// AssistantAuto: the built-in changes Ollie makes without asking (contracts/ai.md "Approvals").
+	AssistantAuto []string
 }
+
+// Complete runs one billed model call without tools for feature, attributed to userID: it
+// checks the AI balance covers the call's estimate and charges only when the call
+// succeeded. A Model of "" picks the workspace's model for the feature's tier. Usage rows
+// hold counts only; on the workspace's own key nothing is charged.
+func (s *Service) Complete(ctx context.Context, wid uuid.UUID, userID *uuid.UUID, feature string, req Request) (Response, error) {
+	if !s.Enabled() {
+		return Response{}, errDisabled
+	}
+	c := s.newCall(wid, userID, nil, feature)
+	resp, err := c.run(ctx, req, nil)
+	if err != nil {
+		return Response{}, err
+	}
+	c.charge(ctx)
+	return resp, nil
+}
+
+// ParseJSON decodes a model's JSON output, tolerating a code fence or stray prose
+// (ErrBadOutput when there is none).
+func ParseJSON(text string, v any) error { return parseJSON(text, v) }
 
 // AssistantTurn runs one billed model turn with tools: it checks the AI balance covers
 // the turn's estimate, streams text through onDelta, and charges only when the turn

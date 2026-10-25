@@ -108,6 +108,11 @@ export class WidgetApi {
     return this.req<unknown>("POST", `/v1/widget/conversations/${enc(id)}/seen`, {});
   }
 
+  /** The visitor is writing: agents on the conversation see them typing. */
+  typing(id: string) {
+    return this.req<unknown>("POST", `/v1/widget/conversations/${enc(id)}/typing`, {});
+  }
+
   /** The visitor wants a person instead of the AI agent. */
   handoff(id: string) {
     return this.req<unknown>("POST", `/v1/widget/conversations/${enc(id)}/handoff`, {});

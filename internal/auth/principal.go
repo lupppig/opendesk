@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"slices"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -70,6 +71,10 @@ type Principal struct {
 	// it: it runs with the user's own role and checks, and is attributed to ai on
 	// behalf of the user.
 	Assistant bool
+	// ViaAssistant marks every request the assistant makes for this user, reads included.
+	// It changes no attribution; routes that are the person's alone (Collab mail, what they
+	// share with teammates' assistant) refuse it.
+	ViaAssistant bool
 	// GrantID is set when a user acts through an AI client connected to the MCP server
 	// with OAuth (contracts/agent.md). Scopes then bound the request like an API key's,
 	// on top of the user's role, and account routes are refused.
@@ -77,6 +82,9 @@ type Principal struct {
 	// HiddenTeams caches the private teams this caller may not see (domain.HiddenTeams).
 	HiddenTeams       []uuid.UUID
 	HiddenTeamsLoaded bool
+	// ResolvedAt is when the credential began to be resolved, before any lookup: what
+	// the request reads from here on is at least as recent as this.
+	ResolvedAt time.Time
 }
 
 func (p *Principal) HasScope(s string) bool { return slices.Contains(p.Scopes, s) }

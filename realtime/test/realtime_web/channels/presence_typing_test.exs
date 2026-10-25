@@ -111,19 +111,24 @@ defmodule RealtimeWeb.PresenceTypingTest do
       assert_broadcast "typing", %{user_id: ^uid, name: "Anna"}
     end
 
-    test "with a contact_id also goes to the contact topic in the contract shape", c do
+    test "a contact_id forwards nothing to the contact topic", c do
       contact_topic = "contact:#{c.wid}:#{c.cid}"
       {:ok, _, _} = subscribe_and_join(c.contact_socket, ContactChannel, contact_topic)
+      :ok = Endpoint.subscribe(contact_topic)
+      uid = c.uid
 
-      push(c.ticket, "typing", %{"contact_id" => c.cid})
+      for payload <- [
+            %{"contact_id" => c.cid},
+            %{"contact_id" => "../../x"},
+            %{"contact_id" => 5}
+          ] do
+        ref = push(c.ticket, "typing", payload)
+        assert_broadcast "typing", %{user_id: ^uid}
+        refute_reply ref, :error, %{reason: "invalid"}, 20
+      end
 
-      expected = %{ticket_id: c.tid, user: %{id: c.uid, name: "Anna"}}
-
-      assert_receive %Phoenix.Socket.Message{
-        topic: ^contact_topic,
-        event: "typing",
-        payload: ^expected
-      }
+      refute_receive %Broadcast{topic: ^contact_topic, event: "typing"}, 100
+      refute_receive %Phoenix.Socket.Message{topic: ^contact_topic, event: "typing"}, 10
     end
 
     test "a viewer's typing never reaches the customer", c do
@@ -134,41 +139,23 @@ defmodule RealtimeWeb.PresenceTypingTest do
       push(vt, "typing", %{"contact_id" => c.cid})
       refute_receive %Broadcast{topic: "contact:" <> _, event: "typing"}, 100
     end
-
-    test "a malformed contact_id is refused and nothing is sent", c do
-      :ok = Endpoint.subscribe("contact:#{c.wid}:#{c.cid}")
-      ref = push(c.ticket, "typing", %{"contact_id" => "../../x"})
-      assert_reply ref, :error, %{reason: "invalid"}
-      refute_receive %Broadcast{event: "typing"}, 50
-    end
   end
 
   describe "typing from the widget" do
-    test "sends customer_typing to the ticket topic", c do
+    test "is accepted and sends nothing, whatever the ticket_id", c do
       {:ok, _, contact} =
         subscribe_and_join(c.contact_socket, ContactChannel, "contact:#{c.wid}:#{c.cid}")
 
-      push(contact, "typing", %{"ticket_id" => c.tid})
-      topic = c.topic
-      expected = %{ticket_id: c.tid, contact_id: c.cid}
+      :ok = Endpoint.subscribe(c.topic)
 
-      assert_receive %Phoenix.Socket.Message{
-        topic: ^topic,
-        event: "customer_typing",
-        payload: ^expected
-      }
-    end
-
-    test "refuses a malformed or missing ticket_id", c do
-      {:ok, _, contact} =
-        subscribe_and_join(c.contact_socket, ContactChannel, "contact:#{c.wid}:#{c.cid}")
-
-      for payload <- [%{"ticket_id" => "nope"}, %{}, %{"ticket_id" => 5}] do
+      for payload <- [%{"ticket_id" => c.tid}, %{"ticket_id" => "nope"}, %{}, %{"ticket_id" => 5}] do
         ref = push(contact, "typing", payload)
-        assert_reply ref, :error, %{reason: "invalid"}
+        refute_reply ref, :error, %{reason: "invalid"}, 20
       end
 
-      refute_receive %Phoenix.Socket.Message{event: "customer_typing"}, 50
+      refute_receive %Broadcast{event: "customer_typing"}, 100
+      refute_receive %Phoenix.Socket.Message{event: "customer_typing"}, 10
+      assert Process.alive?(contact.channel_pid)
     end
   end
 end

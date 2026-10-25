@@ -9,6 +9,8 @@ import (
 	"github.com/pquerna/otp/totp"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/rivertype"
+
+	"github.com/useopendesk/opendesk/internal/auth"
 )
 
 // TestAccountFlow walks the whole core surface: sign up, workspace, invite and accept,
@@ -83,6 +85,9 @@ func TestAccountFlow(t *testing.T) {
 	rt := kc.do("POST", "/v1/realtime/token", nil)
 	if rt.Status != 200 || rt.str("url") != "ws://gw.test/socket" {
 		t.Fatalf("key realtime token: %d %s", rt.Status, rt.Raw)
+	}
+	if cl, err := e.d.Tokens.Verify(rt.str("token"), auth.PurposeWS); err != nil || cl.Kind != "api_key" || cl.SessionID != "" || cl.IssuedAtMs <= 0 {
+		t.Fatalf("key ws claims: %+v %v", cl, err)
 	}
 	if r := owner.do("POST", "/v1/api-keys", map[string]any{"name": "Bad", "scopes": []string{"admin:all"}}); r.Status != 422 {
 		t.Fatalf("unknown scope: %d", r.Status)

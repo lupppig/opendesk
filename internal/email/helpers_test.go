@@ -51,7 +51,17 @@ var (
 	depsOnce sync.Once
 	shared   *deps.Deps
 	depsErr  error
+	filesAt  string
 )
+
+// TestMain removes the files the tests stored once they have run.
+func TestMain(m *testing.M) {
+	code := m.Run()
+	if filesAt != "" {
+		_ = os.RemoveAll(filesAt)
+	}
+	os.Exit(code)
+}
 
 func testDeps(t testing.TB) *deps.Deps {
 	t.Helper()
@@ -73,6 +83,7 @@ func testDeps(t testing.TB) *deps.Deps {
 			depsErr = err
 			return
 		}
+		filesAt = dir
 		st, err := storage.New(ctx, storage.Options{Driver: "local", Dir: dir})
 		if err != nil {
 			depsErr = err
@@ -181,7 +192,7 @@ func (w *world) receive(m *mailboxRow, raw string) uuid.UUID {
 	w.t.Helper()
 	raw = strings.ReplaceAll(raw, "\r\n", "\n")
 	raw = strings.ReplaceAll(raw, "\n", "\r\n")
-	id, dup, err := w.s.ingest(w.ctx, m, []byte(raw), w.forwardAddr(m, ""), nil)
+	id, dup, err := w.s.ingest(w.ctx, m, []byte(raw), w.forwardAddr(m, ""), nil, viaForward)
 	if err != nil {
 		w.t.Fatal(err)
 	}

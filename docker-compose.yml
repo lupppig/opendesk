@@ -337,7 +337,7 @@ services:
   ollama:
     <<: *hardening
     profiles: [ollama]
-    image: ${OLLAMA_IMAGE:-ollama/ollama:0.40.6}
+    image: ${OLLAMA_IMAGE:-ollama/ollama:0.40.8}
     environment:
       OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
     volumes:
@@ -346,7 +346,7 @@ services:
 
   ollama-init:
     profiles: [ollama]
-    image: ${OLLAMA_IMAGE:-ollama/ollama:0.40.6}
+    image: ${OLLAMA_IMAGE:-ollama/ollama:0.40.8}
     restart: "no"
     logging: *logging
     environment:

@@ -335,7 +335,27 @@ final class SessionStore {
         await onEnded?(ended)
         await api.signOut()
         reset()
+        #if DEBUG
+        if DemoMode.isOn, !DemoMode.launchedInDemo { leaveDemo() }
+        #endif
     }
+
+    #if DEBUG
+    /// Signs in to the demo's in-memory workspace (`DemoMode`), with nothing leaving the device.
+    func enterDemo() async {
+        DemoMode.enter()
+        await DemoBackend.shared.restart()
+        phase = .launching
+        useInstance(DemoMode.instance, config: DemoMode.authConfig)
+        await bootstrap()
+    }
+
+    /// Back to the server chosen before the demo, signed out.
+    private func leaveDemo() {
+        DemoMode.leave()
+        useInstance(Preferences.instance ?? .cloud, config: nil)
+    }
+    #endif
 
     func deleteAccount(password: String?, code: String?) async throws {
         struct Body: Encodable, Sendable {

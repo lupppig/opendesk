@@ -62,6 +62,7 @@ ARG TARGETOS TARGETARCH
 ARG VERSION=dev COMMIT=none
 WORKDIR /src
 COPY go.mod go.sum ./
+COPY internal/thirdparty/douceur/ internal/thirdparty/douceur/
 RUN --mount=type=cache,id=gomod,target=/go/pkg/mod go mod download
 COPY . .
 # internal/webui embeds dist/; replace whatever the checkout has with the build.

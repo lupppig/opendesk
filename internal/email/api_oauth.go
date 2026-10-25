@@ -42,7 +42,7 @@ type oauthStartInput struct {
 		MailboxID string `json:"mailbox_id,omitempty" doc:"Reconnect this mailbox instead of adding one"`
 		Name      string `json:"name,omitempty" maxLength:"64"`
 		Email     string `json:"email,omitempty" maxLength:"254" doc:"Login hint for the provider"`
-		Receive   string `json:"receive,omitempty" enum:"forwarding,sync,api" doc:"How a new mailbox receives: forwarding (default; the connection only sends), sync (read the inbox over IMAP, while this instance has IMAP on) or api (read the inbox through the Gmail API or Microsoft Graph, while the workspace has Collab). A reconnect keeps the mailbox's own, or moves it to api."`
+		Receive   string `json:"receive,omitempty" enum:"forwarding,sync,api" doc:"How a new mailbox receives: forwarding (default; the connection only sends), sync (read the inbox over IMAP, while this instance has IMAP on) or api (read the inbox through the Gmail API or Microsoft Graph, while the workspace has Collab). A reconnect keeps the mailbox's own, or moves it to sync or api when asked."`
 		SyncStart string `json:"sync_start,omitempty" enum:"recent,new" doc:"Where the first sync reads from: the last 7 days (recent, default) or only new mail. A reconnect without it keeps the mailbox's own."`
 	}
 }
@@ -95,9 +95,10 @@ func (s *service) registerOAuthRoutes(api huma.API, r chi.Router) {
 				if err != nil {
 					return nil, wrapMailboxErr(err)
 				}
-				// A reconnect keeps how the mailbox receives, or moves it to reading through
-				// the provider's API when asked. One that reads through the API while the
-				// workspace no longer may, or over IMAP while IMAP is off, moves to forwarding.
+				// A reconnect keeps how the mailbox receives, or moves it to reading its inbox
+				// over IMAP or through the provider's API when asked. One that reads through the
+				// API while the workspace no longer may, or over IMAP while IMAP is off, moves to
+				// forwarding.
 				switch {
 				case b.Receive == "api" || (m.readsAPI() && m.InboundKind == in.Provider):
 					grant = GrantAPI
@@ -107,6 +108,10 @@ func (s *service) registerOAuthRoutes(api huma.API, r chi.Router) {
 						}
 						grant = GrantSend
 					}
+				case b.Receive == "sync" && !m.readsAPI():
+					// A forwarding mailbox, send-only or not, starts reading its inbox (IMAP is
+					// on: checked above).
+					grant = GrantSync
 				case receivesIMAP(m.InboundKind) && !m.readsAPI() && s.mailboxIMAP:
 					grant = GrantSync
 				default:

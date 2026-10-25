@@ -340,9 +340,9 @@ func TestCountStats(t *testing.T) {
 	}
 	e.Do("GET", "/v1/tickets/counts", ws.Agent.As(ws), nil).Want(t, 200).JSON(t, &c)
 	want := map[string]stats{
-		"ticket_folder:unassigned": {1, 2, 1}, // t1, t3, t8
+		"ticket_folder:unassigned": {1, 1, 1}, // t1, t3 (t8 is in a team the agent cannot see)
 		"ticket_folder:mine":       {1, 1, 1}, // t2, t4, t5
-		"ticket_folder:open":       {2, 3, 0}, // t1, t4, t5, t8
+		"ticket_folder:open":       {2, 2, 0}, // t1, t4, t5
 		"ticket_folder:pending":    {0, 0, 2}, // t2, t3
 		"team:" + team.String():    {1, 1, 1}, // t1, t2
 		"team:mine":                {1, 1, 1},

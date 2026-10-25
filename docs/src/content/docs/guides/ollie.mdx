@@ -10,7 +10,7 @@ import Callout from '../../../components/Callout.astro';
 import Legend from '../../../components/Legend.astro';
 import Fold from '../../../components/Fold.astro';
 
-Ollie is opendesk's assistant: the violet blob in the top bar. Ask it about your queue in plain words. It reads tickets, customers, help articles, views, reports and the team's workload, explains what it finds, and prepares changes for you. **Nothing changes until you approve it.**
+Ollie is opendesk's assistant: the violet blob in the top bar. Ask it about your queue in plain words. It reads tickets, customers, help articles, views, reports and the team's workload, explains what it finds, and prepares changes for you. **Nothing changes until you approve it**, unless an admin lets Ollie make some changes without asking.
 
 <Screenshot src="/guides/ollie/overview" alt="The inbox with Ollie's panel open on a ticket: the Ollie button ringed as 1, the Conversations and New chat buttons as 2, the steps Ollie took as 3, an approval card as 4 and the message box as 5" />
 
@@ -45,20 +45,22 @@ For example:
 - "Draft a reply to this customer" or "Add an internal note with what we know so far."
 - "How are we doing this week?" for volume, response times, SLA and CSAT.
 - "Draft a help article from recently solved tickets about the most common question."
-- "Set my email signature to this" or "Put this signature on the support address." Ollie can change anything you can change in opendesk yourself, such as your profile, teams, addresses and settings, always with your approval. Passwords, API keys and billing stay with you.
+- "Set my email signature to this" or "Put this signature on the support address." Ollie can change anything you can change in opendesk yourself, such as your profile, teams, addresses and settings, always with your approval. Passwords, API keys and billing stay with you, and the secrets in what Ollie reads from your settings are hidden from it, including those inside links such as a webhook's address.
 
 Ticket numbers in Ollie's answers, like #123, open the ticket.
 
 </Step>
 <Step title="Approve or deny what it prepares">
 
-When Ollie wants to change something, it shows an approval card with exactly what will happen: each field now and after, the tickets it covers, or the full text of a reply or note. A reply that will reach a customer is marked **Sends to the customer**.
+When Ollie wants to change something, it shows an approval card with exactly what will happen: each field now and after, the tickets it covers, or the full text of a reply or note. A reply that will reach a customer is marked **Sends to the customer**. For a change in settings or in a connected product, **Show all arguments** opens the complete request, and the card says when its summary leaves something out.
 
 <Screenshot src="/guides/ollie/approval" alt="An approval card: the assignee change from nobody to Jonas Weber ringed as 1, the Deny and Approve buttons ringed as 2" />
 
 - **Approve** (<kbd>mod</kbd> <kbd>enter</kbd>) makes the change with your permissions, once.
 - **Deny** leaves everything as it is, and Ollie asks what you want instead.
 - Sending a new message instead skips the change.
+
+If an admin lets Ollie make a kind of change without asking, it makes it right away instead of showing a card, and the step is marked **Ran without asking**. **Show what it ran** opens the same fields and arguments the card would have shown.
 
 </Step>
 </Steps>
@@ -118,9 +120,35 @@ Your conversations with Ollie are private to you. Open past ones from **Conversa
 
 Ollie can change the assignee, status, priority, labels and fields, add notes, send replies you approved, save help article drafts and personal views, and (for admins) save automations, switched off for you to review. It prepares one change at a time.
 
+Admins can let Ollie make some of these without asking, in **Settings, AI**, under **Changes Ollie makes without asking**: updating a ticket or several, adding a note, saving a draft article, a personal view or an automation (switched off). It is off by default. Ollie still makes them with the permissions of the person who asked, records each one in the audit log, and stops after 20 such changes for one message. Replies, messages to people outside the team and changes to other settings always ask first, whatever the setting says.
+
 Bulk changes cover at most 50 tickets per approval, and the tickets are fixed when Ollie proposes the change, so a ticket that arrives later is not swept in.
 
-With [integrations](/guides/integrations/) connected, Ollie can also look things up in Linear, GitHub, Jira, Sentry, Stripe and others, and create or update things there with the same kind of approval, marked **Runs in** the product.
+With [integrations](/guides/integrations/) connected, Ollie can also look things up in Linear, GitHub, Jira, Sentry, Stripe and others, and create or update things there with the same kind of approval, marked **Runs in** the product, or without asking for the tools an admin chose.
+
+</Fold>
+
+<Fold>
+
+## Ask a teammate's Ollie
+
+With Collab, your own mail accounts in opendesk, much of what a teammate knows sits in their own mail. Ollie can ask a teammate's Ollie for you: "ask Priya what the Acme renewal date is". Their Ollie searches the mail they chose to share and answers on their behalf. You get the answer, never their mail, and the step shows whose Ollie answered and from how many conversations.
+
+It is off until both sides agree:
+
+1. An admin allows it for the workspace with **Let teammates' Ollie ask each other** in **Settings, AI**.
+2. Each person opts in for their own mail in **Settings, Agent-to-agent**. Nobody's mail is reachable without their own consent, and admins cannot see or change anyone's choices.
+
+On the agent-to-agent page you choose:
+
+- **Share with**: everyone in the workspace, or the people and teams you pick.
+- **Use information from**: all your mail accounts, or only the ones you pick. For each account choose **Verbatim** (your Ollie may quote it), **Summaries only** (the default: it answers only in its own words) or **Nothing**.
+- **Sharing rules**: what your Ollie may and may not share, in your own words, such as "Share dates and next steps. Never share prices or anything personal."
+- **Recent asks**: who asked, what, and what your Ollie answered, for the last 90 days.
+
+Your Ollie also uses common sense: it leaves out personal, health, money and HR matters and anything marked confidential, declines what your rules forbid, never passes on addresses, links or attachments, and never follows instructions written in your mail. An answer that copies a summaries-only email word for word is refused.
+
+Each answer is one call on the fast model, charged to the workspace's AI balance and counted for the person who asked.
 
 </Fold>
 

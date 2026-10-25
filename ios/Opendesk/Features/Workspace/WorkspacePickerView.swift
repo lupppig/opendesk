@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Pick a workspace (or make the first one). Also the switcher from Account.
+/// Pick a workspace (or make the first one), on the painted frame sign-in uses.
 struct WorkspacePickerView: View {
     @Environment(AppEnvironment.self) private var env
     @State private var creating = false
@@ -9,46 +9,43 @@ struct WorkspacePickerView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(session.memberships.isEmpty ? "Create a workspace" : "Choose a workspace")
-                            .font(ODFont.sans(27, weight: .semibold))
-                            .tracking(-0.7)
-                            .foregroundStyle(Theme.fg)
-                        Text(session.memberships.isEmpty
+            AuthScene(painting: .plains) {
+                VStack(alignment: .leading, spacing: 16) {
+                    ODWordmark(size: 22, color: .white)
+                    HeroTitle(
+                        title: session.memberships.isEmpty ? "Create a workspace" : "Choose a workspace",
+                        subtitle: session.memberships.isEmpty
                             ? "A workspace holds your team's inboxes, tickets and help center."
-                            : "Signed in as \(session.user?.email ?? "").")
-                            .font(ODFont.callout)
-                            .foregroundStyle(Theme.fg3)
-                    }
-
-                    if !session.memberships.isEmpty {
-                        WorkspaceList()
-                    }
-
-                    if session.memberships.isEmpty {
-                        CreateWorkspaceForm()
-                    } else {
-                        Button {
-                            creating = true
-                        } label: {
-                            Label("New workspace", systemImage: "plus")
-                        }
-                        .buttonStyle(OutlineButtonStyle())
-                    }
-
-                    Button("Sign out") {
-                        Task { await session.signOut() }
-                    }
-                    .font(ODFont.sans(14, weight: .medium))
-                    .foregroundStyle(Theme.fg3)
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 6)
+                            : "Signed in as \(session.user?.email ?? "").",
+                        size: 30
+                    )
                 }
-                .padding(24)
+                .padding(.top, 14)
+            } panel: {
+                if !session.memberships.isEmpty {
+                    WorkspaceList()
+                }
+
+                if session.memberships.isEmpty {
+                    CreateWorkspaceForm()
+                } else {
+                    Button {
+                        creating = true
+                    } label: {
+                        Label("New workspace", systemImage: "plus")
+                    }
+                    .buttonStyle(OutlineButtonStyle())
+                }
+
+                Button("Sign out") {
+                    Task { await session.signOut() }
+                }
+                .font(ODFont.sans(14, weight: .medium))
+                .foregroundStyle(Theme.fg3)
+                .frame(maxWidth: .infinity)
+                .frame(height: 36)
             }
-            .background(Theme.chrome.ignoresSafeArea())
+            .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $creating) {
                 NavigationStack {
                     ScrollView { CreateWorkspaceForm().padding(20) }

@@ -16,6 +16,9 @@ import { wantsDesktop } from "@/lib/notificationPrefs";
 import { q, qk } from "@/lib/queries";
 import { queryClient } from "@/lib/queryClient";
 import { describe, notificationPath } from "./Notifications";
+import { useBellNotifications } from "./notificationRead";
+import { inWorkspace } from "@/lib/api/client";
+import { withWorkspaceParam } from "@/lib/workspaceParam";
 
 /** `opendesk://open?path=…` and notification clicks: always on, signed in or not. */
 export function useDesktopNavigation() {
@@ -29,10 +32,10 @@ export function useDesktopNavigation() {
   }, [router]);
 }
 
-/** Keeps the badge equal to the unread notification count from the query cache. */
+/** Keeps the badge equal to the unread notification count: every shown workspace's with Together. */
 export function useDesktopBadge() {
-  const { data } = useQuery({ ...q.notifications(), enabled: isDesktop });
-  const unread = data?.filter((n) => !n.read_at).length;
+  const bell = useBellNotifications();
+  const unread = bell.isLoading && !bell.hasAny ? undefined : bell.unread;
   useEffect(() => {
     if (desktop && unread !== undefined) desktop.setBadge(unread);
   }, [unread]);
@@ -56,14 +59,16 @@ export function useDesktopPreferences() {
  * Preferences not loaded yet follow the defaults: on for every type. `open`
  * navigates to a browser notification's path when it is clicked.
  */
-export function notifyDesktop(n: Notification, open: (path: string) => void) {
+export function notifyDesktop(n: Notification, open: (path: string) => void, workspaceId?: string) {
   if (document.hasFocus()) return;
   if (!desktop && !browserNotificationsAllowed()) return;
-  if (!wantsDesktop(queryClient.getQueryData<NotificationPreferences>(qk.notificationPreferences), n.type)) return;
+  if (!wantsDesktop(inWorkspace(workspaceId, () => queryClient.getQueryData<NotificationPreferences>(qk.notificationPreferences)), n.type)) return;
   const t = i18n.getFixedT(null, "shell");
   const title = describe(n, t);
   const body = n.ticket ? `#${n.ticket.number} ${n.ticket.subject ?? ""}`.trim() : undefined;
-  const path = notificationPath(n) ?? undefined;
+  // The path names its workspace (`?ws=`), so a click opens it there whichever has the focus.
+  const at = notificationPath(n);
+  const path = at ? withWorkspaceParam(at, workspaceId) : undefined;
   if (desktop) {
     desktop.notify({ id: n.id, title, body, path });
     return;

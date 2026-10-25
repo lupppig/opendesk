@@ -35,7 +35,7 @@ func TestMain(m *testing.M) {
 	if os.Getenv("TEST_DATABASE_URL") == "" {
 		os.Setenv("TEST_DATABASE_URL", "postgres://opendesk:opendesk@localhost:55432/opendesk_ai?sslmode=disable")
 	}
-	os.Exit(m.Run())
+	hdtest.Main(m)
 }
 
 type env struct {

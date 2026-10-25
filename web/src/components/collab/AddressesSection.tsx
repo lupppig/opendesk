@@ -28,6 +28,7 @@ import { identitiesOf } from "@/lib/collab/identities";
 import { isEmail } from "@/lib/collab/recipients";
 import { relLong } from "@/lib/format";
 import { COLLAB_FROM_VARS, fromNameProblem } from "@/lib/fromname";
+import { qk } from "@/lib/queries";
 import { SyncLine } from "./AccountSettings";
 
 type Editing = { mode: "add" } | { mode: "edit"; identity: MailIdentity };
@@ -161,7 +162,7 @@ function AddressDrawer({ account, editing, onClose }: { account: MailAccount; ed
   const manual = !current || current.source === "manual";
   const fromGmail = current?.source === "provider";
   const suggestions = useQuery({
-    queryKey: ["collab", "identity-suggestions", account.id],
+    queryKey: qk.of("collab", "identity-suggestions", account.id),
     queryFn: () => api.collab.accounts.identitySuggestions(account.id),
     enabled: !current && account.provider === "microsoft",
     staleTime: 60_000,

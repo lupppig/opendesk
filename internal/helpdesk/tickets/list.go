@@ -558,7 +558,13 @@ func ticketCounts(ctx context.Context, q db.Querier, p *auth.Principal) (TicketC
 	for _, s := range []*TicketStats{&sUnassigned, &sMine, &sOpen, &sPending, &sMyTeams} {
 		dest = append(dest, s.dest()...)
 	}
-	err := q.QueryRow(ctx, `SELECT
+	// Folder totals count only tickets the caller may see: a private team's are left out
+	// unless they are on it or the ticket is theirs, as in the lists.
+	hidden, err := domain.HiddenTeams(ctx, q, p)
+	if err != nil {
+		return c, err
+	}
+	err = q.QueryRow(ctx, `SELECT
 		count(*) FILTER (WHERE `+unassigned+`),
 		count(*) FILTER (WHERE `+mine+`),
 		count(*) FILTER (WHERE `+open+`),
@@ -573,7 +579,7 @@ func ticketCounts(ctx context.Context, q db.Querier, p *auth.Principal) (TicketC
 		`+statCols("", open)+`,
 		`+statCols("", pending)+`,
 		`+statCols("", myTeams)+`
-		FROM tickets WHERE workspace_id = $1 AND deleted_at IS NULL`, p.WorkspaceID, p.ActorUserID()).
+		FROM tickets WHERE workspace_id = $1 AND deleted_at IS NULL AND `+domain.VisibleSQLUser("tickets", 3, 2), p.WorkspaceID, p.ActorUserID(), hidden).
 		Scan(dest...)
 	if err != nil {
 		return c, err
@@ -583,10 +589,6 @@ func ticketCounts(ctx context.Context, q db.Querier, p *auth.Principal) (TicketC
 	c.Stats["ticket_folder:open"] = sOpen
 	c.Stats["ticket_folder:pending"] = sPending
 	c.Stats["team:mine"] = sMyTeams
-	hidden, err := domain.HiddenTeams(ctx, q, p)
-	if err != nil {
-		return c, err
-	}
 	rows, err := q.Query(ctx, `SELECT tm.id,
 		count(t.id) FILTER (WHERE t.id IS NOT NULL), count(t.id) FILTER (WHERE t.assignee_id IS NULL),
 		`+statCols("t.", "t.id IS NOT NULL")+`

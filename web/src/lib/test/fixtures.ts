@@ -1,4 +1,9 @@
+import { setWorkspaceId } from "../api/client";
 import type { Envelope, Ticket } from "../api/types";
+
+/** The focus workspace of these fixtures: env() events belong to it, so qk keys built in a test read theirs. */
+export const FOCUS = "w1";
+setWorkspaceId(FOCUS);
 
 export function ticket(over: Partial<Ticket> = {}): Ticket {
   return {

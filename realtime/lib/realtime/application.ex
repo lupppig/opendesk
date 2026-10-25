@@ -36,6 +36,7 @@ defmodule Realtime.Application do
         Realtime.Sockets,
         Realtime.RateLimiter,
         Realtime.Metrics,
+        Realtime.Revocations,
         Realtime.Fanout.Dedupe
       ] ++
       Realtime.PostHog.children() ++

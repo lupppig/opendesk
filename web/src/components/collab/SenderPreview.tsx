@@ -14,6 +14,7 @@ import type { MailAccount, MailIdentityPreview, MailIdentityPreviewBody } from "
 import { collabFromName } from "@/lib/collab/identities";
 import { cn } from "@/lib/cn";
 import { COLLAB_FROM_VARS } from "@/lib/fromname";
+import { qk } from "@/lib/queries";
 import { useUser, useWorkspace } from "@/lib/session";
 
 function useDebounced<T>(value: T, ms: number): T {
@@ -29,7 +30,7 @@ function useDebounced<T>(value: T, ms: number): T {
 export function useSenderPreview(accountId: string, body: MailIdentityPreviewBody, enabled = true): MailIdentityPreview | undefined {
   const key = useDebounced(JSON.stringify(body), 250);
   const { data } = useQuery({
-    queryKey: ["collab", "identity-preview", accountId, key],
+    queryKey: qk.of("collab", "identity-preview", accountId, key),
     queryFn: () => api.collab.accounts.previewIdentity(accountId, JSON.parse(key) as MailIdentityPreviewBody),
     placeholderData: keepPreviousData,
     staleTime: 30_000,

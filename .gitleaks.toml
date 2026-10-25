@@ -21,8 +21,14 @@ regexes = [
   '''Wrong-Passw0rd''',
   # The Web Push content encoding named in a comment (internal/push/webpush_test.go).
   '''aes128gcm-encrypted''',
+  # The iPhone app's demo mode (ios/Opendesk/Core/Demo): the demo account's fixed TOTP setup
+  # secret, and the placeholder key in a demo help article's curl example.
+  '''JBSWY3DPEHPK3PXPMZXW6YTB''',
+  '''mgn_live_\.\.\.''',
 ]
 paths = [
   '''internal/auth/passwords/breached\.txt''',
   '''(^|/)pnpm-lock\.yaml$''',
+  # The iPhone app's demo world: sample data on the device, never a credential (DemoMode).
+  '''^ios/Opendesk/Core/Demo/''',
 ]

@@ -1,6 +1,7 @@
 package assistant
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -236,9 +237,10 @@ func (s *Service) catalog() string {
 	return strings.Join(tags, ", ")
 }
 
-// Prefixes the tools never reach: sign-in, the operator's panel, Ollie itself, and the
-// routes visitors, devices and other servers call.
-var apiClosed = []string{"/v1/admin", "/v1/auth", "/v1/assistant", "/v1/public", "/v1/push", "/v1/oauth", "/v1/realtime",
+// Prefixes the tools never reach: sign-in, the operator's panel, Ollie itself and what a
+// person shares with teammates' Ollie, and the routes visitors, devices and other servers
+// call.
+var apiClosed = []string{"/v1/admin", "/v1/auth", "/v1/assistant", "/v1/me/assistant-peer", "/v1/public", "/v1/push", "/v1/oauth", "/v1/realtime",
 	"/v1/inbound", "/v1/widget/session", "/v1/widget/conversations", "/v1/widget/attachments", "/v1/widget/config"}
 
 // Writes that stay with the person: credentials, sessions and devices, money, owner-only
@@ -644,8 +646,106 @@ func scrub(v any) any {
 		for i := range x {
 			x[i] = scrub(x[i])
 		}
+	case string:
+		return scrubURL(x)
 	}
 	return v
+}
+
+// scrubURL is s without the parts of a URL that can carry a credential, when s is an
+// absolute http(s) URL: no userinfo, every query (and fragment) value [hidden] with its
+// name kept, and every path segment that looks like a credential [hidden]. Anything
+// else is returned as it is.
+func scrubURL(s string) string {
+	if len(s) > 8192 || strings.ContainsAny(s, " \t\r\n") {
+		return s
+	}
+	lower := strings.ToLower(s)
+	if !strings.HasPrefix(lower, "https://") && !strings.HasPrefix(lower, "http://") {
+		return s
+	}
+	u, err := url.Parse(s)
+	if err != nil || u.Host == "" {
+		return s
+	}
+	var b strings.Builder
+	b.WriteString(u.Scheme + "://" + u.Host)
+	segs := strings.Split(u.EscapedPath(), "/")
+	for i, seg := range segs {
+		if credentialSegment(seg) {
+			segs[i] = "[hidden]"
+		}
+	}
+	b.WriteString(strings.Join(segs, "/"))
+	if u.RawQuery != "" || u.ForceQuery {
+		b.WriteString("?" + hideValues(u.RawQuery))
+	}
+	if f := u.EscapedFragment(); f != "" {
+		b.WriteString("#")
+		if strings.Contains(f, "=") {
+			b.WriteString(hideValues(f))
+		} else if credentialSegment(f) {
+			b.WriteString("[hidden]")
+		} else {
+			b.WriteString(f)
+		}
+	}
+	return b.String()
+}
+
+// hideValues replaces the value of each name=value pair with [hidden]; a bare part is
+// hidden when it looks like a credential.
+func hideValues(raw string) string {
+	parts := strings.Split(raw, "&")
+	for i, p := range parts {
+		if name, val, ok := strings.Cut(p, "="); ok {
+			if val != "" {
+				parts[i] = name + "=[hidden]"
+			}
+		} else if credentialSegment(p) {
+			parts[i] = "[hidden]"
+		}
+	}
+	return strings.Join(parts, "&")
+}
+
+var (
+	uuidLike  = regexp.MustCompile(`[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}`)
+	tokenRun  = regexp.MustCompile(`[A-Za-z0-9_-]{20,}`)
+	tokenPart = regexp.MustCompile(`[_-]`)
+)
+
+// credentialSegment says whether a URL path segment looks like a credential: a run of
+// 20 or more letters, digits, '-' and '_' that mixes letters and digits, and either
+// holds an unbroken stretch of 16 or more such characters or is 32 or more long with
+// upper and lower case. Ids in the UUID form are not counted, so ordinary slugs
+// ("how-to-reset-2fa-in-2024") and record ids survive; tokens such as a webhook's
+// path secret do not.
+func credentialSegment(seg string) bool {
+	if dec, err := url.PathUnescape(seg); err == nil {
+		seg = dec
+	}
+	seg = uuidLike.ReplaceAllString(seg, ".")
+	for _, run := range tokenRun.FindAllString(seg, -1) {
+		if !hasLetter(run) || !strings.ContainsAny(run, "0123456789") {
+			continue
+		}
+		longest := 0
+		for _, p := range tokenPart.Split(run, -1) {
+			if len(p) >= 16 && hasLetter(p) && strings.ContainsAny(p, "0123456789") {
+				return true
+			}
+			longest = max(longest, len(p))
+		}
+		if len(run) >= 32 && longest >= 10 && strings.ToLower(run) != run && strings.ToUpper(run) != run {
+			return true
+		}
+	}
+	return false
+}
+
+func hasLetter(s string) bool {
+	return strings.ContainsFunc(s, func(r rune) bool { return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') })
 }
 
 // --- api_change -------------------------------------------------------------------------
@@ -729,22 +829,48 @@ func proposeAPI(ctx context.Context, rc *runCtx, in json.RawMessage) (any, Previ
 		from := ""
 		if cur != nil {
 			if v, ok := cur[k]; ok {
-				from = clip(show(v), 2000)
+				from = show(v)
 			}
 		}
-		to := clip(show(a.Body[k]), 2000)
+		to := show(a.Body[k])
 		if from == to {
+			pv.Omitted++ // sent, and the same as now
 			continue
 		}
-		pv.Changes = append(pv.Changes, Change{Field: k, From: from, To: to})
+		pv.Changes = append(pv.Changes, Change{Field: k, From: clipped(&pv, from, 2000), To: clipped(&pv, to, 2000)})
 	}
-	for k, v := range a.Query {
-		pv.Changes = append(pv.Changes, Change{Field: k, To: clip(v, 200)})
+	qkeys := make([]string, 0, len(a.Query))
+	for k := range a.Query {
+		qkeys = append(qkeys, k)
+	}
+	sort.Strings(qkeys)
+	for _, k := range qkeys {
+		pv.Changes = append(pv.Changes, Change{Field: k, To: clipped(&pv, a.Query[k], 200)})
 	}
 	if a.Method != http.MethodDelete && len(a.Body) > 0 && len(pv.Changes) == 0 {
 		return nil, Preview{}, httpx.Validation("these values are already set; there is nothing to change")
 	}
+	pv.Arguments = a.request()
 	return a, pv, nil
+}
+
+// request is the request applyAPI sends, as indented JSON for the approval card. The
+// body is encoded as the API receives it (a body without fields is not sent).
+func (a apiArgs) request() string {
+	r := struct {
+		Method string            `json:"method"`
+		Path   string            `json:"path"`
+		Query  map[string]string `json:"query,omitempty"`
+		Body   map[string]any    `json:"body,omitempty"`
+	}{a.Method, a.Path, a.Query, a.Body}
+	var b bytes.Buffer
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if enc.Encode(r) != nil {
+		return ""
+	}
+	return strings.TrimSpace(b.String())
 }
 
 func applyAPI(ctx context.Context, rc *runCtx, w *caller, raw json.RawMessage, key string) (output, error) {

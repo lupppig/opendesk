@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { SaveBar } from "@/components/settings/SaveBar";
 import { RolePill } from "@/components/settings2/bits";
+import { ClockSetting } from "@/components/settings2/ClockSetting";
 import { MemberProfileFields, profileChanges, profileDirty, profileOf, useSaveProfile } from "@/components/settings2/MemberProfileFields";
 import { UnsavedGuard } from "@/components/settings2/UnsavedGuard";
 import { SettingsPage, Section, Row } from "@/components/layout";
@@ -171,6 +172,10 @@ export default function Profile() {
         <div className="py-3">
           <ThemeCards />
         </div>
+      </Section>
+
+      <Section title={t("profile.clock.title")} description={t("profile.clock.hint")}>
+        <ClockSetting />
       </Section>
 
       <Section title={t("profile.sounds.title")} description={t("profile.sounds.hint")}>

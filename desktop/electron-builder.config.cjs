@@ -34,6 +34,9 @@ const channel = /-/.test(version) ? "beta" : "latest";
 module.exports = {
   appId: "sh.opendesk.desktop",
   productName: "opendesk",
+  // Otherwise derived from the package name (@opendesk/desktop), which Linux
+  // targets refuse as a file name.
+  executableName: "opendesk",
   copyright: "Copyright © opendesk",
   directories: { output: "release", buildResources: "build" },
   files: ["dist/**", "!dist/**/*.map", "package.json"],

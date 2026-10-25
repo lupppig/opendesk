@@ -11,8 +11,12 @@ final class DirectoryStore {
     private(set) var tags: [Tag] = []
     private(set) var views: [SavedView] = []
     private(set) var savedReplies: [SavedReply] = []
+    /// Custom field definitions for tickets, contacts and companies, archived ones included.
+    private(set) var fields: [CustomField] = []
     private(set) var counts: TicketCounts?
     private(set) var ai: AIConfig = .off
+    /// Collab mail for this workspace; the Mail area shows only when it is on.
+    private(set) var collab: CollabAvailability = .off
     private(set) var loaded = false
 
     @ObservationIgnored private var api: APIClient?
@@ -30,8 +34,10 @@ final class DirectoryStore {
         tags = []
         views = []
         savedReplies = []
+        fields = []
         counts = nil
         ai = .off
+        collab = .off
         loaded = false
     }
 
@@ -44,7 +50,9 @@ final class DirectoryStore {
         ])
         async let views: Page<SavedView>? = try? api.get("v1/views", query: [URLQueryItem(name: "limit", value: "100")])
         async let replies: Page<SavedReply>? = try? api.get("v1/saved-replies", query: [URLQueryItem(name: "limit", value: "100")])
+        async let fields: Page<CustomField>? = try? api.get("v1/custom-fields")
         async let ai: AIConfig? = try? api.get("v1/ai/config")
+        async let collab: CollabAvailability? = try? api.get("v1/collab")
         async let counts: TicketCounts? = try? api.get("v1/tickets/counts")
 
         if let page = await members { self.members = page.data }
@@ -52,7 +60,9 @@ final class DirectoryStore {
         if let page = await tags { self.tags = page.data.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending } }
         if let page = await views { self.views = page.data.sorted { ($0.position ?? 0) < ($1.position ?? 0) } }
         if let page = await replies { self.savedReplies = page.data.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending } }
+        if let page = await fields { self.fields = page.data.sorted { $0.position < $1.position } }
         if let config = await ai { self.ai = config }
+        if let status = await collab { self.collab = status }
         if let value = await counts { self.counts = value }
         loaded = true
     }
@@ -86,6 +96,12 @@ final class DirectoryStore {
     }
 
     func view(_ id: String) -> SavedView? { views.first { $0.id == id } }
+
+    /// Lets the Mail area refresh what `GET /v1/collab` says (after connecting an account on the web).
+    func setCollab(_ status: CollabAvailability) { collab = status }
+
+    /// Live (unarchived) custom fields for `entity` (`ticket`, `contact`, `company`), in order.
+    func fields(for entity: String) -> [CustomField] { fields.filter { $0.entity == entity && !$0.archived } }
 
     func tag(named name: String) -> Tag? {
         tags.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }

@@ -47,7 +47,7 @@ func (rv *Resolver) resolve(r *http.Request) *Principal {
 		return nil
 	}
 	ctx := r.Context()
-	base := Principal{IP: rv.ClientIP(r), UserAgent: truncate(r.UserAgent(), 400)}
+	base := Principal{IP: rv.ClientIP(r), UserAgent: truncate(r.UserAgent(), 400), ResolvedAt: time.Now()}
 	switch {
 	case strings.EqualFold(scheme, "Bearer") && strings.HasPrefix(cred, "od_live_"):
 		p := base

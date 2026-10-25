@@ -1,5 +1,6 @@
 {
   "titles": {
+    "everywhere": "Everywhere",
     "helpCenter": "Help center",
     "rateYourConversation": "Rate your conversation",
     "logIn": "Log in",
@@ -41,6 +42,8 @@
     "profile": "Profile",
     "security": "Security",
     "notifications": "Notifications",
+    "agentToAgent": "Agent-to-agent",
+    "workspaces": "Workspaces",
     "general": "General",
     "members": "Members",
     "teams": "Teams",
@@ -92,6 +95,8 @@
     "profile": "Profile",
     "security": "Security",
     "notifications": "Notifications",
+    "agentToAgent": "Agent-to-agent",
+    "workspaces": "Workspaces",
     "general": "General",
     "members": "Members",
     "teams": "Teams",
@@ -153,7 +158,7 @@
     "aiKnowledge": "AI agent knowledge",
     "aiTools": "AI agent tools",
     "aiPlayground": "AI agent playground",
-    "importHistory": "Import history from Zendesk, Help Scout, Freshdesk, Intercom or CSV"
+    "importHistory": "Import history from Zendesk, Help Scout, Freshdesk, Intercom, Front or CSV"
   },
   "shortcuts": {
     "general": "General",

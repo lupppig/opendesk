@@ -8,6 +8,7 @@ import type { CompanyRef } from "@/lib/api/types";
 import { cn } from "@/lib/cn";
 import { CompanyGlyph } from "./bits";
 import { useDebounced } from "./hooks";
+import { qk } from "@/lib/queries";
 
 /** Pick a company with server-side search. `null` clears it. */
 export function CompanyPicker({ value, onChange, id }: { value: CompanyRef | null; onChange: (c: CompanyRef | null) => void; id?: string }) {
@@ -15,7 +16,7 @@ export function CompanyPicker({ value, onChange, id }: { value: CompanyRef | nul
   const [query, setQuery] = useState("");
   const term = useDebounced(query, 200);
   const { data } = useQuery({
-    queryKey: ["companies", "pick", term],
+    queryKey: qk.of("companies", "pick", term),
     queryFn: () => api.companies.search({ q: term || undefined, limit: 12 }),
   });
   const rows = data?.data ?? [];

@@ -27,7 +27,7 @@ opendesk does not inspect message text or attachments against organization rules
 
 opendesk has no configurable retention schedule or legal-hold feature for helpdesk tickets or Collab mail. Ticket deletion and Collab sync have different effects:
 
-Helpdesk email becomes a workspace ticket and follows ticket visibility. Collab stores personal or shared mailbox copies. A private account is visible only to its connector; a shared account follows its configured audience.
+Helpdesk email becomes a workspace ticket and follows ticket visibility. Collab stores personal or shared mailbox copies. A private account is visible only to its connector; a shared account follows its configured audience. When a member answers a ticket from their own Collab address, answers to that reply are copied into the ticket and from then on follow ticket visibility. No other mail from the account reaches the ticket.
 
 | Data | What happens in opendesk | What remains outside opendesk |
 | --- | --- | --- |

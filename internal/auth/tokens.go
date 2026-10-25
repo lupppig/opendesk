@@ -61,6 +61,12 @@ type Claims struct {
 	Avatar    string `json:"avatar,omitempty"`
 	// Teams are the private teams a ws token may join (contracts/teams.md).
 	Teams []string `json:"teams,omitempty"`
+	// IssuedAtMs is a ws token's issue time in milliseconds: the gateway refuses a token
+	// issued at or before a revocation of its subject or session (contracts/realtime.md).
+	IssuedAtMs int64 `json:"iat_ms,omitempty"`
+	// Workspaces (ws, users only) are the other workspaces the socket may join besides wid,
+	// by id, with the user's role and private teams in each (contracts/tokens.md).
+	Workspaces map[string]WSWorkspace `json:"workspaces,omitempty"`
 	// Brand binds a widget_ws token to the brand of the widget it was issued for.
 	Brand string `json:"bid,omitempty"`
 	// Free-form payload for oauth_state (provider, redirect, mailbox flow).
@@ -70,6 +76,20 @@ type Claims struct {
 	Scope string `json:"scope,omitempty"`
 	jwt.RegisteredClaims
 }
+
+// WSWorkspace is one workspace of a ws token's workspaces claim.
+type WSWorkspace struct {
+	Role  string   `json:"role"`
+	Teams []string `json:"teams,omitempty"`
+}
+
+// A ws token's workspaces claim holds at most this many workspaces and private teams in
+// all, which keeps the token within what the gateway accepts. Past either, a workspace is
+// left out of the claim: the app refreshes it when it is opened instead of live.
+const (
+	WSMaxWorkspaces = 25
+	WSMaxTeams      = 50
+)
 
 type Tokens struct{ secret []byte }
 

@@ -2,11 +2,13 @@
 // a ticket marks its notifications read, so nobody is emailed about a ticket they
 // are already looking at.
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { inWorkspace } from "@/lib/api/client";
 import { api } from "@/lib/api/endpoints";
 import type { Notification } from "@/lib/api/types";
 import { q, qk } from "@/lib/queries";
+import { mergeByActivity, useTogether } from "@/lib/together";
 
 export type ReadBody = { ids?: string[]; all?: boolean };
 
@@ -36,6 +38,47 @@ export function useMarkNotificationsRead() {
     onError: (_e, _b, ctx) => {
       if (ctx?.prev) qc.setQueryData(qk.notifications, ctx.prev);
     },
+  });
+}
+
+/**
+ * The bell's notifications: every shown workspace's with Together, newest first, each
+ * tagged with its workspace; the focus workspace's alone otherwise. One request per
+ * workspace, each with that workspace's own access rules.
+ */
+export function useBellNotifications() {
+  const { active, shown, focus } = useTogether();
+  const wids = active ? shown.filter((m) => !m.suspended).map((m) => m.workspace.id) : focus ? [focus] : [];
+  const results = useQueries({ queries: wids.map((wid) => inWorkspace(wid, () => q.notifications())) });
+  const items = mergeByActivity(
+    wids.map((wid, i) => ({ workspaceId: wid, rows: results[i]?.data ?? [] })),
+    (n) => n.created_at,
+  );
+  return {
+    together: active && wids.length > 1,
+    items,
+    isLoading: results.some((r) => r.isLoading),
+    unread: items.filter((x) => !x.row.read_at).length,
+    hasAny: items.length > 0,
+  };
+}
+
+/** Mark read in workspace `wid`, whichever has the focus; applied first, rolled back on failure. */
+export function useMarkReadIn() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ wid, body }: { wid: string; body: ReadBody }) => inWorkspace(wid, () => api.notifications.read(body)),
+    onMutate: async ({ wid, body }) => {
+      const key = inWorkspace(wid, () => qk.notifications);
+      await qc.cancelQueries({ queryKey: key });
+      const prev = qc.getQueryData<Notification[]>(key);
+      if (prev) qc.setQueryData<Notification[]>(key, withRead(prev, body, new Date().toISOString()));
+      return { prev, key };
+    },
+    onError: (_e, _b, ctx) => {
+      if (ctx?.prev) qc.setQueryData(ctx.key, ctx.prev);
+    },
+    onSettled: () => void qc.invalidateQueries({ queryKey: qk.overview }),
   });
 }
 

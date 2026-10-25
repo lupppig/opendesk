@@ -2,7 +2,9 @@ defmodule RealtimeWeb.TicketChannel do
   @moduledoc """
   `ticket:<wid>:<ticket_id>`: Presence of agents on a ticket, typing, and the
   widget agent's live reply previews (`"live"`, from `Realtime.Fanout`).
-  Joined by `ws` tokens with `kind=user` in the same workspace.
+  Joined by `ws` tokens with `kind=user` that cover the workspace (their own, or
+  for a person one of the others their `workspaces` claim lists); the channel
+  acts with the role and private teams the token gives in that workspace.
 
   Join params:
 
@@ -15,35 +17,40 @@ defmodule RealtimeWeb.TicketChannel do
       Presence meta and typing to that team.
 
   A private team's ticket reaches only its team: Presence metas and typing of
-  joiners that named the team, and live previews the API marks with the team,
-  carry `team_id`, and `handle_out` drops them for sockets whose `teams` claim
-  lacks it (and strips `team_id` from what it pushes). A socket that omits
-  `team_id` therefore joins, but receives nothing scoped to a private team.
+  joiners that named the team, and live previews and the visitor's typing
+  (`"customer_typing"`) the API marks with the team, carry `team_id`, and
+  `handle_out` drops them for sockets whose `teams` claim lacks it (and strips
+  `team_id` from what it pushes). A socket that omits `team_id` therefore joins,
+  but receives nothing scoped to a private team.
 
   Client pushes:
 
     * `"presence"` `{state: "viewing" | "replying" | "idle"}` updates the meta.
-    * `"typing"` `{contact_id?}` sends `"typing"` `{user_id, name}` to the other
-      agents here and, with a `contact_id`, `"typing"`
-      `{ticket_id, user: {id, name}}` to `contact:<wid>:<contact_id>` (not from a
-      viewer, who cannot reply).
+    * `"typing"` sends `"typing"` `{user_id, name}` to the other agents here. It
+      reaches no one else: the visitor sees an agent typing through the API
+      (`POST /v1/tickets/{id}/typing`), which checks the ticket, so a
+      `contact_id` in the payload is ignored.
   """
 
   use Phoenix.Channel, log_join: false, log_handle_in: false
 
-  intercept ["live", "typing", "presence_diff"]
+  intercept ["live", "typing", "customer_typing", "presence_diff"]
 
+  alias Realtime.Auth
   alias Realtime.Ids
   alias RealtimeWeb.Channels.Guard
-  alias RealtimeWeb.Endpoint
   alias RealtimeWeb.Presence
 
   @states ~w(viewing replying idle)
 
   @impl true
-  def join("ticket:" <> rest, payload, %{assigns: %{kind: :user, wid: wid}} = socket) do
-    with [^wid, ticket_id] <- String.split(rest, ":"),
+  def join("ticket:" <> rest, payload, %{assigns: %{kind: :user} = assigns} = socket) do
+    with [wid, ticket_id] <- String.split(rest, ":"),
+         %{role: role, teams: teams} <- Auth.workspace(assigns, wid),
          true <- Ids.uuid?(ticket_id) and ticket_id == Ids.normalize(ticket_id),
+         # This channel acts in the topic's workspace: the role and private teams the
+         # token gives there, whichever workspace the token was issued in.
+         socket = socket |> assign(:wid, wid) |> assign(:role, role) |> assign(:teams, teams),
          {:ok, team_id} <- join_team(payload, socket) do
       if Guard.join_allowed?(socket) do
         send(self(), :after_join)
@@ -88,7 +95,7 @@ defmodule RealtimeWeb.TicketChannel do
     {:noreply, socket}
   end
 
-  def handle_out(event, payload, socket) when event in ["live", "typing"] do
+  def handle_out(event, payload, socket) when event in ["live", "typing", "customer_typing"] do
     {team_id, payload} = pop_team(payload)
     if visible?(team_id, socket), do: push(socket, event, payload)
     {:noreply, socket}
@@ -158,36 +165,13 @@ defmodule RealtimeWeb.TicketChannel do
     {:reply, :ok, socket}
   end
 
-  defp handle_push("typing", payload, socket) when is_map(payload) do
-    case Map.get(payload, "contact_id") do
-      nil ->
-        broadcast_from!(socket, "typing", typing(socket))
-        {:noreply, socket}
-
-      contact_id ->
-        if Ids.uuid?(contact_id) do
-          broadcast_from!(socket, "typing", typing(socket))
-          typing_to_contact(socket, contact_id)
-          {:noreply, socket}
-        else
-          Guard.invalid(socket)
-        end
-    end
+  # Clients from before the typing route still send a contact_id; it is ignored.
+  defp handle_push("typing", _payload, socket) do
+    broadcast_from!(socket, "typing", typing(socket))
+    {:noreply, socket}
   end
 
   defp handle_push(_event, _payload, socket), do: Guard.invalid(socket)
-
-  # Only someone who can reply shows the customer they are typing: never a viewer.
-  defp typing_to_contact(%{assigns: %{role: "viewer"}}, _contact_id), do: :ok
-
-  defp typing_to_contact(socket, contact_id) do
-    %{sub: sub, name: name, wid: wid, ticket_id: ticket_id} = socket.assigns
-
-    Endpoint.broadcast!("contact:#{wid}:#{Ids.normalize(contact_id)}", "typing", %{
-      ticket_id: ticket_id,
-      user: %{id: sub, name: name}
-    })
-  end
 
   defp typing(socket),
     do: %{user_id: socket.assigns.sub, name: socket.assigns.name, team_id: socket.assigns.team_id}

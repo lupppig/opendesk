@@ -1,5 +1,6 @@
 {
   "titles": {
+    "everywhere": "Partout",
     "helpCenter": "Centre d’aide",
     "rateYourConversation": "Évaluez votre conversation",
     "logIn": "Connexion",
@@ -41,6 +42,8 @@
     "profile": "Profil",
     "security": "Sécurité",
     "notifications": "Notifications",
+    "agentToAgent": "Agent à agent",
+    "workspaces": "Espaces de travail",
     "general": "Général",
     "members": "Membres",
     "teams": "Équipes",
@@ -92,6 +95,8 @@
     "profile": "Profil",
     "security": "Sécurité",
     "notifications": "Notifications",
+    "agentToAgent": "Agent à agent",
+    "workspaces": "Espaces de travail",
     "general": "Général",
     "members": "Membres",
     "teams": "Équipes",
@@ -153,7 +158,7 @@
     "aiKnowledge": "Connaissances de l’agent IA",
     "aiTools": "Outils de l’agent IA",
     "aiPlayground": "Espace d’essai de l’agent IA",
-    "importHistory": "Importer l’historique depuis Zendesk, Help Scout, Freshdesk, Intercom ou un fichier CSV"
+    "importHistory": "Importer l’historique depuis Zendesk, Help Scout, Freshdesk, Intercom, Front ou un fichier CSV"
   },
   "shortcuts": {
     "general": "Général",

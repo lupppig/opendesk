@@ -18,14 +18,16 @@ struct ODLogoMark: Shape {
 
 struct ODWordmark: View {
     var size: CGFloat = 22
+    /// White over a painting.
+    var color: Color = Theme.fg
 
     var body: some View {
         HStack(spacing: size * 0.36) {
-            ODLogoMark().fill(Theme.fg).frame(width: size, height: size)
+            ODLogoMark().fill(color).frame(width: size, height: size)
             Text("opendesk")
                 .font(ODFont.sans(size * 0.92, weight: .semibold))
                 .tracking(-size * 0.03)
-                .foregroundStyle(Theme.fg)
+                .foregroundStyle(color)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("opendesk")

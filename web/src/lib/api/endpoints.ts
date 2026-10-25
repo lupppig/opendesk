@@ -81,6 +81,8 @@ export type SendMessageBody = {
   mailbox_id?: string;
   /** Replies: the agent's own note this reply is written from; it stays as a marker pointing at the reply. */
   from_note_id?: string;
+  /** Email replies: send from one of your own Collab addresses instead; the ticket's reply address stays. */
+  from_account?: { account_id: string; email?: string; reply_to?: string };
 };
 
 /** Starts a third-party thread (contracts/api.md "Threads"). */
@@ -187,7 +189,7 @@ export const api = {
   me: {
     get: () => http.get<T.Me>("/v1/me", { workspace: false }),
     /** `avatar_url` is an https picture to copy (processed in the background), or "" to remove it. */
-    update: (b: { name?: string; avatar_url?: string }) => http.patch<T.User>("/v1/me", b, { workspace: false }),
+    update: (b: { name?: string; avatar_url?: string; time_format?: T.TimeFormat }) => http.patch<T.User>("/v1/me", b, { workspace: false }),
     /** PNG, JPEG, GIF or WebP, at most 5 MB. */
     uploadAvatar: (file: File | Blob) => http.put<T.User>("/v1/me/avatar", imageForm(file), { workspace: false }),
     removeAvatar: () => http.del<T.User>("/v1/me/avatar", undefined, { workspace: false }),
@@ -200,6 +202,11 @@ export const api = {
     sessions: () => http.get<T.Session[] | T.Page<T.Session>>("/v1/me/sessions", { workspace: false }),
     revokeSession: (id: string) => http.del(`/v1/me/sessions/${id}`, undefined, { workspace: false }),
     delete: (b: { password?: string; code?: string }) => http.del("/v1/me", b, { workspace: false }),
+    /** How this person's workspaces show together (contracts/api.md "Workspaces together"). */
+    workspacePrefs: () => http.get<T.WorkspacePrefs>("/v1/me/workspace-prefs", { workspace: false }),
+    putWorkspacePrefs: (b: T.WorkspacePrefsInput) => http.put<T.WorkspacePrefs>("/v1/me/workspace-prefs", b, { workspace: false }),
+    /** Every workspace's sidebar numbers, each as that workspace answers this person. */
+    overview: () => http.get<{ workspaces: T.WorkspaceOverview[] }>("/v1/me/overview", { workspace: false }),
   },
   workspaces: {
     create: (name: string) => http.create<T.Workspace>("/v1/workspaces", { name }, { workspace: false }),
@@ -214,7 +221,7 @@ export const api = {
     removeImage: (slot: "logo" | T.WorkspaceImageSlot) => http.del<T.Workspace>(`/v1/workspace/images/${slot}`),
   },
   members: {
-    list: () => http.get<T.Page<T.Member>>("/v1/members"),
+    list: (q?: ListQuery) => http.get<T.Page<T.Member>>("/v1/members", { query: q }),
     update: (userId: string, role: T.Role) => http.patch<T.Member>(`/v1/members/${userId}`, { role }),
     remove: (userId: string) => http.del(`/v1/members/${userId}`),
     /** `userId` may be "me". Members set their own availability; admins anyone's, and the cap. */
@@ -351,7 +358,7 @@ export const api = {
       http.create<{ integration: T.Integration; authorize_url?: string }>("/v1/integrations", b),
     authorize: (id: string) => http.post<{ integration: T.Integration; authorize_url: string }>(`/v1/integrations/${id}/authorize`),
     sync: (id: string) => http.post<T.Integration>(`/v1/integrations/${id}/sync`),
-    update: (id: string, b: { name?: string; enabled?: boolean; disabled_tools?: string[]; token?: string }) =>
+    update: (id: string, b: { name?: string; enabled?: boolean; disabled_tools?: string[]; ask_tools?: string[]; auto_tools?: string[]; token?: string }) =>
       http.patch<T.Integration>(`/v1/integrations/${id}`, b),
     remove: (id: string) => http.del(`/v1/integrations/${id}`),
   },
@@ -394,7 +401,9 @@ export const api = {
   },
   auditLogs: (q?: ListQuery & { action?: string; entity_type?: string }) => http.get<T.Page<T.AuditLog>>("/v1/audit-logs", { query: q }),
   events: (since: number, limit = 500) => http.get<T.EventsPage>("/v1/events", { query: { since, limit } }),
-  realtimeToken: () => http.post<{ token: string; url: string; expires_at: string }>("/v1/realtime/token"),
+  /** With allWorkspaces, the token also covers the person's other workspaces (contracts/tokens.md). */
+  realtimeToken: (allWorkspaces = false) =>
+    http.post<{ token: string; url: string; expires_at: string }>("/v1/realtime/token", undefined, { query: { all_workspaces: allWorkspaces || undefined } }),
   notifications: {
     list: (q?: ListQuery & { unread?: boolean }) => http.get<T.Page<T.Notification>>("/v1/notifications", { query: q }),
     read: (b: { ids?: string[]; all?: boolean }) => http.post<void>("/v1/notifications/read", b),
@@ -409,6 +418,12 @@ export const api = {
     unsubscribe: (token: string) =>
       http.post<{ workspace: { id: string; name: string }; email: string }>("/v1/notifications/unsubscribe", { token }, pub),
   },
+  /** What teammates' Ollie may ask the caller's (contracts/ai.md "Asking a teammate"): the caller's own settings and log. */
+  assistantPeer: {
+    get: () => http.get<T.PeerSettings>("/v1/me/assistant-peer"),
+    put: (b: T.PeerSettingsInput) => http.put<T.PeerSettings>("/v1/me/assistant-peer", b),
+    asks: (q?: ListQuery) => http.get<T.Page<T.PeerAsk>>("/v1/me/assistant-peer/asks", { query: q }),
+  },
 
   tickets: {
     list: (q: TicketListQuery) => http.get<T.Page<T.Ticket>>("/v1/tickets", { query: listQuery(q) }),
@@ -422,7 +437,7 @@ export const api = {
     merge: (id: string, into_id: string) => http.post<T.Ticket>(`/v1/tickets/${id}/merge`, { into_id }),
     messages: (id: string) => http.get<T.Page<T.Message>>(`/v1/tickets/${id}/messages`),
     /** `opts` pins the account and workspace a held reply started in, and lets it outlive the page. */
-    send: (id: string, b: SendMessageBody, opts?: { keepalive?: boolean; as?: string; workspaceId?: string }) =>
+    send: (id: string, b: SendMessageBody, opts?: { keepalive?: boolean; as?: string; workspace?: string }) =>
       http.create<T.Message>(`/v1/tickets/${id}/messages`, b, opts),
     editMessage: (id: string, messageId: string, b: { body_html: string }) => http.patch<T.Message>(`/v1/tickets/${id}/messages/${messageId}`, b),
     deleteMessage: (id: string, messageId: string) => http.del(`/v1/tickets/${id}/messages/${messageId}`),
@@ -433,6 +448,8 @@ export const api = {
     /** Admin: removes a deleted message's text, files and original email for good. */
     purgeMessage: (id: string, messageId: string) => http.post<T.Message>(`/v1/tickets/${id}/messages/${messageId}/purge`),
     activities: (id: string) => http.get<T.Page<T.Activity>>(`/v1/tickets/${id}/activities`),
+    /** A teammate is writing a reply: the chat's visitor sees them typing. */
+    typing: (id: string, opts?: { workspace?: string }) => http.post<void>(`/v1/tickets/${id}/typing`, undefined, opts),
     /** The ticket's shared draft (contracts/api.md "Drafts"): staged for the team, sent by whoever picks it up. */
     draft: {
       get: (id: string) => http.get<{ draft: T.TicketDraft | null }>(`/v1/tickets/${id}/draft`),
@@ -516,9 +533,10 @@ export const api = {
     update: (b: Partial<T.WidgetSettings>) => http.patch<T.WidgetSettings>("/v1/widget/settings", b),
   },
   mailboxes: {
-    ...crud<T.Mailbox, Partial<CreateMailboxBody> & Partial<Pick<T.Mailbox, "signature_html" | "auto_reply_enabled" | "auto_reply_subject" | "auto_reply_html" | "status" | "ai_answers" | "ai_answers_mode" | "ai_answers_outside_hours" | "trusted_form_senders">> & { bot_id?: string | null; alias_settings?: Record<string, T.AliasSettingsInput> }>("/v1/mailboxes"),
+    ...crud<T.Mailbox, Partial<CreateMailboxBody> & Partial<Pick<T.Mailbox, "signature_html" | "auto_reply_enabled" | "auto_reply_subject" | "auto_reply_html" | "status" | "ai_answers" | "ai_answers_mode" | "ai_answers_outside_hours" | "trusted_form_senders" | "personal_replies">> & { bot_id?: string | null; alias_settings?: Record<string, T.AliasSettingsInput> }>("/v1/mailboxes"),
     create: (b: CreateMailboxBody) => http.create<T.Mailbox>("/v1/mailboxes", b),
     test: (id: string) => http.post<T.MailboxTest>(`/v1/mailboxes/${id}/test`),
+    usage: (id: string) => http.get<T.MailboxUsage>(`/v1/mailboxes/${id}/usage`),
     /** Reads Gmail's send-as list again (422 send_as_unreadable for a send-only connection). */
     checkSendAs: (id: string) => http.post<T.Mailbox>(`/v1/mailboxes/${id}/send-as/check`),
     /**

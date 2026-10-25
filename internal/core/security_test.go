@@ -101,6 +101,15 @@ func TestTokenPurposes(t *testing.T) {
 	if err != nil || cl.Kind != "user" || cl.Workspace != u.workspace || cl.Role != "owner" {
 		t.Fatalf("ws claims: %+v %v", cl, err)
 	}
+	// It is bound to the session that asked for it, with an issue time in milliseconds
+	// no later than its whole-second iat allows.
+	access, err := e.d.Tokens.Verify(u.token, auth.PurposeAccess)
+	if err != nil || access.SessionID == "" || cl.SessionID != access.SessionID {
+		t.Fatalf("ws sid %q, session %+v %v", cl.SessionID, access, err)
+	}
+	if cl.IssuedAtMs <= 0 || cl.IssuedAtMs/1000 > cl.IssuedAt.Unix() {
+		t.Fatalf("ws iat_ms %d, iat %v", cl.IssuedAtMs, cl.IssuedAt)
+	}
 	if _, err := e.d.Tokens.Verify(r.str("token"), auth.PurposeAccess); err == nil {
 		t.Fatal("ws token accepted as access")
 	}

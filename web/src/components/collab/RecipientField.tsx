@@ -12,6 +12,7 @@ import { normEmail, parseAddressList } from "@/lib/collab/recipients";
 import { cn } from "@/lib/cn";
 import { useDebounced } from "@/components/contacts/hooks";
 import { Avatar } from "@/components/ui/avatar";
+import { qk } from "@/lib/queries";
 
 export function RecipientField({
   label,
@@ -40,7 +41,7 @@ export function RecipientField({
   const listId = useId();
   const term = useDebounced(text.trim(), 200);
   const contacts = useQuery({
-    queryKey: ["collab", "contact-suggest", term],
+    queryKey: qk.of("collab", "contact-suggest", term),
     queryFn: () => api.contacts.search({ q: term, limit: 6 }),
     enabled: open && term.length > 1,
     staleTime: 30_000,

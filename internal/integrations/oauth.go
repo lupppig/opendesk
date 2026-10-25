@@ -36,6 +36,9 @@ type oauthClient struct {
 	Scope         string `json:"scope,omitempty"`
 	RedirectURI   string `json:"redirect_uri"`
 	RegisteredVia string `json:"registered_via"` // preregistered | metadata_document | dynamic
+	// IssParam: the server names itself in its sign-in responses (RFC 9207), so a response
+	// without its name is refused.
+	IssParam bool `json:"iss_param,omitempty"`
 }
 
 // tokens are stored sealed (credentials_enc).
@@ -76,6 +79,7 @@ type serverMetadata struct {
 	CodeChallengeMethods         []string `json:"code_challenge_methods_supported"`
 	TokenEndpointAuthMethods     []string `json:"token_endpoint_auth_methods_supported"`
 	ClientIDMetadataDocSupported bool     `json:"client_id_metadata_document_supported"`
+	IssParameterSupported        bool     `json:"authorization_response_iss_parameter_supported"`
 }
 
 var challengeParam = regexp.MustCompile(`(\w+)="([^"]*)"`)
@@ -176,10 +180,20 @@ func (s *Service) serverMetadata(ctx context.Context, issuer string) (*serverMet
 	for _, t := range tries {
 		var m serverMetadata
 		if err := s.getJSON(ctx, t, &m); err == nil && m.AuthorizationEndpoint != "" && m.TokenEndpoint != "" {
+			// The metadata is the issuer's own only when it names that issuer (RFC 8414 3.3).
+			if !sameIssuer(m.Issuer, issuer) {
+				return nil, errors.New("the server's authorization server names a different issuer in its metadata")
+			}
 			return &m, nil
 		}
 	}
 	return nil, errors.New("the server's authorization server publishes no metadata")
+}
+
+// sameIssuer compares issuer identifiers, a trailing slash aside.
+func sameIssuer(a, b string) bool {
+	a, b = strings.TrimRight(a, "/"), strings.TrimRight(b, "/")
+	return a != "" && a == b
 }
 
 // checkEndpoint applies the outbound URL rules to an endpoint a server named.
@@ -240,7 +254,8 @@ func (s *Service) clientMetadata() map[string]any {
 // operator's pre-registered client, the metadata document (only on https), or a
 // dynamic registration.
 func (s *Service) identify(ctx context.Context, providerKey string, asm *serverMetadata) (*oauthClient, error) {
-	c := &oauthClient{Issuer: asm.Issuer, AuthorizeURL: asm.AuthorizationEndpoint, TokenURL: asm.TokenEndpoint, RedirectURI: s.redirectURI()}
+	c := &oauthClient{Issuer: asm.Issuer, AuthorizeURL: asm.AuthorizationEndpoint, TokenURL: asm.TokenEndpoint, RedirectURI: s.redirectURI(),
+		IssParam: asm.IssParameterSupported}
 	if id, secret := preRegistered(providerKey); id != "" {
 		c.ClientID, c.ClientSecret, c.RegisteredVia = id, secret, "preregistered"
 		c.AuthMethod = tokenAuthMethod(asm, secret != "")

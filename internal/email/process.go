@@ -73,12 +73,12 @@ type threadMatch struct {
 // processInbound turns a stored raw email into a ticket message.
 func (s *service) processInbound(ctx context.Context, wid, inboundID uuid.UUID) error {
 	var mailboxID uuid.UUID
-	var key, status, rcpt, msgIDHdr, hash string
+	var key, status, rcpt, msgIDHdr, hash, via string
 	var envFrom *string
 	var ref *providerRef
-	err := s.d.DB.Pool.QueryRow(ctx, `SELECT mailbox_id, raw_storage_key, status, rcpt_to, message_id_hdr, content_hash, envelope_from, provider_ref
+	err := s.d.DB.Pool.QueryRow(ctx, `SELECT mailbox_id, raw_storage_key, status, rcpt_to, message_id_hdr, content_hash, envelope_from, provider_ref, via
 		FROM inbound_emails WHERE workspace_id = $1 AND id = $2`, wid, inboundID).
-		Scan(&mailboxID, &key, &status, &rcpt, &msgIDHdr, &hash, &envFrom, &ref)
+		Scan(&mailboxID, &key, &status, &rcpt, &msgIDHdr, &hash, &envFrom, &ref, &via)
 	if db.IsNotFound(err) || err == nil && status != "pending" {
 		return nil
 	}
@@ -154,7 +154,7 @@ func (s *service) processInbound(ctx context.Context, wid, inboundID uuid.UUID) 
 	// A DMARC failure reported by a trusted receiving server: the From address is not
 	// the sender's own. A new ticket is marked spam; a message on an existing one is kept
 	// and flagged, and changes nothing about the ticket.
-	verdict := dmarcVerdict(raw, s.trustedAuthserv(m))
+	verdict := dmarcVerdict(raw, s.trustedAuthserv(m, via))
 	authFailed := verdict == authFail
 	// A website contact form the mailbox trusts, whose mail passed sender authentication,
 	// writes for the visitor its Reply-To names: the visitor is the customer.
@@ -256,9 +256,12 @@ func (s *service) processInbound(ctx context.Context, wid, inboundID uuid.UUID) 
 			return err
 		}
 		var ticket domain.Ticket
-		created := false
+		created, newcomer := false, false
 		if match != nil && match.status != domain.StatusClosed {
 			ticket.ID, ticket.Number = match.ticketID, match.number
+			if newcomer, err = newToConversation(ctx, tx, wid, ticket.ID, sender); err != nil {
+				return err
+			}
 		} else {
 			custom := map[string]any{}
 			subject := subjectTagRe.ReplaceAllString(pm.Subject, "")
@@ -308,6 +311,8 @@ func (s *service) processInbound(ctx context.Context, wid, inboundID uuid.UUID) 
 			trigger = jobs.TriggerTicketCreated
 		case authFailed:
 			trigger = "none" // no customer_replied automations for a sender that failed authentication
+		case newcomer:
+			trigger = "none" // nor for someone new to the conversation: the team reads them first
 		}
 		replyTo := pm.replyTo()
 		if formSender != "" {
@@ -340,7 +345,7 @@ func (s *service) processInbound(ctx context.Context, wid, inboundID uuid.UUID) 
 				return err
 			}
 		}
-		if !authFailed && !internal {
+		if !authFailed && !internal && !newcomer {
 			if err := s.queueAIAnswer(ctx, tx, m, ticket.ID, msg.ID, pm, sender); err != nil {
 				return err
 			}
@@ -520,6 +525,23 @@ func (s *service) contactMatch(ctx context.Context, tx pgx.Tx, wid uuid.UUID, t 
 		return nil, nil
 	}
 	return t, nil
+}
+
+// newToConversation reports a sender who is neither the ticket's customer nor someone the
+// team or the customer wrote to or copied on the conversation: someone a participant passed
+// it on to. Only what the team and the customer addressed counts, never what a newcomer's
+// own message names. Their message joins the conversation for the team to read, and nothing
+// automatic (an automation, an Ollie answer) acts on it.
+func newToConversation(ctx context.Context, tx pgx.Tx, wid, ticketID uuid.UUID, sender string) (bool, error) {
+	var known bool
+	err := tx.QueryRow(ctx, `WITH customer AS (SELECT lower(c.email) AS email FROM tickets t
+			JOIN contacts c ON c.id = t.contact_id AND c.workspace_id = t.workspace_id WHERE t.workspace_id = $1 AND t.id = $2)
+		SELECT EXISTS (SELECT 1 FROM customer WHERE email = $3)
+		OR EXISTS (SELECT 1 FROM messages m WHERE m.workspace_id = $1 AND m.ticket_id = $2 AND m.thread_id IS NULL
+			AND (m.direction = 'outbound' OR lower(m.from_email) IN (SELECT email FROM customer))
+			AND EXISTS (SELECT 1 FROM unnest(m.to_emails || m.cc_emails) e WHERE lower(e) = $3))`,
+		wid, ticketID, strings.ToLower(sender)).Scan(&known)
+	return !known, err
 }
 
 func (s *service) storeAttachments(ctx context.Context, wid uuid.UUID, pm *parsedMail) ([]preparedAttachment, error) {

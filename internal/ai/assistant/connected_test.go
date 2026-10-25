@@ -99,6 +99,15 @@ func TestConnectedToolsReadProposeApplyAndLink(t *testing.T) {
 		ap.Preview.Changes[0].To != "Login loop after SSO" {
 		t.Fatalf("preview = %+v", ap.Preview)
 	}
+	if ap.Preview.Arguments != "{\n  \"title\": \"Login loop after SSO\"\n}" || ap.Preview.Omitted != 0 || ap.Preview.Clipped {
+		t.Fatalf("preview arguments = %+v", ap.Preview)
+	}
+	// The stored proposal gives back the same complete arguments.
+	var tr Transcript
+	e.Do("GET", "/v1/assistant/sessions/"+sid, agent, nil).Want(t, 200).JSON(t, &tr)
+	if tr.Approval == nil || tr.Approval.Preview.Arguments != ap.Preview.Arguments {
+		t.Fatalf("stored approval = %+v", tr.Approval)
+	}
 	fl.mu.Lock()
 	if len(fl.calls) != 1 {
 		t.Fatalf("create ran before approval: %v", fl.calls)
@@ -129,6 +138,44 @@ func TestConnectedToolsReadProposeApplyAndLink(t *testing.T) {
 	_ = e.D.DB.Pool.QueryRow(e.Ctx, `SELECT count(*) FROM activities WHERE ticket_id = $1 AND type = 'linked' AND actor_type = 'ai'`, tk.ID).Scan(&linked)
 	if linked != 1 {
 		t.Fatalf("linked activities = %d", linked)
+	}
+}
+
+func TestAskFirstLookupWaitsForApproval(t *testing.T) {
+	e := newEnv(t, false)
+	fl := &fakeLinear{}
+	srv := httptest.NewServer(fl)
+	defer srv.Close()
+	tools := `[{"name":"list_issues","description":"Search issues","input_schema":{"type":"object"},"read_only":true}]`
+	if _, err := e.D.DB.Pool.Exec(e.Ctx, `INSERT INTO integrations (id, workspace_id, provider, slug, name, url, auth_type, status, tools, ask_tools)
+		VALUES ($1,$2,'linear','linear','Linear',$3,'none','connected',$4,'{list_issues}')`, ids.New(), e.WS.ID, srv.URL+"/mcp", tools); err != nil {
+		t.Fatal(err)
+	}
+	agent := e.WS.Agent.As(e.WS)
+	sid := e.session(agent)
+	e.M.queue(step{tool: "linear__list_issues", args: map[string]any{"query": "login"}})
+	_, evs, _ := e.stream("/v1/assistant/sessions/"+sid+"/messages", agent, map[string]any{"text": "Is this in Linear?"})
+	ap := approvalOf(t, evs)
+	if ap.Preview.System != "Linear" || ap.Preview.Arguments != "{\n  \"query\": \"login\"\n}" {
+		t.Fatalf("preview = %+v", ap.Preview)
+	}
+	fl.mu.Lock()
+	if len(fl.calls) != 0 {
+		t.Fatalf("an ask first lookup ran before approval: %v", fl.calls)
+	}
+	fl.mu.Unlock()
+	// Turned back into a lookup while waiting: what the user approved still runs.
+	if _, err := e.D.DB.Pool.Exec(e.Ctx, `UPDATE integrations SET ask_tools = '{}' WHERE workspace_id = $1`, e.WS.ID); err != nil {
+		t.Fatal(err)
+	}
+	e.M.queue(step{text: "Nothing yet."})
+	if st, _, body := e.stream("/v1/assistant/actions/"+ap.ActionID.String()+"/decision", agent, map[string]any{"decision": "approve", "token": ap.Token}); st != 200 {
+		t.Fatalf("decision %d: %s", st, body)
+	}
+	fl.mu.Lock()
+	defer fl.mu.Unlock()
+	if len(fl.calls) != 1 || fl.calls[0] != "list_issues" {
+		t.Fatalf("calls after approval = %v", fl.calls)
 	}
 }
 

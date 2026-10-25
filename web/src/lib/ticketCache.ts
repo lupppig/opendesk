@@ -5,7 +5,7 @@
 import type { InfiniteData, QueryClient } from "@tanstack/react-query";
 import type { TicketListQuery } from "./api/endpoints";
 import type { Page, Priority, Severity, Team, Ticket, TicketFilters, View } from "./api/types";
-import { qk } from "./queries";
+import { keyBody, qk } from "./queries";
 
 export type TicketPages = InfiniteData<Page<Ticket>, string | null>;
 
@@ -149,7 +149,7 @@ export function patchTicketEverywhere(qc: QueryClient, t: Ticket, me: string) {
   const myTeams = teams ? teamsOf(teams, me) : null;
   for (const [key, data] of qc.getQueriesData<TicketPages>({ queryKey: qk.ticketLists })) {
     if (!data) continue;
-    const query = (key[2] ?? {}) as TicketListQuery;
+    const query = (keyBody(key)[2] ?? {}) as TicketListQuery;
     const match = ticketMatches(query, t, me, views, myTeams);
     if (match === null) {
       if (findTicket(data, t.id)) qc.setQueryData<TicketPages>(key, placeOrReplace(data, t));

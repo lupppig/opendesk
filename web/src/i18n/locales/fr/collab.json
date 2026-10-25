@@ -233,7 +233,9 @@
     "draftTo": "À {{who}}",
     "draftNoRecipients": "Aucun destinataire pour le moment",
     "toAlias": "À {{email}}",
-    "toAliasHint": "Écrit à cette adresse. Afficher ses messages"
+    "toAliasHint": "Écrit à cette adresse. Afficher ses messages",
+    "onTicket": "Sur le ticket #{{number}}",
+    "ticketHint": "Réponse envoyée depuis un ticket : {{subject}}. Ouvrir le ticket"
   },
   "composer": {
     "to": "À",

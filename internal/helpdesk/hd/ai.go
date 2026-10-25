@@ -28,10 +28,16 @@ type AISettings struct {
 	AutoSummarize bool `json:"auto_summarize"`
 	WidgetAnswers bool `json:"widget_answers"`
 	// Assistant offers the assistant panel (Ollie) to the workspace's members.
-	Assistant     bool   `json:"assistant"`
-	Tone          string `json:"tone"`
-	ReplyLanguage string `json:"reply_language" enum:"customer,workspace"`
-	Instructions  string `json:"instructions"`
+	Assistant bool `json:"assistant"`
+	// AssistantPeer lets members' Ollie ask a teammate's Ollie, for the members who opt in
+	// (contracts/ai.md "Asking a teammate"). Off by default.
+	AssistantPeer bool `json:"assistant_peer"`
+	// AssistantAuto are the built-in changes Ollie makes without asking first (some of
+	// AssistantAutoTools). Empty by default: every change waits for approval.
+	AssistantAuto []string `json:"assistant_auto"`
+	Tone          string   `json:"tone"`
+	ReplyLanguage string   `json:"reply_language" enum:"customer,workspace"`
+	Instructions  string   `json:"instructions"`
 	// Models (contracts/ai.md "Models"); "" = the instance default.
 	Model       string `json:"model"`
 	FastModel   string `json:"fast_model"`
@@ -46,7 +52,7 @@ type AISettings struct {
 
 // DefaultAISettings apply to keys a workspace has not set.
 func DefaultAISettings() AISettings {
-	return AISettings{Enabled: true, Assistant: true, Tone: "friendly", ReplyLanguage: "customer",
+	return AISettings{Enabled: true, Assistant: true, AssistantAuto: []string{}, Tone: "friendly", ReplyLanguage: "customer",
 		WidgetMaxReplies: DefaultWidgetMaxReplies, WidgetBlockedTopics: []string{}, WidgetCollectEmail: true}
 }
 
@@ -66,6 +72,8 @@ func (s Settings) AI() AISettings {
 			field("auto_summarize", &a.AutoSummarize)
 			field("widget_answers", &a.WidgetAnswers)
 			field("assistant", &a.Assistant)
+			field("assistant_peer", &a.AssistantPeer)
+			field("assistant_auto", &a.AssistantAuto)
 			field("tone", &a.Tone)
 			field("reply_language", &a.ReplyLanguage)
 			field("instructions", &a.Instructions)
@@ -80,6 +88,11 @@ func (s Settings) AI() AISettings {
 	}
 	if a.WidgetMaxReplies < 1 || a.WidgetMaxReplies > 100 {
 		a.WidgetMaxReplies = DefaultWidgetMaxReplies
+	}
+	// Only the changes that may run without asking count, whatever is stored.
+	a.AssistantAuto = slices.DeleteFunc(slices.Clone(a.AssistantAuto), func(n string) bool { return !slices.Contains(AssistantAutoTools, n) })
+	if a.AssistantAuto == nil {
+		a.AssistantAuto = []string{}
 	}
 	if a.WidgetBlockedTopics == nil {
 		a.WidgetBlockedTopics = []string{}
@@ -96,17 +109,19 @@ func (s Settings) AI() AISettings {
 
 // AISettingsPatch is the body of PATCH /v1/ai/settings.
 type AISettingsPatch struct {
-	Enabled       *bool   `json:"enabled,omitempty"`
-	AutoTriage    *bool   `json:"auto_triage,omitempty"`
-	AutoSummarize *bool   `json:"auto_summarize,omitempty"`
-	WidgetAnswers *bool   `json:"widget_answers,omitempty"`
-	Assistant     *bool   `json:"assistant,omitempty"`
-	Tone          *string `json:"tone,omitempty" maxLength:"200" doc:"friendly, professional, concise, or free text up to 200 characters"`
-	ReplyLanguage *string `json:"reply_language,omitempty" enum:"customer,workspace"`
-	Instructions  *string `json:"instructions,omitempty" maxLength:"2000"`
-	Model         *string `json:"model,omitempty" maxLength:"200" doc:"\"\" or an id from GET /v1/ai/models"`
-	FastModel     *string `json:"fast_model,omitempty" maxLength:"200"`
-	WidgetModel   *string `json:"widget_model,omitempty" maxLength:"200"`
+	Enabled       *bool     `json:"enabled,omitempty"`
+	AutoTriage    *bool     `json:"auto_triage,omitempty"`
+	AutoSummarize *bool     `json:"auto_summarize,omitempty"`
+	WidgetAnswers *bool     `json:"widget_answers,omitempty"`
+	Assistant     *bool     `json:"assistant,omitempty"`
+	AssistantPeer *bool     `json:"assistant_peer,omitempty"`
+	AssistantAuto *[]string `json:"assistant_auto,omitempty" maxItems:"10" doc:"Built-in changes Ollie makes without asking: update_ticket, bulk_update_tickets, add_note, create_kb_draft, create_view, create_automation_draft. Replaces the list"`
+	Tone          *string   `json:"tone,omitempty" maxLength:"200" doc:"friendly, professional, concise, or free text up to 200 characters"`
+	ReplyLanguage *string   `json:"reply_language,omitempty" enum:"customer,workspace"`
+	Instructions  *string   `json:"instructions,omitempty" maxLength:"2000"`
+	Model         *string   `json:"model,omitempty" maxLength:"200" doc:"\"\" or an id from GET /v1/ai/models"`
+	FastModel     *string   `json:"fast_model,omitempty" maxLength:"200"`
+	WidgetModel   *string   `json:"widget_model,omitempty" maxLength:"200"`
 
 	WidgetMaxReplies    *int      `json:"widget_max_replies,omitempty" minimum:"1" maximum:"100"`
 	WidgetBlockedTopics *[]string `json:"widget_blocked_topics,omitempty" maxItems:"20"`
@@ -117,6 +132,12 @@ type AISettingsPatch struct {
 // DefaultWidgetMaxReplies is how many replies the widget agent gives in one
 // conversation before it hands off, unless the workspace chose otherwise.
 const DefaultWidgetMaxReplies = 20
+
+// AssistantAutoTools are the built-in assistant changes a workspace may let Ollie make
+// without asking first. Replies and anything else that reaches someone outside, and
+// changes through the API (api_change), are not among them: those always ask
+// (contracts/ai.md "Approvals").
+var AssistantAutoTools = []string{"update_ticket", "bulk_update_tickets", "add_note", "create_kb_draft", "create_view", "create_automation_draft"}
 
 // AITones are the named tones; any other value is free text.
 var AITones = []string{"friendly", "professional", "concise"}
@@ -139,6 +160,21 @@ func ValidateAIPatch(p AISettingsPatch, allowedModel func(string) bool) (map[str
 	}
 	if p.Assistant != nil {
 		out["assistant"] = *p.Assistant
+	}
+	if p.AssistantPeer != nil {
+		out["assistant_peer"] = *p.AssistantPeer
+	}
+	if p.AssistantAuto != nil {
+		list := []string{}
+		for _, n := range *p.AssistantAuto {
+			if !slices.Contains(AssistantAutoTools, n) {
+				return nil, httpx.Validation("assistant_auto takes only " + strings.Join(AssistantAutoTools, ", "))
+			}
+			if !slices.Contains(list, n) {
+				list = append(list, n)
+			}
+		}
+		out["assistant_auto"] = list
 	}
 	if p.Tone != nil {
 		t := strings.Join(strings.Fields(*p.Tone), " ")

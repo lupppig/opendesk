@@ -17,6 +17,17 @@ export function workspaceParam(search: Record<string, unknown>): string | null |
   return typeof s === "string" && ID.test(s) ? s : null;
 }
 
+/**
+ * An app href that names its workspace (`?ws=<id>`), so a reload, a shared link or a
+ * notification opens it there whichever workspace has the focus. Without an id, as is.
+ */
+export function withWorkspaceParam(href: string, wid: string | null | undefined): string {
+  if (!wid || !ID.test(wid)) return href;
+  const u = new URL(href, "http://app.invalid");
+  u.searchParams.set("ws", wid);
+  return `${u.pathname}${u.search}${u.hash}`;
+}
+
 /** The same app href without `ws`: path, the other parameters and the hash. */
 export function stripWorkspaceParam(href: string): string {
   const u = new URL(href, "http://app.invalid");

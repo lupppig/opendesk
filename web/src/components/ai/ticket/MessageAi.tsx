@@ -7,7 +7,7 @@ import { useTranslation } from "react-i18next";
 import type { Message, Ticket } from "@/lib/api/types";
 import { api } from "@/lib/api/endpoints";
 import { useAI } from "@/lib/ai";
-import { q } from "@/lib/queries";
+import { q, qk } from "@/lib/queries";
 import { useRole, atLeast } from "@/lib/session";
 import { cn } from "@/lib/cn";
 import { AI_TONE, tone } from "@/lib/tones";
@@ -35,14 +35,14 @@ export function useMessageTranslation(m: Message): MessageTranslation {
   const qc = useQueryClient();
   // The message list doesn't carry the ticket; read the cached one (subscribing, never fetching).
   const { data: byId } = useQuery({ ...q.ticket(m.ticket_id), enabled: false });
-  const ticket = byId ?? qc.getQueriesData<Ticket>({ queryKey: ["tickets", "detail"] }).find(([, d]) => d?.id === m.ticket_id)?.[1];
+  const ticket = byId ?? qc.getQueriesData<Ticket>({ queryKey: qk.of("tickets", "detail") }).find(([, d]) => d?.id === m.ticket_id)?.[1];
   const [requested, setRequested] = useState(false);
   const [showing, setShowing] = useState(false);
   const lang = messageLanguage(m, ticket);
   const eligible = ai.enabled && atLeast(role, "agent") && m.direction === "inbound" && m.kind === "reply" && isForeign(lang, OURS);
 
   const res = useQuery({
-    queryKey: ["ai", "translate", m.id, OURS],
+    queryKey: qk.of("ai", "translate", m.id, OURS),
     queryFn: async () => {
       try {
         const r = await api.ai.translate({ html: m.body_html || undefined, text: m.body_html ? undefined : m.body_text, target: OURS });

@@ -2,16 +2,18 @@ import { useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useWaitingAlerts } from "@/components/tickets/useWaitingAlerts";
 import { Outlet, useNavigate, useRouter, useRouterState } from "@tanstack/react-router";
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useRef } from "react";
 import { Dialog as D } from "radix-ui";
 import { identify } from "@/lib/analytics";
 import { formatUsd } from "@/lib/format";
 import { useHotkeys } from "@/lib/hotkeys";
 import { useHeartbeat } from "@/lib/pictures";
 import { playAlertOnce, type AlertSound } from "@/lib/alertSound";
-import { startRealtime, stopRealtime } from "@/lib/realtime/manager";
+import { realtime, startRealtime, stopRealtime } from "@/lib/realtime/manager";
+import { inWorkspace } from "@/lib/api/client";
+import { useTogether } from "@/lib/together";
 import { useRealtime } from "@/lib/realtime/store";
-import { currentMembership, reloadSession, useSession } from "@/lib/session";
+import { currentMembership, reloadSession, selectWorkspace, useSession } from "@/lib/session";
 import { useUpgrade } from "@/lib/upgrade";
 import { toast } from "@/components/ui/toast";
 import { AssistantDock, AssistantRoot } from "@/components/assistant/AssistantRoot";
@@ -127,54 +129,77 @@ function useRealtimeConnection() {
   const wid = useSession((s) => s.workspaceId);
   const uid = useSession((s) => s.user?.id);
   const suspended = useSession((s) => !!currentMembership(s)?.suspended);
+  const together = useTogether().active;
+  // Together keeps one socket while the focus moves; Separate follows the focus alone.
+  const memberKey = useSession((s) => s.memberships.map((m) => m.workspace.id).join(","));
+  const socketKey = together ? `all:${memberKey}` : `one:${wid}`;
+  const focusRef = useRef(wid);
+  focusRef.current = wid;
   useEffect(() => {
-    if (!wid || !uid || suspended) return;
-    identify(uid, wid);
+    if (wid && uid) identify(uid, wid);
+    if (wid) realtime()?.setFocus(wid);
+  }, [wid, uid]);
+  useEffect(() => {
+    const focus = focusRef.current;
+    if (!focus || !uid || suspended) return;
     startRealtime({
       qc,
-      workspaceId: wid,
+      workspaceId: focus,
       userId: uid,
-      onNotification: (n) => {
-        notifyDesktop(n, (path) => router.history.push(path));
+      together,
+      onNotification: (n, from) => {
+        // A notification of another workspace says which, and opening it moves the focus there.
+        const other = from !== useSession.getState().workspaceId;
+        const name = other ? useSession.getState().memberships.find((m) => m.workspace.id === from)?.workspace.name : undefined;
+        const go = (fn: () => void) => () => {
+          if (other) selectWorkspace(from);
+          fn();
+        };
+        notifyDesktop(n, (path) => router.history.push(path), from);
         soundForNotification(n);
         if (n.type === "customer_replied") return;
-        if (n.type === "ai_key_failed") void qc.invalidateQueries({ queryKey: qk.aiProvider });
+        if (n.type === "ai_key_failed") inWorkspace(from, () => void qc.invalidateQueries({ queryKey: qk.aiProvider }));
+        const body =
+          n.type === "ai_cap_reached"
+            ? "Chats go to your team until the cap resets or you raise it."
+            : (billingNoticeBody[n.type] ?? importProblem(n) ?? n.ticket?.subject ?? (typeof n.data.subject === "string" ? n.data.subject : undefined));
         toast.info(notificationText(n), {
-          description:
-            n.type === "ai_cap_reached"
-              ? "Chats go to your team until the cap resets or you raise it."
-              : (billingNoticeBody[n.type] ?? importProblem(n) ?? n.ticket?.subject ?? (typeof n.data.subject === "string" ? n.data.subject : undefined)),
+          description: name ? [name, body].filter(Boolean).join(" · ") : body,
           action: n.ticket
             ? {
                 label: "Open",
-                onClick: () =>
-                  void navigate({ to: "/inbox/$folder/{-$ticketId}", params: { folder: ticketFolder(n), ticketId: n.ticket!.id } }),
+                onClick: go(() => void navigate({ to: "/inbox/$folder/{-$ticketId}", params: { folder: ticketFolder(n), ticketId: n.ticket!.id } })),
               }
             : n.type === "team_joined"
               ? {
                   label: "View team",
-                  onClick: () => {
+                  onClick: go(() => {
                     const id = joinedTeam(n).id;
                     if (id) void navigate({ to: "/settings/teams/$teamId", params: { teamId: id } });
                     else void navigate({ to: "/settings/teams" });
-                  },
+                  }),
                 }
               : n.type === "import_finished"
-                ? { label: "View import", onClick: () => void navigate({ to: "/settings/import" }) }
+                ? { label: "View import", onClick: go(() => void navigate({ to: "/settings/import" })) }
               : collabThread(n)
                 ? {
                     label: "Open",
-                    onClick: () =>
-                      void navigate({ to: "/mail/$box/{-$threadId}", params: { box: n.type === "collab_assigned" ? "assigned" : "all", threadId: collabThread(n)! }, search: {} }),
+                    onClick: go(
+                      () =>
+                        void navigate({ to: "/mail/$box/{-$threadId}", params: { box: n.type === "collab_assigned" ? "assigned" : "all", threadId: collabThread(n)! }, search: {} }),
+                    ),
                   }
               : n.type === "ai_cap_reached" || n.type === "ai_key_failed"
-              ? { label: "Settings", onClick: () => void navigate({ to: n.type === "ai_key_failed" ? "/settings/ai" : "/settings/ai/behaviour" }) }
+              ? { label: "Settings", onClick: go(() => void navigate({ to: n.type === "ai_key_failed" ? "/settings/ai" : "/settings/ai/behaviour" })) }
               : billingNoticeBody[n.type]
-                ? { label: "Billing", onClick: () => void navigate({ to: "/settings/billing" }) }
+                ? { label: "Billing", onClick: go(() => void navigate({ to: "/settings/billing" })) }
                 : undefined,
         });
       },
-      onTicketCreated: (t) => soundForTicket(t, uid),
+      // New-ticket sounds are the focus workspace's: the others ring through notifications.
+      onTicketCreated: (t, from) => {
+        if (from === useSession.getState().workspaceId) soundForTicket(t, uid);
+      },
       onSelfMembershipChanged: () => {
         void reloadSession().then((s) => {
           if (!s.workspaceId) void navigate({ to: "/onboarding" });
@@ -182,7 +207,7 @@ function useRealtimeConnection() {
       },
     });
     return () => stopRealtime();
-  }, [wid, uid, suspended, qc, navigate, router]);
+  }, [socketKey, uid, suspended, together, qc, navigate, router]);
 }
 
 /** Subscribes this browser to web pushes for the session once notifications are allowed. */
@@ -199,6 +224,7 @@ export function AppLayout() {
   const { t: tNav } = useTranslation("navigation");
   // The top-level area (inbox, views, contacts, settings/...) keys the route transition.
   const section = useRouterState({ select: (s) => { const p = s.location.pathname.split("/").filter(Boolean); return p[0] ?? ""; } });
+  const focus = useSession((s) => s.workspaceId);
   useRealtimeConnection();
   useHeartbeat();
   useDesktopBadge();
@@ -270,8 +296,9 @@ export function AppLayout() {
           <AiBalanceBanner />
           <DesktopUpdateBanner />
           <AllowNotificationsBanner />
-          {/* Moving between areas cross-fades the panel; moving within one (ticket to ticket) does not. */}
-          <div key={section} className="flex min-h-0 flex-1 flex-col animate-route-in motion-reduce:animate-none">
+          {/* Moving between areas cross-fades the panel; moving within one (ticket to ticket) does not. A page belongs
+              to the focus workspace: moving the focus remounts it, so nothing keeps another workspace's keys. */}
+          <div key={`${focus}:${section}`} className="flex min-h-0 flex-1 flex-col animate-route-in motion-reduce:animate-none">
             <Outlet />
           </div>
         </main>

@@ -2,7 +2,6 @@
 // workspaces: the workspace switcher, the account menu, the command menu and
 // the quick switch keys all go through here.
 
-import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
@@ -27,7 +26,6 @@ export function useSwitcherEntries() {
 
 export function useAccountActions() {
   const navigate = useNavigate();
-  const qc = useQueryClient();
   const { t } = useTranslation("shell");
 
   const land = (workspaceId: string | null) => {
@@ -41,7 +39,6 @@ export function useAccountActions() {
     if (s.user?.id === userId) {
       if (!workspaceId || workspaceId === s.workspaceId) return;
       selectWorkspace(workspaceId);
-      qc.clear();
       land(workspaceId);
       return;
     }

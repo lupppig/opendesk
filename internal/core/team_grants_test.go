@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/rivertype"
 
 	"github.com/useopendesk/opendesk/internal/auth"
 	"github.com/useopendesk/opendesk/internal/domain"
@@ -354,5 +355,42 @@ func TestGrantBackfill(t *testing.T) {
 	}
 	if _, err := tx.Exec(f.ctx, `SET CONSTRAINTS ALL IMMEDIATE`); err != nil {
 		t.Fatalf("grants left without a granter: %v", err)
+	}
+}
+
+// TestDeliveryNeedsGrant: a queued delivery of a private team's event goes out only while
+// the webhook is still granted the team, so a grant withdrawn after the event stops it.
+func TestDeliveryNeedsGrant(t *testing.T) {
+	f := newGrantFixture(t, "ana", "ben")
+	hook, kept := f.hook("ana"), f.hook("ben")
+	if !f.delivered(hook) || !f.delivered(kept) {
+		t.Fatal("granted webhooks did not get the team's event")
+	}
+	pending := func(h uuid.UUID) uuid.UUID {
+		var id uuid.UUID
+		f.scalar(`SELECT id FROM webhook_deliveries WHERE webhook_id = $1 AND status = 'pending' AND event_type = 'team.updated'
+			ORDER BY created_at DESC LIMIT 1`, &id, h)
+		return id
+	}
+	lapsed, still := pending(hook), pending(kept)
+	if r := f.users["ana"].do("POST", "/v1/teams/"+f.team.String()+"/leave", nil); r.Status != 204 {
+		t.Fatalf("ana leaves: %d %s", r.Status, r.Raw)
+	}
+	run := func(did uuid.UUID) (string, string) {
+		job := &river.Job[jobs.WebhookDeliverArgs]{Args: jobs.WebhookDeliverArgs{DeliveryID: did}}
+		job.JobRow = &rivertype.JobRow{Attempt: 1, MaxAttempts: webhookMaxAttempts}
+		if err := (&deliverWorker{s: f.e.s}).Work(f.ctx, job); err != nil {
+			t.Fatal(err)
+		}
+		var status, last string
+		f.scalar(`SELECT status || '|' || last_error FROM webhook_deliveries WHERE id = $1`, &status, did)
+		status, last, _ = strings.Cut(status, "|")
+		return status, last
+	}
+	if status, last := run(lapsed); status != "failed" || last != "private team no longer granted" {
+		t.Fatalf("delivery after the grant lapsed: %s %q", status, last)
+	}
+	if status, _ := run(still); status != "succeeded" {
+		t.Fatalf("delivery of a webhook still granted: %s", status)
 	}
 }

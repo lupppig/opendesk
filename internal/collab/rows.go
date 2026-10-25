@@ -248,19 +248,30 @@ type messageRow struct {
 	FolderIDs   []uuid.UUID
 	// DeliveredTo is where it was delivered (Delivered-To, X-Original-To), lower case.
 	DeliveredTo []string
+	// Filed is set when the provider files the message in the account's Sent or Drafts.
+	Filed bool
+}
+
+// outgoing reports mail the account wrote: sent from opendesk, a draft, or filed by the
+// provider in Sent or Drafts. A From naming the account is not enough, since a sender
+// writes their own From.
+func (m *messageRow) outgoing() bool {
+	return m.SentBy != nil || m.Draft || m.Filed
 }
 
 // messageColumns reads a message with its folders (alias m).
 const messageColumns = `m.id, m.workspace_id, m.account_id, m.thread_id, m.remote_id, m.message_id, m.in_reply_to, m.refs,
 	m.from_addr, m.to_addrs, m.cc_addrs, m.bcc_addrs, m.reply_to, m.subject, m.snippet, m.body_html, m.body_text, m.sent_at,
 	m.unread, m.starred, m.draft, m.attachments, m.raw_key, m.location, m.sent_by,
-	ARRAY(SELECT folder_id FROM collab_message_folders mf WHERE mf.message_id = m.id), m.delivered_to`
+	ARRAY(SELECT folder_id FROM collab_message_folders mf WHERE mf.message_id = m.id), m.delivered_to,
+	EXISTS (SELECT 1 FROM collab_message_folders mf JOIN collab_folders f ON f.id = mf.folder_id
+		WHERE mf.message_id = m.id AND f.role IN ('sent', 'drafts'))`
 
 func scanMessage(row pgx.Row) (*messageRow, error) {
 	var m messageRow
 	if err := row.Scan(&m.ID, &m.WorkspaceID, &m.AccountID, &m.ThreadID, &m.RemoteID, &m.MessageID, &m.InReplyTo, &m.Refs,
 		&m.From, &m.To, &m.Cc, &m.Bcc, &m.ReplyTo, &m.Subject, &m.Snippet, &m.BodyHTML, &m.BodyText, &m.SentAt,
-		&m.Unread, &m.Starred, &m.Draft, &m.Attachments, &m.RawKey, &m.Location, &m.SentBy, &m.FolderIDs, &m.DeliveredTo); err != nil {
+		&m.Unread, &m.Starred, &m.Draft, &m.Attachments, &m.RawKey, &m.Location, &m.SentBy, &m.FolderIDs, &m.DeliveredTo, &m.Filed); err != nil {
 		return nil, err
 	}
 	for _, list := range []*[]Address{&m.To, &m.Cc, &m.Bcc, &m.ReplyTo} {

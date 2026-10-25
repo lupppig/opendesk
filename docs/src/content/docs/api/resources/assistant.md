@@ -62,7 +62,7 @@ Ollie never changes anything on its own. A change arrives as an `approval` event
 }
 ```
 
-`body` holds the markdown of a reply or note, `total` the number of matching tickets for a bulk change, and `external: true` marks a reply that reaches the customer.
+`body` holds the markdown of a reply or note, `total` the number of matching tickets for a bulk change, and `external: true` marks a reply that reaches the customer. A change in a connected product names it in `system`. For a connected tool or a change through the API, `arguments` is everything the change runs with, as indented JSON (a connected tool's arguments exactly as they are sent; for the API, `{method, path, query, body}`), `omitted` counts the fields `changes` and `body` leave out, and `clipped: true` marks a value they cut short.
 
 ```http
 POST /v1/assistant/actions/{action_id}/decision
@@ -74,6 +74,8 @@ Accept: text/event-stream
 The token is bound to the action, the user, the sign-in session and the workspace, and lasts 15 minutes. A decision runs once: a second answers `409 approval_not_pending`, a wrong token `403 approval_invalid`. Sending a new message expires the pending change. The response is a run, as above, in which Ollie continues.
 
 An approved change goes through the regular API with the user's permissions. Ticket activities record it with `actor_type: "ai"` and the user in `actor.user`, shown as Ollie, and the audit log records `assistant.action`.
+
+A change the workspace lets run without asking (`settings.ai.assistant_auto` for the built-in ones, an integration's `auto_tools` for connected ones) sends no `approval` event: it runs on the same path straight away, and its step ends `done` with `auto: true` and the `preview` of what it ran. The audit entry carries `data.auto: true`. A reply or anything else marked `external`, and every `api_change`, always asks. At most 20 changes run this way for one message.
 
 ## Tips
 

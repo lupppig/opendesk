@@ -14,7 +14,7 @@ import { useAI } from "@/lib/ai";
 import { aiSuggestions, pct } from "@/lib/decisions";
 import { relLong, fullDate } from "@/lib/format";
 import { ease, springs } from "@/lib/motion";
-import { q } from "@/lib/queries";
+import { q, qk } from "@/lib/queries";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { atLeast, useRole, useSession } from "@/lib/session";
 import { patchTicketEverywhere } from "@/lib/ticketCache";
@@ -49,7 +49,7 @@ function readSummary(t: Ticket): AISummary | null {
 /** Write a change into every cached copy of the ticket (lists and detail, by id or by number). */
 function patchCachedTicket(qc: QueryClient, t: Ticket, me: string) {
   patchTicketEverywhere(qc, t, me);
-  qc.setQueriesData<Ticket>({ queryKey: ["tickets", "detail"] }, (old) => (old && old.id === t.id ? t : old));
+  qc.setQueriesData<Ticket>({ queryKey: qk.of("tickets", "detail") }, (old) => (old && old.id === t.id ? t : old));
 }
 
 /** The PATCH that accepts one of Ollie's stored suggestions. */
@@ -165,7 +165,7 @@ function useSummary(ticket: Ticket, run: Run) {
     setBusy(true);
     try {
       const res = await run(t("summary.working"), () => api.ai.summary(ticket.id));
-      const cur = qc.getQueryData<Ticket>(["tickets", "detail", ticket.id]) ?? ticket;
+      const cur = qc.getQueryData<Ticket>(qk.of("tickets", "detail", ticket.id)) ?? ticket;
       patchCachedTicket(qc, { ...cur, custom: { ...cur.custom, ai_summary: { text: res.summary, key_points: res.key_points, sentiment: res.sentiment, updated_at: res.updated_at }, ai_sentiment: res.sentiment } }, me);
       balanceSpent(qc);
     } catch (e) {

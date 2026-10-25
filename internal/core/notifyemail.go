@@ -141,11 +141,11 @@ func (s *svc) sendNotificationEmail(ctx context.Context, tx pgx.Tx, wid, uid uui
 		return nil // nothing due yet; a later sweep comes back
 	}
 
-	var email, workspace string
+	var email, workspace, clock string
 	var verified bool
-	err = tx.QueryRow(ctx, `SELECT u.email::text, u.email_verified_at IS NOT NULL, w.name
+	err = tx.QueryRow(ctx, `SELECT u.email::text, u.email_verified_at IS NOT NULL, w.name, u.time_format
 		FROM members m JOIN users u ON u.id = m.user_id JOIN workspaces w ON w.id = m.workspace_id
-		WHERE m.workspace_id = $1 AND m.user_id = $2`, wid, uid).Scan(&email, &verified, &workspace)
+		WHERE m.workspace_id = $1 AND m.user_id = $2`, wid, uid).Scan(&email, &verified, &workspace, &clock)
 	member := err == nil
 	if err != nil && !db.IsNotFound(err) {
 		return err
@@ -226,7 +226,7 @@ func (s *svc) sendNotificationEmail(ctx context.Context, tx pgx.Tx, wid, uid uui
 		wid, uid, d.Step, now, now.Add(pace.Cooldown(d.Step)), lastUrgent); err != nil {
 		return err
 	}
-	b := emails.Batch{WorkspaceID: wid, Workspace: workspace, Cadence: set.Cadence, Location: set.Location(), Now: now, Urgent: notifyprefs.Urgent}
+	b := emails.Batch{WorkspaceID: wid, Workspace: workspace, Cadence: set.Cadence, Location: set.Location(), Clock: clock, Now: now, Urgent: notifyprefs.Urgent}
 	if len(keep) > emails.MaxListed {
 		b.More = len(keep) - emails.MaxListed
 		keep = keep[:emails.MaxListed]
@@ -290,11 +290,11 @@ func (s *svc) unsubscribeToken(uid, wid uuid.UUID) (string, error) {
 // sendTestNotificationEmail queues a sample notification email to the user, whatever
 // their preferences. Its ticket and names are made up.
 func (s *svc) sendTestNotificationEmail(ctx context.Context, tx pgx.Tx, wid, uid uuid.UUID) error {
-	var email, workspace, name string
+	var email, workspace, name, clock string
 	var verified bool
-	if err := tx.QueryRow(ctx, `SELECT u.email::text, u.email_verified_at IS NOT NULL, u.name, w.name
+	if err := tx.QueryRow(ctx, `SELECT u.email::text, u.email_verified_at IS NOT NULL, u.name, w.name, u.time_format
 		FROM members m JOIN users u ON u.id = m.user_id JOIN workspaces w ON w.id = m.workspace_id
-		WHERE m.workspace_id = $1 AND m.user_id = $2`, wid, uid).Scan(&email, &verified, &name, &workspace); err != nil {
+		WHERE m.workspace_id = $1 AND m.user_id = $2`, wid, uid).Scan(&email, &verified, &name, &workspace, &clock); err != nil {
 		return err
 	}
 	if !verified {
@@ -309,7 +309,7 @@ func (s *svc) sendTestNotificationEmail(ctx context.Context, tx pgx.Tx, wid, uid
 		return err
 	}
 	now := time.Now()
-	b := emails.Batch{WorkspaceID: wid, Workspace: workspace, Cadence: notifyprefs.CadenceInstant, Location: set.Location(), Now: now,
+	b := emails.Batch{WorkspaceID: wid, Workspace: workspace, Cadence: notifyprefs.CadenceInstant, Location: set.Location(), Clock: clock, Now: now,
 		Notes: emails.SampleNotes(now), UnsubscribeToken: tok, Test: true, Urgent: notifyprefs.Urgent}
 	return s.enqueueMail(ctx, tx, email, emails.Notifications(s.site(), b))
 }

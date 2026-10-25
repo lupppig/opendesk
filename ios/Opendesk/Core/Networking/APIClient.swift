@@ -218,18 +218,20 @@ actor APIClient {
             throw APIError.parse(status: http.statusCode, data: data)
         }
         let isJSON = (http.value(forHTTPHeaderField: "Content-Type") ?? "").contains("application/json")
+        // The body moves into the reading task and is not touched here again.
+        let body = bytes
         return AsyncThrowingStream { continuation in
             let task = Task {
                 do {
                     if isJSON {
                         // A server that answers in one piece: hand it over as a single `result` event.
                         var data = Data()
-                        for try await byte in bytes { data.append(byte) }
+                        for try await byte in body { data.append(byte) }
                         continuation.yield(SSEEvent(event: "result", data: String(decoding: data, as: UTF8.self)))
                     } else {
                         var event = "message"
                         var lines: [String] = []
-                        for try await line in bytes.lines {
+                        for try await line in body.lines {
                             if line.hasPrefix("event:") {
                                 event = line.dropFirst(6).trimmingCharacters(in: .whitespaces)
                             } else if line.hasPrefix("data:") {

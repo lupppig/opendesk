@@ -309,7 +309,7 @@ func TestForgedBounceIgnored(t *testing.T) {
 	raw := []byte(strings.ReplaceAll(strings.ReplaceAll(dsn, "\r\n", "\n"), "\n", "\r\n"))
 	raw = bytes.Replace(raw, []byte("<bounce"), []byte("<bounce-env"), 1)
 	sender := "mallory@evil.test"
-	iid, _, err := w.s.ingest(w.ctx, m, raw, w.forwardAddr(m, ""), &sender)
+	iid, _, err := w.s.ingest(w.ctx, m, raw, w.forwardAddr(m, ""), &sender, viaForward)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -382,7 +382,7 @@ func TestDedupeNeedsMatchingContent(t *testing.T) {
 		t.Fatalf("message %+v", got)
 	}
 	// Its redelivery is still the same message, at ingest and at another address.
-	if _, dup, err := w.s.ingest(w.ctx, m, []byte(mk("The real question.")), "", nil); err != nil || !dup {
+	if _, dup, err := w.s.ingest(w.ctx, m, []byte(mk("The real question.")), "", nil, viaMailbox); err != nil || !dup {
 		t.Fatalf("redelivery at ingest: dup=%v err=%v", dup, err)
 	}
 	again := w.receive(other, mk("The real question."))
@@ -413,5 +413,49 @@ func TestContentHash(t *testing.T) {
 		if contentHash([]byte(v)) == contentHash([]byte(base)) {
 			t.Errorf("change %d hashed the same", i)
 		}
+	}
+}
+
+// TestNewcomerOnConversation: a reply naming one of our Message-IDs joins its conversation
+// whoever sent it, but nothing automatic acts on mail from someone the team and the
+// customer never wrote to: no customer_replied automation, no Ollie answer.
+func TestNewcomerOnConversation(t *testing.T) {
+	w := aiWorld(t)
+	m := w.mailbox(InboundForwarding, OutboundSystem, nil)
+	mustExec(t, w.d, `UPDATE mailboxes SET ai_answers = true WHERE id = $1`, m.ID)
+	m, _ = loadMailbox(w.ctx, w.d.DB.Pool, w.wid, m.ID)
+	from := customer()
+	colleague, stranger := "colleague"+crypto.RandomString(6)+"@customer.test", "stranger"+crypto.RandomString(6)+"@elsewhere.test"
+	tk, ours := firstTicket(t, w, m, from)
+	reply := func(sender, cc, body string) {
+		t.Helper()
+		raw := "From: " + sender + "\r\nTo: " + m.Email + "\r\n" + cc + "Subject: Re: hello\r\nIn-Reply-To: " + ours +
+			"\r\nMessage-ID: <nc" + crypto.RandomString(8) + "@x.test>\r\n\r\n" + body + "\r\n"
+		msg := w.messageFor(w.receive(m, raw))
+		if msg.TicketID != tk.ID {
+			t.Fatalf("%s: the reply left its conversation", sender)
+		}
+
+	}
+	counts := func() (int, int) {
+		return w.jobCount("helpdesk.ticket_trigger", "", ""), w.jobCount("ai.email_answer", "", "")
+	}
+
+	trig, ai := counts()
+	reply(stranger, "Cc: "+stranger+"\r\n", "Send the refund to my account instead.")
+	if t2, a2 := counts(); t2 != trig || a2 != ai {
+		t.Fatalf("automatic work for a newcomer: triggers %d to %d, answers %d to %d", trig, t2, ai, a2)
+	}
+	// Their own message naming them does not make them known.
+	reply(stranger, "", "Again.")
+	if t2, a2 := counts(); t2 != trig || a2 != ai {
+		t.Fatal("a newcomer's own message made them known")
+	}
+	// The customer copying a colleague in makes the colleague part of the conversation.
+	reply(from, "Cc: "+colleague+"\r\n", "Adding my colleague.")
+	trig, ai = counts()
+	reply(colleague, "", "Any news?")
+	if t2, a2 := counts(); t2 == trig || a2 == ai {
+		t.Fatalf("a colleague the customer copied in was treated as new: triggers %d to %d, answers %d to %d", trig, t2, ai, a2)
 	}
 }

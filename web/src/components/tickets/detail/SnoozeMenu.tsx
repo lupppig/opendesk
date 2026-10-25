@@ -6,6 +6,7 @@ import { Popover } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { DateField, TimeField, parseDay, parseTime } from "@/components/ui/date-picker";
 import { Tooltip } from "@/components/ui/tooltip";
+import { weekdayClock } from "@/lib/format";
 
 function at9(d: Date) {
   return setMinutes(setHours(d, 9), 0);
@@ -61,7 +62,7 @@ export function SnoozeMenu({ onSnooze, disabled, open: openProp, onOpenChange }:
           className="flex h-8 w-full items-center justify-between rounded-md px-2 text-[12.5px] outline-none transition-colors hover:bg-hover focus-visible:bg-hover"
         >
           {t(`snooze.${o.key}`)}
-          <span className="mono text-[11px] text-fg-4">{format(o.at, "EEE HH:mm")}</span>
+          <span className="mono text-[11px] text-fg-4">{weekdayClock(o.at)}</span>
         </button>
       ))}
       <div className="mt-1 border-t border-line p-1.5 pt-2">

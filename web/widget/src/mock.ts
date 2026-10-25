@@ -421,7 +421,9 @@ export function createMock(o: MockOptions = {}): Mock {
       else teamTurn(cid);
       return json({ conversation: c, message: first }, 201);
     }
-    let m = /^\/v1\/widget\/conversations\/([^/]+)\/handoff$/.exec(path);
+    let m = /^\/v1\/widget\/conversations\/([^/]+)\/typing$/.exec(path);
+    if (m && method === "POST") return conv(m[1]) ? json(null, 204) : notFound();
+    m = /^\/v1\/widget\/conversations\/([^/]+)\/handoff$/.exec(path);
     if (m && method === "POST") {
       const c = conv(m[1]);
       if (!c) return notFound();

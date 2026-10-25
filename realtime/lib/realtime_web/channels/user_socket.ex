@@ -7,8 +7,11 @@ defmodule RealtimeWeb.UserSocket do
   `RealtimeWeb.WidgetSocket` instead.
 
   The token is verified once at connect and then forgotten: only its claims are
-  kept in assigns. A token in the URL is never read, and connection logging is
-  off.
+  kept in assigns, for at most the socket's maximum age (`MAX_SOCKET_AGE`, see
+  `RealtimeWeb.SocketAuth`), after which the client reconnects with a fresh token.
+  A token issued before a revocation of its user or session is refused
+  (`Realtime.Revocations`). A token in the URL is never read, and connection
+  logging is off.
   """
 
   use Phoenix.Socket, log: false
@@ -20,7 +23,10 @@ defmodule RealtimeWeb.UserSocket do
 
   @impl true
   def connect(params, socket, connect_info),
-    do: RealtimeWeb.SocketAuth.connect(params, socket, connect_info, [:user, :api_key])
+    do:
+      RealtimeWeb.SocketAuth.connect(params, socket, connect_info, [:user, :api_key],
+        max_age: true
+      )
 
   @impl true
   def id(socket), do: "user_socket:" <> socket.assigns.sub

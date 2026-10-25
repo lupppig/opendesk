@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -343,7 +344,7 @@ func TestDiscoverRefusesNonPKCE(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"authorization_servers": []string{origin}})
 	})
 	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, _ *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{"authorization_endpoint": origin + "/a", "token_endpoint": origin + "/t"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"issuer": origin, "authorization_endpoint": origin + "/a", "token_endpoint": origin + "/t"})
 	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
@@ -377,6 +378,53 @@ func TestStoredToolsSanitizes(t *testing.T) {
 	// Duplicates, nameless tools and oversized schemas are dropped, long text is clipped.
 	if len(out) != 1 || out[0].Name != "a" || len([]rune(out[0].Description)) > 1100 {
 		t.Fatalf("out = %d tools", len(out))
+	}
+}
+
+func TestAskFirstMakesAReadAWrite(t *testing.T) {
+	x := &row{Tools: []StoredTool{{Name: "search", ReadOnly: true}, {Name: "fetch", ReadOnly: true}, {Name: "create"}},
+		AskTools: []string{"search"}}
+	for name, want := range map[string]bool{"search": false, "fetch": true, "create": false} {
+		i := slices.IndexFunc(x.Tools, func(t StoredTool) bool { return t.Name == name })
+		if got := x.readOnly(x.Tools[i]); got != want {
+			t.Errorf("readOnly(%s) = %v, want %v", name, got, want)
+		}
+	}
+	for _, tl := range x.api().Tools {
+		switch tl.Name {
+		case "search":
+			if tl.ReadOnly || !tl.ReadOnlyHint || !tl.AskFirst {
+				t.Errorf("search = %+v", tl)
+			}
+		case "fetch":
+			if !tl.ReadOnly || !tl.ReadOnlyHint || tl.AskFirst {
+				t.Errorf("fetch = %+v", tl)
+			}
+		case "create":
+			if tl.ReadOnly || tl.ReadOnlyHint || tl.AskFirst {
+				t.Errorf("create = %+v", tl)
+			}
+		}
+	}
+	if got := x.knownTools([]string{"fetch", "nope", "fetch", "create"}); !slices.Equal(got, []string{"fetch", "create"}) {
+		t.Fatalf("knownTools = %v", got)
+	}
+}
+
+func TestAutoToolsRunOnlyWritesAndAskFirstWins(t *testing.T) {
+	x := &row{Tools: []StoredTool{{Name: "fetch", ReadOnly: true}, {Name: "search", ReadOnly: true}, {Name: "create"}, {Name: "close"}, {Name: "post"}},
+		AskTools: []string{"search", "close"}, AutoTools: []string{"fetch", "search", "create", "close"}}
+	// fetch: a lookup already; search: asks first; create: auto; close: on both lists, ask first wins; post: not listed.
+	for name, want := range map[string]bool{"fetch": false, "search": false, "create": true, "close": false, "post": false} {
+		i := slices.IndexFunc(x.Tools, func(t StoredTool) bool { return t.Name == name })
+		if got := x.autoRun(x.Tools[i]); got != want {
+			t.Errorf("autoRun(%s) = %v, want %v", name, got, want)
+		}
+	}
+	for _, tl := range x.api().Tools {
+		if tl.AutoRun != (tl.Name == "create") {
+			t.Errorf("api %s auto_run = %v", tl.Name, tl.AutoRun)
+		}
 	}
 }
 
@@ -426,5 +474,32 @@ func TestRegisteredAppSignIn(t *testing.T) {
 	t.Setenv("MCP_SLACK_CLIENT_SECRET", "secret")
 	if c, err := s.identify(context.Background(), "slack", asm); err != nil || c.AuthMethod != "client_secret_basic" {
 		t.Fatalf("identify slack: %+v %v", c, err)
+	}
+}
+
+// TestOAuthIssuerMustMatch: an authorization server's metadata counts only when it names the
+// issuer it was fetched for.
+func TestOAuthIssuerMustMatch(t *testing.T) {
+	var origin, named string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/.well-known/oauth-protected-resource/mcp", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"resource": origin + "/mcp", "authorization_servers": []string{origin + "/auth"}})
+	})
+	mux.HandleFunc("/.well-known/oauth-authorization-server/auth", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"issuer": named, "authorization_endpoint": origin + "/auth/authorize",
+			"token_endpoint": origin + "/auth/token", "code_challenge_methods_supported": []string{"S256"}})
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	origin = srv.URL
+	s := testService(t)
+	for _, c := range []struct {
+		named string
+		ok    bool
+	}{{origin + "/auth", true}, {origin + "/auth/", true}, {"https://other.example/auth", false}, {"", false}} {
+		named = c.named
+		if _, _, _, err := s.discover(context.Background(), origin+"/mcp"); (err == nil) != c.ok {
+			t.Fatalf("issuer %q: err %v", c.named, err)
+		}
 	}
 }

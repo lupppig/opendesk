@@ -131,7 +131,7 @@ func (s *service) ingestAPI(ctx context.Context, m *mailboxRow, raw []byte, ref 
 		s.log.Warn("skipping oversized message", "mailbox_id", m.ID, "bytes", len(raw))
 		return nil
 	}
-	if _, _, err := s.ingestRef(ctx, m, raw, "", nil, ref); err != nil {
+	if _, _, err := s.ingestRef(ctx, m, raw, "", nil, ref, viaMailbox); err != nil {
 		return &ingestFailure{err: err}
 	}
 	return nil

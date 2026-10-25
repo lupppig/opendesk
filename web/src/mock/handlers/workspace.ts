@@ -13,6 +13,7 @@ import { checkLimit } from "./billing";
 import { assign } from "./crud";
 import { registerPictures } from "./pictures";
 import { registerWidget } from "./widget";
+import { mockWsToken } from "./together";
 import { lapseGrants, registerTeams, seedDefaultBrand } from "./teams";
 import { envelopeTeam, standIn } from "../gateway";
 import { setGrants, teamRole } from "../teams";
@@ -337,8 +338,8 @@ export function registerWorkspace() {
     return { data: resync ? [] : log.filter((e) => e.seq > since).slice(0, limit).map(mine), latest_seq: ctx.ws.seq, resync };
   });
 
-  post("/v1/realtime/token", () =>
-    respond(200, { token: `ws_mock_${randomToken(24)}`, url: "ws://mock.opendesk.local/socket", expires_at: new Date(Date.now() + 5 * 60_000).toISOString() }),
+  post("/v1/realtime/token", (ctx) =>
+    respond(200, { token: mockWsToken(ctx), url: "ws://mock.opendesk.local/socket", expires_at: new Date(Date.now() + 5 * 60_000).toISOString() }),
   );
 
   get("/v1/notifications", (ctx) => {

@@ -30,7 +30,7 @@ function Row({ s, active }: { s: AssistantSession; active: boolean }) {
     mutationFn: (v: string) => assistantApi.rename(s.id, v),
     onSuccess: (r) => {
       if (useOllie.getState().sessionId === s.id) useOllie.setState({ title: r.title });
-      void qc.invalidateQueries({ queryKey: sessionsKey });
+      void qc.invalidateQueries({ queryKey: sessionsKey() });
     },
     onError: (e) => toast.error(e),
   });
@@ -40,7 +40,7 @@ function Row({ s, active }: { s: AssistantSession; active: boolean }) {
       async () => {
         await assistantApi.remove(s.id);
         if (useOllie.getState().sessionId === s.id) ollie.newChat();
-        void qc.invalidateQueries({ queryKey: sessionsKey });
+        void qc.invalidateQueries({ queryKey: sessionsKey() });
       },
       { title: t("deleteTitle"), confirmLabel: t("delete"), danger: true },
     );
@@ -97,7 +97,7 @@ function Row({ s, active }: { s: AssistantSession; active: boolean }) {
 export function SessionList() {
   const { t } = useTranslation("assistant");
   const active = useOllie((s) => s.sessionId);
-  const { data, isLoading } = useQuery({ queryKey: sessionsKey, queryFn: assistantApi.sessions, staleTime: 30_000 });
+  const { data, isLoading } = useQuery({ queryKey: sessionsKey(), queryFn: assistantApi.sessions, staleTime: 30_000 });
   const rows = data?.data ?? [];
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 py-2">

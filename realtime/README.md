@@ -40,6 +40,7 @@ In dev the defaults match `go run ./cmd/opendesk serve`: the same development
 | `POSTHOG_HOST` | `https://us.i.posthog.com` | PostHog ingestion host. |
 | `MAX_SOCKETS_PER_SUB` | `20` | Concurrent sockets per token subject (user, API key or contact), cluster-wide. |
 | `MAX_SOCKETS_PER_IP` | `200` | Concurrent sockets per client IP, cluster-wide. |
+| `MAX_SOCKET_AGE` | `3600` | Seconds an agents' socket (users and API keys) lives before the gateway closes it (code 1001) and the client reconnects with a fresh token. Each socket takes a random 80 to 100 % of it. `0` for no limit. The widget's socket has none. |
 | `TRUSTED_PROXY_HOPS` | `0` | Proxies in front of the gateway that append to `X-Forwarded-For`. `0` uses the TCP peer. Behind one ALB or Caddy set `1`; behind Cloudflare plus an ALB, `2`. |
 
 Blank variables count as unset.
@@ -70,7 +71,8 @@ presence.onSync(() => presence.list((userId, { metas }) => metas[0])); // {user_
 ticket.on("typing", ({ user_id, name }) => {});                       // another agent typing
 ticket.on("customer_typing", ({ ticket_id, contact_id }) => {});      // the customer typing
 ticket.push("presence", { state: "replying" });                       // "viewing" | "replying" | "idle"
-ticket.push("typing", { contact_id });                                // contact_id only on chat tickets
+ticket.push("typing", {});                                            // the other agents on the ticket
+// On a chat, the visitor sees it through the API: POST /v1/tickets/{id}/typing
 
 // Widget: widget_ws token, any origin, its own contact topic only
 const widget = new Socket(GATEWAY_URL + "/widget", { params: () => ({ token: widgetToken }) });
@@ -78,7 +80,7 @@ widget.connect();                                                     // -> /soc
 const chat = widget.channel(`contact:${wid}:${contactId}`);
 chat.on("event", applyEnvelope);                                      // public events only
 chat.on("typing", ({ ticket_id, user: { id, name } }) => {});         // an agent typing
-chat.push("typing", { ticket_id });
+// The visitor typing: POST /v1/widget/conversations/{id}/typing (the API checks it is theirs)
 ```
 
 - Joins reply `{server_time}`; unauthorized joins reply `{reason: "forbidden"}`. Ids in
@@ -90,7 +92,10 @@ chat.push("typing", { ticket_id });
   the first push gets `{reason: "rate_limited"}` and later ones are dropped silently, so send
   `typing` at most every couple of seconds while the user types.
 - On logout or revocation the server closes the socket; the client's reconnect then needs a
-  new token, which the API refuses for a revoked session.
+  new token, which the API refuses for a revoked session. A token fetched before the revocation
+  is refused too.
+- An agents' socket closes with code 1001 at its maximum age (`MAX_SOCKET_AGE`); the client
+  reconnects with a fresh token, as after any drop.
 
 ## How it works
 
@@ -105,8 +110,15 @@ share serializer, frame cap, connect throttle and socket caps (`RealtimeWeb.Sock
 HS384/HS512 and asymmetric algs are refused), `exp` required and in the future, `nbf`
 honoured, `purpose` `ws` or `widget_ws`, UUID `sub` and `wid`. The token itself is not kept:
 assigns are `kind` (`:user`, `:api_key`, `:contact`), `sub`, `wid`, `role`, `name`,
-`avatar`. The socket id is `user_socket:<sub>`. Socket and join logging is off, so the
-query string never reaches a log.
+`avatar`, `teams`, `brand`, `sid` and `issued_ms`. The socket id is `user_socket:<sub>`. Socket
+and join logging is off, so the query string never reaches a log.
+
+**Revocations.** Each node keeps the `od.control.disconnect` messages of the last six minutes
+(the token lifetime plus a minute) in ETS (`Realtime.Revocations`), by subject for a user-wide
+one and by session for a session's, with their time (`at`, or when the node received it). A
+token whose `sub` or `sid` was revoked at or after its issue time (`iat_ms`, else `iat * 1000`)
+is refused (`revoked`). The agents' socket also schedules its own close at its maximum age, so
+the claims it holds are at most `MAX_SOCKET_AGE` old.
 
 **Fan-out and once-only delivery.** Every node subscribes to `od.events.>` and
 `od.control.disconnect` itself, with **no queue group**, and broadcasts with
@@ -121,11 +133,15 @@ highest `seq` it broadcast per workspace and drops repeats (`Realtime.Fanout.Ded
 Routing for an envelope on `od.events.<wid>` (the subject and `workspace_id` must agree):
 `workspace:<wid>` always; each `user:<uid>` in `topics`; each `contact:<wid>:<cid>` in
 `topics` only when `visibility` is `public` and the contact topic is in the same workspace.
-`od.control.disconnect` `{user_id}` broadcasts `disconnect` to `user_socket:<user_id>`,
-which closes every socket of that subject on that node (each node gets the message).
+`od.control.disconnect` `{user_id, session_id?, at?}` records the revocation and broadcasts
+`disconnect` to `user_socket:<user_id>`, which closes every socket of that subject on that node
+(each node gets the message).
 
-**Presence and typing** are client-originated, so they use the normal cluster-wide
-`Phoenix.PubSub` broadcast and `Phoenix.Presence` (CRDT, replicated across nodes).
+**Presence and typing** between agents on a ticket are client-originated, so they use the
+normal cluster-wide `Phoenix.PubSub` broadcast and `Phoenix.Presence` (CRDT, replicated across
+nodes). Typing between an agent and a visitor goes through the API, which checks the ticket, and
+arrives on `od.live.<wid>` (`agent.typing`, `customer.typing`); the gateway pushes it to the one
+topic it is for, filtered by brand or team like any live event.
 
 **NATS connection.** `Realtime.Nats.Consumer` owns the `gnat` connection, linked with exits
 trapped: when NATS is down the gateway stays up and keeps serving sockets while it
@@ -152,7 +168,7 @@ reported by exception type and stack frames only, never messages or state.
 
 - `mix test`: auth (purpose, algs, expiry, claims, short secret, prod boot config), Origin,
   joins for every topic, fan-out rules, dedupe, presence, typing, rate limits, socket caps,
-  disconnect. NATS is injected: `Realtime.Fanout.handle/3` takes the subject and body.
+  disconnect, revocations and the socket age. NATS is injected: `Realtime.Fanout.handle/3` takes the subject and body.
 - `NATS_TEST_URL=nats://127.0.0.1:4222 mix test --only nats`: the consumer against a real
   NATS server.
 - `test/e2e/`: `node e2e.mjs` drives a running gateway with the `phoenix` client against the

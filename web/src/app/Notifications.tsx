@@ -16,7 +16,9 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { EmptyState } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Segmented } from "@/components/ui/tabs";
-import { useMarkNotificationsRead } from "./notificationRead";
+import { useBellNotifications, useMarkReadIn } from "./notificationRead";
+import { selectWorkspace, useSession } from "@/lib/session";
+import { WorkspaceBadge } from "@/components/workspaces/WorkspaceBadge";
 import { i18n } from "@/i18n";
 
 // Each kind keeps one icon and one hue, so the list scans by what happened.
@@ -166,10 +168,15 @@ export function NotificationsButton() {
   const [filter, setFilter] = useState<"all" | "unread">("all");
   const navigate = useNavigate();
   const reduce = useReducedMotion();
-  const { data, isLoading } = useQuery(q.notifications());
-  const unread = data?.filter((n) => !n.read_at).length ?? 0;
+  // With Together, every shown workspace's notifications, each with its workspace's badge.
+  const bell = useBellNotifications();
+  const memberships = useSession((s) => s.memberships);
+  const wsOf = (wid: string) => memberships.find((m) => m.workspace.id === wid)?.workspace;
+  const data = bell.isLoading && !bell.hasAny ? undefined : bell.items;
+  const isLoading = bell.isLoading && !bell.hasAny;
+  const unread = bell.unread;
   const { t } = useTranslation("shell");
-  const shown = (data ?? []).filter((n) => filter === "all" || !n.read_at);
+  const shown = (data ?? []).filter((x) => filter === "all" || !x.row.read_at);
   // The bell rings once when a new unread notification arrives (not on first load).
   const [rings, setRings] = useState(0);
   const seen = useRef<number | null>(null);
@@ -179,11 +186,17 @@ export function NotificationsButton() {
     seen.current = unread;
   }, [data, unread]);
 
-  const markRead = useMarkNotificationsRead();
+  const markRead = useMarkReadIn();
+  const markAll = () => {
+    const wids = new Set((data ?? []).filter((x) => !x.row.read_at).map((x) => x.workspaceId));
+    for (const wid of wids) markRead.mutate({ wid, body: { all: true } });
+  };
 
-  const openTicket = (n: Notification) => {
-    if (!n.read_at) markRead.mutate({ ids: [n.id] });
+  const openTicket = (n: Notification, wid: string) => {
+    if (!n.read_at) markRead.mutate({ wid, body: { ids: [n.id] } });
     setOpen(false);
+    // Another workspace's notification opens there: the focus moves first.
+    if (wid !== useSession.getState().workspaceId) selectWorkspace(wid);
     if (n.type === "ai_cap_reached") void navigate({ to: "/settings/ai/behaviour" });
     else if (n.type === "ai_key_failed") void navigate({ to: "/settings/ai" });
     else if (n.type === "ai_balance_low" || n.type === "ai_balance_out" || n.type === "auto_recharge_failed") void navigate({ to: "/settings/billing" });
@@ -241,7 +254,7 @@ export function NotificationsButton() {
           {unread > 0 && (
             <button
               type="button"
-              onClick={() => markRead.mutate({ all: true })}
+              onClick={markAll}
               className="rounded-sm px-1.5 py-0.5 text-xs text-fg-3 transition-colors hover:bg-hover hover:text-fg"
             >
               {t("notifications.markAll")}
@@ -291,11 +304,12 @@ export function NotificationsButton() {
         ) : (
           <ul>
             <AnimatePresence initial={false}>
-              {shown.map((n) => {
+              {shown.map(({ row: n, workspaceId }) => {
                 const k = kindOf(n);
+                const ws = bell.together ? wsOf(workspaceId) : undefined;
                 return (
                   <motion.li
-                    key={n.id}
+                    key={`${workspaceId}:${n.id}`}
                     layout={reduce ? false : "position"}
                     initial={reduce ? false : { opacity: 0, y: -4 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -304,17 +318,25 @@ export function NotificationsButton() {
                   >
                     <button
                       type="button"
-                      onClick={() => openTicket(n)}
+                      onClick={() => openTicket(n, workspaceId)}
                       className="group flex w-full items-start gap-2.5 rounded-md px-2 py-2 text-left transition-colors duration-100 hover:bg-hover active:scale-[0.995] motion-reduce:active:scale-100"
                     >
                       <span
                         className={cn(
-                          "mt-px flex size-7 shrink-0 items-center justify-center rounded-md transition-opacity [&_svg]:size-3.5",
+                          "relative mt-px flex size-7 shrink-0 items-center justify-center rounded-md transition-opacity [&_svg]:size-3.5",
                           tone[k.tone].chip,
                           n.read_at && "opacity-60",
                         )}
                       >
                         {k.icon}
+                        {ws && (
+                          <WorkspaceBadge
+                            name={ws.name}
+                            logo={ws.avatar_url}
+                            size="xs"
+                            className="absolute -bottom-1 -right-1 ring-2 ring-surface"
+                          />
+                        )}
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className={cn("block truncate text-[12.5px]", n.read_at ? "text-fg-2" : "font-medium text-fg")}>{describe(n, t)}</span>

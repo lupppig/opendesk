@@ -516,7 +516,7 @@ func (s *svc) registerWebhooks(api huma.API) {
 				data, _ := json.Marshal(map[string]any{"webhook_id": id, "message": "This is a test event from opendesk."})
 				pl := webhookPayload{ID: ids.New(), Seq: 0, WorkspaceID: p.WorkspaceID, Type: webhookTestEvent,
 					Visibility: events.VisibilityAgents, Data: data, OccurredAt: time.Now().UTC()}
-				did, err := s.createDelivery(ctx, tx, p.WorkspaceID, id, pl)
+				did, err := s.createDelivery(ctx, tx, p.WorkspaceID, id, pl, nil)
 				if err != nil {
 					return err
 				}
@@ -680,14 +680,16 @@ func cleanDescription(s string) string {
 }
 
 // createDelivery stores a delivery with its fixed payload and enqueues it in tx.
-func (s *svc) createDelivery(ctx context.Context, tx pgx.Tx, wid, hookID uuid.UUID, pl webhookPayload) (uuid.UUID, error) {
+// createDelivery queues one delivery. team is the private team of the event's ticket (nil
+// outside one): the delivery goes out only while the webhook is still granted it.
+func (s *svc) createDelivery(ctx context.Context, tx pgx.Tx, wid, hookID uuid.UUID, pl webhookPayload, team *uuid.UUID) (uuid.UUID, error) {
 	body, err := json.Marshal(pl)
 	if err != nil {
 		return uuid.Nil, err
 	}
 	id := ids.New()
-	if _, err := tx.Exec(ctx, `INSERT INTO webhook_deliveries (id, workspace_id, webhook_id, event_id, event_type, payload)
-		VALUES ($1, $2, $3, $4, $5, $6)`, id, wid, hookID, pl.ID, pl.Type, body); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO webhook_deliveries (id, workspace_id, webhook_id, event_id, event_type, payload, team_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`, id, wid, hookID, pl.ID, pl.Type, body, team); err != nil {
 		return uuid.Nil, err
 	}
 	_, err = s.d.Jobs.InsertTx(ctx, tx, jobs.WebhookDeliverArgs{DeliveryID: id},
@@ -755,7 +757,7 @@ func (w *dispatchWorker) Work(ctx context.Context, job *river.Job[jobs.WebhookDi
 			if exists {
 				continue
 			}
-			if _, err := w.s.createDelivery(ctx, tx, a.WorkspaceID, h.id, pl); err != nil {
+			if _, err := w.s.createDelivery(ctx, tx, a.WorkspaceID, h.id, pl, team); err != nil {
 				return err
 			}
 		}
@@ -778,11 +780,16 @@ func (w *deliverWorker) Work(ctx context.Context, job *river.Job[jobs.WebhookDel
 	var wid, hookID uuid.UUID
 	var url, status, eventType string
 	var eventID uuid.UUID
-	var enabled, verified bool
+	var enabled, verified, granted bool
 	var sealed, body []byte
+	// granted: the event is outside a private team, the webhook is still granted its team, or
+	// the team is no longer private. A grant withdrawn after the event stops its retries too.
 	err := s.d.DB.Pool.QueryRow(ctx, `SELECT d.workspace_id, d.webhook_id, d.status, d.event_id, d.event_type, d.payload,
-		h.url, h.enabled, h.verified_at IS NOT NULL, h.secret_enc FROM webhook_deliveries d JOIN webhooks h ON h.id = d.webhook_id AND h.workspace_id = d.workspace_id
-		WHERE d.id = $1`, job.Args.DeliveryID).Scan(&wid, &hookID, &status, &eventID, &eventType, &body, &url, &enabled, &verified, &sealed)
+		h.url, h.enabled, h.verified_at IS NOT NULL, h.secret_enc,
+		d.team_id IS NULL OR d.team_id = ANY(h.private_team_ids)
+			OR NOT EXISTS (SELECT 1 FROM teams t WHERE t.workspace_id = d.workspace_id AND t.id = d.team_id AND t.private)
+		FROM webhook_deliveries d JOIN webhooks h ON h.id = d.webhook_id AND h.workspace_id = d.workspace_id
+		WHERE d.id = $1`, job.Args.DeliveryID).Scan(&wid, &hookID, &status, &eventID, &eventType, &body, &url, &enabled, &verified, &sealed, &granted)
 	if db.IsNotFound(err) {
 		return nil // webhook or workspace deleted
 	}
@@ -799,6 +806,10 @@ func (w *deliverWorker) Work(ctx context.Context, job *river.Job[jobs.WebhookDel
 	}
 	if !enabled && eventType != webhookTestEvent {
 		_, err := s.d.DB.Pool.Exec(ctx, `UPDATE webhook_deliveries SET status = 'failed', last_error = 'webhook disabled' WHERE id = $1`, job.Args.DeliveryID)
+		return err
+	}
+	if !granted {
+		_, err := s.d.DB.Pool.Exec(ctx, `UPDATE webhook_deliveries SET status = 'failed', last_error = 'private team no longer granted' WHERE id = $1`, job.Args.DeliveryID)
 		return err
 	}
 	if suspended, err := domain.WorkspaceSuspended(ctx, s.d.DB.Pool, wid); err != nil || suspended {

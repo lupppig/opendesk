@@ -17,6 +17,7 @@ import { errorMessage, isPlanLimit } from "@/lib/api/client";
 import type { KBArticleDraft, Ticket } from "@/lib/api/types";
 import { AiIcon, useCostLabel } from "./bits";
 import { TaskRows, type TaskRow, type TaskStatus } from "./ui/TaskRows";
+import { qk } from "@/lib/queries";
 
 /** The server drafts from at most 10 tickets. */
 const MAX_TICKETS = 10;
@@ -43,7 +44,7 @@ export function KbDraftDialog({
   const [stage, setStage] = useState(-1);
 
   const search = useQuery({
-    queryKey: ["ai", "kb-draft-tickets", query],
+    queryKey: qk.of("ai", "kb-draft-tickets", query),
     queryFn: () => api.tickets.list({ q: query.trim() || undefined, limit: 8, spam: false }),
     enabled: open,
     staleTime: 30_000,

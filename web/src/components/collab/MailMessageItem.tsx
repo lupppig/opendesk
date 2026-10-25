@@ -133,20 +133,18 @@ const list = (xs: MailAddress[]) => xs.map(formatAddress).join(", ");
 
 export const MailMessageItem = memo(function MailMessageItem({
   m,
-  ownEmail,
   open,
   onToggle,
 }: {
   m: MailMessage;
-  /** The account's addresses: its own and its aliases. */
-  ownEmail: string | readonly string[];
   open: boolean;
   onToggle: () => void;
 }) {
   const { t } = useTranslation("collab");
   const [remote, setRemote] = useState(false);
   const [showQuoted, setShowQuoted] = useState(false);
-  const external = !(typeof ownEmail === "string" ? [ownEmail] : ownEmail).some((e) => normEmail(e) === normEmail(m.from.email));
+  // Where the mail came from decides, not the From it claims: a sender writes their own From.
+  const external = !m.outgoing;
   const name = m.from.name || m.from.email;
   const { body, quoted } = useMailBody(m, external, remote);
   const held = body.held + (showQuoted && quoted ? quoted.held : 0);

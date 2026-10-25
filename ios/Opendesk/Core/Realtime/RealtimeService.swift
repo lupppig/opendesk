@@ -423,13 +423,17 @@ final class RealtimeService {
         push(activeTicket, event: "presence", payload: .object(["state": .string(state.rawValue)]))
     }
 
-    /// Tells the team (and, on chat, the visitor) that a reply is being written. Throttled to one per 2.5 s.
+    /// Tells the team (the socket) and, on chat, the visitor (the API, which checks the ticket)
+    /// that a reply is being written. Throttled to one per 2.5 s.
     func noteTyping() {
         guard let activeTicket, ticketModes[activeTicket] == true, Date.now.timeIntervalSince(lastTypingSent) >= 2.5 else { return }
         lastTypingSent = .now
-        var payload: [String: JSONValue] = [:]
-        if let activeContactID { payload["contact_id"] = .string(activeContactID) }
-        push(activeTicket, event: "typing", payload: .object(payload))
+        push(activeTicket, event: "typing", payload: .object([:]))
+        if activeContactID != nil, let api {
+            Task {
+                let _: EmptyBody? = try? await api.post("v1/tickets/\(activeTicket)/typing")
+            }
+        }
     }
 
     private func reconcileTickets() {

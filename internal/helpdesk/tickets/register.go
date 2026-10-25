@@ -4,10 +4,13 @@
 package tickets
 
 import (
+	"context"
+
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5"
 	"github.com/riverqueue/river"
 
+	"github.com/useopendesk/opendesk/internal/auth"
 	"github.com/useopendesk/opendesk/internal/deps"
 )
 
@@ -16,10 +19,15 @@ func Register(d *deps.Deps, api huma.API, r chi.Router) {
 	registerTickets(d, api)
 	registerMessages(d, api)
 	registerDrafts(d, api)
+	registerTyping(d, api)
 	registerThreads(d, api)
 	registerTemplates(d, api)
 	registerCSAT(d, api)
 	registerInsights(d, api)
+	// The overview's ticket counts are the counts route's own answer for that workspace.
+	d.Overview.TicketCounts = func(ctx context.Context, p *auth.Principal) (any, error) {
+		return ticketCounts(ctx, d.DB.Pool, p)
+	}
 }
 
 // RegisterWorkers adds the ticket trigger and periodic workers.

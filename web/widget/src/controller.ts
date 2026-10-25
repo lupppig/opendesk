@@ -132,6 +132,7 @@ export class Controller {
         onTyping: (p) => this.onTyping(p.ticket_id, p.user?.name ?? t("support")),
         onLive: (e) => this.onLive(e),
         onReconnect: () => void this.catchUp(),
+        sendTyping: (id) => this.api.typing(id),
       },
     );
     this.live.start();

@@ -3,7 +3,7 @@
 // only once approved (attributed to Ollie), and tips from simple counts.
 
 import type { AssistantSession, AssistantStep, Approval, Preview, Tip, TranscriptItem } from "@/components/assistant/api";
-import type { Ticket, UserRef } from "@/lib/api/types";
+import type { AssistantAutoTool, Ticket, UserRef } from "@/lib/api/types";
 import { db, userRef, type WsData } from "../db";
 import { reserve, spend } from "../aiBalance";
 import { HttpError, del, get, invalid, patch, post, respond, type Ctx } from "../router";
@@ -11,6 +11,7 @@ import { aiDecisions } from "@/lib/decisions";
 import { applyPatch, findTicket } from "../tickets";
 import { nowIso, uuid } from "../util";
 import { assertAi } from "./ai";
+import { askTeammate, peerAvailable } from "./assistantPeer";
 import { connected, linkTicket } from "./integrations";
 
 type Pending = {
@@ -104,6 +105,9 @@ async function agent(ctx: Ctx, s: Sess, text: string, ticketId: string | undefin
   const id = () => `call_${uuid().slice(0, 8)}`;
   const current = (ticketId && findTicket(ws, ticketId)) || open(ws).find((t) => !t.assignee) || open(ws)[0];
 
+  const teammate = askedTeammate(ws, lower);
+  if (teammate) return askTeammateScenario(ctx, text, teammate, emit, item, id);
+
   const tools = await connectedTools(ctx, s, lower, current, emit, item, id);
   if (tools) return tools;
 
@@ -129,8 +133,7 @@ async function agent(ctx: Ctx, s: Sess, text: string, ticketId: string | undefin
       targets: [ref(current)],
     };
     s.pending = { id: pid, callId: st.id, ticketIds: [current.id], patch: { assignee_id: pick.user.id, priority: current.priority === "urgent" ? "urgent" : "high" }, summary: `#${current.number} is now with **${pick.user.name}** at high priority.`, token: uuid(), step: st };
-    await emit("approval", approvalOf(s.pending, preview));
-    return "awaiting_approval";
+    return proposeOrRun(ws, s, preview, emit, item, false);
   }
 
   if (/\blabel|tag\b/.test(lower)) {
@@ -147,8 +150,7 @@ async function agent(ctx: Ctx, s: Sess, text: string, ticketId: string | undefin
     item.steps.push(st);
     const preview: Preview = { title: `Label ${hits.length} tickets`, summary: "Billing questions from this week", changes: [{ field: "Labels", from: "", to: "+ Billing" }], targets: hits.map(ref), total: hits.length };
     s.pending = { id: pid, callId: st.id, ticketIds: hits.map((t) => t.id), patch: { add_tags: ["Billing"] }, summary: `Labeled ${hits.length} tickets **Billing**.`, token: uuid(), step: st };
-    await emit("approval", approvalOf(s.pending, preview));
-    return "awaiting_approval";
+    return proposeOrRun(ws, s, preview, emit, item, false);
   }
 
   if (/\bsummar/.test(lower) && current) {
@@ -178,6 +180,52 @@ async function agent(ctx: Ctx, s: Sess, text: string, ticketId: string | undefin
   return "complete";
 }
 
+/** "Ask Priya …": a teammate named after "ask", while the workspace allows agent-to-agent. */
+function askedTeammate(ws: WsData, lower: string): UserRef | null {
+  if (!/\bask\b/.test(lower) || !peerAvailable(ws)) return null;
+  for (const m of ws.members) {
+    if (m.user_id === db.meId) continue;
+    const u = userRef(m.user_id);
+    const first = u?.name.split(" ")[0]?.toLowerCase();
+    if (u && first && new RegExp(`\\bask\\b.*\\b${first.replace(/[^a-z0-9]/g, "")}\\b`).test(lower)) return u;
+  }
+  return null;
+}
+
+/** ask_teammate (contracts/ai.md "Asking a teammate"): the teammate's Ollie answers from their own mail, or it is not shared with you. */
+async function askTeammateScenario(ctx: Ctx, text: string, who: UserRef, emit: Emit, item: TranscriptItem, id: () => string) {
+  const ws = ctx.ws;
+  const first = who.name.split(" ")[0];
+  const lower = text.toLowerCase();
+  const user = { id: who.id, name: who.name, avatar_url: who.avatar_url };
+  const st: AssistantStep = { id: id(), tool: "ask_teammate", label: `Asking ${who.name}'s Ollie`, status: "running", peer: { user, result: "answered", sources: 0 } };
+  await emit("tool", st);
+  await sleep(1100);
+  const acme = /\b(acme|renewal)\b/.test(lower);
+  const res = askTeammate(ws, db.meId, who.id, text, () =>
+    acme
+      ? { text: "The Acme renewal is on March 14. Their team asked for the new pricing a week before, and the renewal call is booked for March 7.", sources: 3 }
+      : { text: "Nothing in the mail it may use covers that yet.", sources: 0 },
+  );
+  if (res.result === "answered") spend(ws, "assistant_peer");
+  const summary = res.result === "answered" ? (res.sources === 1 ? "answered from 1 conversation" : `answered from ${res.sources} conversations`) : "not shared with you";
+  const done: AssistantStep = { ...st, status: "done", label: `Asked ${who.name}'s Ollie`, summary, peer: { user, result: res.result, sources: res.sources } };
+  await emit("tool", done);
+  item.steps.push(done);
+  if (res.result !== "answered") {
+    await say(emit, item, `${first} hasn't shared their mail with you through Ollie, so I couldn't ask. You could message ${first} directly.`);
+    return "complete";
+  }
+  await say(
+    emit,
+    item,
+    acme
+      ? `${first}'s Ollie says the Acme renewal is on **March 14**, and their team asked for the new pricing a week before. It answered from ${res.sources} of ${first}'s conversations.`
+      : `${first}'s Ollie found nothing about that in the mail ${first} shares. ${first} may know more.`,
+  );
+  return "complete";
+}
+
 /** "Set this as our signature": found through the API, proposed on the addresses, applied on approval. */
 async function signature(ctx: Ctx, s: Sess, text: string, emit: Emit, item: TranscriptItem, id: () => string) {
   const ws = ctx.ws;
@@ -201,7 +249,12 @@ async function signature(ctx: Ctx, s: Sess, text: string, emit: Emit, item: Tran
   const st: AssistantStep = { id: id(), tool: "api_change", label: "Update a mailbox", status: "awaiting_approval", action_id: pid };
   await emit("tool", st);
   item.steps.push(st);
-  const preview: Preview = { title: "Update a mailbox", summary: box.name || box.email, changes: [{ field: "signature_html", from: box.signature_html || "", to: value }] };
+  const preview: Preview = {
+    title: "Update a mailbox",
+    summary: box.name || box.email,
+    changes: [{ field: "signature_html", from: box.signature_html || "", to: value }],
+    arguments: JSON.stringify({ method: "PATCH", path: `/v1/mailboxes/${box.id}`, body: { signature_html: value } }, null, 2),
+  };
   s.pending = {
     id: pid,
     callId: st.id,
@@ -273,11 +326,14 @@ async function connectedTools(ctx: Ctx, s: Sess, lower: string, current: Ticket 
   const st: AssistantStep = { id: id(), tool: `${slug}__${create.name}`, label: `Preparing ${create.title.toLowerCase()} in ${x.name}`, status: "awaiting_approval", action_id: pid };
   await emit("tool", st);
   item.steps.push(st);
+  const priority = current.priority === "urgent" ? "Urgent" : current.priority === "high" ? "High" : "Medium";
+  const args: Record<string, string> = x.provider === "linear" ? { title, team: "Support", priority, description: body } : { title, description: body };
   const preview: Preview = {
     title: `${x.name}: ${create.title}`,
     system: x.name,
-    changes: [{ field: "Title", from: "", to: title }, ...(x.provider === "linear" ? [{ field: "Team", from: "", to: "Support" }, { field: "Priority", from: "", to: current.priority === "urgent" ? "Urgent" : current.priority === "high" ? "High" : "Medium" }] : [])],
+    changes: [{ field: "Title", from: "", to: title }, ...(x.provider === "linear" ? [{ field: "Team", from: "", to: "Support" }, { field: "Priority", from: "", to: priority }] : [])],
     body,
+    arguments: JSON.stringify(args, null, 2),
   };
   const n = 180 + current.number;
   const url = x.provider === "github" ? `https://github.com/margin/app/issues/${n}` : x.provider === "atlassian" ? `https://margin.atlassian.net/browse/SUP-${n}` : `https://${host}/margin/issue/FN-${n}`;
@@ -299,8 +355,7 @@ async function connectedTools(ctx: Ctx, s: Sess, lower: string, current: Ticket 
       };
     },
   };
-  await emit("approval", approvalOf(s.pending, preview));
-  return "awaiting_approval";
+  return proposeOrRun(ws, s, preview, emit, item, !!create.auto_run);
 }
 
 function stream(run: (emit: Emit) => Promise<void>): Response {
@@ -419,31 +474,54 @@ export function registerAssistant() {
       p.step.status = "approved";
       await emit("tool", p.step);
       await sleep(450);
-      if (p.external) {
-        const { text, ...done } = p.external();
-        Object.assign(p.step, done, { status: "done" });
-        await emit("tool", p.step);
-        await say(emit, item, text);
-        spend(ctx.ws, "assistant");
-        await emit("done", { status: "complete" });
-        return;
-      }
-      const me = userRef(db.meId);
-      for (const tid of p.ticketIds) {
-        const t = findTicket(ctx.ws, tid);
-        if (!t) continue;
-        const before = ctx.ws.activities.length;
-        applyPatch(ctx.ws, t, p.patch, me, true, { createLabels: true, lenient: true });
-        // Ollie made the change on the user's behalf.
-        for (const a of ctx.ws.activities.slice(before)) a.actor = { type: "ai", user: me };
-      }
-      p.step.status = "done";
-      p.step.label = p.step.tool === "bulk_update_tickets" ? "Updated the tickets" : "Updated the ticket";
-      p.step.summary = p.ticketIds.length === 1 ? "Done" : `${p.ticketIds.length} tickets`;
+      const text = applyPending(ctx.ws, p);
       await emit("tool", p.step);
-      await say(emit, item, `Done. ${p.summary}`);
+      await say(emit, item, text);
       spend(ctx.ws, "assistant");
       await emit("done", { status: "complete" });
     });
   });
+}
+
+/** Runs a change, approved or allowed to run without asking, and says what happened. */
+function applyPending(ws: WsData, p: Pending): string {
+  if (p.external) {
+    const { text, ...done } = p.external();
+    Object.assign(p.step, done, { status: "done" });
+    return text;
+  }
+  const me = userRef(db.meId);
+  for (const tid of p.ticketIds) {
+    const t = findTicket(ws, tid);
+    if (!t) continue;
+    const before = ws.activities.length;
+    applyPatch(ws, t, p.patch, me, true, { createLabels: true, lenient: true });
+    // Ollie made the change on the user's behalf.
+    for (const a of ws.activities.slice(before)) a.actor = { type: "ai", user: me };
+  }
+  p.step.status = "done";
+  p.step.label = p.step.tool === "bulk_update_tickets" ? "Updated the tickets" : "Updated the ticket";
+  p.step.summary = p.ticketIds.length === 1 ? "Done" : `${p.ticketIds.length} tickets`;
+  return `Done. ${p.summary}`;
+}
+
+/**
+ * A change the workspace lets run without asking (settings.ai.assistant_auto, or a
+ * connected tool's auto_run) runs now instead of waiting: "awaiting_approval" when it
+ * still asks, "complete" when it ran.
+ */
+async function proposeOrRun(ws: WsData, s: Sess, preview: Preview, emit: Emit, item: TranscriptItem, auto: boolean): Promise<"awaiting_approval" | "complete"> {
+  const p = s.pending!;
+  const builtIn = (ws.ai.assistant_auto ?? []).includes(p.step.tool as AssistantAutoTool);
+  if (preview.external || p.step.tool === "api_change" || !(auto || builtIn)) {
+    await emit("approval", approvalOf(p, preview));
+    return "awaiting_approval";
+  }
+  s.pending = null;
+  p.step.action_id = p.id;
+  const text = applyPending(ws, p);
+  Object.assign(p.step, { auto: true, preview });
+  await emit("tool", p.step);
+  await say(emit, item, text);
+  return "complete";
 }

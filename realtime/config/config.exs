@@ -11,6 +11,9 @@ config :realtime,
   # Concurrent sockets per token subject and per client IP (cluster-wide).
   max_sockets_per_sub: 20,
   max_sockets_per_ip: 200,
+  # Seconds an agents' socket lives before it reconnects with a fresh token (0 = no limit);
+  # each socket takes a random 80 to 100 % of it.
+  max_socket_age: 3600,
   # Token buckets: {per_second, burst}.
   connect_rate_per_ip: {2, 30},
   join_rate_per_socket: {10, 50},

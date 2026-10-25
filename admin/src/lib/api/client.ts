@@ -1,8 +1,8 @@
 // The one HTTP client for the admin API (contracts/admin.md).
 //
 // - The access token lives in this module's memory only: never in storage.
-// - The refresh token is the HttpOnly `od_admin` cookie, scoped to
-//   /v1/admin/auth, so only the auth calls send credentials.
+// - The refresh token is the HttpOnly admin refresh cookie; only the auth calls
+//   send credentials.
 // - Data calls carry `Authorization: Bearer`. A 401 from one triggers a single
 //   shared refresh (the server rotates the cookie on use, so two parallel
 //   refreshes would present an already-rotated token), then one retry.
@@ -114,6 +114,12 @@ const state = {
 /** Refresh this long before the access token expires. */
 export const REFRESH_AHEAD_MS = 60_000;
 
+/**
+ * Waits before trying a refresh again that another tab answered first (409
+ * refresh_in_progress): by then its new cookie is in the browser's jar.
+ */
+export const REFRESH_RETRY_MS = [1_000, 2_000];
+
 type SessionListener = (r: AdminAuthResult | null, reason?: ApiError) => void;
 const listeners = new Set<SessionListener>();
 /** Called with every new session (sign-in, refresh) and with null when it ends. */
@@ -176,25 +182,36 @@ export function setSession(r: AdminAuthResult | null, reason?: ApiError) {
 
 let refreshing: Promise<AdminAuthResult | null> | null = null;
 
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+async function postRefresh(): Promise<Response> {
+  try {
+    return await transport(apiUrl("/v1/admin/auth/refresh"), {
+      method: "POST",
+      credentials: "include",
+      headers: { Accept: "application/json" },
+    });
+  } catch {
+    throw new ApiError({ status: 0, title: "Network error" });
+  }
+}
+
 /**
  * Exchanges the refresh cookie for a new access token. Concurrent callers share
- * one request. Resolves null when there is no live session (401, or 403 for a
- * suspended account or a revoked admin); throws ApiError when the API could not
- * answer (network, 5xx), keeping the current token.
+ * one request; when another tab rotated the cookie a moment earlier (409), it
+ * tries again with the cookie that tab received. Resolves null when there is no
+ * live session (401, or 403 for a suspended account or a revoked admin); throws
+ * ApiError when the API could not answer (network, 5xx), keeping the current token.
  */
 export function refreshSession(): Promise<AdminAuthResult | null> {
   if (refreshing) return refreshing;
   refreshing = (async () => {
     try {
-      let res: Response;
-      try {
-        res = await transport(apiUrl("/v1/admin/auth/refresh"), {
-          method: "POST",
-          credentials: "include",
-          headers: { Accept: "application/json" },
-        });
-      } catch {
-        throw new ApiError({ status: 0, title: "Network error" });
+      let res = await postRefresh();
+      for (const wait of REFRESH_RETRY_MS) {
+        if (res.status !== 409) break;
+        await sleep(wait);
+        res = await postRefresh();
       }
       if (res.status === 401 || res.status === 403) {
         const err = await parseError(res);

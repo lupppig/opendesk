@@ -20,7 +20,7 @@ func (s *service) registerStatusRoutes(api huma.API) {
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			if p.Kind != auth.KindUser || p.Assistant || p.GrantID != uuid.Nil {
+			if p.Kind != auth.KindUser || p.Assistant || p.ViaAssistant || p.GrantID != uuid.Nil {
 				return nil, httpx.Wrap(auth.ErrForbidden)
 			}
 			ent, err := s.d.Plan.Entitlements(ctx, s.d.DB.Pool, p.WorkspaceID)

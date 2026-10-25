@@ -80,6 +80,18 @@ A reply from a mailbox with no way to send (`sending: "system_off"`, see [Mailbo
 { "status": 422, "code": "mailbox_cannot_send", "detail": "This mailbox has no way to send email yet. Connect Google or Microsoft, or add SMTP, in its settings." }
 ```
 
+## Reply from your own address
+
+With Collab, a signed-in member can send an email reply from one of their own mail accounts instead of the ticket's address. Pass `from_account` with the account's id; `email` picks one of its addresses (left out: the one you last answered this ticket from, else the account's default), and `reply_to` is `address`, `mailbox` (the ticket's address) or any email address (left out: the ticket's address's `personal_replies.reply_to`, else the workspace's `settings.collab_ticket_reply_to`). Each mailbox can override the workspace's rules and limit which addresses work on its tickets (`personal_replies` on [Mailboxes](/api/resources/mailboxes/)). The ticket's reply address stays as it is, and the message carries `from_account`. API keys and AI clients cannot send this way (`403`). The workspace can turn it off (`409 collab_ticket_replies_off`), and it needs Collab (`402 collab_required`). See [Reply from your own address](/guides/inbox-and-tickets/#reply-from-your-own-address).
+
+```json
+{
+  "kind": "reply",
+  "body_html": "<p>I'll check with the warehouse today.</p>",
+  "from_account": { "account_id": "0192f0d1-...", "reply_to": "mailbox" }
+}
+```
+
 ## Add a note
 
 ```sh

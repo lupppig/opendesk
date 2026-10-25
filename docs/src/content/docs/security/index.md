@@ -27,7 +27,7 @@ See [Email security and data controls](/security/email-data-controls/) for attac
 - Access tokens live 15 minutes, and every request checks that the session behind its token is still live and its account not suspended. Refresh tokens rotate on every use and are stored hashed.
 - A session lasts at most 30 days, used or idle; then the person signs in again. Instance admin sessions end after an hour without use and 12 hours after sign-in.
 - Logout, password change, member removal and session revocation revoke the sessions **and** close their live connections.
-- Session cookies are HttpOnly, Secure and SameSite (Lax for the app, Strict for the admin panel), and carry the `__Host-` prefix, so only the server's own host can set them. Refresh cookies are honoured only on requests from the app's own origin.
+- Session cookies are HttpOnly, Secure and SameSite=Lax, and carry the `__Host-` prefix, so only the server's own host can set them. Refresh cookies are honoured only on requests from the app's own origin, and the admin panel's only on its own.
 - API keys, visitor tokens and one-time email links are random, at least 32 bytes, and stored only as hashes.
 
 ## Access control

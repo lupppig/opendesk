@@ -780,10 +780,15 @@ func (s *service) recordDelivery(ctx context.Context, wid, mid, ticketID uuid.UU
 			return nil
 		}
 		if sent != nil {
-			// The message records the address and name it actually went out as.
-			if _, err := tx.Exec(ctx, `UPDATE messages SET mailbox_id = $3, from_email = $4, from_name = $5,
+			// The message records the address and name it actually went out as (a reply from a
+			// member's own address has no mailbox).
+			var mailbox *uuid.UUID
+			if sent.mailboxID != uuid.Nil {
+				mailbox = &sent.mailboxID
+			}
+			if _, err := tx.Exec(ctx, `UPDATE messages SET mailbox_id = COALESCE($3, mailbox_id), from_email = $4, from_name = $5,
 				to_emails = CASE WHEN cardinality($6::text[]) > 0 THEN $6 ELSE to_emails END WHERE workspace_id = $1 AND id = $2`,
-				wid, mid, sent.mailboxID, sent.fromEmail, truncate(sent.fromName, 200), sent.to); err != nil {
+				wid, mid, mailbox, sent.fromEmail, truncate(sent.fromName, 200), sent.to); err != nil {
 				return err
 			}
 			if sent.provider != nil {

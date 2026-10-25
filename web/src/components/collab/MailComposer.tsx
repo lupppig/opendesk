@@ -402,7 +402,7 @@ export function MailComposer({ variant, threadId, accounts, accountId, onAccount
         }, true);
       const id = draftIdRef.current;
       if (id) {
-        qc.setQueriesData<MailThreadDetail>({ queryKey: ["collab", "thread"] }, (old) => (old ? { ...old, messages: old.messages.filter((x) => x.id !== id) } : old));
+        qc.setQueriesData<MailThreadDetail>({ queryKey: qk.of("collab", "thread") }, (old) => (old ? { ...old, messages: old.messages.filter((x) => x.id !== id) } : old));
         api.collab.drafts.remove(id).then(
           () => void qc.invalidateQueries({ queryKey: qk.mailThreadLists }),
           (e) => toast.error(e, t("composer.discardFailed")),

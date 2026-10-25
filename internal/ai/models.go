@@ -26,7 +26,7 @@ const (
 // featureTier maps an AI feature to its model tier.
 func featureTier(feature string) string {
 	switch feature {
-	case "rewrite", "translate", "triage", "decide":
+	case "rewrite", "translate", "triage", "decide", "assistant_peer":
 		return tierFast
 	case "answer", "answer_email", "playground":
 		return tierWidget
@@ -282,6 +282,8 @@ var typicalTokens = map[string]tokenCount{
 	"playground":   {5000, 400},
 	"kb_draft":     {8000, 1500},
 	"assistant":    {6000, 400},
+	// One answer of a teammate's Ollie: mail excerpts in, a short answer out.
+	"assistant_peer": {4000, 400},
 }
 
 // estimateMaxOutput caps the output tokens an estimate counts: features allow long

@@ -139,6 +139,28 @@ func TestAutomations(t *testing.T) {
 	}
 }
 
+func TestAutomationAssignsFirstReplyWhenUnassigned(t *testing.T) {
+	e, ws := newEnv(t)
+	mailbox := addMailbox(t, e, ws)
+	addAutomation(t, e, ws, jobs.TriggerAgentReplied, 0,
+		[]map[string]string{{"field": "assignee_id", "op": "equals", "value": "none"}},
+		[]map[string]string{{"type": "assign_user", "value": ws.Agent.ID.String()}})
+
+	unassigned := createTicket(t, e, ws, map[string]any{"channel": "email", "mailbox_id": mailbox.String(), "contact": map[string]string{"email": "customer@example.com"}})
+	e.Do("POST", "/v1/tickets/"+unassigned.ID.String()+"/messages", ws.Admin.As(ws), map[string]any{"kind": "reply", "body_html": "<p>First reply</p>"}).Want(t, 201)
+	runTriggers(t, e, ws.ID)
+	if assignee := getTicket(t, e, ws, unassigned.ID).Assignee; assignee == nil || assignee.ID != ws.Agent.ID {
+		t.Fatalf("unassigned ticket assignee %+v", assignee)
+	}
+
+	assigned := createTicket(t, e, ws, map[string]any{"channel": "email", "mailbox_id": mailbox.String(), "contact": map[string]string{"email": "customer@example.com"}, "assignee_id": ws.Admin.ID.String()})
+	e.Do("POST", "/v1/tickets/"+assigned.ID.String()+"/messages", ws.Agent.As(ws), map[string]any{"kind": "reply", "body_html": "<p>Another reply</p>"}).Want(t, 201)
+	runTriggers(t, e, ws.ID)
+	if assignee := getTicket(t, e, ws, assigned.ID).Assignee; assignee == nil || assignee.ID != ws.Admin.ID {
+		t.Fatalf("assigned ticket assignee %+v", assignee)
+	}
+}
+
 func TestAutomationLoopGuard(t *testing.T) {
 	e, ws := newEnv(t)
 	// Two ticket_updated automations that flip each other forever without a guard.

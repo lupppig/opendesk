@@ -33,8 +33,10 @@ import (
 	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/deps"
 	"github.com/useopendesk/opendesk/internal/domain"
+	"github.com/useopendesk/opendesk/internal/events"
 	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/ids"
+	"github.com/useopendesk/opendesk/internal/natsx"
 	"github.com/useopendesk/opendesk/internal/storage"
 )
 
@@ -47,7 +49,18 @@ var (
 	once    sync.Once
 	shared  *deps.Deps
 	initErr error
+	filesAt string
 )
+
+// Main runs a package's tests, then removes the files they stored, and exits.
+// Every package that uses Deps or New calls it from TestMain.
+func Main(m *testing.M) {
+	code := m.Run()
+	if filesAt != "" {
+		_ = os.RemoveAll(filesAt)
+	}
+	os.Exit(code)
+}
 
 // Deps returns process-wide dependencies against the test database (migrated once).
 func Deps(t testing.TB) *deps.Deps {
@@ -70,6 +83,7 @@ func Deps(t testing.TB) *deps.Deps {
 			initErr = err
 			return
 		}
+		filesAt = dir
 		st, err := storage.New(ctx, storage.Options{Driver: "local", Dir: dir})
 		if err != nil {
 			initErr = err
@@ -403,3 +417,35 @@ func (e *Env) Events(wid uuid.UUID, since int64) ([]string, int64) {
 
 // Fmt is fmt.Sprintf, for building paths.
 func Fmt(format string, args ...any) string { return fmt.Sprintf(format, args...) }
+
+// Live connects the test dependencies to an in-process NATS for the rest of the test and
+// returns a function giving the next live event published for the workspace
+// (od.live.<wid>), or nil when none arrives within half a second.
+func (e *Env) Live(wid uuid.UUID) func() *events.LiveEvent {
+	e.T.Helper()
+	nc, err := natsx.Connect(natsx.Options{Name: "hdtest"}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		e.T.Fatal(err)
+	}
+	sub, err := nc.SubscribeSync(events.LiveSubjectPrefix + wid.String())
+	if err != nil {
+		e.T.Fatal(err)
+	}
+	prev := e.D.NATS
+	e.D.NATS = nc
+	e.T.Cleanup(func() {
+		e.D.NATS = prev
+		nc.Close()
+	})
+	return func() *events.LiveEvent {
+		msg, err := sub.NextMsg(500 * time.Millisecond)
+		if err != nil {
+			return nil
+		}
+		var ev events.LiveEvent
+		if err := json.Unmarshal(msg.Data, &ev); err != nil {
+			e.T.Fatal(err)
+		}
+		return &ev
+	}
+}

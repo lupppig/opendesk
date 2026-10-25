@@ -14,6 +14,7 @@ import { isApiError } from "@/lib/api/client";
 import { api } from "@/lib/api/endpoints";
 import type { AutoRechargePatch, Billing } from "@/lib/api/types";
 import { cn } from "@/lib/cn";
+import { clock } from "@/lib/format";
 import { qk } from "@/lib/queries";
 import { tone, type Tone } from "@/lib/tones";
 import { RESUME_AUTO_RECHARGE_KEY, useAddPaymentMethod, useAutoRecharge, useCanManageBilling, useFmt } from "./hooks";
@@ -100,7 +101,7 @@ export function AutoRechargeSection({ b }: { b: Billing }) {
   const retry = v.enabled ? ar.retry : null;
   const retryText = (iso: string) => {
     const d = new Date(iso);
-    const time = new Intl.DateTimeFormat(fmt.locale, { hour: "numeric", minute: "2-digit" }).format(d);
+    const time = clock(iso);
     return d.toDateString() === new Date().toDateString()
       ? t("autoRecharge.retryToday", { time })
       : t("autoRecharge.retryLater", { date: fmt.date(iso), time });

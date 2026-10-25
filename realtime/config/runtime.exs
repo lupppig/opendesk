@@ -88,6 +88,7 @@ config :realtime,
   cluster_dns: env.("CLUSTER_DNS"),
   max_sockets_per_sub: int.("MAX_SOCKETS_PER_SUB", 20),
   max_sockets_per_ip: int.("MAX_SOCKETS_PER_IP", 200),
+  max_socket_age: int.("MAX_SOCKET_AGE", 3600),
   trusted_proxy_hops: int.("TRUSTED_PROXY_HOPS", 0)
 
 # Clustering: ECS service discovery publishes one A record per task under

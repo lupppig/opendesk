@@ -206,6 +206,8 @@ func (w *cleanupWorker) Work(ctx context.Context, _ *river.Job[cleanupArgs]) err
 		`DELETE FROM invitations WHERE expires_at < now() - interval '30 days'`,
 		`DELETE FROM webhook_deliveries WHERE created_at < now() - interval '30 days'`,
 		`DELETE FROM idempotency_keys WHERE created_at < now() - interval '24 hours'`,
+		// Asks made to a member's Ollie by teammates' (contracts/ai.md "Asking a teammate").
+		`DELETE FROM assistant_peer_asks WHERE created_at < now() - interval '90 days'`,
 		`DELETE FROM passkey_challenges WHERE expires_at < now()`,
 		// Visitor sessions past auth.VisitorSessionLive.
 		`DELETE FROM widget_sessions WHERE last_seen_at < now() - interval '90 days' OR (verified AND created_at < now() - interval '30 days')`,

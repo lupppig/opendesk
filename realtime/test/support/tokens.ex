@@ -20,8 +20,10 @@ defmodule Realtime.Test.Tokens do
         "role" => "agent",
         "name" => "Anna",
         "avatar" => "https://example.test/a.png",
+        "sid" => uuid(),
         "jti" => uuid(),
         "iat" => now(),
+        "iat_ms" => now_ms(),
         "exp" => now() + 300
       },
       overrides
@@ -59,4 +61,6 @@ defmodule Realtime.Test.Tokens do
   def random_ip, do: {10, :rand.uniform(254), :rand.uniform(254), :rand.uniform(254)}
 
   def now, do: System.system_time(:second)
+
+  def now_ms, do: System.system_time(:millisecond)
 end

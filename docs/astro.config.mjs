@@ -104,6 +104,7 @@ export default defineConfig({
           items: [
             { label: 'Inbox and tickets', slug: 'guides/inbox-and-tickets' },
             { label: 'Import your history', slug: 'guides/importing' },
+            { label: 'Several workspaces', slug: 'guides/workspaces' },
             {
               label: 'Mailboxes',
               items: [
