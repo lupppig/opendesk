@@ -267,6 +267,9 @@ func TestAPIThreadShareAndAssign(t *testing.T) {
 	if st := doJSON(t, "GET", bea.URL+"/v1/collab/threads?box=assigned", nil, &page); st != 200 || len(page.Data) != 1 {
 		t.Fatalf("assigned box: %d %+v", st, page)
 	}
+	if st := doJSON(t, "GET", bea.URL+"/v1/collab/counts", nil, &counts); st != 200 || counts.Boxes.Assigned != 1 || len(counts.Assigned) != 1 || counts.Assigned[a.ID] != 1 {
+		t.Fatalf("assigned counts by account: %d %+v", st, counts)
+	}
 	if n := w.count(`SELECT count(*) FROM notifications WHERE workspace_id = $1 AND user_id = $2 AND type = 'collab_assigned'
 		AND data->>'thread_id' = $3 AND data->>'subject' = 'Help me with this one'`, w.wid, w.agent2.UserID, tid.String()); n != 1 {
 		t.Fatalf("assigned notifications = %d", n)

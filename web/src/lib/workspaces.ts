@@ -1,8 +1,9 @@
-// Workspaces together (contracts/api.md "Workspaces together"): a person in several
-// workspaces sees them side by side in one sidebar, one bell and the Everywhere lists,
-// or one at a time (Separate, the switcher alone). Pages still work in one workspace,
-// the focus; opening anything of another moves the focus there, without a reload and
-// without clearing the cache (its keys carry their workspace, lib/queries.ts).
+// Several workspaces (contracts/api.md "Several workspaces"): a person in several
+// workspaces works one at a time, the focus, and reaches the others through Spaces, the
+// one bell and the Everywhere lists. Opening anything of another workspace moves the
+// focus there, without a reload and without clearing the cache (its keys carry their
+// workspace, lib/queries.ts). The switcher lists workspaces in the person's order, with
+// the ones they hid folded away.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, type NavigateOptions } from "@tanstack/react-router";
@@ -12,25 +13,9 @@ import type { Membership, WorkspacePrefs, WorkspacePrefsInput } from "./api/type
 import { q, qk } from "./queries";
 import { selectWorkspace, useSession } from "./session";
 
-export const EVERYWHERE = "everywhere";
-
-export const DEFAULT_PREFS: WorkspacePrefs = {
-  mode: "together",
-  mode_set: false,
-  layout: "grouped",
-  order: [],
-  hidden: [],
-  collapsed: [],
-  items: { hidden: [], order: [] },
-  everywhere: true,
-};
+export const DEFAULT_PREFS: WorkspacePrefs = { order: [], hidden: [] };
 
 // ─── Pure helpers ──────────────────────────────────────────────────────────
-
-/** Together shows only for a person in two or more workspaces who did not choose Separate. */
-export function isTogether(prefs: Pick<WorkspacePrefs, "mode">, workspaces: number): boolean {
-  return workspaces >= 2 && prefs.mode === "together";
-}
 
 /** Workspaces in the person's order: the ones they placed first, the rest in joining order. */
 export function orderWorkspaces<M extends { workspace: { id: string } }>(list: M[], order: string[]): M[] {
@@ -41,7 +26,7 @@ export function orderWorkspaces<M extends { workspace: { id: string } }>(list: M
     .map((x) => x.m);
 }
 
-/** The workspaces the sidebar shows: ordered, without the hidden ones, the focus always kept. */
+/** The workspaces shown in the switcher, the bell and the Everywhere lists: ordered, without the hidden ones, the focus always kept. */
 export function shownWorkspaces<M extends { workspace: { id: string } }>(list: M[], prefs: Pick<WorkspacePrefs, "order" | "hidden">, focus: string | null): M[] {
   const hidden = new Set(prefs.hidden);
   return orderWorkspaces(list, prefs.order).filter((m) => !hidden.has(m.workspace.id) || m.workspace.id === focus);
@@ -58,9 +43,6 @@ export function moveWorkspace(ids: string[], id: string, delta: number): string[
   next.splice(j, 0, id);
   return next;
 }
-
-/** A sidebar item's id, qualified by its workspace (contracts/api.md): `<wid>/view:<id>`. */
-export const itemId = (wid: string, kind: string, id?: string) => `${wid}/${kind}${id ? `:${id}` : ""}`;
 
 export function toggleIn(list: string[], x: string, on?: boolean): string[] {
   const has = list.includes(x);
@@ -99,13 +81,15 @@ export function workspaceInitials(name: string): string {
 
 // ─── Prefs: cached per person so the first paint already has them ─────────
 
-const prefsKey = (uid: string) => `od-together:${uid}`;
+const prefsKey = (uid: string) => `od-workspaces:${uid}`;
 
 function storedPrefs(uid: string | undefined): WorkspacePrefs | undefined {
   if (!uid) return undefined;
   try {
     const raw = localStorage.getItem(prefsKey(uid));
-    return raw ? { ...DEFAULT_PREFS, ...(JSON.parse(raw) as Partial<WorkspacePrefs>) } : undefined;
+    if (!raw) return undefined;
+    const p = JSON.parse(raw) as Partial<WorkspacePrefs>;
+    return { order: Array.isArray(p.order) ? p.order : [], hidden: Array.isArray(p.hidden) ? p.hidden : [] };
   } catch {
     return undefined;
   }
@@ -114,7 +98,7 @@ function storedPrefs(uid: string | undefined): WorkspacePrefs | undefined {
 function storePrefs(uid: string | undefined, p: WorkspacePrefs) {
   if (!uid) return;
   try {
-    localStorage.setItem(prefsKey(uid), JSON.stringify(p));
+    localStorage.setItem(prefsKey(uid), JSON.stringify({ order: p.order, hidden: p.hidden }));
   } catch {
     /* storage unavailable */
   }
@@ -122,24 +106,29 @@ function storePrefs(uid: string | undefined, p: WorkspacePrefs) {
 
 export function useWorkspacePrefs(): WorkspacePrefs {
   const uid = useSession((s) => s.user?.id);
-  const { data } = useQuery({ ...q.workspacePrefs(), initialData: () => storedPrefs(uid), initialDataUpdatedAt: 0 });
+  const several = useSession((s) => s.memberships.length > 1);
+  const { data } = useQuery({ ...q.workspacePrefs(), enabled: several, initialData: () => storedPrefs(uid), initialDataUpdatedAt: 0 });
   return data ?? DEFAULT_PREFS;
 }
 
-/** Whether Together is on for this person, and the workspaces it shows. */
-export function useTogether() {
+/**
+ * The person's workspaces as they arranged them: all of them in order, the shown ones
+ * (the hidden ones left out, the focus kept), and whether they are in several (the one
+ * bell, the Everywhere lists and the socket that follows every workspace).
+ */
+export function useWorkspaces() {
   const prefs = useWorkspacePrefs();
   const memberships = useSession((s) => s.memberships);
   const focus = useSession((s) => s.workspaceId);
   return useMemo(() => {
-    const active = isTogether(prefs, memberships.length);
+    const several = memberships.length > 1;
     const ordered = orderWorkspaces(memberships, prefs.order);
-    const shown = active ? shownWorkspaces(memberships, prefs, focus) : memberships.filter((m) => m.workspace.id === focus);
-    return { active, prefs, ordered, shown, focus };
+    const shown = several ? shownWorkspaces(memberships, prefs, focus) : memberships.filter((m) => m.workspace.id === focus);
+    return { several, prefs, ordered, shown, focus };
   }, [prefs, memberships, focus]);
 }
 
-/** Change the settings: applied at once, put back when the server refuses. */
+/** Change the arrangement: applied at once, put back when the server refuses. */
 export function useUpdateWorkspacePrefs() {
   const qc = useQueryClient();
   const uid = useSession((s) => s.user?.id);
@@ -148,8 +137,7 @@ export function useUpdateWorkspacePrefs() {
     onMutate: async (b) => {
       await qc.cancelQueries({ queryKey: qk.workspacePrefs });
       const before = qc.getQueryData<WorkspacePrefs>(qk.workspacePrefs) ?? DEFAULT_PREFS;
-      const { mode, ...rest } = b;
-      const next: WorkspacePrefs = { ...before, ...rest, ...(mode === undefined ? {} : mode === "" ? { mode: "together", mode_set: false } : { mode, mode_set: true }) };
+      const next: WorkspacePrefs = { ...before, ...b };
       qc.setQueryData(qk.workspacePrefs, next);
       storePrefs(uid, next);
       return { before };
@@ -173,7 +161,7 @@ export function useMembership(wid: string | null | undefined): Membership | unde
 
 /**
  * Open a page of workspace `wid`: the focus moves there first (no reload; what the cache
- * holds of it shows at once), then the app navigates.
+ * holds of it shows at once), then the app navigates. A picked Space stays picked.
  */
 export function useOpenInWorkspace() {
   const navigate = useNavigate();

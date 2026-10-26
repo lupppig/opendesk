@@ -7,6 +7,7 @@ import { Fragment, useEffect, useId, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Row, Section, SettingsPage } from "@/components/layout";
 import { IconTile } from "@/components/settings2/bits";
+import { TeamDot, useTeamsCtx } from "@/components/tickets/teams";
 import { Badge, Dot } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Menu, MenuContent, MenuItem, MenuTrigger } from "@/components/ui/menu";
@@ -90,6 +91,7 @@ export default function Notifications() {
           <EmailSection prefs={prefs} onChange={change} />
           <PauseSection prefs={prefs} onChange={change} />
           <TypesSection prefs={prefs} onChange={change} />
+          <TeamsSection prefs={prefs} onChange={change} />
         </>
       )}
     </SettingsPage>
@@ -548,6 +550,36 @@ function TypesSection({ prefs, onChange }: { prefs: NotificationPreferences; onC
         <Note icon={<Laptop />}>{t("notifications.types.desktopHint")}</Note>
         <DesktopPermission />
       </ul>
+    </Section>
+  );
+}
+
+// ─── Teams ─────────────────────────────────────────────────────────────────
+
+/** One switch per team: whether its new tickets, and replies nobody has picked up, reach you. */
+function TeamsSection({ prefs, onChange }: { prefs: NotificationPreferences; onChange: (p: NotificationPreferencesPatch) => void }) {
+  const { t } = useTranslation("settings");
+  const { team } = useTeamsCtx();
+  if (!prefs.teams.length) return null;
+  return (
+    <Section title={t("notifications.teams.title")} description={t("notifications.teams.description")}>
+      {prefs.teams.map((row) => (
+        <Row
+          key={row.id}
+          label={
+            <span className="flex min-w-0 items-center gap-2">
+              <TeamDot team={team(row.id)} />
+              <span className="truncate">{row.name}</span>
+            </span>
+          }
+        >
+          <Switch
+            checked={row.notify}
+            onCheckedChange={(v) => onChange({ teams: [{ id: row.id, notify: v }] })}
+            aria-label={t("notifications.teams.switch", { team: row.name })}
+          />
+        </Row>
+      ))}
     </Section>
   );
 }

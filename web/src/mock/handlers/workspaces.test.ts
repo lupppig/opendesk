@@ -10,19 +10,19 @@ async function call(method: string, path: string, body?: unknown, ws: string | u
   return { status: r.status, body: r.status === 204 ? null : await r.json() };
 }
 
-describe("mock Together", () => {
+describe("mock workspaces", () => {
   installMock();
 
-  it("keeps the person's settings and refuses bad shapes", async () => {
+  it("keeps the person's order and hidden workspaces, and nothing else", async () => {
     const start = (await call("GET", "/v1/me/workspace-prefs")).body as WorkspacePrefs;
-    expect(start.mode).toBe("together");
+    expect(start).toEqual({ order: [], hidden: [] });
     const lumen = db.workspaces[1].workspace.id;
-    const put = await call("PUT", "/v1/me/workspace-prefs", { layout: "mixed", order: [lumen], items: { hidden: [`${lumen}/view:x1`] } });
+    const put = await call("PUT", "/v1/me/workspace-prefs", { order: [lumen] });
     expect(put.status).toBe(200);
     expect((put.body as WorkspacePrefs).order).toEqual([lumen]);
-    expect((await call("PUT", "/v1/me/workspace-prefs", { mode: "both" })).status).toBe(422);
-    expect((await call("PUT", "/v1/me/workspace-prefs", { items: { hidden: ["view:x1"] } })).status).toBe(422);
-    expect(((await call("GET", "/v1/me/workspace-prefs")).body as WorkspacePrefs).layout).toBe("mixed");
+    expect((await call("PUT", "/v1/me/workspace-prefs", { hidden: ["not-a-workspace"] })).status).toBe(422);
+    expect((await call("PUT", "/v1/me/workspace-prefs", { mode: "separate" })).status).toBe(422);
+    expect(((await call("PUT", "/v1/me/workspace-prefs", { hidden: [lumen] })).body as WorkspacePrefs).order).toEqual([lumen]);
   });
 
   it("answers every workspace of the person with its own numbers, never another's", async () => {

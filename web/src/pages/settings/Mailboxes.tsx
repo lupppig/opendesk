@@ -226,9 +226,10 @@ function MailboxSkeleton() {
 function LastMail({ mailbox: m }: { mailbox: Mailbox }) {
   const { t } = useTranslation("settingsChannels");
   const quiet = quietFor(m);
+  const label = m.last_received_at ? relLong(m.last_received_at) : t("list.noMail");
   return (
-    <span className={cn(COLS.synced, "mono whitespace-nowrap text-[11px]", quiet ? tone.amber.text : "text-fg-4")} title={quiet && !quiet.never ? t("list.quiet", { count: quiet.days }) : undefined}>
-      {m.last_received_at ? relLong(m.last_received_at) : t("list.noMail")}
+    <span className={cn(COLS.synced, "mono truncate text-[11px]", quiet ? tone.amber.text : "text-fg-4")} title={quiet && !quiet.never ? t("list.quiet", { count: quiet.days }) : label}>
+      {label}
     </span>
   );
 }

@@ -211,6 +211,25 @@ func TestNotificationPreferencesAPI(t *testing.T) {
 		t.Fatalf("resume: %s", r.Raw)
 	}
 
+	// Teams: the ones the caller leads or works in, on until turned off; an observer's or
+	// another's membership is neither listed nor changed.
+	f.c.workspace = f.wid.String()
+	billing, legal, mayas := uuid.New(), uuid.New(), uuid.New()
+	f.exec(`INSERT INTO teams (id, workspace_id, name) VALUES ($1, $4, 'Billing'), ($2, $4, 'Legal'), ($3, $4, 'Maya''s')`, billing, legal, mayas, f.wid)
+	f.exec(`INSERT INTO team_members (team_id, user_id, role) VALUES ($1, $3, 'member'), ($2, $3, 'observer'), ($4, $5, 'member')`, billing, legal, f.uid, mayas, f.maya)
+	r = f.c.do("GET", "/v1/me/notification-preferences", nil)
+	if teams := r.Body["teams"].([]any); len(teams) != 1 || teams[0].(map[string]any)["name"] != "Billing" || teams[0].(map[string]any)["notify"] != true {
+		t.Fatalf("teams: %s", r.Raw)
+	}
+	r = f.c.do("PATCH", "/v1/me/notification-preferences", map[string]any{"teams": []any{
+		map[string]any{"id": billing, "notify": false}, map[string]any{"id": mayas, "notify": false}}})
+	if teams := r.Body["teams"].([]any); r.Status != 200 || teams[0].(map[string]any)["notify"] != false {
+		t.Fatalf("turn a team off: %d %s", r.Status, r.Raw)
+	}
+	if n := f.count(`SELECT count(*) FROM team_members WHERE NOT notify AND user_id = $1`, f.maya); n != 0 {
+		t.Fatal("changed another member's team")
+	}
+
 	// The test email goes out whatever the preferences, to a confirmed address only.
 	if r := f.c.do("POST", "/v1/me/notification-preferences/test", nil); r.Status != 204 {
 		t.Fatalf("test email: %d %s", r.Status, r.Raw)

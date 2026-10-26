@@ -37,7 +37,7 @@ func parseMail(raw []byte) (*parsedMail, error) {
 	if err != nil {
 		return nil, err
 	}
-	pm := &parsedMail{env: env, HTML: env.HTML, Text: env.Text}
+	pm := &parsedMail{env: env, HTML: dropNUL(env.HTML), Text: dropNUL(env.Text)}
 	pm.MessageID = normalizeMsgID(env.GetHeader("Message-Id"))
 	if pm.MessageID == "" {
 		pm.MessageID = headerMessageID(raw)
@@ -52,10 +52,10 @@ func parseMail(raw []byte) (*parsedMail, error) {
 	}
 	pm.Subject = strings.TrimSpace(strings.Map(dropControl, env.GetHeader("Subject")))
 	if a := firstAddress(env, "From"); a != nil {
-		pm.FromAddr, pm.FromName = strings.ToLower(a.Address), a.Name
+		pm.FromAddr, pm.FromName = strings.ToLower(a.Address), dropNUL(a.Name)
 	}
 	if a := firstAddress(env, "Reply-To"); a != nil {
-		pm.ReplyTo, pm.ReplyName = strings.ToLower(a.Address), a.Name
+		pm.ReplyTo, pm.ReplyName = strings.ToLower(a.Address), dropNUL(a.Name)
 	}
 	pm.To = addresses(env, "To")
 	pm.Cc = addresses(env, "Cc")
@@ -70,6 +70,16 @@ func parseMail(raw []byte) (*parsedMail, error) {
 		}
 	}
 	return pm, nil
+}
+
+// dropNUL removes NUL bytes, which Postgres text cannot hold and mail can carry (a stray
+// byte in a text part, an encoded name): nothing an inbound email saves keeps one, so such
+// an email becomes a ticket like any other.
+func dropNUL(s string) string {
+	if strings.IndexByte(s, 0) < 0 {
+		return s
+	}
+	return strings.ReplaceAll(s, "\x00", "")
 }
 
 func firstAddress(env *enmime.Envelope, key string) *mail.Address {

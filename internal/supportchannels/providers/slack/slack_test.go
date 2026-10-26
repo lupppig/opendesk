@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -235,6 +236,20 @@ func TestRespondOnlyToSlackHooks(t *testing.T) {
 	}
 	if err := (Adapter{}).Respond(context.Background(), server.Client(), nil, server.URL+"/actions/1", "x"); err == nil {
 		t.Fatal("answered through a URL that isn't Slack's")
+	}
+}
+
+func TestPostReturnsRateLimitDelay(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "17")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer server.Close()
+
+	err := (Adapter{BaseURL: server.URL}).Post(context.Background(), server.Client(), map[string]string{"bot_token": "token", "channel_id": "C1"}, "T1", "hello")
+	var limited *channel.RateLimited
+	if !errors.As(err, &limited) || limited.RetryAfter != 17*time.Second {
+		t.Fatalf("post error = %v, want rate limit of 17s", err)
 	}
 }
 

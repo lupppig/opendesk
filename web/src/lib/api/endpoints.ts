@@ -202,11 +202,23 @@ export const api = {
     sessions: () => http.get<T.Session[] | T.Page<T.Session>>("/v1/me/sessions", { workspace: false }),
     revokeSession: (id: string) => http.del(`/v1/me/sessions/${id}`, undefined, { workspace: false }),
     delete: (b: { password?: string; code?: string }) => http.del("/v1/me", b, { workspace: false }),
-    /** How this person's workspaces show together (contracts/api.md "Workspaces together"). */
+    /** How this person arranges their workspaces (contracts/api.md "Several workspaces"). */
     workspacePrefs: () => http.get<T.WorkspacePrefs>("/v1/me/workspace-prefs", { workspace: false }),
     putWorkspacePrefs: (b: T.WorkspacePrefsInput) => http.put<T.WorkspacePrefs>("/v1/me/workspace-prefs", b, { workspace: false }),
     /** Every workspace's sidebar numbers, each as that workspace answers this person. */
     overview: () => http.get<{ workspaces: T.WorkspaceOverview[] }>("/v1/me/overview", { workspace: false }),
+    /** The caller's Spaces (contracts/spaces.md): one list for every workspace and device. */
+    spaces: {
+      get: () => http.get<T.SpacesResponse>("/v1/me/spaces", { workspace: false }),
+      /** Replaces the whole list. */
+      put: (spaces: T.Space[]) => http.put<T.SpacesResponse>("/v1/me/spaces", { spaces }, { workspace: false }),
+    },
+  },
+  /** The workspace's starter Space: members read it, admins publish and remove it. */
+  starterSpace: {
+    get: () => http.get<{ space: T.Space | null }>("/v1/sidebar/starter"),
+    put: (space: T.Space) => http.put<{ space: T.Space }>("/v1/sidebar/starter", space),
+    remove: () => http.del("/v1/sidebar/starter"),
   },
   workspaces: {
     create: (name: string) => http.create<T.Workspace>("/v1/workspaces", { name }, { workspace: false }),

@@ -1,4 +1,4 @@
-// The cache holds several workspaces at once (Together): a key of one workspace is
+// The cache holds several workspaces at once (Spaces, the bell): a key of one workspace is
 // never read for another, a query fetches from the workspace its key names, and a
 // realtime event lands in its own workspace's keys whichever one has the focus.
 

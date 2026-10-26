@@ -15,6 +15,7 @@ import {
   Clock,
   Inbox,
   Keyboard,
+  EyeOff,
   Layers,
   Lock,
   LogOut,
@@ -33,7 +34,7 @@ import {
   Users,
 } from "lucide-react";
 import { DropdownMenu as M } from "radix-ui";
-import { Fragment, lazy, Suspense, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ChecklistMini } from "@/components/onboarding/Checklist";
 import { useUrgentChats, useWaitingFor } from "@/components/tickets/useUrgentChats";
@@ -43,14 +44,13 @@ import { AvailabilityMenuItems } from "@/components/presence/availability";
 import { Avatar } from "@/components/ui/avatar";
 import { toast } from "@/components/ui/toast";
 import { Kbd } from "@/components/ui/kbd";
-import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
+import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuSub, MenuTrigger } from "@/components/ui/menu";
 import { Picker } from "@/components/ui/picker";
 import { sortTeams, TeamDot, useTeamsCtx } from "@/components/tickets/teams";
 import { useHotkeys } from "@/lib/hotkeys";
 import type { Team, TicketCounts } from "@/lib/api/types";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
-import { tone, toneFor } from "@/lib/tones";
 import { folders, type FolderId } from "@/lib/folders";
 import { useAI } from "@/lib/ai";
 import { useDismissOnboarding, useSetAvailability } from "@/lib/pictures";
@@ -59,20 +59,28 @@ import { atLeast, loadAccounts, useRole, useSession, useWorkspace } from "@/lib/
 import { useTheme, type ThemePref } from "@/lib/theme";
 import { desktop } from "@/lib/desktop";
 import { shell, toggleNav, useNav } from "./shellStore";
-import { quickSwitchKeys, useAccountActions, useQuickSwitch, useSwitcherEntries } from "./useAccounts";
+import { quickEntries, quickSwitchKeys, useAccountActions, useQuickSwitch, useSwitcherEntries } from "./useAccounts";
 import { Count, Label, NavTip, PillCtx, rowActive, rowBase, rowIdle, rowShape, Section, WaitDot, WaitingBadge, withPill } from "./sidebarParts";
+import { useSpaceKeys } from "@/components/spaces/actions";
+import { SpaceGlyph } from "@/components/spaces/icons";
+import { SwitcherSpaces, useSwitcherStarters } from "@/components/spaces/SwitcherSpaces";
+import { SectionList, SpaceView } from "@/components/spaces/SpaceView";
+import { useSpaces } from "@/lib/spaces/hooks";
+import { pickedSpace } from "@/lib/spaces/model";
+import { spaceUi, usePickedSpaceId } from "@/lib/spaces/store";
+
+export { WorkspaceGlyph } from "./sidebarParts";
 import type { SidebarPrefs, SidebarSectionId } from "@/lib/api/types";
 import { RowMenu } from "@/components/collab/RowMenu";
 import { useCollab, useSidebarPrefs } from "@/lib/collab/hooks";
 import { ticketRowNumbers } from "@/lib/collab/badges";
 import { badgeFor, hid, pickCount, visibleSections, type BadgeNumbers } from "@/lib/collab/sidebarPrefs";
 import { collabUi } from "@/lib/collab/ui";
-import { useTogether } from "@/lib/together";
-import { TogetherNav } from "./TogetherNav";
 import { WorkspaceBadge } from "@/components/workspaces/WorkspaceBadge";
 
 // Collab's sections load with Collab: a workspace without it never downloads them.
-const MailSections = lazy(() => import("@/components/collab/MailNav"));
+const LazyMail = lazy(() => import("@/components/collab/MailNav").then((m) => ({ default: m.MailSection })));
+const LazyFavorites = lazy(() => import("@/components/collab/MailNav").then((m) => ({ default: m.FavoritesSection })));
 
 const folderIcons: Record<FolderId, ReactNode> = {
   unassigned: <CircleDashed />,
@@ -200,7 +208,7 @@ function TeamRow({
  * The caller's teams (once the workspace has one), "My teams" across them, and the
  * other public teams under a fold. g then t opens a team switcher.
  */
-function TeamsSection({ rail, drawer, counts, hidden = NONE, rp }: { rail: boolean; drawer?: boolean; counts: TicketCounts | undefined; hidden?: ReadonlySet<string>; rp: RowPrefs }) {
+function TeamsSection({ rail, drawer, first, counts, hidden = NONE, rp }: { rail: boolean; drawer?: boolean; first?: boolean; counts: TicketCounts | undefined; hidden?: ReadonlySet<string>; rp: RowPrefs }) {
   const { t } = useTranslation("shell");
   const ctx = useTeamsCtx();
   const role = useRole();
@@ -254,6 +262,7 @@ function TeamsSection({ rail, drawer, counts, hidden = NONE, rp }: { rail: boole
       id="teams"
       label={t("nav.teams")}
       rail={rail}
+      first={first}
       action={
         atLeast(role, "admin") ? (
           <Tooltip content={t("nav.manageTeams")}>
@@ -317,191 +326,204 @@ const NONE: ReadonlySet<string> = new Set();
 /** The ticket sections, top to bottom, as they read without Collab. */
 const CLASSIC: SidebarSectionId[] = ["inbox", "teams", "views", "workspace"];
 
-export function Sidebar({ drawer }: { drawer?: boolean }) {
+/** One built-in section of the open workspace: the sidebar's own rows, live counts and menus. */
+function BuiltinSection({ id, first, rail, drawer }: { id: SidebarSectionId; first: boolean; rail: boolean; drawer?: boolean }) {
   const { t: tNav } = useTranslation("navigation");
   const { data: counts } = useQuery(q.counts());
   const { data: views } = useQuery(q.views());
   const role = useRole();
-  const collapsed = useNav((s) => s.collapsed);
-  const rail = collapsed && !drawer;
   const { t } = useTranslation("shell");
-  // With Collab the member's own order, hidden items and favorites apply; without it the
-  // sidebar is exactly the classic one.
+  // With Collab the member's hidden rows, numbers and menus apply; without it the rows are the classic ones.
   const collab = useCollab();
   const prefs = useSidebarPrefs(collab.enabled);
-  const together = useTogether();
-  // Rows the person hid for this workspace in the Together settings hide here too.
-  const focusPrefix = `${together.focus}/`;
-  const togetherHidden = together.active ? together.prefs.items.hidden.filter((x) => x.startsWith(focusPrefix)).map((x) => x.slice(focusPrefix.length)) : [];
-  const hidden: ReadonlySet<string> =
-    collab.enabled || togetherHidden.length ? new Set([...(collab.enabled ? prefs.hidden : []), ...togetherHidden]) : NONE;
-  const order = collab.enabled ? visibleSections(prefs) : CLASSIC;
-  const firstId = order[0];
+  const hidden: ReadonlySet<string> = collab.enabled ? new Set(prefs.hidden) : NONE;
   const rp: RowPrefs = { collab: collab.enabled, prefs };
   // Without Collab the prefs are the defaults, so every row shows its usual number.
   const shown = (key: string, section: SidebarSectionId, nums: BadgeNumbers) => pickCount(badgeFor(prefs, key, section, "ticket"), nums);
   const waitingFor = useWaitingFor();
-
-  const section = (id: SidebarSectionId) => {
-    const first = id === firstId;
-    switch (id) {
-      case "inbox":
-        return (
-          <Section id="inbox" label={t("nav.inbox")} rail={rail} first={first}>
-            <WaitingChats rail={rail} />
-            {folders.filter((f) => !hidden.has(hid.ticketFolder(f.id))).map((f) => {
-              const key = hid.ticketFolder(f.id);
-              const counted = f.id !== "solved" && f.id !== "spam";
-              const nums = ticketRowNumbers(counts, key);
-              const n = counted ? shown(key, "inbox", nums) : undefined;
-              return (
-              <NavTip key={f.id} rail={rail} label={tNav(f.labelKey)}>
-                <RowMenu
-                  enabled={collab.enabled}
-                  prefs={prefs}
-                  badge={counted ? { key, kind: "ticket", sections: ["inbox"], numbers: nums } : undefined}
-                  pin={{ kind: "ticket_folder", id: f.id }}
-                  hideId={key}
-                  rail={rail}
-                  label={tNav(f.labelKey)}
-                >
-                <Link
-                  to="/inbox/$folder/{-$ticketId}"
-                  params={{ folder: f.id, ticketId: undefined }}
-                  className={cn(rowBase, rowShape(rail), rowIdle)}
-                  activeProps={{ className: rowActive, "data-status": "active" } as Record<string, string>}
-                  aria-label={rail ? tNav(f.labelKey) : undefined}
-                >{withPill(<>
-                  {folderIcons[f.id]}
-                  <Label rail={rail}>{tNav(f.labelKey)}</Label>
-                  <WaitingBadge n={waitingFor({ kind: "ticket_folder", id: f.id })} rail={rail} />
-                  <Count n={n} rail={rail} />
-                  {rail && f.id === "unassigned" && (n ?? 0) > 0 && (
-                    <span className="absolute right-1 top-1 size-1.5 rounded-full bg-fg ring-2 ring-chrome" />
-                  )}
-                </>)}</Link>
-                </RowMenu>
-              </NavTip>
-              );
-            })}
-          </Section>
-        );
-      case "teams":
-        return <TeamsSection key="teams" rail={rail} drawer={drawer} counts={counts} hidden={hidden} rp={rp} />;
-      case "views":
-        return (
-          <Section
-            id="views"
-            label={t("nav.views")}
-            rail={rail}
-            first={first}
-            action={
-              atLeast(role, "agent") ? (
-                <Tooltip content={t("nav.manageViews")}>
-                  <Link
-                    to="/settings/views"
-                    aria-label={t("nav.manageViews")}
-                    className="flex size-5 items-center justify-center rounded text-fg-4 opacity-0 transition-opacity hover:bg-chrome-hover hover:text-fg group-hover/section:opacity-100 focus-visible:opacity-100"
-                  >
-                    <Plus className="size-3.5" />
-                  </Link>
-                </Tooltip>
-              ) : undefined
-            }
-          >
-            {views?.length ? (
-              views
-                .filter((v) => !hidden.has(hid.view(v.id)))
-                .sort((a, b) => a.position - b.position)
-                .map((v) => {
-                  const nums = ticketRowNumbers(counts, hid.view(v.id));
-                  return (
-                  <NavTip key={v.id} rail={rail} label={v.name}>
-                    <RowMenu
-                      enabled={collab.enabled}
-                      prefs={prefs}
-                      badge={{ key: hid.view(v.id), kind: "ticket", sections: ["views"], numbers: nums }}
-                      pin={{ kind: "view", id: v.id }}
-                      hideId={hid.view(v.id)}
-                      rail={rail}
-                      label={v.name}
-                    >
-                    <Link
-                      to="/views/$viewId/{-$ticketId}"
-                      params={{ viewId: v.id, ticketId: undefined }}
-                      className={cn(rowBase, rowShape(rail), rowIdle)}
-                      activeProps={{ className: rowActive, "data-status": "active" } as Record<string, string>}
-                      aria-label={rail ? v.name : undefined}
-                    >{withPill(<>
-                      <Layers />
-                      <Label rail={rail}>{v.name}</Label>
-                      <WaitingBadge n={waitingFor({ kind: "view", id: v.id })} rail={rail} />
-                      <Count n={shown(hid.view(v.id), "views", nums)} rail={rail} />
-                    </>)}</Link>
-                    </RowMenu>
-                  </NavTip>
-                  );
-                })
-            ) : (
-              <NavTip rail={rail} label={t("nav.createView")}>
-                <Link to="/settings/views" className={cn(rowBase, rowShape(rail), rowIdle, "text-fg-3")}>
-                  <Plus />
-                  <Label rail={rail}>{t("nav.createView")}</Label>
-                </Link>
-              </NavTip>
-            )}
-          </Section>
-        );
-      case "workspace":
-        return (
-          <Section id="workspace" label={t("nav.workspace")} rail={rail} first={first}>
-            <NavTip rail={rail} label={t("nav.contacts")}>
+  switch (id) {
+    case "inbox":
+      return (
+        <Section id="inbox" label={t("nav.inbox")} rail={rail} first={first}>
+          <WaitingChats rail={rail} />
+          {folders.filter((f) => !hidden.has(hid.ticketFolder(f.id))).map((f) => {
+            const key = hid.ticketFolder(f.id);
+            const counted = f.id !== "solved" && f.id !== "spam";
+            const nums = ticketRowNumbers(counts, key);
+            const n = counted ? shown(key, "inbox", nums) : undefined;
+            return (
+            <NavTip key={f.id} rail={rail} label={tNav(f.labelKey)}>
+              <RowMenu
+                enabled={collab.enabled}
+                prefs={prefs}
+                badge={counted ? { key, kind: "ticket", sections: ["inbox"], numbers: nums } : undefined}
+                pin={{ kind: "ticket_folder", id: f.id }}
+                hideId={key}
+                rail={rail}
+                label={tNav(f.labelKey)}
+              >
               <Link
-                to="/contacts/{-$contactId}"
-                params={{ contactId: undefined }}
+                to="/inbox/$folder/{-$ticketId}"
+                params={{ folder: f.id, ticketId: undefined }}
                 className={cn(rowBase, rowShape(rail), rowIdle)}
-                activeProps={{ className: rowActive }}
-                aria-label={rail ? t("nav.contacts") : undefined}
+                activeProps={{ className: rowActive, "data-status": "active" } as Record<string, string>}
+                aria-label={rail ? tNav(f.labelKey) : undefined}
               >{withPill(<>
-                <Users />
-                <Label rail={rail}>{t("nav.contacts")}</Label>
+                {folderIcons[f.id]}
+                <Label rail={rail}>{tNav(f.labelKey)}</Label>
+                <WaitingBadge n={waitingFor({ kind: "ticket_folder", id: f.id })} rail={rail} />
+                <Count n={n} rail={rail} />
+                {rail && f.id === "unassigned" && (n ?? 0) > 0 && (
+                  <span className="absolute right-1 top-1 size-1.5 rounded-full bg-fg ring-2 ring-chrome" />
+                )}
               </>)}</Link>
+              </RowMenu>
             </NavTip>
-            <NavTip rail={rail} label={t("nav.kb")}>
-              <Link to="/kb" className={cn(rowBase, rowShape(rail), rowIdle)} activeProps={{ className: rowActive }} aria-label={rail ? t("nav.kb") : undefined}>{withPill(<>
-                <BookOpen />
-                <Label rail={rail}>{t("nav.kb")}</Label>
-              </>)}</Link>
+            );
+          })}
+        </Section>
+      );
+    case "teams":
+      return <TeamsSection rail={rail} drawer={drawer} first={first} counts={counts} hidden={hidden} rp={rp} />;
+    case "views":
+      return (
+        <Section
+          id="views"
+          label={t("nav.views")}
+          rail={rail}
+          first={first}
+          action={
+            atLeast(role, "agent") ? (
+              <Tooltip content={t("nav.manageViews")}>
+                <Link
+                  to="/settings/views"
+                  aria-label={t("nav.manageViews")}
+                  className="flex size-5 items-center justify-center rounded text-fg-4 opacity-0 transition-opacity hover:bg-chrome-hover hover:text-fg group-hover/section:opacity-100 focus-visible:opacity-100"
+                >
+                  <Plus className="size-3.5" />
+                </Link>
+              </Tooltip>
+            ) : undefined
+          }
+        >
+          {views?.length ? (
+            views
+              .filter((v) => !hidden.has(hid.view(v.id)))
+              .sort((a, b) => a.position - b.position)
+              .map((v) => {
+                const nums = ticketRowNumbers(counts, hid.view(v.id));
+                return (
+                <NavTip key={v.id} rail={rail} label={v.name}>
+                  <RowMenu
+                    enabled={collab.enabled}
+                    prefs={prefs}
+                    badge={{ key: hid.view(v.id), kind: "ticket", sections: ["views"], numbers: nums }}
+                    pin={{ kind: "view", id: v.id }}
+                    hideId={hid.view(v.id)}
+                    rail={rail}
+                    label={v.name}
+                  >
+                  <Link
+                    to="/views/$viewId/{-$ticketId}"
+                    params={{ viewId: v.id, ticketId: undefined }}
+                    className={cn(rowBase, rowShape(rail), rowIdle)}
+                    activeProps={{ className: rowActive, "data-status": "active" } as Record<string, string>}
+                    aria-label={rail ? v.name : undefined}
+                  >{withPill(<>
+                    <Layers />
+                    <Label rail={rail}>{v.name}</Label>
+                    <WaitingBadge n={waitingFor({ kind: "view", id: v.id })} rail={rail} />
+                    <Count n={shown(hid.view(v.id), "views", nums)} rail={rail} />
+                  </>)}</Link>
+                  </RowMenu>
+                </NavTip>
+                );
+              })
+          ) : (
+            <NavTip rail={rail} label={t("nav.createView")}>
+              <Link to="/settings/views" className={cn(rowBase, rowShape(rail), rowIdle, "text-fg-3")}>
+                <Plus />
+                <Label rail={rail}>{t("nav.createView")}</Label>
+              </Link>
             </NavTip>
-            <NavTip rail={rail} label={t("nav.reports")}>
-              <Link to="/reports" className={cn(rowBase, rowShape(rail), rowIdle)} activeProps={{ className: rowActive }} aria-label={rail ? t("nav.reports") : undefined}>{withPill(<>
-                <BarChart3 />
-                <Label rail={rail}>{t("nav.reports")}</Label>
-              </>)}</Link>
-            </NavTip>
-          </Section>
-        );
-      case "favorites":
-      case "mail":
-        return null;
-    }
-  };
-  const classic = order.map((id) => <Fragment key={id}>{section(id)}</Fragment>);
-  const focusContent = collab.enabled ? (
-    <Suspense fallback={classic}>
-      <MailSections order={order} prefs={prefs} rail={rail} drawer={drawer} renderSection={section} />
-    </Suspense>
-  ) : (
-    classic
-  );
+          )}
+        </Section>
+      );
+    case "workspace":
+      return (
+        <Section id="workspace" label={t("nav.workspace")} rail={rail} first={first}>
+          <NavTip rail={rail} label={t("nav.contacts")}>
+            <Link
+              to="/contacts/{-$contactId}"
+              params={{ contactId: undefined }}
+              className={cn(rowBase, rowShape(rail), rowIdle)}
+              activeProps={{ className: rowActive }}
+              aria-label={rail ? t("nav.contacts") : undefined}
+            >{withPill(<>
+              <Users />
+              <Label rail={rail}>{t("nav.contacts")}</Label>
+            </>)}</Link>
+          </NavTip>
+          <NavTip rail={rail} label={t("nav.kb")}>
+            <Link to="/kb" className={cn(rowBase, rowShape(rail), rowIdle)} activeProps={{ className: rowActive }} aria-label={rail ? t("nav.kb") : undefined}>{withPill(<>
+              <BookOpen />
+              <Label rail={rail}>{t("nav.kb")}</Label>
+            </>)}</Link>
+          </NavTip>
+          <NavTip rail={rail} label={t("nav.reports")}>
+            <Link to="/reports" className={cn(rowBase, rowShape(rail), rowIdle)} activeProps={{ className: rowActive }} aria-label={rail ? t("nav.reports") : undefined}>{withPill(<>
+              <BarChart3 />
+              <Label rail={rail}>{t("nav.reports")}</Label>
+            </>)}</Link>
+          </NavTip>
+        </Section>
+      );
+    case "favorites":
+      return collab.enabled ? (
+        <Suspense fallback={null}>
+          <LazyFavorites prefs={prefs} rail={rail} first={first} />
+        </Suspense>
+      ) : null;
+    case "mail":
+      return collab.enabled ? (
+        <Suspense fallback={null}>
+          <LazyMail prefs={prefs} rail={rail} first={first} />
+        </Suspense>
+      ) : null;
+  }
+}
+
+export function Sidebar({ drawer }: { drawer?: boolean }) {
+  const collapsed = useNav((s) => s.collapsed);
+  const rail = collapsed && !drawer;
+  const { t } = useTranslation("shell");
+  // With Collab the member's own order and hidden sections apply; without it the classic order.
+  const collab = useCollab();
+  const prefs = useSidebarPrefs(collab.enabled);
+  const order = collab.enabled ? visibleSections(prefs) : CLASSIC;
+  // Spaces (contracts/spaces.md): a picked Space is the sidebar; otherwise the workspace's own.
+  const uid = useSession((s) => s.user?.id ?? "");
+  const { spaces, fresh, isError } = useSpaces();
+  const pickedId = usePickedSpaceId();
+  const space = pickedSpace(spaces, pickedId);
+  // A remembered Space that is gone (deleted elsewhere) quietly gives way to the workspace.
+  useEffect(() => {
+    if (fresh && pickedId && !space && uid) spaceUi.pick(uid, null);
+  }, [fresh, pickedId, space, uid]);
+  // Until the Spaces load, a remembered Space shows nothing rather than the workspace for a moment.
+  const waiting = !!pickedId && !spaces && !isError;
+  const render = (id: SidebarSectionId, first: boolean) => <BuiltinSection id={id} first={first} rail={rail} drawer={drawer} />;
 
   return (
     <PillCtx.Provider value={drawer ? "nav-pill-drawer" : "nav-pill"}>
     <nav aria-label={t("nav.main")} className="flex h-full w-full flex-col">
-      <div className={cn("flex-1 overflow-y-auto overflow-x-hidden pb-3 pt-1", collab.enabled && "[&>*:first-child]:!mt-0")}>
-        {together.active ? <TogetherNav rail={rail} focusContent={focusContent} /> : focusContent}
+      <div className="flex-1 overflow-y-auto overflow-x-hidden pb-3 pt-1">
+        {waiting ? null : space && spaces ? (
+          <SpaceView key={space.id} spaces={spaces} space={space} rail={rail} renderSection={render} />
+        ) : (
+          <SectionList ids={order} render={render} />
+        )}
       </div>
-
       <div className="flex shrink-0 flex-col gap-px py-1.5">
         <SetupChecklist rail={rail} />
         <NavTip rail={rail} label={t("nav.settings")}>
@@ -546,29 +568,56 @@ export function WorkspaceSwitcher() {
   const navigate = useNavigate();
   const { switchTo, addAccount } = useAccountActions();
   const { t } = useTranslation("shell");
-  const together = useTogether().active;
+  const { t: tw } = useTranslation("workspaces");
+  const { spaces } = useSpaces();
+  const pickedId = usePickedSpaceId();
+  const space = pickedSpace(spaces, pickedId);
+  const starters = useSwitcherStarters();
   useQuickSwitch();
+  useSpaceKeys(spaces);
   if (!ws || !user) return null;
+  // A remembered Space waits for the list before the trigger names anything.
+  const waiting = !!pickedId && !spaces;
   const grouped = accounts.length > 1;
   // Accounts in switcher order, each with its workspaces and their quick switch numbers.
+  // Quick switch numbers skip the workspaces the person hid; those fold away under their account.
+  const numbered = new Map(quickEntries(entries).map((e, i) => [`${e.account.user.id}:${e.membership.workspace.id}`, i + 1]));
+  const withN = entries.map((e) => ({ ...e, n: numbered.get(`${e.account.user.id}:${e.membership.workspace.id}`) ?? Infinity }));
   const groups = (grouped ? accounts : accounts.filter((a) => a.user.id === user.id)).map((a) => ({
     account: a,
-    items: entries.map((e, i) => ({ ...e, n: i + 1 })).filter((e) => e.account.user.id === a.user.id),
+    items: withN.filter((e) => e.account.user.id === a.user.id),
   }));
-  if (!groups.length) groups.push({ account: { user, memberships: [] }, items: entries.map((e, i) => ({ ...e, n: i + 1 })) });
+  if (!groups.length) groups.push({ account: { user, memberships: [] }, items: withN });
   return (
-    <Menu onOpenChange={(open) => open && void loadAccounts()}>
+    <Menu
+      onOpenChange={(open) => {
+        starters.onOpen(open);
+        if (open) void loadAccounts();
+      }}
+    >
       <MenuTrigger asChild>
         <button
           type="button"
           className="group flex h-8 min-w-0 max-w-[220px] items-center gap-2 rounded-md pl-1 pr-1.5 text-left outline-none transition-colors hover:bg-chrome-hover focus-visible:shadow-[0_0_0_2px_var(--focus)] data-[state=open]:bg-chrome-hover"
         >
-          {together ? <WorkspaceBadge name={ws.name} logo={ws.avatar_url} size="lg" decorative /> : <WorkspaceGlyph name={ws.name} />}
-          <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-fg">{ws.name}</span>
+          {waiting ? (
+            <span aria-hidden className="skeleton size-6 shrink-0 rounded-md" />
+          ) : space ? (
+            <SpaceGlyph icon={space.icon} name={space.name} color={space.color} size="lg" className="size-6" />
+          ) : (
+            <WorkspaceBadge name={ws.name} logo={ws.avatar_url} size="lg" decorative />
+          )}
+          <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-fg">{waiting ? <span className="skeleton block h-2.5 w-20" /> : space ? space.name : ws.name}</span>
           <ChevronsUpDown className="size-3.5 shrink-0 text-fg-4 transition-colors group-hover:text-fg-2" />
         </button>
       </MenuTrigger>
       <MenuContent align="start" className="max-h-[min(560px,var(--radix-dropdown-menu-content-available-height))] w-[264px] overflow-y-auto">
+        {spaces && (
+          <>
+            <SwitcherSpaces spaces={spaces} picked={space?.id ?? null} starters={starters.list} />
+            <MenuSeparator />
+          </>
+        )}
         {!grouped && <MenuLabel>{t("workspaces.title")}</MenuLabel>}
         {groups.map(({ account, items }, gi) => (
           <M.Group key={account.user.id}>
@@ -578,26 +627,39 @@ export function WorkspaceSwitcher() {
                 <span className="truncate">{account.user.email}</span>
               </M.Label>
             )}
-            {items.map(({ membership: m, n }) => {
-              const current = account.user.id === user.id && m.workspace.id === ws.id;
+            {(() => {
+              const entry = ({ membership: m, n }: (typeof items)[number]) => {
+                const current = !space && account.user.id === user.id && m.workspace.id === ws.id;
+                return (
+                  <MenuItem
+                    key={`${account.user.id}:${m.workspace.id}`}
+                    icon={<WorkspaceBadge name={m.workspace.name} logo={m.workspace.avatar_url} size="sm" decorative />}
+                    onSelect={() => void switchTo(account.user.id, m.workspace.id)}
+                  >
+                    <span className="flex items-center gap-2">
+                      <span className={cn("min-w-0 flex-1 truncate", current && "font-medium")}>{m.workspace.name}</span>
+                      {current && <Check aria-label={t("workspaces.current")} className="!size-3 !text-fg" />}
+                      {n <= 9 && (
+                        <Kbd className="opacity-0 transition-opacity duration-100 group-data-[highlighted]/item:opacity-100 motion-reduce:transition-none">
+                          {quickSwitchKeys(n)}
+                        </Kbd>
+                      )}
+                    </span>
+                  </MenuItem>
+                );
+              };
+              const hidden = items.filter((e) => e.hidden);
               return (
-                <MenuItem
-                  key={`${account.user.id}:${m.workspace.id}`}
-                  icon={together && account.user.id === user.id ? <WorkspaceBadge name={m.workspace.name} logo={m.workspace.avatar_url} size="sm" decorative /> : <WorkspaceGlyph name={m.workspace.name} small />}
-                  onSelect={() => void switchTo(account.user.id, m.workspace.id)}
-                >
-                  <span className="flex items-center gap-2">
-                    <span className={cn("min-w-0 flex-1 truncate", current && "font-medium")}>{m.workspace.name}</span>
-                    {current && <Check aria-label={t("workspaces.current")} className="!size-3 !text-fg" />}
-                    {n <= 9 && (
-                      <Kbd className="opacity-0 transition-opacity duration-100 group-data-[highlighted]/item:opacity-100 motion-reduce:transition-none">
-                        {quickSwitchKeys(n)}
-                      </Kbd>
-                    )}
-                  </span>
-                </MenuItem>
+                <>
+                  {items.filter((e) => !e.hidden).map(entry)}
+                  {hidden.length > 0 && (
+                    <MenuSub label={<span className="text-fg-3">{tw("switcher.hidden", { count: hidden.length })}</span>} icon={<EyeOff />}>
+                      {hidden.map(entry)}
+                    </MenuSub>
+                  )}
+                </>
               );
-            })}
+            })()}
             {!items.length && (
               <MenuItem icon={<Plus />} onSelect={() => void switchTo(account.user.id, null)}>
                 <span className="text-fg-3">{t("workspaces.noneYet")}</span>
@@ -618,21 +680,6 @@ export function WorkspaceSwitcher() {
         </MenuItem>
       </MenuContent>
     </Menu>
-  );
-}
-
-export function WorkspaceGlyph({ name, small }: { name: string; small?: boolean }) {
-  return (
-    <span
-      aria-hidden
-      className={cn(
-        "flex shrink-0 items-center justify-center font-semibold tracking-tight text-white",
-        tone[toneFor(name)].solid,
-        small ? "size-4 rounded-sm text-[9px] !text-white" : "size-6 rounded-md text-[10.5px]",
-      )}
-    >
-      {name.trim().charAt(0).toUpperCase() || "?"}
-    </span>
   );
 }
 
@@ -703,8 +750,6 @@ function UserMenu({ rail }: { rail: boolean }) {
   const setAvailability = useSetAvailability();
   const collab = useCollab();
   const { t: tc } = useTranslation("collab");
-  const { t: tw } = useTranslation("together");
-  const workspaces = useSession((s) => s.memberships.length);
   if (!user) return null;
   const name = user.name || user.email;
   const me = members?.find((m) => m.user.id === user.id);
@@ -759,11 +804,6 @@ function UserMenu({ rail }: { rail: boolean }) {
         {collab.enabled && (
           <MenuItem icon={<SlidersHorizontal />} onSelect={() => collabUi.customize(true)}>
             {tc("nav.customize")}
-          </MenuItem>
-        )}
-        {workspaces > 1 && (
-          <MenuItem icon={<Layers />} onSelect={() => void navigate({ to: "/settings/workspaces" })}>
-            {collab.enabled ? tw("customize.arrange") : tw("customize.menu")}
           </MenuItem>
         )}
         <MenuItem icon={<Keyboard />} onSelect={() => shell.shortcuts()}>

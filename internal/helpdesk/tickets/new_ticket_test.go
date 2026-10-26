@@ -204,6 +204,13 @@ func TestNewTicketSettings(t *testing.T) {
 	if got := newTicketRecipients(t, e, ws, tk.ID); !sameUsers(got, ws.Owner.ID, ws.Agent.ID, extra[0], extra[1]) {
 		t.Fatalf("auto, small team (observer left out): %v", got)
 	}
+
+	// Someone who turned the team's notifications off is left out.
+	e.Exec(`UPDATE team_members SET notify = false WHERE team_id = $1 AND user_id = $2`, team, extra[0])
+	tk = apiTicket(t, e, ws, key, map[string]any{"team_id": team.String()})
+	if got := newTicketRecipients(t, e, ws, tk.ID); !sameUsers(got, ws.Owner.ID, ws.Agent.ID, extra[1]) {
+		t.Fatalf("auto, team turned off by one: %v", got)
+	}
 }
 
 func TestNewTicketWaitsForTheBot(t *testing.T) {

@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/useopendesk/opendesk/internal/supportchannels/channel"
 )
@@ -46,6 +47,19 @@ func TestConfigureAndHealth(t *testing.T) {
 	health, err := a.Health(context.Background(), server.Client(), credentials, setup)
 	if err != nil || health.Status != "healthy" {
 		t.Fatalf("health: %+v, %v", health, err)
+	}
+}
+
+func TestPostReturnsProviderRateLimitDelay(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"ok":false,"error_code":429,"description":"Too Many Requests","parameters":{"retry_after":9}}`))
+	}))
+	defer server.Close()
+
+	err := (Adapter{BaseURL: server.URL}).Post(context.Background(), server.Client(), map[string]string{"bot_token": "token", "channel_id": "C1"}, "T1", "hello")
+	var limited *channel.RateLimited
+	if !errors.As(err, &limited) || limited.RetryAfter != 9*time.Second {
+		t.Fatalf("post error = %v, want provider rate limit of 9s", err)
 	}
 }
 

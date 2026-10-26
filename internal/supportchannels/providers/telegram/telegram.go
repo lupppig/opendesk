@@ -53,11 +53,19 @@ func (a Adapter) call(ctx context.Context, c *http.Client, cr map[string]string,
 		return transportError(method, token, err)
 	}
 	var env struct {
-		OK          bool            `json:"ok"`
-		Description string          `json:"description"`
-		Result      json.RawMessage `json:"result"`
+		OK          bool   `json:"ok"`
+		ErrorCode   int    `json:"error_code"`
+		Description string `json:"description"`
+		Parameters  struct {
+			RetryAfter int `json:"retry_after"`
+		} `json:"parameters"`
+		Result json.RawMessage `json:"result"`
 	}
-	if json.Unmarshal(raw, &env) != nil || !env.OK {
+	decodeErr := json.Unmarshal(raw, &env)
+	if resp.StatusCode == http.StatusTooManyRequests || (decodeErr == nil && env.ErrorCode == http.StatusTooManyRequests) {
+		return fmt.Errorf("telegram %s: %w", method, &channel.RateLimited{RetryAfter: channel.RateLimitDelay(resp.Header, float64(env.Parameters.RetryAfter))})
+	}
+	if decodeErr != nil || !env.OK {
 		return fmt.Errorf("telegram %s: %s", method, redact(env.Description, token))
 	}
 	if out != nil {

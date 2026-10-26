@@ -34,6 +34,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - id: v
         env:
           TAG: ${{ github.ref_name }}
@@ -45,6 +46,14 @@ jobs:
           case "$TAG" in *-*) echo "prerelease=true" ;; *) echo "prerelease=false" ;; esac >> "$GITHUB_OUTPUT"
       - name: Installer checksum is current
         run: cd deploy/install && sha256sum -c install.sh.sha256
+      # An upgrade from the previous release applies only versions above its
+      # highest, so every migration it lacks must be numbered above that.
+      - name: Migrations are ordered after the previous release
+        env:
+          SHA: ${{ github.sha }}
+        run: |
+          prev=$(git describe --tags --abbrev=0 --match 'v*' "$SHA^" 2>/dev/null) || { echo "No earlier release"; exit 0; }
+          ./scripts/check-migrations.sh --against "$prev"
 
   # The Go build cross-compiles and the web build is architecture independent,
   # so one runner builds both platforms without QEMU.
@@ -222,6 +231,10 @@ jobs:
       matrix:
         image: [opendesk, realtime]
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/trivy-db
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ env.IMAGE_PREFIX }}/${{ matrix.image }}:${{ needs.validate.outputs.version }}
@@ -229,6 +242,7 @@ jobs:
           format: sarif
           output: trivy.sarif
           exit-code: "0"
+          skip-setup-trivy: true
       - uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           sarif_file: trivy.sarif

@@ -8,7 +8,7 @@ import { inWorkspace } from "@/lib/api/client";
 import { api } from "@/lib/api/endpoints";
 import type { Notification } from "@/lib/api/types";
 import { q, qk } from "@/lib/queries";
-import { mergeByActivity, useTogether } from "@/lib/together";
+import { mergeByActivity, useWorkspaces } from "@/lib/workspaces";
 
 export type ReadBody = { ids?: string[]; all?: boolean };
 
@@ -42,12 +42,12 @@ export function useMarkNotificationsRead() {
 }
 
 /**
- * The bell's notifications: every shown workspace's with Together, newest first, each
+ * The bell's notifications: every shown workspace's for someone in several, newest first, each
  * tagged with its workspace; the focus workspace's alone otherwise. One request per
  * workspace, each with that workspace's own access rules.
  */
 export function useBellNotifications() {
-  const { active, shown, focus } = useTogether();
+  const { several: active, shown, focus } = useWorkspaces();
   const wids = active ? shown.filter((m) => !m.suspended).map((m) => m.workspace.id) : focus ? [focus] : [];
   const results = useQueries({ queries: wids.map((wid) => inWorkspace(wid, () => q.notifications())) });
   const items = mergeByActivity(
@@ -55,7 +55,7 @@ export function useBellNotifications() {
     (n) => n.created_at,
   );
   return {
-    together: active && wids.length > 1,
+    several: active && wids.length > 1,
     items,
     isLoading: results.some((r) => r.isLoading),
     unread: items.filter((x) => !x.row.read_at).length,

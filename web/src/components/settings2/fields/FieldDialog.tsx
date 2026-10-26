@@ -18,6 +18,7 @@ import { ColorSwatchPicker } from "../ColorSwatchPicker";
 import { IconTile } from "../bits";
 import { rowSpring } from "../motion";
 import { FIELD_TYPES, hasOptions, keyRe, slugKey, slugOption, typeIcon, typeTone, type CustomField, type FieldEntity, type FieldInput, type FieldOption, type FieldType } from "./model";
+import { inSentence } from "@/i18n";
 
 type DraftOption = FieldOption & { uid: number };
 
@@ -102,7 +103,7 @@ export function FieldDialog({
       open
       size="lg"
       onOpenChange={(o) => !o && onClose()}
-      title={field ? t("fields.dialog.editTitle") : t("fields.dialog.newTitle", { entity: t(`fields.entity.${entity}`).toLowerCase() })}
+      title={field ? t("fields.dialog.editTitle") : t("fields.dialog.newTitle", { entity: inSentence(t(`fields.entity.${entity}`)) })}
       description={field ? t("fields.dialog.editDescription") : t("fields.dialog.newDescription")}
       footer={
         <>

@@ -9,13 +9,11 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Row, Section } from "@/components/layout";
 import { RichEditor } from "@/components/editor/RichEditor";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DateField, TimeField } from "@/components/ui/date-picker";
 import { TextInput } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/toast";
-import { Tooltip } from "@/components/ui/tooltip";
 import { api } from "@/lib/api/endpoints";
 import { errorMessage } from "@/lib/api/client";
 import type { MailAccount, MailIdentitySync } from "@/lib/api/types";
@@ -99,19 +97,6 @@ export function FromNameHint({ account }: { account: MailAccount }) {
 }
 
 /** The sidebar's pill while an account's automatic reply is on. */
-export function AwayPill() {
-  const { t } = useTranslation("collab");
-  return (
-    <Tooltip content={t("nav.awayTip")}>
-      <span className="ml-auto flex shrink-0">
-        <Badge tone="amber" className="h-4 rounded-[4px] px-1 text-[10px]">
-          {t("nav.away")}
-        </Badge>
-      </span>
-    </Tooltip>
-  );
-}
-
 const sameForm = (a: OutOfOfficeForm, b: OutOfOfficeForm) => JSON.stringify(a) === JSON.stringify(b);
 
 /**

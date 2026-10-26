@@ -1,0 +1,46 @@
+{
+  "everywhere": {
+    "title": "Partout",
+    "mine": "Mes tickets",
+    "mail": "Tous les e-mails",
+    "mineTitle": "Mes tickets partout",
+    "mailTitle": "Tous les e-mails partout",
+    "mineHint": "Les tickets qui vous sont assignés dans chaque espace de travail, activité la plus récente en premier.",
+    "mailHint": "Vos boîtes de réception de chaque espace de travail avec Collab, les plus récentes en premier.",
+    "emptyMine": "Rien ne vous est assigné",
+    "emptyMineHint": "Les tickets qui vous sont assignés dans n’importe quel espace de travail apparaissent ici.",
+    "emptyMail": "Pas encore d’e-mails",
+    "emptyMailHint": "Les conversations de vos comptes de messagerie de chaque espace de travail apparaissent ici.",
+    "noMail": "Aucun de vos espaces de travail n’a Collab",
+    "noMailHint": "Tous les e-mails réunit les comptes de messagerie des espaces de travail qui l’ont.",
+    "failed": "{{name}} n’a pas pu être chargé",
+    "retry": "Réessayer",
+    "openIn": "S’ouvre dans {{name}}",
+    "workspaces": "Espaces de travail de cette liste",
+    "allWorkspaces": "Tous les espaces de travail",
+    "more": "Les plus anciens sont dans la liste de chaque espace de travail."
+  },
+  "customize": {
+    "arrange": "Organiser les espaces de travail",
+    "title": "Espaces de travail",
+    "description": "Comment les espaces de travail dont vous êtes membre sont organisés dans le sélecteur. Vous seul voyez ces réglages.",
+    "order": "Ordre et visibilité",
+    "orderHint": "Faites glisser pour réordonner, ou appuyez sur Alt avec la flèche haut ou bas. Un espace de travail masqué se replie dans le sélecteur et n’apparaît ni dans les notifications, ni dans les listes Partout.",
+    "drag": "Réordonner {{name}}",
+    "show": "Afficher {{name}}",
+    "failed": "Enregistrement impossible. Votre modification a été annulée.",
+    "single": "Vous êtes membre d’un seul espace de travail",
+    "singleHint": "Dès que vous en rejoignez un autre, vous pourrez les organiser ici et les réunir dans un Space.",
+    "moved": "{{name}} est maintenant en position {{n}}",
+    "hiddenNow": "Masqué",
+    "current": "Ouvert"
+  },
+  "badge": {
+    "in": "Dans {{name}}"
+  },
+  "switcher": {
+    "hidden_one": "{{count}} espace de travail masqué",
+    "hidden_many": "{{count}} espaces de travail masqués",
+    "hidden_other": "{{count}} espaces de travail masqués"
+  }
+}

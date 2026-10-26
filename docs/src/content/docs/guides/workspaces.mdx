@@ -1,54 +1,62 @@
 ---
 title: Several workspaces
-description: Work every workspace you belong to side by side in one sidebar, one bell and the Everywhere lists, or keep them apart and switch between them. Grouped or mixed, in your own order.
+description: Build Spaces, sidebars of your own that mix rows from any of your workspaces, pick them in the workspace switcher, and keep one bell and the Everywhere lists across workspaces.
 ---
 
 import Steps from '../../../components/Steps.astro';
 import Step from '../../../components/Step.astro';
 import Callout from '../../../components/Callout.astro';
 
-If you belong to more than one workspace, opendesk shows them **together** by default: every workspace's inbox, teams, views and mail in one sidebar, every notification in one bell, and the **Everywhere** lists on top. Each workspace keeps its own badge (its logo, or its initials on its own colour), so you always know where something belongs. Opening anything of another workspace takes you there at once, without reloading.
+If you belong to more than one workspace, you work in one at a time and switch with the workspace switcher in the top bar. To keep what matters from several workspaces in one place, build a **Space**: a sidebar you name and fill yourself, with sections and rows from any of your workspaces. Keep several ("Morning", "Support", "Mail") and pick one in the same switcher.
 
-If you would rather keep work and other workspaces apart, choose **Separate**: you see one workspace at a time and switch with the workspace menu, as with a single workspace. Nothing changes for someone in one workspace.
+Spaces and the order of your workspaces are yours alone, the same on every device. Billing, members, roles and settings stay per workspace. Nothing changes for someone in one workspace.
 
-These settings are yours alone. Billing, members, roles and settings stay per workspace.
-
-## Choose how workspaces show
+## Build a Space
 
 <Steps>
-<Step title="Open the settings">
+<Step title="Open New Space">
 
-Go to **Settings, Account, Workspaces**, or choose **Customize sidebar** (**Arrange workspaces** when the workspace has Collab) in the account menu at the bottom of the sidebar.
-
-</Step>
-<Step title="Pick Together or Separate">
-
-**Together** shows every workspace at once. **Separate** shows one at a time.
+Open the workspace switcher and choose **New Space**. Start blank, from a copy of a workspace's own sidebar, or from a starter Space its admins published.
 
 </Step>
-<Step title="Pick a layout">
+<Step title="Name it">
 
-With Together, **Grouped** gives each workspace its own foldable section, with what waits there next to its name while it is folded. **Mixed** combines them: one Inbox, one list of teams, views and mail accounts, each row led by its workspace's badge. The pages of the workspace you are in (contacts, knowledge base, reports) follow underneath.
+Give it a name, an icon and a colour. The switcher shows them while the Space is picked.
+
+</Step>
+<Step title="Add sections and rows">
+
+Under **Add from**, each of your workspaces has a tab with what it offers: its whole built-in sections (kept up to date), inbox folders, teams, views, mail accounts, boxes and folders, and pages. **Every workspace** adds the Everywhere lists. Add sections to group rows, and drag rows and sections into order. Give a row a name of its own or choose its number if you like.
 
 </Step>
 </Steps>
 
+## Pick a Space or a workspace
+
+The switcher lists your Spaces above your workspaces. Picking a workspace shows its own sidebar. Picking a Space shows that Space's rows and keeps the workspace you are in. **Alt** with **1** to **9** picks a Space; **Ctrl+Alt** (**⌘⌥** on a Mac) with **1** to **9** picks a workspace.
+
+Rows of the workspace you are in look and work exactly as in its sidebar. A row of another workspace carries that workspace's small badge ("In Acme" when you point at it), shows its live numbers, and opens in that workspace at once, without reloading; the Space stays picked. To hide the badges, turn them off when you edit the Space.
+
+Each Space has a menu in the switcher to **Edit**, **Duplicate**, move it up or down, or **Delete** it. Inside a Space, a row's menu changes its number, renames it in this Space, moves it to another section, adds it to another Space too, or removes it.
+
+## Starter Spaces
+
+A workspace's admins can publish a starter Space in **Settings, General**: a sidebar of that workspace that everyone there finds under **New Space**. A Space started from it is your own copy; later changes to the starter do not change it.
+
 ## The Everywhere lists
 
-**Assigned to me** gathers the open tickets assigned to you in every workspace, newest activity first. **All mail** gathers the inboxes of your mail accounts in every workspace that has Collab. Each row carries its workspace's badge; opening one takes you to it in its workspace. Turn the lists off in **Settings, Account, Workspaces** if you do not use them.
+**My tickets** gathers the open tickets assigned to you in every workspace, newest activity first. **All mail** gathers the inboxes of your mail accounts in every workspace that has Collab. Each row carries its workspace's badge; opening one takes you to it in its workspace. Add them to a Space from the **Every workspace** tab, or open them from the command palette.
 
-## Order, hide and tidy up
+## Order and hide workspaces
 
-- **Order**: drag a workspace by its handle, or focus the handle and press **Alt** with the up or down arrow.
-- **Hide a workspace**: turn it off in the list. A hidden workspace stays out of the sidebar, the bell and the Everywhere lists, and is still one click away in the workspace menu.
-- **Items**: under **Items**, choose which inbox folders, teams and views each workspace shows in the sidebar.
-- **Fold**: click a workspace's name in the sidebar to fold its section; it stays folded next time.
+Go to **Settings, Account, Workspaces**.
 
-The order of a workspace's own mail accounts and folders is set in its **Customize sidebar** dialog, as before.
+- **Order**: drag a workspace by its handle, or focus the handle and press **Alt** with the up or down arrow. The switcher and its number keys follow this order.
+- **Hide a workspace**: turn it off in the list. A hidden workspace folds away in the switcher and stays out of the bell and the Everywhere lists.
 
 ## Notifications
 
-With Together, the bell lists every workspace's notifications, each with its workspace's badge, and **Mark all read** clears them everywhere. The desktop app's badge counts them all. A notification of another workspace opens in that workspace. Links in notification emails name their workspace, so they open in the right one too.
+The bell lists every workspace's notifications, each with its workspace's badge, and **Mark all read** clears them everywhere. The desktop app's badge counts them all. A notification of another workspace opens in that workspace. Links in notification emails name their workspace, so they open in the right one too.
 
 <Callout type="note" title="Each workspace's own rules">
 
@@ -58,4 +66,4 @@ Every list and number is asked of each workspace separately, with your role ther
 
 ## Several accounts
 
-Together joins the workspaces of the account you are signed in with. If you are signed in to more than one account in the same browser, each account's workspaces stay with that account, and you switch accounts with the workspace menu.
+Spaces belong to the account you are signed in with and offer only its workspaces. If you are signed in to more than one account in the same browser, switching accounts switches Spaces too.

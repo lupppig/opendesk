@@ -3,6 +3,7 @@ package hd_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hdtest"
@@ -76,6 +77,36 @@ body{margin:0} .x td{color:#333 !important;behavior:url(x.htc)} a{background:url
 	}
 	if got := hd.SanitizeEmailHTML(`<style>.a{color:red};.b{color:blue}</style><p>Hi</p>`); got != `<style>.a{color:red}.b{color:blue}</style><p>Hi</p>` {
 		t.Errorf("stray stylesheet semicolon: %s", got)
+	}
+}
+
+func TestSanitizeEmailHTMLMalformedStyleSheets(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"a, visited; color #003d80;text-decoration underline;\ntd collapse;", ""},
+		{"p; .x{color:red} b;", ".x{color:red}"},
+		{"@media only screen and (max-width:600px){.a b; .w{width:100% !important}}", "@media only screen and (max-width:600px){.w{width:100% !important}}"},
+		{`.q{font-family:"a;}b"} i; .k{color:red}`, ".k{color:red}"},
+		{"/* x; */ .y{color:blue}", ".y{color:blue}"},
+		{"@import url(https://e.example/x.css); .z{margin:0}", ".z{margin:0}"},
+		{"{a;b}", ""},
+		{"\ufeff{;", ""},
+		{`url(\{color:red;}@import `, ""},
+	}
+	for _, c := range cases {
+		want := "<p>Hi</p>"
+		if c.want != "" {
+			want = "<style>" + c.want + "</style>" + want
+		}
+		got := make(chan string, 1)
+		go func() { got <- hd.SanitizeEmailHTML("<style>" + c.in + "</style><p>Hi</p>") }()
+		select {
+		case g := <-got:
+			if g != want {
+				t.Errorf("%q: got %s, want %s", c.in, g, want)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("%q: sanitizing never finished", c.in)
+		}
 	}
 }
 

@@ -230,7 +230,8 @@ type NotificationPreferences = {
   email: string /* where notification emails go */; email_verified: boolean /* notification emails go to a confirmed address only */;
   delay_minutes: number /* how long an unread notification waits before "instant" emails it */; pacing: NotificationPacing;
   unsubscribed_at: string | null /* an email's unsubscribe link turned off email from this workspace; resubscribe undoes it */;
-  types: NotificationTypePrefs[] /* the types the caller can receive in this workspace: owners and admins also get the ai_billing and workspace groups */ };
+  types: NotificationTypePrefs[] /* the types the caller can receive in this workspace: owners and admins also get the ai_billing and workspace groups */;
+  teams: { id: string; name: string; notify: boolean }[] /* the teams the caller leads or works in (not observes), by name; notify false: they hear nothing of its tickets nobody has ("Assignment") */ };
 // Notification.data: assigned {by, actor_type, actor?: {id, name}}; mentioned {message_id, by, actor?: {id, name}, preview};
 // new_ticket {channel, contact?: {id, name}}; customer_replied {message_id?, preview?, contact?: {id, name}}; sla_breached {kind}; ai_handoff {via: "ai" | "contact", contact?: {id, name}}; ai_cap_reached {cap_usd} (ticket null; the widget agent reached `widget_monthly_cap_usd`, once a month to owners and admins); ai_balance_low {remaining_usd}, ai_balance_out {remaining_usd} (US dollars), auto_recharge_failed {reason} (ticket null; owners and admins, contracts/billing.md "Auto-recharge"); ai_key_failed {provider: "openrouter" | "openai" | "anthropic", reason: "rejected" | "no_funds"} (ticket null; the workspace's own AI key failed, at most once an hour to owners and admins, contracts/ai.md "Provider per workspace"); import_finished {import_id, source, source_name, account, status: "completed" | "failed" | "needs_credentials", tickets, updated, articles, failed, error} (ticket null; to the admin who started the import, contracts/imports.md); collab_assigned {thread_id, account_id, by, subject, actor?: {id, name}}, collab_mention {thread_id, comment_id, by, subject, preview, actor?: {id, name}} (ticket null; contracts/collab.md).
 // Mentions in note HTML: <span data-type="mention" data-id="<user_id>">@Name</span> (also data-mention="<user_id>"), or "@<full name or email>" in text.
@@ -283,34 +284,31 @@ type NotificationPreferences = {
 | GET | `/v1/me/assistant-peer/asks` | paginated asks made to the caller's Ollie, newest first, kept 90 days |
 | DELETE | `/v1/me` | `{password?, code?}` → 204. `password` when the account has one, `code` when 2FA is on. Deletes the account and every workspace it solely owns (`409 sole_owner` while owner of a workspace with other members) |
 | GET | `/v1/me/workspace-prefs` | `WorkspacePrefs` (below; the defaults until the person changes something). No `OD-Workspace` |
-| PUT | `/v1/me/workspace-prefs` | any of `{mode, layout, order, hidden, collapsed, items, everywhere}` → `WorkspacePrefs`. Fields left out keep their value; `mode: ""` goes back to the default. `422` for an unknown mode or layout, more than 100 workspace ids, or an item id not shaped `<workspace id>/<kind>[:<id>]` (or `everywhere/<list>`), at most 500 items |
+| PUT | `/v1/me/workspace-prefs` | any of `{order, hidden}` → `WorkspacePrefs`. Fields left out keep their value. `422` for more than 100 workspace ids, or a field it does not take |
 | GET | `/v1/me/overview` | `{workspaces: WorkspaceOverview[]}`: every workspace the person is in, in joining order (below). No `OD-Workspace` |
 
-#### Workspaces together
+#### Several workspaces
 
-A person in several workspaces can work them side by side in the web app ("Together"), or one at a
-time ("Separate"). Every request still targets exactly one workspace (`OD-Workspace`), with that
-workspace's role and private teams: a view across workspaces is made of one request per workspace.
-The app keeps each workspace's data under its own cache keys and opens anything of another workspace
-by moving its focus there, without reloading. Links to a workspace's pages carry `?ws=<id>` (above).
+A person in several workspaces works one at a time in the web app, the focus, and reaches the others
+through Spaces (contracts/spaces.md: sidebars of rows from any of their workspaces), the one bell and
+the Everywhere lists (tickets assigned to them, and all mail, across workspaces). Every request still
+targets exactly one workspace (`OD-Workspace`), with that workspace's role and private teams: a view
+across workspaces is made of one request per workspace. The app keeps each workspace's data under its
+own cache keys and opens anything of another workspace by moving its focus there, without reloading.
+Links to a workspace's pages carry `?ws=<id>` (above).
 
-`WorkspacePrefs` is the person's own, one per user, whatever the workspace, and deleted with them:
+`WorkspacePrefs` is how the person arranges their workspaces in the switcher: their own, one per user,
+whatever the workspace, and deleted with them:
 
 ```jsonc
 {
-  "mode": "together" | "separate",  // the default is together (it only shows with two or more workspaces)
-  "mode_set": false,                // read only: whether the person chose the mode
-  "layout": "grouped" | "mixed",    // grouped: a sidebar group per workspace; mixed: sections combined, rows badged
-  "order": ["<wid>"],               // sidebar order; workspaces not listed follow in joining order
-  "hidden": ["<wid>"],              // left out of the sidebar, the Everywhere lists and the bell
-  "collapsed": ["<wid>" | "everywhere"],
-  "items": { "hidden": ["<wid>/view:<id>"], "order": ["<wid>/team:<id>"] },
-  "everywhere": true,               // the Everywhere lists: assigned to me, and all mail
+  "order": ["<wid>"],    // switcher order; workspaces not listed follow in joining order
+  "hidden": ["<wid>"],   // folded away in the switcher, left out of the bell and the Everywhere lists
   "updated_at": "..."
 }
 ```
 
-Ids in it only arrange the sidebar. They are never checked against memberships and never grant
+Ids in it only arrange the switcher. They are never checked against memberships and never grant
 anything: a workspace the person is not in is simply not shown.
 
 `WorkspaceOverview` is one workspace's sidebar numbers, each computed as that workspace's own route
@@ -361,7 +359,7 @@ A suspended workspace is listed with its name and nothing else.
 | GET | `/v1/events?since=<seq>&limit=` | `limit` default 500, max 1000 → `{data: Envelope[], latest_seq, resync: bool}`. Members, and API keys with `realtime` or `tickets:read` |
 | POST | `/v1/realtime/token` | → `{token, url, expires_at}` (users and keys with `realtime`) |
 | GET | `/v1/me/notification-preferences` | workspace-scoped → `NotificationPreferences` for the caller in this workspace (members, any role) |
-| PATCH | `/v1/me/notification-preferences` | `{email_cadence?, digest_hour?, timezone?, paused_until?: string \| "" /* "" resumes */, types?: [{type, email?, push?, desktop?}]}` → `NotificationPreferences`. `types` change this workspace only; the rest is account-wide. A cadence change reschedules the emails already waiting. `paused_until` at most 30 days ahead. Unknown types or timezones are `422` |
+| PATCH | `/v1/me/notification-preferences` | `{email_cadence?, digest_hour?, timezone?, paused_until?: string \| "" /* "" resumes */, types?: [{type, email?, push?, desktop?}], teams?: [{id, notify}] /* at most 200; an id that is not one of the caller's teams changes nothing */}` → `NotificationPreferences`. `types` and `teams` change this workspace only; the rest is account-wide. A cadence change reschedules the emails already waiting. `paused_until` at most 30 days ahead. Unknown types or timezones are `422` |
 | POST | `/v1/me/notification-preferences/resubscribe` | workspace-scoped → `NotificationPreferences`. Restores each type's email choice from before the unsubscribe link was used here and clears `unsubscribed_at`; without one nothing changes. Turning any type's email on with PATCH also clears it |
 | POST | `/v1/me/notification-preferences/test` | workspace-scoped → 204. Sends a sample notification email to the caller now, whatever the preferences. 5 per hour. `422 email_unverified` |
 | POST | `/v1/notifications/unsubscribe` | public, `{token}` → `{workspace: {id, name}, email}`. Turns off every notification email from that workspace for the token's user (the `email` channel of every type). Idempotent. `400 invalid_token`. 30 per IP per hour |
@@ -701,7 +699,8 @@ automation is saved and skipped at run time if the field was archived or deleted
   - `everyone`: the team's leads and members, or every owner, admin and agent (at most 50).
   - `leads`: the team's leads, or the owners and admins (at most 50).
   - `off`: nobody.
-  A team with nobody to work it falls back to its leads, else the owners and admins. `hd.Notify` still skips anyone who
+  A team with nobody to work it falls back to its leads, else the owners and admins. Then anyone who turned the team's
+  notifications off (`NotificationPreferences.teams`) is left out. `hd.Notify` still skips anyone who
   may not see a private team's ticket.
 - A customer's reply on a ticket nobody is assigned to (`customer_replied` trigger, after auto-assignment) goes, as
   `customer_replied`, to the same people under the same rules (not spam, solved, closed or with the answer bot); on an

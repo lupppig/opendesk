@@ -42,6 +42,11 @@ import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/toast";
 import { Tooltip } from "@/components/ui/tooltip";
 import { AccountDot, boxIcon, FolderGlyph } from "./bits";
+import { SpaceGlyph } from "@/components/spaces/icons";
+import { useSession } from "@/lib/session";
+import { useSpaces } from "@/lib/spaces/hooks";
+import { pickedSpace } from "@/lib/spaces/model";
+import { spaceUi, usePickedSpaceId } from "@/lib/spaces/store";
 
 function IconToggle({ on, onClick, label, iconOn, iconOff, disabled }: { on: boolean; onClick: () => void; label: string; iconOn: ReactNode; iconOff: ReactNode; disabled?: boolean }) {
   return (
@@ -203,6 +208,10 @@ export function CustomizeSidebar() {
   const { data: views } = useQuery(q.views());
   const teams = useTeamsCtx();
   const [expanded, setExpanded] = useState<Set<SidebarSectionId>>(new Set(["mail"]));
+  const { t: ts } = useTranslation("spaces");
+  const { spaces } = useSpaces();
+  const space = pickedSpace(spaces, usePickedSpaceId());
+  const wsName = useSession((s) => s.memberships.find((m) => m.workspace.id === s.workspaceId)?.workspace.name ?? "");
 
   const change = (p: SidebarPrefs) => save.mutate(p, { onError: (e) => toast.error(e, t("customize.saveFailed")) });
   const order = sectionOrder(prefs);
@@ -300,6 +309,24 @@ export function CustomizeSidebar() {
       }
     >
       <div className="flex flex-col gap-5 pb-2">
+        {space && (
+          // These prefs are the workspace's own sidebar (and what is inside its sections in a Space); the picked Space has its editor.
+          <div className="flex items-center justify-between gap-3 rounded-lg bg-sunken px-3.5 py-2.5 shadow-[inset_0_0_0_1px_var(--line-soft)]">
+            <span className="flex min-w-0 items-center gap-2 text-[12px] text-fg-3">
+              <SpaceGlyph icon={space.icon} name={space.name} color={space.color} />
+              <span>{ts("customize.spaces", { space: space.name, workspace: wsName })}</span>
+            </span>
+            <Button
+              size="xs"
+              onClick={() => {
+                collabUi.customize(false);
+                spaceUi.edit({ kind: "space", id: space.id });
+              }}
+            >
+              {ts("customize.editSpace")}
+            </Button>
+          </div>
+        )}
         <section>
           <h3 className="label-caps mb-1.5">{t("customize.options")}</h3>
           <div className="rounded-lg border border-line">

@@ -1,12 +1,33 @@
 package supportchannels
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/riverqueue/river/rivertype"
+
 	"github.com/useopendesk/opendesk/internal/supportchannels/channel"
 )
+
+func TestDispatchWorkerSnoozesForProviderRateLimit(t *testing.T) {
+	const delay = 25 * time.Second
+	err := snoozeRateLimit(fmt.Errorf("provider post: %w", &channel.RateLimited{RetryAfter: delay}))
+
+	var snooze *rivertype.JobSnoozeError
+	if !errors.As(err, &snooze) || snooze.Duration != delay {
+		t.Fatalf("dispatch error = %v, want a %s snooze", err, delay)
+	}
+}
+
+func TestDispatchWorkerPreservesOtherErrors(t *testing.T) {
+	want := errors.New("provider unavailable")
+	if got := snoozeRateLimit(want); got != want {
+		t.Fatalf("dispatch error = %v, want original error", got)
+	}
+}
 
 func TestMessageEventDecodesEventPayload(t *testing.T) {
 	tests := []struct {

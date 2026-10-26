@@ -15,23 +15,19 @@ import (
 
 func TestApplyWorkspacePrefs(t *testing.T) {
 	cur := defaultWorkspacePrefs()
-	s := func(v string) *string { return &v }
 	wid := ids.New()
 
-	next, err := applyWorkspacePrefs(cur, workspacePrefsInput{Mode: s("separate"), Layout: s("mixed"),
-		Order: &[]uuid.UUID{wid, wid}, Collapsed: &[]string{"everywhere", wid.String()},
-		Items: &WorkspacePrefItems{Hidden: []string{wid.String() + "/view:abc-1", "everywhere/mine"}}})
+	next, err := applyWorkspacePrefs(cur, workspacePrefsInput{Order: &[]uuid.UUID{wid, wid}, Hidden: &[]uuid.UUID{wid}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if next.Mode != ModeSeparate || !next.ModeSet || next.Layout != LayoutMixed || len(next.Order) != 1 || len(next.Collapsed) != 2 ||
-		len(next.Items.Hidden) != 2 || next.Items.Order == nil || !next.Everywhere {
+	if len(next.Order) != 1 || len(next.Hidden) != 1 {
 		t.Fatalf("applied: %+v", next)
 	}
-	// Left out keeps; "" goes back to the default.
-	back, err := applyWorkspacePrefs(next, workspacePrefsInput{Mode: s("")})
-	if err != nil || back.Mode != ModeTogether || back.ModeSet || back.Layout != LayoutMixed {
-		t.Fatalf("reset mode: %+v %v", back, err)
+	// Left out keeps.
+	kept, err := applyWorkspacePrefs(next, workspacePrefsInput{Hidden: &[]uuid.UUID{}})
+	if err != nil || len(kept.Order) != 1 || len(kept.Hidden) != 0 {
+		t.Fatalf("partial: %+v %v", kept, err)
 	}
 
 	many := make([]uuid.UUID, 101)
@@ -39,14 +35,8 @@ func TestApplyWorkspacePrefs(t *testing.T) {
 		many[i] = ids.New()
 	}
 	for name, in := range map[string]workspacePrefsInput{
-		"mode":          {Mode: s("both")},
-		"layout":        {Layout: s("tree")},
-		"order":         {Order: &many},
-		"hidden":        {Hidden: &many},
-		"collapsed":     {Collapsed: &[]string{"nope"}},
-		"item id":       {Items: &WorkspacePrefItems{Hidden: []string{"view:1"}}},
-		"item injected": {Items: &WorkspacePrefItems{Order: []string{wid.String() + "/view:<script>"}}},
-		"item other":    {Items: &WorkspacePrefItems{Order: []string{"someone/view:1"}}},
+		"order":  {Order: &many},
+		"hidden": {Hidden: &many},
 	} {
 		if _, err := applyWorkspacePrefs(cur, in); err == nil {
 			t.Errorf("%s: accepted", name)
@@ -59,31 +49,36 @@ func TestWorkspacePrefsRoutes(t *testing.T) {
 	u, _ := e.signup("prefs")
 	// A person's own settings: no workspace needed.
 	r := u.do("GET", "/v1/me/workspace-prefs", nil)
-	if r.Status != 200 || r.str("mode") != "together" || r.str("layout") != "grouped" || r.Body["mode_set"] != false || r.Body["everywhere"] != true {
+	if order, _ := r.Body["order"].([]any); r.Status != 200 || order == nil || len(order) != 0 {
 		t.Fatalf("defaults: %d %s", r.Status, r.Raw)
 	}
+	for _, gone := range []string{"mode", "layout", "collapsed", "items", "everywhere"} {
+		if _, ok := r.Body[gone]; ok {
+			t.Fatalf("%s is no longer a setting: %s", gone, r.Raw)
+		}
+	}
 	wid := ids.New().String()
-	r = u.do("PUT", "/v1/me/workspace-prefs", map[string]any{"mode": "separate", "order": []string{wid}, "items": map[string]any{"hidden": []string{wid + "/team:x1"}}})
-	if r.Status != 200 || r.str("mode") != "separate" || r.Body["mode_set"] != true {
+	r = u.do("PUT", "/v1/me/workspace-prefs", map[string]any{"order": []string{wid}})
+	if r.Status != 200 {
 		t.Fatalf("put: %d %s", r.Status, r.Raw)
 	}
-	r = u.do("PUT", "/v1/me/workspace-prefs", map[string]any{"layout": "mixed", "everywhere": false})
+	r = u.do("PUT", "/v1/me/workspace-prefs", map[string]any{"hidden": []string{wid}})
 	if r.Status != 200 {
 		t.Fatalf("put 2: %d %s", r.Status, r.Raw)
 	}
 	r = u.do("GET", "/v1/me/workspace-prefs", nil)
-	if r.str("mode") != "separate" || r.str("layout") != "mixed" || r.Body["everywhere"] != false {
-		t.Fatalf("kept: %s", r.Raw)
-	}
 	if order, _ := r.Body["order"].([]any); len(order) != 1 || order[0] != wid {
-		t.Fatalf("order: %s", r.Raw)
+		t.Fatalf("order kept: %s", r.Raw)
 	}
-	if r := u.do("PUT", "/v1/me/workspace-prefs", map[string]any{"mode": "both"}); r.Status != 422 {
-		t.Fatalf("bad mode: %d %s", r.Status, r.Raw)
+	if hidden, _ := r.Body["hidden"].([]any); len(hidden) != 1 || hidden[0] != wid {
+		t.Fatalf("hidden: %s", r.Raw)
+	}
+	if r := u.do("PUT", "/v1/me/workspace-prefs", map[string]any{"mode": "separate"}); r.Status != 422 {
+		t.Fatalf("a removed field: %d %s", r.Status, r.Raw)
 	}
 	// Someone else's settings stay theirs.
 	o, _ := e.signup("other")
-	if r := o.do("GET", "/v1/me/workspace-prefs", nil); r.str("mode") != "together" || r.Body["mode_set"] != false {
+	if r := o.do("GET", "/v1/me/workspace-prefs", nil); len(r.Body["order"].([]any)) != 0 {
 		t.Fatalf("leaked: %s", r.Raw)
 	}
 	if r := e.client().do("GET", "/v1/me/workspace-prefs", nil); r.Status != 401 {
@@ -91,15 +86,15 @@ func TestWorkspacePrefsRoutes(t *testing.T) {
 	}
 }
 
-// togetherWorld: Uma owns W1, is a viewer in W2 (member of private team Legal, not of
+// multiWorld: Uma owns W1, is a viewer in W2 (member of private team Legal, not of
 // private team Board), an agent in suspended W3; Otto alone is in W4.
-type togetherWorld struct {
+type multiWorld struct {
 	u                  *client
 	w1, w2, w3, w4     string
 	legal, board, open string
 }
 
-func newTogetherWorld(t *testing.T, e *testEnv) togetherWorld {
+func newMultiWorld(t *testing.T, e *testEnv) multiWorld {
 	t.Helper()
 	ctx := context.Background()
 	exec := func(sql string, args ...any) {
@@ -110,7 +105,7 @@ func newTogetherWorld(t *testing.T, e *testEnv) togetherWorld {
 	}
 	u, _ := e.signup("uma")
 	o, _ := e.signup("otto")
-	w := togetherWorld{u: u, w1: u.newWorkspace("Uma Co"), w2: o.newWorkspace("Otto Co"), w3: o.newWorkspace("Paused Co"), w4: o.newWorkspace("Otto Only")}
+	w := multiWorld{u: u, w1: u.newWorkspace("Uma Co"), w2: o.newWorkspace("Otto Co"), w3: o.newWorkspace("Paused Co"), w4: o.newWorkspace("Otto Only")}
 	u.workspace = w.w1
 	var uid uuid.UUID
 	if err := e.d.DB.Pool.QueryRow(ctx, `SELECT user_id FROM members WHERE workspace_id = $1`, w.w1).Scan(&uid); err != nil {
@@ -153,7 +148,7 @@ func TestOverview(t *testing.T) {
 		mailFor = append(mailFor, p.WorkspaceID)
 		return nil, nil // a workspace without Collab
 	}
-	w := newTogetherWorld(t, e)
+	w := newMultiWorld(t, e)
 
 	// No OD-Workspace needed; one sent changes nothing.
 	w.u.workspace = ""
@@ -216,7 +211,7 @@ func TestOverview(t *testing.T) {
 
 func TestRealtimeTokenAcrossWorkspaces(t *testing.T) {
 	e := newEnv(t)
-	w := newTogetherWorld(t, e)
+	w := newMultiWorld(t, e)
 	claims := func(path string) *auth.Claims {
 		t.Helper()
 		r := w.u.do("POST", path, nil)

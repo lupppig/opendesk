@@ -422,3 +422,44 @@ func TestMicrosoftAddressSuggestions(t *testing.T) {
 		t.Fatalf("suggestions: %d %v", st, out.Addresses)
 	}
 }
+
+func TestCountsByAddress(t *testing.T) {
+	w := newWorld(t)
+	w.useFake(&fakeProvider{})
+	a := w.account(w.agent, ProviderIMAP, VisibilityPrivate, Audience{})
+	plain := w.account(w.agent, ProviderIMAP, VisibilityPrivate, Audience{})
+	inbox, plainInbox := w.folder(a, RoleInbox), w.folder(plain, RoleInbox)
+	srv := w.api(w.agent)
+	if st := doJSON(t, "POST", srv.URL+"/v1/collab/accounts/"+a.ID.String()+"/identities", map[string]any{"email": "support@acme.test"}, nil); st != 200 {
+		t.Fatalf("add: %d", st)
+	}
+	toSupport := func(subject string) uuid.UUID {
+		tid, mid := w.seedThread(a, subject, inbox)
+		mustExec(t, w.d, `UPDATE collab_messages SET to_addrs = $2 WHERE id = $1`, mid, []Address{{Email: "Support@acme.test"}})
+		if err := w.d.DB.Tx(w.ctx, func(tx pgx.Tx) error { return recomputeThreads(w.ctx, tx, a, []uuid.UUID{tid}) }); err != nil {
+			t.Fatal(err)
+		}
+		return tid
+	}
+	toSupport("Help")
+	read := toSupport("Already read")
+	mustExec(t, w.d, `UPDATE collab_threads SET unread = false WHERE id = $1`, read)
+	own, _ := w.seedThread(a, "To me", inbox)
+	if err := w.d.DB.Tx(w.ctx, func(tx pgx.Tx) error { return recomputeThreads(w.ctx, tx, a, []uuid.UUID{own}) }); err != nil {
+		t.Fatal(err)
+	}
+	w.seedThread(plain, "Elsewhere", plainInbox)
+
+	var counts CollabCounts
+	if st := doJSON(t, "GET", srv.URL+"/v1/collab/counts", nil, &counts); st != 200 {
+		t.Fatalf("counts: %d", st)
+	}
+	got := counts.Addresses[a.ID]
+	if got["support@acme.test"] != 1 || got[strings.ToLower(a.Email)] != 1 || len(got) != 2 {
+		t.Fatalf("addresses: %+v", counts.Addresses)
+	}
+	// An account with only its own address has no numbers by address.
+	if _, ok := counts.Addresses[plain.ID]; ok || counts.Accounts[plain.ID] != 1 {
+		t.Fatalf("account without aliases: %+v", counts)
+	}
+}

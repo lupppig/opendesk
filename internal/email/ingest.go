@@ -52,7 +52,7 @@ var msgIDRe = regexp.MustCompile(`<([^<>\s]{1,900})>`)
 
 // normalizeMsgID returns "<id>" from a header value, or "" when there is none.
 func normalizeMsgID(v string) string {
-	v = strings.TrimSpace(v)
+	v = strings.TrimSpace(dropNUL(v))
 	if m := msgIDRe.FindStringSubmatch(v); m != nil {
 		return "<" + m[1] + ">"
 	}
@@ -67,7 +67,7 @@ func msgIDList(vals ...string) []string {
 	var out []string
 	seen := map[string]bool{}
 	for _, v := range vals {
-		for _, m := range msgIDRe.FindAllStringSubmatch(v, -1) {
+		for _, m := range msgIDRe.FindAllStringSubmatch(dropNUL(v), -1) {
 			id := "<" + m[1] + ">"
 			if !seen[id] {
 				seen[id] = true

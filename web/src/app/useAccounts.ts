@@ -3,25 +3,44 @@
 // the quick switch keys all go through here.
 
 import { useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "@/components/ui/toast";
 import { modKey } from "@/components/ui/kbd";
 import { resetAnalytics } from "@/lib/analytics";
 import { isTypingTarget } from "@/lib/hotkeys";
 import { selectWorkspace, signOut, switchAccount, switcherEntries, useSession } from "@/lib/session";
+import { spaceUi } from "@/lib/spaces/store";
+import { orderWorkspaces, useWorkspacePrefs } from "@/lib/workspaces";
 
 /** The quick switch keys, as Kbd text: mod + alt + n. */
 export function quickSwitchKeys(n: number | string) {
   return `mod ${modKey() === "⌘" ? "⌥" : "Alt"} ${n}`;
 }
 
-/** Workspaces in switcher order (grouped by account), each with its account. */
+/**
+ * Workspaces in switcher order (grouped by account), each with its account: the active
+ * account's in the person's order (Settings › Workspaces). The ones they hid are marked
+ * (folded away in the switcher, never given a quick switch number), the open one never.
+ */
 export function useSwitcherEntries() {
   const accounts = useSession((s) => s.accounts);
   const user = useSession((s) => s.user);
   const memberships = useSession((s) => s.memberships);
-  return switcherEntries({ accounts, user, memberships });
+  const focus = useSession((s) => s.workspaceId);
+  const prefs = useWorkspacePrefs();
+  return useMemo(() => {
+    const hidden = new Set(prefs.hidden);
+    return switcherEntries({ accounts, user, memberships: orderWorkspaces(memberships, prefs.order) }).map((e) => ({
+      ...e,
+      hidden: e.account.user.id === user?.id && hidden.has(e.membership.workspace.id) && e.membership.workspace.id !== focus,
+    }));
+  }, [accounts, user, memberships, focus, prefs]);
+}
+
+/** The entries the quick switch keys number: the hidden ones are left out. */
+export function quickEntries<E extends { hidden: boolean }>(entries: E[]): E[] {
+  return entries.filter((e) => !e.hidden);
 }
 
 export function useAccountActions() {
@@ -35,6 +54,8 @@ export function useAccountActions() {
 
   /** Open a workspace, in whichever signed-in account it belongs to. */
   const switchTo = async (userId: string, workspaceId: string | null) => {
+    // Picking a workspace shows its own sidebar: the Space it leaves stays in the switcher (contracts/spaces.md).
+    if (workspaceId) spaceUi.pick(userId, null);
     const s = useSession.getState();
     if (s.user?.id === userId) {
       if (!workspaceId || workspaceId === s.workspaceId) return;
@@ -73,7 +94,7 @@ export function useAccountActions() {
  * Ctrl+Alt is AltGr on many keyboards.
  */
 export function useQuickSwitch() {
-  const entries = useSwitcherEntries();
+  const entries = quickEntries(useSwitcherEntries());
   const { switchTo } = useAccountActions();
   const ref = useRef({ entries, switchTo });
   ref.current = { entries, switchTo };

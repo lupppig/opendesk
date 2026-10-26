@@ -29,6 +29,17 @@ describe("mock Collab", () => {
     expect(typeof counts.boxes.inbox).toBe("number");
   });
 
+  it("counts each address of an account with aliases like the list's to=", async () => {
+    const accounts = (await call("GET", "/v1/collab/accounts")).body as { id: string; identities: { email: string; primary: boolean }[] }[];
+    const a = accounts.find((x) => x.identities.some((i) => !i.primary))!;
+    const counts = (await call("GET", "/v1/collab/counts")).body as { addresses: Record<string, Record<string, number>> };
+    expect(Object.keys(counts.addresses)).toEqual([a.id]);
+    for (const i of a.identities) {
+      const list = (await call("GET", `/v1/collab/threads?box=inbox&account_id=${a.id}&to=${encodeURIComponent(i.email)}`)).body.data as { unread: boolean }[];
+      expect(counts.addresses[a.id][i.email] ?? 0).toBe(list.filter((t) => t.unread).length);
+    }
+  });
+
   it("labels Outlook categories, refuses labels on IMAP, and keeps the sidebar prefs", async () => {
     const accounts = (await call("GET", "/v1/collab/accounts")).body as { id: string; provider: string }[];
     const ms = accounts.find((a) => a.provider === "microsoft")!;

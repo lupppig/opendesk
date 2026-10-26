@@ -176,6 +176,10 @@ export function applyPreferencesPatch(prefs: NotificationPreferences, patch: Not
       return out;
     });
   }
+  if (patch.teams?.length) {
+    const changes = new Map(patch.teams.map((t) => [t.id, t.notify]));
+    next.teams = prefs.teams.map((row) => (changes.has(row.id) ? { ...row, notify: changes.get(row.id)! } : row));
+  }
   return next;
 }
 

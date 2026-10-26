@@ -14,6 +14,7 @@ import { inverseAction, leavesList, listPlace, UNDOABLE } from "@/lib/collab/act
 import { accountName, isMailBox, mailListQuery, type MailSearch } from "@/lib/collab/boxes";
 import { cachedFolders } from "@/lib/collab/cache";
 import { compose } from "@/lib/collab/compose";
+import { addressNumbers } from "@/lib/collab/badges";
 import { useAllFolders, useCanAct, useMailAccounts, useSidebarPrefs, useThreadAction } from "@/lib/collab/hooks";
 import { type ComposeMode } from "@/lib/collab/recipients";
 import { identitiesOf, ownEmails as ownEmailsOf } from "@/lib/collab/identities";
@@ -104,7 +105,15 @@ export default function MailPage() {
   const title = folder ? folder.name : account ? `${boxLabel} · ${accountName(account)}` : boxLabel;
   useDocumentTitle(openId ? null : title);
   usePageCrumb(openId ? null : title);
-  const count = folder ? (counts?.folders[folder.id] ?? folder.unread) : account && box === "inbox" ? (counts?.accounts[account.id] ?? account.unread) : !account && isMailBox(box) && box in (counts?.boxes ?? {}) ? counts?.boxes[box as "inbox"] : undefined;
+  const count = folder
+    ? (counts?.folders[folder.id] ?? folder.unread)
+    : account && box === "inbox" && search.to
+      ? addressNumbers(account.id, search.to, counts).unread
+      : account && box === "inbox"
+        ? (counts?.accounts[account.id] ?? account.unread)
+        : !account && isMailBox(box) && box in (counts?.boxes ?? {})
+          ? counts?.boxes[box as "inbox"]
+          : undefined;
 
   // ── Selection and keyboard focus ────────────────────────────────────────
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -438,7 +447,13 @@ export default function MailPage() {
                 onChange={(v) => setTo(v === "*" ? "" : v)}
                 aria-label={t("list.writtenTo")}
                 className="h-7 max-w-[280px] border-transparent px-1.5 shadow-none hover:border-line"
-                options={[{ value: "*", label: t("list.anyAddress") }, ...addresses.map((i) => ({ value: i.email, label: i.email }))]}
+                options={[
+                  { value: "*", label: t("list.anyAddress") },
+                  ...addresses.map((i) => {
+                    const n = scopeAccount ? addressNumbers(scopeAccount.id, i.email, counts).unread : undefined;
+                    return { value: i.email, label: i.email, hint: n || undefined };
+                  }),
+                ]}
               />
             ) : (
               <span className="mono min-w-0 truncate text-fg-2">{search.to}</span>

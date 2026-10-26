@@ -90,6 +90,14 @@ jobs:
         run: |
           git merge-base --is-ancestor "$SHA" origin/main ||
             { echo "::error::$TAG is not on main; only commits on main deploy"; exit 1; }
+      # Production upgrades from the previous release, and its migration task
+      # applies only versions above that release's highest.
+      - if: github.ref_type == 'tag'
+        env:
+          SHA: ${{ github.sha }}
+        run: |
+          prev=$(git describe --tags --abbrev=0 --match 'v*' --exclude 'v*-*' "$SHA^" 2>/dev/null) || exit 0
+          ./scripts/check-migrations.sh --against "$prev"
       - id: t
         env:
           INPUT: ${{ inputs.target }}
@@ -270,6 +278,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=deploy-realtime
       # Nothing rolls out with a fixable high or critical finding: migrate and the
       # services wait on this job. ECR's login above lets Trivy pull the images.
+      - uses: ./.github/actions/trivy-db
       - name: Trivy (opendesk)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         env:
@@ -280,6 +289,7 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
           format: table
+          skip-setup-trivy: true
       - name: Trivy (realtime)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         env:

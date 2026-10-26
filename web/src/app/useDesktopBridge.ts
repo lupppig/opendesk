@@ -32,7 +32,7 @@ export function useDesktopNavigation() {
   }, [router]);
 }
 
-/** Keeps the badge equal to the unread notification count: every shown workspace's with Together. */
+/** Keeps the badge equal to the unread notification count: every shown workspace's for someone in several. */
 export function useDesktopBadge() {
   const bell = useBellNotifications();
   const unread = bell.isLoading && !bell.hasAny ? undefined : bell.unread;

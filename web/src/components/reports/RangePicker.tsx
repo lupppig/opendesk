@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { i18n } from "@/i18n";
-import { fr } from "date-fns/locale";
+import { dateLocale, datePattern } from "@/i18n/dates";
 import { endOfMonth, format, parseISO, startOfMonth, subDays, subMonths } from "date-fns";
 import { CalendarDays, Check, ChevronDown } from "lucide-react";
 import { useState } from "react";
@@ -28,7 +28,7 @@ export function rangeLabel(r: ReportsRange) {
   const a = parseISO(r.from);
   const b = parseISO(r.to);
   const sameYear = a.getFullYear() === b.getFullYear();
-  return `${format(a, i18n.language.startsWith("fr") ? (sameYear ? "d MMM" : "d MMM yyyy") : (sameYear ? "MMM d" : "MMM d, yyyy"), { locale: i18n.language.startsWith("fr") ? fr : undefined })} – ${format(b, (i18n.language.startsWith("fr") ? "d MMM yyyy" : "MMM d, yyyy"), { locale: i18n.language.startsWith("fr") ? fr : undefined })}`;
+  return `${format(a, datePattern(sameYear ? "dayMonth" : "dayMonthYear"), { locale: dateLocale() })} – ${format(b, datePattern("dayMonthYear"), { locale: dateLocale() })}`;
 }
 
 export function RangePicker({ value, onChange }: { value: ReportsRange; onChange: (r: ReportsRange) => void }) {
@@ -75,7 +75,7 @@ export function RangePicker({ value, onChange }: { value: ReportsRange; onChange
             )}
           >
             <span className="flex-1">{p.label}</span>
-            <span className="mono text-[10.5px] text-fg-4">{format(parseISO(p.range.from), (i18n.language.startsWith("fr") ? "d MMM" : "MMM d"), { locale: i18n.language.startsWith("fr") ? fr : undefined })}</span>
+            <span className="mono text-[10.5px] text-fg-4">{format(parseISO(p.range.from), datePattern("dayMonth"), { locale: dateLocale() })}</span>
             <Check className={cn("size-4", active === p.id ? "text-fg" : "invisible")} strokeWidth={2.5} />
           </button>
         ))}

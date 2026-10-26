@@ -1,0 +1,133 @@
+{
+  "title": "Berichte",
+  "compared_one": "Im Vergleich zum Vortag",
+  "compared_other": "Im Vergleich zu den vorherigen {{count}} Tagen",
+  "loading": "Berichte werden geladen",
+  "error": {
+    "title": "Berichte konnten nicht geladen werden",
+    "description": "Prüfe deine Verbindung und versuche es erneut.",
+    "retry": "Erneut versuchen"
+  },
+  "empty": {
+    "title": "Noch nichts zu berichten",
+    "description": "Berichte füllen sich, sobald Tickets eingehen. Die Zahlen hinter dieser Karte sind Beispieldaten.",
+    "sample": "Beispieldaten",
+    "sampleHint": "Eine Vorschau darauf, was diese Seite zeigt, sobald Tickets eingehen. Keine dieser Zahlen ist echt."
+  },
+  "unit": {
+    "tickets_one": "{{count}} Ticket",
+    "tickets_other": "{{count}} Tickets"
+  },
+  "kpi": {
+    "created": "Erstellt",
+    "solved": "Gelöst",
+    "openNow": "Jetzt offen",
+    "rightNow": "Aktuell",
+    "firstResponse": "Erste Antwort",
+    "resolution": "Lösung",
+    "median": "Median",
+    "csat": "CSAT",
+    "ratings_one": "{{count}} Bewertung",
+    "ratings_other": "{{count}} Bewertungen",
+    "slaBreached": "SLA überschritten"
+  },
+  "delta": {
+    "none": "Keine Änderung",
+    "title": "Im Vergleich zum vorherigen Zeitraum",
+    "better": "besser als im vorherigen Zeitraum",
+    "worse": "schlechter als im vorherigen Zeitraum"
+  },
+  "volume": {
+    "title": "Volumen im Zeitverlauf",
+    "subtitle": "Erstellte und gelöste Tickets pro Tag",
+    "chart": "Diagramm",
+    "table": "Tabelle",
+    "avg": "Tagesdurchschnitt",
+    "perDay": "erstellt pro Tag",
+    "busiest": "Stärkster Tag",
+    "solveRate": "Lösungsquote",
+    "solvedOfCreated": "der erstellten gelöst"
+  },
+  "backlog": {
+    "title": "Rückstand",
+    "subtitle": "Offene Arbeit aktuell, nach Status",
+    "open": "Offene Arbeit",
+    "tickets": "Tickets",
+    "unassigned": "Nicht zugewiesen",
+    "emptyTitle": "Posteingang leer",
+    "emptyDescription": "Gerade keine offenen Tickets."
+  },
+  "channel": {
+    "title": "Nach Kanal",
+    "subtitle": "Im Zeitraum erstellte Tickets"
+  },
+  "open": {
+    "subtitle": "Offene Arbeit aktuell",
+    "sample": "Die {{count}} neuesten offenen Tickets"
+  },
+  "priority": {
+    "title": "Nach Priorität"
+  },
+  "severity": {
+    "title": "Nach Schweregrad",
+    "subtitle": "Im Zeitraum erstellte Tickets",
+    "none": "Kein Schweregrad"
+  },
+  "tags": {
+    "title": "Nach Label",
+    "emptyTitle": "Keine Labels an offener Arbeit",
+    "emptyDescription": "Versieh Tickets mit Labels, um zu sehen, wonach Leute fragen."
+  },
+  "agents": {
+    "title": "Rangliste",
+    "subtitle": "Im Zeitraum gelöste Tickets",
+    "caption": "Gelöste Tickets und Zeit bis zur ersten Antwort nach Agent",
+    "agent": "Agent",
+    "solved": "Gelöst",
+    "share": "Anteil",
+    "firstResponse": "Erste Antwort",
+    "emptyTitle": "Keine gelösten Tickets",
+    "emptyDescription": "Agenten erscheinen hier, sobald sie in diesem Zeitraum Tickets lösen."
+  },
+  "response": {
+    "title": "Antwortzeiten",
+    "subtitle": "Mediane für den Zeitraum",
+    "fastest": "Schnellste erste Antwort",
+    "none": "In diesem Zeitraum noch keine Antworten."
+  },
+  "filter": {
+    "teamLabel": "Team: {{value}}",
+    "brandLabel": "Marke: {{value}}",
+    "allTeams": "Alle Teams",
+    "noTeam": "Kein Team",
+    "private": "Privat",
+    "allBrands": "Alle Marken",
+    "searchTeams": "Teams suchen",
+    "searchBrands": "Marken suchen"
+  },
+  "groups": {
+    "narrow": "Nur das im Bericht zeigen"
+  },
+  "byTeam": {
+    "title": "Nach Team",
+    "subtitle": "Im Zeitraum erstellte und gelöste Tickets, jetzt offene",
+    "caption": "Erstellte, gelöste und offene Tickets sowie Zeit bis zur ersten Antwort, nach Team",
+    "team": "Team",
+    "hidden": "Private Teams, in denen du nicht bist, werden hier ausgelassen. Die Summen oben zählen ihre Tickets mit.",
+    "emptyTitle": "Keine Team-Arbeit in diesem Zeitraum",
+    "emptyDescription": "Teams erscheinen hier, sobald ihre Tickets eingehen oder gelöst werden."
+  },
+  "byBrand": {
+    "title": "Nach Marke",
+    "subtitle": "Im Zeitraum erstellte und gelöste Tickets, jetzt offene",
+    "caption": "Erstellte, gelöste und offene Tickets sowie Zeit bis zur ersten Antwort, nach Marke",
+    "brand": "Marke",
+    "emptyTitle": "Keine Marken-Arbeit in diesem Zeitraum",
+    "emptyDescription": "Marken erscheinen hier, sobald ihre Tickets eingehen oder gelöst werden."
+  },
+  "filtered": {
+    "emptyTitle": "In diesem Zeitraum nichts hier",
+    "emptyDescription": "Im Zeitraum passen keine Tickets zu diesem Team und dieser Marke. Versuche einen längeren Zeitraum oder setze die Filter zurück.",
+    "clear": "Filter zurücksetzen"
+  }
+}

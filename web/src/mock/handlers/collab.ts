@@ -168,7 +168,7 @@ function seedState(ws: WsData): State {
   const other = memberIds.find((id) => id !== me) ?? me;
   const meUser = db.users.find((u) => u.id === me);
   const local = (meUser?.email ?? "me@margin.app").split("@")[0];
-  // Each workspace's accounts are at its own domain (Together shows them side by side).
+  // Each workspace's accounts are at its own domain (a Space shows them side by side).
   const domain = ws.mailboxes[0]?.email.split("@")[1] ?? "margin.app";
   const org = ws.workspace.name.split(" ")[0];
   const now = Date.now();
@@ -638,8 +638,9 @@ function state(ws: WsData): State {
 }
 
 function status(ws: WsData): CollabStatus {
-  const p = new URLSearchParams(location.search).get("mock_collab");
-  const off = p === "off" || p === "plan";
+  // ?mock_collab=off|plan turns it off everywhere; a workspace seeded without it (Pressroom) has it off.
+  const p = new URLSearchParams(location.search).get("mock_collab") ?? ws.collabOff ?? null;
+  const off = p === "off" || p === "plan" || p === "disabled";
   return { enabled: !off, reason: off ? (p === "plan" ? "plan" : "disabled") : null, providers: { google: true, microsoft: true, imap: true }, accounts: off ? 0 : visibleAccounts(ws).length, storage: storage() };
 }
 
@@ -692,7 +693,7 @@ function runHistory(ws: WsData, a: Account) {
   );
 }
 
-/** GET /v1/collab/counts for a workspace, or null when it has no Collab (the overview, handlers/together.ts). */
+/** GET /v1/collab/counts for a workspace, or null when it has no Collab (the overview, handlers/workspaces.ts). */
 export function collabCountsFor(ws: WsData) {
   return status(ws).enabled ? counts(ws) : null;
 }
@@ -976,16 +977,32 @@ function counts(ws: WsData) {
   for (const a of seeAcc) accounts[a] = inbox.filter((t) => t.account_id === a && t.unread).length;
   const folders: Record<string, number> = {};
   for (const f of s.folders) if (seeAcc.has(f.account_id)) folders[f.id] = mine.filter((t) => t.unread && t.folder_ids.includes(f.id)).length;
+  // Each address of an account with aliases, matched like the list's to=; one without unread mail is left out.
+  const addresses: Record<string, Record<string, number>> = {};
+  for (const a of s.accounts) {
+    if (!seeAcc.has(a.id) || !a.aliases.length) continue;
+    const out: Record<string, number> = {};
+    for (const e of [a.email, ...a.aliases.map((x) => x.email)].map((x) => x.toLowerCase())) {
+      const n = inbox.filter((t) => t.account_id === a.id && t.unread && msgsOf(s, t.id).some((m) => [m.from, ...m.to, ...m.cc].some((x) => x.email.toLowerCase() === e))).length;
+      if (n) out[e] = n;
+    }
+    addresses[a.id] = out;
+  }
+  const assignedOpen = all.filter((t) => t.assignees.some((a) => a.id === me) && inRole(s, t, "inbox"));
+  const assigned: Record<string, number> = {};
+  for (const t of assignedOpen) assigned[t.account_id] = (assigned[t.account_id] ?? 0) + 1;
   return {
     boxes: {
       inbox: inbox.filter((t) => t.unread).length,
       unread: mine.filter((t) => t.unread && !inRole(s, t, "trash") && !inRole(s, t, "spam")).length,
       shared: all.filter((t) => t.shared && inRole(s, t, "inbox")).length,
-      assigned: all.filter((t) => t.assignees.some((a) => a.id === me) && inRole(s, t, "inbox")).length,
+      assigned: assignedOpen.length,
       drafts: mine.filter((t) => inRole(s, t, "drafts")).length,
     },
     accounts,
     folders,
+    addresses,
+    assigned,
   };
 }
 

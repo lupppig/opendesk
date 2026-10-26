@@ -544,6 +544,11 @@
       "urgent": "Urgent",
       "urgentHint": "Can be emailed sooner, at most every {{gap}}"
     },
+    "teams": {
+      "title": "Your teams",
+      "description": "New tickets in a team, and replies nobody has picked up. Tickets assigned to you and mentions always reach you.",
+      "switch": "Notifications from {{team}}"
+    },
     "kinds": {
       "assigned": {
         "label": "Assigned to you",

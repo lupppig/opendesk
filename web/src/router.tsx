@@ -262,7 +262,7 @@ const inboxRoute = createRoute({
   staticData: { title: "inbox" },
 });
 
-// The Everywhere lists (contracts/api.md "Workspaces together"): every workspace's, one request each.
+// The Everywhere lists (contracts/api.md "Several workspaces"): every workspace's, one request each.
 const everywhereRoute = createRoute({
   getParentRoute: () => appLayout,
   path: "/everywhere/$list",

@@ -578,6 +578,12 @@
     "customize": "Customize sidebar",
     "more": "Options for {{name}}"
   },
+  "address": {
+    "pillTip_one": "{{count}} more address",
+    "pillTip_other": "{{count}} more addresses",
+    "more_one": "and {{count}} more",
+    "more_other": "and {{count}} more"
+  },
   "tabs": {
     "title": "Customize tabs",
     "description": "Choose which folders show as tabs above your mail, and in what order. Everything else stays in More.",

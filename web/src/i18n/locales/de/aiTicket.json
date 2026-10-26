@@ -1,0 +1,143 @@
+{
+  "undo": "Rückgängig",
+  "suggested": {
+    "label": "Antwortvorschlag von {{name}}",
+    "title": "{{name}} hat eine Antwort vorgeschlagen",
+    "hint": "Nichts wird gesendet, bevor du es sendest",
+    "send": "Senden",
+    "edit": "Bearbeiten",
+    "discard": "Verwerfen",
+    "basedOn": "Basierend auf",
+    "sent": "Antwort gesendet",
+    "gone": "Dieser Vorschlag wurde schon erledigt",
+    "sendFailed": "Die Antwort konnte nicht gesendet werden",
+    "discardFailed": "Der Vorschlag konnte nicht verworfen werden",
+    "replaceTitle": "Deinen Entwurf ersetzen?",
+    "replaceBody": "Die Antwort von {{name}} ersetzt, was du geschrieben hast.",
+    "replaceConfirm": "Entwurf ersetzen"
+  },
+  "composer": {
+    "menuLabel": "Mit KI schreiben",
+    "menuShort": "KI",
+    "draft": "Antwort entwerfen",
+    "draftWithGuide": "Mit Anweisungen entwerfen",
+    "guideTitle": "Was soll in der Antwort stehen?",
+    "guidePlaceholder": "Halte es kurz und erwähne die Rückerstattung",
+    "rewriteLabel": "Umschreiben",
+    "translateTo": "In {{language}} übersetzen",
+    "drafting": "Antwort wird entworfen",
+    "rewriting": "Dein Entwurf wird umgeschrieben",
+    "rewritingSelection": "Auswahl wird umgeschrieben",
+    "translating": "Wird übersetzt",
+    "stop": "Stoppen",
+    "basedOn": "Basierend auf",
+    "hideSources": "Quellen ausblenden",
+    "replaceTitle": "Deinen Entwurf ersetzen?",
+    "replaceBody": "Der KI-Entwurf ersetzt, was du geschrieben hast. Du kannst das danach rückgängig machen.",
+    "replaceConfirm": "Entwurf ersetzen",
+    "draftReplaced": "Entwurf ersetzt",
+    "draftFailed": "Die Antwort konnte nicht entworfen werden",
+    "rewrote": "Umgeschrieben: {{mode}}",
+    "rewroteSelection": "Auswahl umgeschrieben",
+    "rewriteFailed": "Der Entwurf konnte nicht umgeschrieben werden",
+    "translated": "In {{language}} übersetzt",
+    "translateFailed": "Der Entwurf konnte nicht übersetzt werden",
+    "command": "Antwort mit KI entwerfen",
+    "reading": "Unterhaltung wird gelesen",
+    "keep": "Behalten",
+    "diffBefore": "Vorher",
+    "diffAfter": "Nachher",
+    "diffSummary": "+{{added}} -{{removed}} Wörter"
+  },
+  "rewrite": {
+    "friendlier": "Freundlicher",
+    "more_formal": "Förmlicher",
+    "shorter": "Kürzer",
+    "longer": "Länger",
+    "fix_grammar": "Rechtschreibung und Grammatik korrigieren",
+    "simplify": "Einfacher"
+  },
+  "ollie": {
+    "idle": "Hilft dir bei diesem Ticket",
+    "waiting_one": "Hat {{count}} Vorschlag für dich",
+    "waiting_other": "Hat {{count}} Vorschläge für dich",
+    "applying": "Ticket wird aktualisiert",
+    "show": "Anzeigen",
+    "hide": "Ausblenden"
+  },
+  "summary": {
+    "generate": "Zusammenfassen",
+    "refresh": "Aktualisieren",
+    "refreshHint": "Neu zusammenfassen",
+    "updated": "Aktualisiert {{when}}",
+    "mood": "So fühlt sich der Kunde",
+    "failed": "Das Ticket konnte nicht zusammengefasst werden",
+    "working": "Unterhaltung wird gelesen",
+    "hint": "{{name}} liest die Unterhaltung und fasst sie zusammen"
+  },
+  "sentiment": {
+    "label": "Stimmung",
+    "positive": "Positiv",
+    "neutral": "Neutral",
+    "negative": "Negativ",
+    "frustrated": "Frustriert"
+  },
+  "suggest": {
+    "run": "Änderungen vorschlagen",
+    "working": "Ticket wird geprüft",
+    "apply": "Übernehmen",
+    "skip": "Überspringen",
+    "applyAll": "Alle übernehmen",
+    "skipAll": "Alle überspringen",
+    "applyAria": "{{what}} übernehmen",
+    "skipAria": "{{what}} überspringen",
+    "sure": "{{name}} ist sich zu {{pct}} % sicher",
+    "newTag": "Neues Label, wird beim Übernehmen erstellt",
+    "done": "Fertig. Das Ticket ist aktualisiert.",
+    "nothing": "Alles entspricht schon dem, was {{name}} wählen würde.",
+    "failed": "Für dieses Ticket konnte nichts vorgeschlagen werden",
+    "spam": "Als Spam markieren",
+    "fields": {
+      "priority": "Priorität",
+      "severity": "Schweregrad",
+      "team": "Team",
+      "labels": "Labels",
+      "newLabels": "Neue Labels",
+      "spam": "Spam"
+    },
+    "hint": "{{name}} schlägt Priorität, Schweregrad, Team und Labels vor. Nichts ändert sich, bevor du übernimmst."
+  },
+  "ask": {
+    "title": "{{name}} fragen",
+    "placeholder": "Frag {{name}} zu diesem Ticket",
+    "send": "Fragen",
+    "thinking": "Denkt nach",
+    "writing": "Schreibt",
+    "answered": "Beantwortet in {{time}}",
+    "sources": "Aus",
+    "failed": "Das konnte nicht beantwortet werden",
+    "clear": "Leeren",
+    "starters": {
+      "want": "Was möchte der Kunde?",
+      "tried": "Was wurde bisher versucht?",
+      "next": "Was sollte ich als Nächstes tun?"
+    }
+  },
+  "message": {
+    "translate": "Übersetzen",
+    "translateHint": "Aus {{language}} übersetzen",
+    "translating": "Wird übersetzt",
+    "translatedFrom": "Aus {{language}} übersetzt",
+    "showOriginal": "Original anzeigen",
+    "showTranslation": "Übersetzung anzeigen",
+    "failed": "Diese Nachricht konnte nicht übersetzt werden",
+    "aiLabel": "KI",
+    "aiHint": "Vom KI-Assistenten aus deiner Wissensdatenbank beantwortet"
+  },
+  "tools": {
+    "title": "In deinen Tools",
+    "more_one": "{{count}} weiteres",
+    "more_other": "{{count}} weitere",
+    "fewer": "Weniger"
+  }
+}

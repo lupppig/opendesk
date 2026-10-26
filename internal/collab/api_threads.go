@@ -102,6 +102,12 @@ type CollabCounts struct {
 	Boxes    CollabBoxCounts   `json:"boxes"`
 	Accounts map[uuid.UUID]int `json:"accounts"`
 	Folders  map[uuid.UUID]int `json:"folders"`
+	// Addresses counts, for each account with addresses besides its own, the unread
+	// conversations in its inbox with each of its addresses on a message (the threads
+	// list's to=); an address without any is left out.
+	Addresses map[uuid.UUID]map[string]int `json:"addresses"`
+	// Assigned: boxes.assigned by account, for the row under each account.
+	Assigned map[uuid.UUID]int `json:"assigned"`
 }
 
 // CollabBoxCounts are unread conversations; assigned and shared: open ones (in an inbox).
@@ -601,7 +607,7 @@ func (s *service) detailResponse(ctx context.Context, p *auth.Principal, id uuid
 
 // counts are the sidebar's numbers for the caller.
 func (s *service) counts(ctx context.Context, q db.Querier, p *auth.Principal) (CollabCounts, error) {
-	out := CollabCounts{Accounts: map[uuid.UUID]int{}, Folders: map[uuid.UUID]int{}}
+	out := CollabCounts{Accounts: map[uuid.UUID]int{}, Folders: map[uuid.UUID]int{}, Assigned: map[uuid.UUID]int{}, Addresses: map[uuid.UUID]map[string]int{}}
 	inAccounts := `t.workspace_id = $1 AND t.account_id IN ` + visibleAccountsSQL("$2")
 	err := q.QueryRow(ctx, `SELECT
 		(SELECT count(*) FROM collab_threads t WHERE `+inAccounts+` AND t.unread AND t.folder_ids && `+inboxSQL+`),
@@ -631,5 +637,38 @@ func (s *service) counts(ctx context.Context, q db.Querier, p *auth.Principal) (
 	if out.Folders, err = collectCounts(rows); err != nil {
 		return out, err
 	}
-	return out, nil
+	rows, err = q.Query(ctx, `SELECT t.account_id, count(*) FROM collab_threads t WHERE t.workspace_id = $1
+		AND EXISTS (SELECT 1 FROM collab_assignees xa WHERE xa.thread_id = t.id AND xa.user_id = $2) AND t.folder_ids && `+inboxSQL+`
+		GROUP BY t.account_id`, p.WorkspaceID, p.UserID)
+	if err != nil {
+		return out, err
+	}
+	if out.Assigned, err = collectCounts(rows); err != nil {
+		return out, err
+	}
+	// Every address of the accounts with aliases (their own included), matched like to=.
+	rows, err = q.Query(ctx, `SELECT t.account_id, x.email, count(*) FROM collab_threads t
+		JOIN (SELECT i.account_id, i.email FROM collab_identities i WHERE i.workspace_id = $1
+			UNION SELECT a.id, lower(a.email) FROM collab_accounts a WHERE a.workspace_id = $1
+				AND EXISTS (SELECT 1 FROM collab_identities i WHERE i.account_id = a.id)) x
+			ON x.account_id = t.account_id AND t.addresses @> ARRAY[x.email]
+		WHERE `+inAccounts+` AND t.unread AND t.folder_ids && `+inboxSQL+`
+		GROUP BY t.account_id, x.email`, p.WorkspaceID, p.UserID)
+	if err != nil {
+		return out, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var aid uuid.UUID
+		var addr string
+		var n int
+		if err := rows.Scan(&aid, &addr, &n); err != nil {
+			return out, err
+		}
+		if out.Addresses[aid] == nil {
+			out.Addresses[aid] = map[string]int{}
+		}
+		out.Addresses[aid][addr] = n
+	}
+	return out, rows.Err()
 }

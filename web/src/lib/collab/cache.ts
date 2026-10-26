@@ -17,6 +17,19 @@ export function cachedFolders(qc: QueryClient): MailFolder[] {
   return qc.getQueriesData<MailFolder[]>({ queryKey: qk.of("collab", "folders") }).flatMap(([, d]) => d ?? []);
 }
 
+/** The cached copies of conversations, from their open thread or any list. */
+export function cachedThreads(qc: QueryClient, ids: Set<string>): MailThread[] {
+  const found = new Map<string, MailThread>();
+  for (const id of ids) {
+    const t = qc.getQueryData<MailThreadDetail>(qk.mailThread(id))?.thread;
+    if (t) found.set(id, t);
+  }
+  for (const [, data] of qc.getQueriesData<ThreadPages>({ queryKey: qk.mailThreadLists })) {
+    for (const p of data?.pages ?? []) for (const t of p.data) if (ids.has(t.id) && !found.has(t.id)) found.set(t.id, t);
+  }
+  return [...found.values()];
+}
+
 /** Replaces conversations by id in every list and open thread. */
 export function patchThreads(qc: QueryClient, threads: MailThread[]) {
   if (!threads.length) return;
@@ -64,9 +77,10 @@ export function dropFromLists(qc: QueryClient, ids: Set<string>, action: MailThr
 
 export type Snapshot = [QueryKey, unknown][];
 
-/** Thread lists and the given open threads, to put back when an action fails. */
+/** Thread lists, the counts and the given open threads, to put back when an action fails. */
 export function snapshotThreads(qc: QueryClient, ids: Iterable<string>): Snapshot {
   const out: Snapshot = qc.getQueriesData({ queryKey: qk.mailThreadLists });
+  out.push([qk.mailCounts, qc.getQueryData(qk.mailCounts)]);
   for (const id of ids) out.push([qk.mailThread(id), qc.getQueryData(qk.mailThread(id))]);
   return out;
 }
@@ -76,7 +90,7 @@ export function restore(qc: QueryClient, snap: Snapshot) {
 }
 
 // Pending work per workspace: events of several workspaces can arrive in one burst
-// (Together), and each flush runs in its own workspace's keys.
+// (several workspaces), and each flush runs in its own workspace's keys.
 type Pending = { timer: ReturnType<typeof setTimeout> | null; threads: Set<string>; folders: Set<string | null> };
 const pending = new Map<string, Pending>();
 

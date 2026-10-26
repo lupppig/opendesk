@@ -1,11 +1,11 @@
-// A workspace's mark wherever things of several workspaces sit together (Together):
+// A workspace's mark wherever things of several workspaces sit side by side (Spaces, the bell):
 // its logo when it has one, else its initials on its soft identity tone. A rounded
 // square, like every organisation. Its accessible name is the workspace's name.
 
 import { useState } from "react";
 import { cn } from "@/lib/cn";
 import { tone, toneFor } from "@/lib/tones";
-import { workspaceInitials } from "@/lib/together";
+import { workspaceInitials } from "@/lib/workspaces";
 
 const sizes = {
   xs: "size-3.5 rounded-[3px] text-[7px]",

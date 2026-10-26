@@ -28,6 +28,7 @@ import { SourceChips } from "../ui/StreamingText";
 import { ShimmerText, WorkingBar, formatElapsed, useElapsed } from "../ui/Thinking";
 import { balanceSpent, isAbort, reportAiError } from "./errors";
 import { isForeign, languageName, streamTextToHtml, ticketLanguage } from "./text";
+import { inSentence } from "@/i18n";
 
 export const REWRITE_MODES: RewriteMode[] = ["friendlier", "more_formal", "shorter", "longer", "fix_grammar", "simplify"];
 
@@ -172,7 +173,7 @@ export function useComposerAi(editor: RefObject<RichEditorHandle | null>, ticket
       balanceSpent(qc);
       setReview({
         id: Date.now(),
-        title: t(selection ? "composer.rewroteSelection" : "composer.rewrote", { mode: t(`rewrite.${m}`).toLowerCase() }),
+        title: t(selection ? "composer.rewroteSelection" : "composer.rewrote", { mode: inSentence(t(`rewrite.${m}`)) }),
         before: htmlToPlain(html),
         after: htmlToPlain(res.html),
         prev,

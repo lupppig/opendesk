@@ -1,0 +1,45 @@
+{
+  "everywhere": {
+    "title": "Everywhere",
+    "mine": "My tickets",
+    "mail": "All mail",
+    "mineTitle": "My tickets everywhere",
+    "mailTitle": "All mail everywhere",
+    "mineHint": "Tickets assigned to you in every workspace, newest activity first.",
+    "mailHint": "Your inboxes in every workspace with Collab, newest first.",
+    "emptyMine": "Nothing assigned to you",
+    "emptyMineHint": "Tickets assigned to you in any workspace show up here.",
+    "emptyMail": "No mail yet",
+    "emptyMailHint": "Conversations from your mail accounts in every workspace show up here.",
+    "noMail": "None of your workspaces has Collab",
+    "noMailHint": "All mail gathers the mail accounts of the workspaces that have it.",
+    "failed": "{{name}} didn't load",
+    "retry": "Try again",
+    "openIn": "Opens in {{name}}",
+    "workspaces": "Workspaces in this list",
+    "allWorkspaces": "All workspaces",
+    "more": "Older ones are in each workspace's own list."
+  },
+  "customize": {
+    "arrange": "Arrange workspaces",
+    "title": "Workspaces",
+    "description": "How the workspaces you belong to are arranged in the workspace switcher. Only you see these settings.",
+    "order": "Order and visibility",
+    "orderHint": "Drag to reorder, or press Alt with the up or down arrow. A hidden workspace folds away in the switcher and stays out of the bell and the Everywhere lists.",
+    "drag": "Reorder {{name}}",
+    "show": "Show {{name}}",
+    "failed": "Couldn't save. Your change was undone.",
+    "single": "You belong to one workspace",
+    "singleHint": "Once you join another, you can arrange them here and bring them together in a Space.",
+    "moved": "{{name}} is now number {{n}}",
+    "hiddenNow": "Hidden",
+    "current": "Open now"
+  },
+  "badge": {
+    "in": "In {{name}}"
+  },
+  "switcher": {
+    "hidden_one": "{{count}} hidden workspace",
+    "hidden_other": "{{count}} hidden workspaces"
+  }
+}

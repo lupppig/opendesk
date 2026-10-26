@@ -9,7 +9,7 @@ enum Folder: String, CaseIterable, Identifiable, Sendable, Codable {
     var title: String {
         switch self {
         case .unassigned: "Unassigned"
-        case .mine: "Mine"
+        case .mine: "My tickets"
         case .open: "All open"
         case .pending: "Pending"
         case .solved: "Solved"

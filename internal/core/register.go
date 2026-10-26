@@ -27,7 +27,7 @@ func Register(d *deps.Deps, api huma.API, r chi.Router) {
 	s.registerTOTP(api)
 	s.registerPasskeys(api)
 	s.registerMe(api)
-	s.registerTogether(api)
+	s.registerWorkspaceOverview(api)
 	s.registerAvatars(api)
 	s.registerOnboarding(api)
 	installImageHooks()
@@ -43,6 +43,7 @@ func Register(d *deps.Deps, api huma.API, r chi.Router) {
 	s.registerPush(api)
 	s.registerWebPush(api)
 	s.registerNotificationPrefs(api, r)
+	s.registerSpaces(api)
 }
 
 // RegisterWorkers adds this area's River workers.

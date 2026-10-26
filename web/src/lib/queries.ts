@@ -5,10 +5,11 @@
 import { infiniteQueryOptions, queryOptions, type QueryClient } from "@tanstack/react-query";
 import { scopeWorkspace } from "./api/client";
 import { api, rows, type CollabThreadQuery, type TicketListQuery } from "./api/endpoints";
-import type { Page, ReportsQuery, ReportsRange } from "./api/types";
+import type { Page, ReportsQuery, ReportsRange, SpacesResponse } from "./api/types";
+import { normalizeSpace, normalizeSpaces } from "./spaces/model";
 
 // Workspace-owned keys start with `ws:<workspace id>`: the cache holds several
-// workspaces at once (Together, contracts/api.md "Workspaces together") and a key of
+// workspaces at once (contracts/api.md "Several workspaces") and a key of
 // one is never read for another. A key is made for the workspace in scope when it is
 // built: the focus workspace, or the one `inWorkspace` names. So a key is built where
 // it is used, never kept in a module constant. User-level keys (the account, its
@@ -42,10 +43,16 @@ export const qk = {
   scope: (wid?: string | null) => [scopeKey(wid === undefined ? scopeWorkspace() : wid)] as const,
   /** An ad hoc workspace key: [scope, ...parts]. Prefer a named key below. */
   of: <T extends readonly unknown[]>(...parts: T) => w(parts),
-  /** The person's Together settings (contracts/api.md "Workspaces together"). */
+  /** How the person arranges their workspaces (contracts/api.md "Several workspaces"). */
   workspacePrefs: ["me", "workspace-prefs"] as const,
   /** Every workspace's sidebar numbers in one answer (GET /v1/me/overview). */
   overview: ["me", "overview"] as const,
+  /** The person's Spaces (contracts/spaces.md): one list, the same in every workspace. */
+  spaces: ["me", "spaces"] as const,
+  /** The workspace's starter Space. */
+  get starter() {
+    return w(["sidebar-starter"] as const);
+  },
   authConfig: ["auth-config"] as const,
   get workspace() {
     return w(["workspace"] as const);
@@ -298,6 +305,19 @@ export const q = {
   authConfig: () => queryOptions({ queryKey: qk.authConfig, queryFn: api.auth.config, staleTime: 5 * 60_000 }),
   workspacePrefs: () => queryOptions({ queryKey: qk.workspacePrefs, queryFn: api.me.workspacePrefs, staleTime: 5 * 60_000 }),
   overview: () => queryOptions({ queryKey: qk.overview, queryFn: async () => (await api.me.overview()).workspaces, staleTime: 30_000 }),
+  /** The user's Spaces, every field present. No events announce changes, so focus refetches them. */
+  spaces: () =>
+    queryOptions({
+      queryKey: qk.spaces,
+      queryFn: async (): Promise<SpacesResponse> => {
+        const r = await api.me.spaces.get();
+        return { spaces: normalizeSpaces(r?.spaces), saved: r?.saved !== false };
+      },
+      staleTime: 60_000,
+      refetchOnWindowFocus: true,
+    }),
+  /** The workspace's starter Space, or null (another workspace's with inWorkspace). */
+  starter: () => queryOptions({ queryKey: qk.starter, queryFn: async () => normalizeSpace((await api.starterSpace.get())?.space), staleTime: 60_000 }),
   workspace: () => queryOptions({ queryKey: qk.workspace, queryFn: api.workspaces.current }),
   sessions: () => list(qk.sessions, api.me.sessions),
   counts: () => queryOptions({ queryKey: qk.counts, queryFn: api.tickets.counts, staleTime: 30_000 }),

@@ -1,18 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { tokenWorkspaces } from "./realtime/manager";
-import { DEFAULT_PREFS, isTogether, itemId, mergeByActivity, moveWorkspace, orderWorkspaces, shownWorkspaces, toggleIn, workspaceInitials } from "./together";
+import { mergeByActivity, moveWorkspace, orderWorkspaces, shownWorkspaces, toggleIn, workspaceInitials } from "./workspaces";
 import { withWorkspaceParam } from "./workspaceParam";
 
 const ws = (id: string) => ({ workspace: { id } });
 const ids = (list: { workspace: { id: string } }[]) => list.map((m) => m.workspace.id);
 
-describe("Together prefs", () => {
-  it("is on for two or more workspaces unless the person chose Separate", () => {
-    expect(isTogether(DEFAULT_PREFS, 1)).toBe(false);
-    expect(isTogether(DEFAULT_PREFS, 2)).toBe(true);
-    expect(isTogether({ mode: "separate" }, 3)).toBe(false);
-  });
-
+describe("arranging workspaces", () => {
   it("orders workspaces: the placed ones first, the rest in joining order, unknown ids ignored", () => {
     const list = [ws("a"), ws("b"), ws("c"), ws("d")];
     expect(ids(orderWorkspaces(list, ["c", "gone", "a"]))).toEqual(["c", "a", "b", "d"]);
@@ -31,9 +25,7 @@ describe("Together prefs", () => {
     expect(moveWorkspace(["a"], "x", 1)).toEqual(["a"]);
   });
 
-  it("qualifies item ids by workspace and toggles them", () => {
-    expect(itemId("w1", "view", "v1")).toBe("w1/view:v1");
-    expect(itemId("everywhere", "mine")).toBe("everywhere/mine");
+  it("toggles ids in a list", () => {
     expect(toggleIn(["a"], "b")).toEqual(["a", "b"]);
     expect(toggleIn(["a", "b"], "a")).toEqual(["b"]);
     expect(toggleIn(["a"], "a", true)).toEqual(["a"]);

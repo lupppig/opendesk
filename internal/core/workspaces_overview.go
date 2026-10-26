@@ -2,9 +2,7 @@ package core
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
-	"regexp"
 	"slices"
 	"time"
 
@@ -17,92 +15,45 @@ import (
 	"github.com/useopendesk/opendesk/internal/httpx"
 )
 
-// Workspaces together (contracts/api.md "Workspaces together"): a person in several
-// workspaces works them side by side. Every request still targets one workspace; these
-// two routes are the person's own: their settings for the arrangement, and one answer
-// with each workspace's sidebar numbers, each computed as that workspace's own routes
-// would for them (their role there, that workspace's private teams).
+// Several workspaces (contracts/api.md "Several workspaces"): a person in several
+// workspaces orders and hides them in the switcher, sees every workspace's sidebar
+// numbers in one answer (Spaces, the bell), and follows them all on one socket. Every
+// request still targets one workspace; these routes are the person's own, and each
+// workspace's numbers are computed as that workspace's own routes would for them
+// (their role there, that workspace's private teams).
 
-// Together modes and layouts.
-const (
-	ModeTogether   = "together"
-	ModeSeparate   = "separate"
-	LayoutGrouped  = "grouped"
-	LayoutMixed    = "mixed"
-	collapsedAll   = "everywhere"
-	maxPrefIDs     = 100
-	maxPrefItems   = 500
-	maxPrefItemLen = 120
-)
+const maxPrefIDs = 100
 
-// itemIDRe is a sidebar item id qualified by its workspace: `<wid>/<kind>:<id>`, or
-// `everywhere/<list>` for the Everywhere lists.
-var itemIDRe = regexp.MustCompile(`^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|everywhere)/[a-z_]{1,32}(?::[A-Za-z0-9_-]{1,64})?$`)
-
-// WorkspacePrefItems are the sidebar items a person hid and the order they put them in.
-type WorkspacePrefItems struct {
-	Hidden []string `json:"hidden" required:"false" maxItems:"500" doc:"Item ids, qualified by workspace: <workspace id>/<kind>:<id>"`
-	Order  []string `json:"order" required:"false" maxItems:"500" doc:"Item ids in the order the person put them; unknown ids are ignored"`
-}
-
-// WorkspacePrefs is a person's Together settings. Workspace ids in it only arrange the
-// sidebar: a workspace the person is not in is ignored, never shown.
+// WorkspacePrefs is how a person arranges their workspaces. Workspace ids in it only
+// arrange the switcher: a workspace the person is not in is ignored, never shown.
 type WorkspacePrefs struct {
-	Mode       string             `json:"mode" enum:"together,separate" doc:"together (the default) shows every workspace in one sidebar; separate shows one at a time"`
-	ModeSet    bool               `json:"mode_set" readOnly:"true" doc:"Whether the person chose the mode (false: the default applies)"`
-	Layout     string             `json:"layout" enum:"grouped,mixed" doc:"grouped: a section per workspace; mixed: sections combined across workspaces"`
-	Order      []uuid.UUID        `json:"order" maxItems:"100" doc:"Workspace ids in sidebar order; the rest follow in joining order"`
-	Hidden     []uuid.UUID        `json:"hidden" maxItems:"100" doc:"Workspaces left out of the sidebar and the Everywhere lists"`
-	Collapsed  []string           `json:"collapsed" maxItems:"101" doc:"Folded sidebar groups: workspace ids, or everywhere"`
-	Items      WorkspacePrefItems `json:"items"`
-	Everywhere bool               `json:"everywhere" doc:"Show the Everywhere lists (assigned to me and all mail, across workspaces)"`
-	UpdatedAt  *time.Time         `json:"updated_at,omitempty" readOnly:"true"`
+	Order     []uuid.UUID `json:"order" maxItems:"100" doc:"Workspace ids in switcher order; the rest follow in joining order"`
+	Hidden    []uuid.UUID `json:"hidden" maxItems:"100" doc:"Workspaces folded away in the switcher and left out of the bell and the Everywhere lists"`
+	UpdatedAt *time.Time  `json:"updated_at,omitempty" readOnly:"true"`
 }
 
 type workspacePrefsInput struct {
-	Mode       *string             `json:"mode,omitempty" doc:"together or separate; empty goes back to the default"`
-	Layout     *string             `json:"layout,omitempty" enum:"grouped,mixed"`
-	Order      *[]uuid.UUID        `json:"order,omitempty" maxItems:"100"`
-	Hidden     *[]uuid.UUID        `json:"hidden,omitempty" maxItems:"100"`
-	Collapsed  *[]string           `json:"collapsed,omitempty" maxItems:"101"`
-	Items      *WorkspacePrefItems `json:"items,omitempty"`
-	Everywhere *bool               `json:"everywhere,omitempty"`
+	Order  *[]uuid.UUID `json:"order,omitempty" maxItems:"100"`
+	Hidden *[]uuid.UUID `json:"hidden,omitempty" maxItems:"100"`
 }
 
 func defaultWorkspacePrefs() WorkspacePrefs {
-	return WorkspacePrefs{Mode: ModeTogether, Layout: LayoutGrouped, Order: []uuid.UUID{}, Hidden: []uuid.UUID{},
-		Collapsed: []string{}, Items: WorkspacePrefItems{Hidden: []string{}, Order: []string{}}, Everywhere: true}
+	return WorkspacePrefs{Order: []uuid.UUID{}, Hidden: []uuid.UUID{}}
 }
 
 func loadWorkspacePrefs(ctx context.Context, q db.Querier, uid uuid.UUID) (WorkspacePrefs, error) {
 	out := defaultWorkspacePrefs()
-	var mode *string
-	var items []byte
 	var updated time.Time
-	err := q.QueryRow(ctx, `SELECT mode, layout, workspace_order, hidden_workspaces, collapsed, items, everywhere, updated_at
-		FROM user_workspace_prefs WHERE user_id = $1`, uid).
-		Scan(&mode, &out.Layout, &out.Order, &out.Hidden, &out.Collapsed, &items, &out.Everywhere, &updated)
+	err := q.QueryRow(ctx, `SELECT workspace_order, hidden_workspaces, updated_at FROM user_workspace_prefs WHERE user_id = $1`, uid).
+		Scan(&out.Order, &out.Hidden, &updated)
 	if db.IsNotFound(err) {
 		return out, nil
 	}
 	if err != nil {
 		return out, err
 	}
-	if mode != nil {
-		out.Mode, out.ModeSet = *mode, true
-	}
-	_ = json.Unmarshal(items, &out.Items)
-	out.Items.Hidden = orEmpty(out.Items.Hidden)
-	out.Items.Order = orEmpty(out.Items.Order)
 	out.UpdatedAt = &updated
 	return out, nil
-}
-
-func orEmpty[T any](s []T) []T {
-	if s == nil {
-		return []T{}
-	}
-	return s
 }
 
 // uniqueIDs keeps the first of each id, in order.
@@ -119,22 +70,6 @@ func uniqueIDs[T comparable](in []T) []T {
 // applyWorkspacePrefs validates a change and applies it to cur.
 func applyWorkspacePrefs(cur WorkspacePrefs, in workspacePrefsInput) (WorkspacePrefs, error) {
 	out := cur
-	if in.Mode != nil {
-		switch *in.Mode {
-		case "":
-			out.Mode, out.ModeSet = ModeTogether, false
-		case ModeTogether, ModeSeparate:
-			out.Mode, out.ModeSet = *in.Mode, true
-		default:
-			return out, httpx.Validation("mode must be together or separate.")
-		}
-	}
-	if in.Layout != nil {
-		if *in.Layout != LayoutGrouped && *in.Layout != LayoutMixed {
-			return out, httpx.Validation("layout must be grouped or mixed.")
-		}
-		out.Layout = *in.Layout
-	}
 	if in.Order != nil {
 		if len(*in.Order) > maxPrefIDs {
 			return out, httpx.Validation("order lists at most 100 workspaces.")
@@ -146,33 +81,6 @@ func applyWorkspacePrefs(cur WorkspacePrefs, in workspacePrefsInput) (WorkspaceP
 			return out, httpx.Validation("hidden lists at most 100 workspaces.")
 		}
 		out.Hidden = uniqueIDs(*in.Hidden)
-	}
-	if in.Collapsed != nil {
-		if len(*in.Collapsed) > maxPrefIDs+1 {
-			return out, httpx.Validation("collapsed lists at most 101 groups.")
-		}
-		for _, c := range *in.Collapsed {
-			if _, err := uuid.Parse(c); c != collapsedAll && (err != nil || len(c) != 36) {
-				return out, httpx.Validation("collapsed takes workspace ids and everywhere.")
-			}
-		}
-		out.Collapsed = uniqueIDs(*in.Collapsed)
-	}
-	if in.Items != nil {
-		for _, list := range [][]string{in.Items.Hidden, in.Items.Order} {
-			if len(list) > maxPrefItems {
-				return out, httpx.Validation("items lists at most 500 ids.")
-			}
-			for _, id := range list {
-				if len(id) > maxPrefItemLen || !itemIDRe.MatchString(id) {
-					return out, httpx.Validation("Item ids look like <workspace id>/view:<id>.")
-				}
-			}
-		}
-		out.Items = WorkspacePrefItems{Hidden: uniqueIDs(orEmpty(in.Items.Hidden)), Order: uniqueIDs(orEmpty(in.Items.Order))}
-	}
-	if in.Everywhere != nil {
-		out.Everywhere = *in.Everywhere
 	}
 	return out, nil
 }
@@ -252,11 +160,11 @@ func (s *svc) overview(ctx context.Context, p *auth.Principal) ([]WorkspaceOverv
 	return out, nil
 }
 
-func (s *svc) registerTogether(api huma.API) {
+func (s *svc) registerWorkspaceOverview(api huma.API) {
 	tags := []string{"Account"}
 
 	register(s, api, huma.Operation{OperationID: "get-workspace-prefs", Method: http.MethodGet, Path: "/v1/me/workspace-prefs",
-		Summary: "Get how your workspaces show together", Tags: tags},
+		Summary: "Get how your workspaces are arranged", Tags: tags},
 		func(ctx context.Context, _ *struct{}) (*struct{ Body WorkspacePrefs }, error) {
 			p, err := auth.RequireUser(ctx)
 			if err != nil {
@@ -270,8 +178,8 @@ func (s *svc) registerTogether(api huma.API) {
 		})
 
 	register(s, api, huma.Operation{OperationID: "put-workspace-prefs", Method: http.MethodPut, Path: "/v1/me/workspace-prefs",
-		Summary: "Change how your workspaces show together", Tags: tags,
-		Description: "Fields left out keep their value. mode \"\" goes back to the default."},
+		Summary: "Change how your workspaces are arranged", Tags: tags,
+		Description: "Fields left out keep their value."},
 		func(ctx context.Context, in *struct{ Body workspacePrefsInput }) (*struct{ Body WorkspacePrefs }, error) {
 			p, err := auth.RequireUser(ctx)
 			if err != nil {
@@ -285,20 +193,12 @@ func (s *svc) registerTogether(api huma.API) {
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			var mode *string
-			if next.ModeSet {
-				mode = &next.Mode
-			}
-			items, _ := json.Marshal(next.Items)
 			var updated time.Time
-			err = s.d.DB.Pool.QueryRow(ctx, `INSERT INTO user_workspace_prefs
-				(user_id, mode, layout, workspace_order, hidden_workspaces, collapsed, items, everywhere, updated_at)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
-				ON CONFLICT (user_id) DO UPDATE SET mode = EXCLUDED.mode, layout = EXCLUDED.layout,
-					workspace_order = EXCLUDED.workspace_order, hidden_workspaces = EXCLUDED.hidden_workspaces,
-					collapsed = EXCLUDED.collapsed, items = EXCLUDED.items, everywhere = EXCLUDED.everywhere, updated_at = now()
-				RETURNING updated_at`,
-				p.UserID, mode, next.Layout, next.Order, next.Hidden, next.Collapsed, items, next.Everywhere).Scan(&updated)
+			err = s.d.DB.Pool.QueryRow(ctx, `INSERT INTO user_workspace_prefs (user_id, workspace_order, hidden_workspaces, updated_at)
+				VALUES ($1, $2, $3, now())
+				ON CONFLICT (user_id) DO UPDATE SET workspace_order = EXCLUDED.workspace_order,
+					hidden_workspaces = EXCLUDED.hidden_workspaces, updated_at = now()
+				RETURNING updated_at`, p.UserID, next.Order, next.Hidden).Scan(&updated)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}

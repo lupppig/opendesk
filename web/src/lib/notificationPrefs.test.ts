@@ -18,6 +18,7 @@ const prefs = (over: Partial<NotificationPreferences> = {}): NotificationPrefere
   pacing: DEFAULT_PACING,
   unsubscribed_at: null,
   types: [row("assigned"), row("mentioned", { desktop: false }), row("team_joined")],
+  teams: [{ id: "t1", name: "Billing", notify: true }, { id: "t2", name: "Legal", notify: true }],
   ...over,
 });
 
@@ -80,6 +81,12 @@ describe("applyPreferencesPatch", () => {
     const paused = applyPreferencesPatch(prefs(), { email_cadence: "daily", digest_hour: 7, timezone: "Europe/Budapest", paused_until: "2026-10-14T07:00:00Z" });
     expect(paused).toMatchObject({ email_cadence: "daily", digest_hour: 7, timezone: "Europe/Budapest", paused_until: "2026-10-14T07:00:00Z" });
     expect(applyPreferencesPatch(paused, { paused_until: "" }).paused_until).toBeNull();
+  });
+  it("turns one team off and leaves the others", () => {
+    const p = prefs();
+    const next = applyPreferencesPatch(p, { teams: [{ id: "t2", notify: false }] });
+    expect(next.teams.map((t) => t.notify)).toEqual([true, false]);
+    expect(next.teams[0]).toBe(p.teams[0]);
   });
 });
 

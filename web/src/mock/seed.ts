@@ -1444,19 +1444,19 @@ function seedLumen(): WsData {
     addMessage(ws, t, { kind: "reply", direction: "inbound", html: textToHtml(`Hello,\n\n${subject}. Can you help?`), at: t.created_at }, { publish: false });
     if (i === 3) t.status = "pending";
   });
-  seedLumenTogether(ws);
+  seedLumenTeams(ws);
   seedDefaultBrand(ws);
   placeSimple(ws);
   return ws;
 }
 
 /**
- * Lumen Labs, Maya's second workspace (she is an agent there), with enough to show
- * Together (contracts/api.md "Workspaces together"): a team she is on, a private team
+ * Lumen Labs, Maya's second workspace (she is an agent there), with enough for a Space
+ * across workspaces (contracts/spaces.md): a team she is on, a private team
  * she is not on (its ticket never reaches her), a view, tickets assigned to her and
  * notifications. Its Collab mail (handlers/collab.ts) is seeded on first use.
  */
-function seedLumenTogether(ws: WsData) {
+function seedLumenTeams(ws: WsData) {
   const maya = db.users[0].id;
   const owner = db.users[3].id;
   const team = (name: string, color: Team["color"], members: string[], extra: Partial<Team> = {}): Team => ({
@@ -1552,10 +1552,78 @@ function seedHarbor(): WsData {
   return ws;
 }
 
+/** A team in a small side workspace. */
+function sideTeam(name: string, color: Team["color"], memberIds: string[]): Team {
+  return {
+    id: uuid(),
+    name,
+    description: "",
+    color,
+    private: false,
+    members: memberIds.map((user_id) => ({ user_id, role: "member" as const })),
+    member_ids: memberIds,
+    signature_html: "",
+    business_hours: null,
+    assign_mode: null,
+    mailbox_ids: [],
+    open_count: 0,
+    unassigned_count: 0,
+    created_at: ago(90 * DAY),
+    updated_at: ago(9 * DAY),
+  };
+}
+
+/** Pressroom: a third workspace of Maya's, without Collab, so a Space shows how mail rows are skipped there. */
+function seedPressroom(): WsData {
+  const ws = baseWorkspace(uuid(), "Pressroom", "pressroom");
+  ws.workspace.settings = { timezone: "Europe/London", help_center_enabled: false, csat_enabled: false, auto_assign: "none" };
+  ws.collabOff = "plan";
+  const maya = db.users[0].id;
+  ws.members = [
+    { user_id: maya, role: "admin", created_at: ago(30 * DAY), availability: "online" },
+    { user_id: db.users[2].id, role: "owner", created_at: ago(300 * DAY) },
+  ];
+  ws.sla = [{ id: uuid(), name: "Default", priority: null, first_response_minutes: 120, resolution_minutes: 1440, business_hours: false, enabled: true, position: 0 }];
+  seedDefaultLabels(ws);
+  ws.teams = [sideTeam("Newsdesk", "blue", [maya, db.users[2].id]), sideTeam("Corrections", "amber", [maya])];
+  ws.views = [{ id: uuid(), name: "Embargoed", shared: true, filters: { status: ["open", "pending"], priority: ["urgent", "high"] }, position: 0 }];
+  const names = ["Hana Sato", "Owen Price", "Leila Haddad", "Bruno Costa", "Ama Mensah"];
+  ws.contacts = names.map((name) => ({
+    id: uuid(),
+    email: `${name.split(" ")[0].toLowerCase()}@newsroom.example`,
+    name,
+    phone: "",
+    avatar_url: null,
+    avatar_source: null,
+    company: null,
+    external_id: null,
+    notes: "",
+    custom: {},
+    tags: [],
+    fields: {},
+    blocked: false,
+    ticket_count: 1,
+    created_at: ago(25 * DAY),
+    updated_at: ago(1 * DAY),
+  }));
+  const subjects = ["Correction request on Tuesday's story", "Interview request for the launch", "Embargo time for the Q4 numbers", "Photo credit is wrong", "Can we get a statement by noon?"];
+  subjects.forEach((subject, i) => {
+    const t = newTicket(ws, { subject, contact: contactRef(ws.contacts[i]), channel: "email", created_at: ago((i + 1) * 3 * HOUR), priority: i === 2 ? "urgent" : "normal", team_id: i % 2 ? ws.teams[1].id : ws.teams[0].id });
+    t.number = 301 + i;
+    addMessage(ws, t, { kind: "reply", direction: "inbound", html: textToHtml(`Hello,\n\n${subject}.\n\n${ws.contacts[i].name.split(" ")[0]}`), at: t.created_at }, { publish: false });
+    if (i === 4) t.status = "pending";
+  });
+  seedDefaultBrand(ws);
+  placeSimple(ws);
+  return ws;
+}
+
 export function seed() {
   reseed(0x2f6e2b1);
   seedUsers();
   db.notificationSettings = {};
   db.workspaces = [seedMargin(), seedLumen()];
   db.workspaces.push(seedHarbor());
+  // Spaces (contracts/spaces.md): a third workspace of Maya's, without Collab.
+  db.workspaces.push(seedPressroom());
 }

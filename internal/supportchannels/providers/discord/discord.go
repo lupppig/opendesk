@@ -51,10 +51,14 @@ func (a Adapter) call(ctx context.Context, c *http.Client, token, method, path s
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
 		var refusal struct {
-			Code int `json:"code"`
+			Code       int     `json:"code"`
+			RetryAfter float64 `json:"retry_after"`
 		}
 		_ = json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&refusal)
 		io.Copy(io.Discard, resp.Body)
+		if resp.StatusCode == http.StatusTooManyRequests {
+			return fmt.Errorf("discord: %w", &channel.RateLimited{RetryAfter: channel.RateLimitDelay(resp.Header, refusal.RetryAfter)})
+		}
 		return &statusError{code: resp.StatusCode, api: refusal.Code}
 	}
 	if out != nil {

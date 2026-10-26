@@ -13,7 +13,7 @@ import { checkLimit } from "./billing";
 import { assign } from "./crud";
 import { registerPictures } from "./pictures";
 import { registerWidget } from "./widget";
-import { mockWsToken } from "./together";
+import { mockWsToken } from "./workspaces";
 import { lapseGrants, registerTeams, seedDefaultBrand } from "./teams";
 import { envelopeTeam, standIn } from "../gateway";
 import { setGrants, teamRole } from "../teams";

@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { i18n } from "@/i18n";
-import { fr } from "date-fns/locale";
+import { dateLocale, datePattern } from "@/i18n/dates";
 import { format, parseISO } from "date-fns";
 import { motion, useReducedMotion } from "motion/react";
 import { useState } from "react";
@@ -94,7 +94,7 @@ export function VolumeChart<D extends Row = Day>({
           <line x1={ML} x2={ML + plotW} y1={y(0)} y2={y(0)} stroke="var(--line)" strokeWidth={1} shapeRendering="crispEdges" />
           {xTicks.map(({ d, i }) => (
             <text key={d.date} x={x(i)} y={MT + H + 18} textAnchor="middle" className="mono" fontSize={10.5} fill="var(--fg-4)">
-              {format(parseISO(d.date), (i18n.language.startsWith("fr") ? "d MMM" : "MMM d"), { locale: i18n.language.startsWith("fr") ? fr : undefined })}
+              {format(parseISO(d.date), datePattern("dayMonth"), { locale: dateLocale() })}
             </text>
           ))}
 
@@ -164,7 +164,7 @@ export function VolumeChart<D extends Row = Day>({
           className="pointer-events-none absolute z-10 min-w-[148px] rounded-lg border border-line bg-raised px-3 py-2 shadow-pop transition-[left] duration-100 ease-out motion-reduce:transition-none"
           style={{ left: flip ? tipLeft - 12 : tipLeft + 12, top: MT + 4, transform: flip ? "translateX(-100%)" : undefined }}
         >
-          <div className="mono mb-1.5 text-[10.5px] text-fg-3">{format(parseISO(h.date), (i18n.language.startsWith("fr") ? "EEE d MMM" : "EEE, MMM d"), { locale: i18n.language.startsWith("fr") ? fr : undefined })}</div>
+          <div className="mono mb-1.5 text-[10.5px] text-fg-3">{format(parseISO(h.date), datePattern("weekdayDayMonth"), { locale: dateLocale() })}</div>
           {lines.map((s) => (
             <div key={s.key} className="flex items-center gap-2 py-px">
               <span className="size-2 rounded-xs" style={{ background: s.color }} />
@@ -209,7 +209,7 @@ export function VolumeTable({ days }: { days: Day[] }) {
         <tbody>
           {[...days].reverse().map((d) => (
             <tr key={d.date} className="border-b border-line-soft">
-              <td className="py-1.5 text-fg-2">{format(parseISO(d.date), (i18n.language.startsWith("fr") ? "EEE d MMM" : "EEE, MMM d"), { locale: i18n.language.startsWith("fr") ? fr : undefined })}</td>
+              <td className="py-1.5 text-fg-2">{format(parseISO(d.date), datePattern("weekdayDayMonth"), { locale: dateLocale() })}</td>
               <td className="mono py-1.5 text-right tabular-nums">{d.created}</td>
               <td className="mono py-1.5 text-right tabular-nums text-fg-2">{d.solved}</td>
             </tr>

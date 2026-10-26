@@ -38,6 +38,7 @@ import { cn } from "@/lib/cn";
 import { q, qk } from "@/lib/queries";
 import { atLeast, updateWorkspace, useRole } from "@/lib/session";
 import { tone as tones } from "@/lib/tones";
+import { inSentence } from "@/i18n";
 
 type Editing = { label: Label | null; group?: string | null } | null;
 
@@ -315,7 +316,7 @@ function LabelRow({ label: l, caps, canEdit, groups, onEdit, onDelete, onArchive
       {caps.scope && (
         <span className="hidden w-[76px] items-center gap-1.5 text-fg-4 md:flex [&_svg]:size-3.5">
           {SCOPES.map((s) => (
-            <Tooltip key={s} content={l.applies_to.includes(s) ? t(`labels.scope.${s}`) : t("labels.scope.not", { what: t(`labels.scope.${s}`).toLowerCase() })}>
+            <Tooltip key={s} content={l.applies_to.includes(s) ? t(`labels.scope.${s}`) : t("labels.scope.not", { what: inSentence(t(`labels.scope.${s}`)) })}>
               <span tabIndex={-1} className={cn("flex", !l.applies_to.includes(s) && "opacity-25")}>
                 {scopeIcon[s]}
               </span>

@@ -18,6 +18,11 @@ export function accountNumbers(a: MailAccount, folders: MailFolder[] | undefined
   return { unread: counts?.accounts[a.id] ?? a.unread, total: folderWithRole(folders, "inbox")?.total };
 }
 
+/** One address of an account (its own or an alias): the unread conversations in the inbox with it on a message. */
+export function addressNumbers(accountId: string, email: string, counts: MailCounts | undefined): RowNumbers {
+  return { unread: counts ? (counts.addresses?.[accountId]?.[email.toLowerCase()] ?? 0) : undefined };
+}
+
 /** All inboxes: unread across every account, and the sum of the shown accounts' inbox totals. */
 export function allInboxNumbers(shown: MailAccount[], folders: FolderMap, counts: MailCounts | undefined): RowNumbers {
   return { unread: counts?.boxes.inbox, total: shown.length ? sum(shown.map((a) => folderWithRole(folders[a.id], "inbox")?.total)) : undefined };
@@ -36,6 +41,12 @@ export function folderNumbers(f: MailFolder, counts: MailCounts | undefined): Ro
 /** Shared with me and Assigned to me: one count, the conversations of theirs still in an inbox. */
 export function listBoxNumbers(box: "shared" | "assigned", counts: MailCounts | undefined): RowNumbers {
   const n = counts?.boxes[box];
+  return { unread: n, total: n };
+}
+
+/** Assigned to me within one account. */
+export function accountAssignedNumbers(accountId: string, counts: MailCounts | undefined): RowNumbers {
+  const n = counts ? (counts.assigned?.[accountId] ?? 0) : undefined;
   return { unread: n, total: n };
 }
 

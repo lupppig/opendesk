@@ -42,6 +42,11 @@ export function preferencesOut(ws: WsData, uid: string): NotificationPreferences
     pacing: { ...DEFAULT_PACING, cooldown_minutes: [...DEFAULT_PACING.cooldown_minutes] },
     unsubscribed_at: ws.notificationUnsubscribes?.[uid]?.at ?? null,
     types,
+    // The teams they lead or work in (observers never hear about new tickets).
+    teams: ws.teams
+      .filter((t) => t.members.some((m) => m.user_id === uid && m.role !== "observer"))
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((t) => ({ id: t.id, name: t.name, notify: !ws.mutedTeams?.[uid]?.includes(t.id) })),
   };
 }
 
@@ -117,7 +122,23 @@ export function registerNotificationPrefs() {
         changes.push([row.type as NotificationType, c]);
       }
     }
+    const teamChanges: { id: string; notify: boolean }[] = [];
+    if (b.teams !== undefined) {
+      if (!Array.isArray(b.teams) || b.teams.length > 200) throw invalid("teams is a list of at most 200");
+      for (const row of b.teams) {
+        if (!isRecord(row) || typeof row.id !== "string" || typeof row.notify !== "boolean") throw invalid("each team is {id, notify}");
+        teamChanges.push({ id: row.id, notify: row.notify });
+      }
+    }
     db.notificationSettings[uid] = s;
+    // Another team's id changes nothing, as on the server.
+    for (const { id, notify } of teamChanges) {
+      if (!ctx.ws.teams.some((t) => t.id === id && t.members.some((m) => m.user_id === uid))) continue;
+      const muted = new Set((ctx.ws.mutedTeams ??= {})[uid] ?? []);
+      if (notify) muted.delete(id);
+      else muted.add(id);
+      ctx.ws.mutedTeams[uid] = [...muted];
+    }
     if (changes.length) {
       const mine = ((ctx.ws.notificationPrefs ??= {})[uid] ??= {});
       for (const [type, c] of changes) mine[type] = { ...mine[type], ...c };

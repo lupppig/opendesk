@@ -50,7 +50,7 @@ import { useCollab, useMailAccounts } from "@/lib/collab/hooks";
 import { compose } from "@/lib/collab/compose";
 import { AccountDot } from "@/components/collab/bits";
 import { WorkspaceBadge } from "@/components/workspaces/WorkspaceBadge";
-import { useTogether } from "@/lib/together";
+import { useWorkspaces } from "@/lib/workspaces";
 
 const itemCls =
   "flex h-9 cursor-default select-none items-center gap-2.5 rounded-md px-2.5 text-[13px] text-fg transition-colors duration-100 animate-item-in motion-reduce:animate-none data-[selected=true]:bg-hover [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-fg-3";
@@ -91,8 +91,8 @@ export function CommandPalette() {
   const collab = useCollab();
   const { data: mailAccounts } = useMailAccounts();
   const { t: tCollab } = useTranslation("collab");
-  const { t: tTogether } = useTranslation("together");
-  const together = useTogether().active;
+  const { t: tw } = useTranslation("workspaces");
+  const several = useWorkspaces().several;
   const aiQuery = useDebounced(query.trim(), 300);
   const aiSearch = useQuery({ ...q.aiSearch(aiQuery), enabled: open && aiMode && ai.enabled && aiQuery.length > 1 });
 
@@ -403,16 +403,16 @@ export function CommandPalette() {
                       </Item>
                     );
                   })}
-                {together && (
+                {several && (
                   <>
                     <Item value="everywhere assigned to me all workspaces" icon={<User />} onSelect={() => go(() => void navigate({ to: "/everywhere/$list", params: { list: "mine" } }))}>
-                      {tTogether("everywhere.mineTitle")}
+                      {tw("everywhere.mineTitle")}
                     </Item>
                     <Item value="everywhere all mail all workspaces" icon={<Mail />} onSelect={() => go(() => void navigate({ to: "/everywhere/$list", params: { list: "mail" } }))}>
-                      {tTogether("everywhere.mailTitle")}
+                      {tw("everywhere.mailTitle")}
                     </Item>
-                    <Item value="arrange workspaces sidebar together separate" icon={<Layers />} onSelect={() => go(() => void navigate({ to: "/settings/workspaces" }))}>
-                      {tTogether("customize.arrange")}
+                    <Item value="arrange workspaces order hide switcher" icon={<Layers />} onSelect={() => go(() => void navigate({ to: "/settings/workspaces" }))}>
+                      {tw("customize.arrange")}
                     </Item>
                   </>
                 )}

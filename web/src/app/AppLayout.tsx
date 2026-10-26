@@ -11,7 +11,7 @@ import { useHeartbeat } from "@/lib/pictures";
 import { playAlertOnce, type AlertSound } from "@/lib/alertSound";
 import { realtime, startRealtime, stopRealtime } from "@/lib/realtime/manager";
 import { inWorkspace } from "@/lib/api/client";
-import { useTogether } from "@/lib/together";
+import { useWorkspaces } from "@/lib/workspaces";
 import { useRealtime } from "@/lib/realtime/store";
 import { currentMembership, reloadSession, selectWorkspace, useSession } from "@/lib/session";
 import { useUpgrade } from "@/lib/upgrade";
@@ -36,11 +36,13 @@ import { DesktopUpdateBanner } from "@/components/desktop/UpdateBanner";
 import { AllowNotificationsBanner } from "@/components/notifications/AllowBanner";
 import { shell, toggleNav, useNav, useShell } from "./shellStore";
 import { useCollab } from "@/lib/collab/hooks";
+import { useSpaceUi } from "@/lib/spaces/store";
 import { compose } from "@/lib/collab/compose";
 
 const NewTicketDialog = lazy(() => import("@/components/tickets/NewTicketDialog"));
 // Collab's dialogs (customize sidebar, new mail) load only for workspaces with Collab.
 const CollabRoot = lazy(() => import("@/components/collab/CollabRoot"));
+const SpaceEditorRoot = lazy(() => import("@/components/spaces/SpaceEditor"));
 const UpgradeDialog = lazy(() => import("@/components/billing/UpgradeDialog"));
 
 function notificationText(n: Notification) {
@@ -129,10 +131,11 @@ function useRealtimeConnection() {
   const wid = useSession((s) => s.workspaceId);
   const uid = useSession((s) => s.user?.id);
   const suspended = useSession((s) => !!currentMembership(s)?.suspended);
-  const together = useTogether().active;
-  // Together keeps one socket while the focus moves; Separate follows the focus alone.
+  // Someone in several workspaces keeps one socket that follows them all while the focus
+  // moves: a Space's rows, the bell and the Everywhere lists stay live across workspaces.
+  const several = useWorkspaces().several;
   const memberKey = useSession((s) => s.memberships.map((m) => m.workspace.id).join(","));
-  const socketKey = together ? `all:${memberKey}` : `one:${wid}`;
+  const socketKey = several ? `all:${memberKey}` : `one:${wid}`;
   const focusRef = useRef(wid);
   focusRef.current = wid;
   useEffect(() => {
@@ -146,7 +149,7 @@ function useRealtimeConnection() {
       qc,
       workspaceId: focus,
       userId: uid,
-      together,
+      allWorkspaces: several,
       onNotification: (n, from) => {
         // A notification of another workspace says which, and opening it moves the focus there.
         const other = from !== useSession.getState().workspaceId;
@@ -207,7 +210,7 @@ function useRealtimeConnection() {
       },
     });
     return () => stopRealtime();
-  }, [socketKey, uid, suspended, together, qc, navigate, router]);
+  }, [socketKey, uid, suspended, several, qc, navigate, router]);
 }
 
 /** Subscribes this browser to web pushes for the session once notifications are allowed. */
@@ -243,6 +246,7 @@ export function AppLayout() {
   useWaitingAlerts(authed && !suspended);
 
   const collab = useCollab();
+  const spaceEditor = useSpaceUi((s) => !!s.editor);
   // On the mail pages, c writes new mail and g i goes to the mail inbox.
   const onMail = collab.enabled && section === "mail";
 
@@ -321,6 +325,11 @@ export function AppLayout() {
       {collab.enabled && (
         <Suspense fallback={null}>
           <CollabRoot />
+        </Suspense>
+      )}
+      {spaceEditor && (
+        <Suspense fallback={null}>
+          <SpaceEditorRoot />
         </Suspense>
       )}
     </div>

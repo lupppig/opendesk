@@ -121,7 +121,7 @@ rotates on use, reuse outside the 30 s grace window revokes it, 30-day cap wheth
   account (`od-account`) and each account's last workspace (`od-ws:<user id>`). Switching account clears the whole
   query cache and restarts realtime, so no data of one account renders under another. Switching workspace
   within an account keeps the cache: every key of workspace data starts with its workspace, and a query
-  fetches from the workspace its key names (contracts/api.md "Workspaces together").
+  fetches from the workspace its key names (contracts/api.md "Several workspaces").
 
 ## Native apps (`contracts/native.md`)
 

@@ -1,4 +1,4 @@
-import { i18n } from "@/i18n";
+import { i18n, inSentence } from "@/i18n";
 import type { ParseKeys } from "i18next";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -166,7 +166,7 @@ export function WebhookDialog({ hook, onClose, onCreated }: { hook: Webhook | nu
                     <Checkbox
                       checked={on === g.events.length ? true : on ? "indeterminate" : false}
                       onCheckedChange={(v) => toggleGroup(g.events, v)}
-                      aria-label={ui("allGroupEvents", { group: ui(g.label).toLowerCase() })}
+                      aria-label={ui("allGroupEvents", { group: inSentence(ui(g.label)) })}
                     />
                     {ui(g.label)}
                   </label>

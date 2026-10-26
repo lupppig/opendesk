@@ -276,6 +276,12 @@ type mailboxRow struct {
 	sendAs *storedSendAs
 }
 
+// lockWorkspaceForMailboxWrite keeps mailbox writes in the same order as ticket imports.
+func lockWorkspaceForMailboxWrite(ctx context.Context, tx pgx.Tx, wid uuid.UUID) error {
+	var id uuid.UUID
+	return tx.QueryRow(ctx, `SELECT id FROM workspaces WHERE id = $1 FOR NO KEY UPDATE`, wid).Scan(&id)
+}
+
 // credentials is the sealed secret blob in mailboxes.credentials_enc.
 type credentials struct {
 	Password     string `json:"password,omitempty"`
@@ -620,7 +626,7 @@ func (s *service) setSyncError(ctx context.Context, m *mailboxRow, msg string) e
 		var prevStatus, prevErr string
 		err := tx.QueryRow(ctx, `UPDATE mailboxes m SET status = CASE WHEN m.status = 'disabled' THEN m.status ELSE 'error' END,
 			last_error = $3, sync_failures = $4, next_sync_at = now() + $5::interval, updated_at = now()
-			FROM (SELECT status, last_error FROM mailboxes WHERE id = $2 FOR UPDATE) old
+			FROM (SELECT status, last_error FROM mailboxes WHERE id = $2 FOR NO KEY UPDATE) old
 			WHERE m.workspace_id = $1 AND m.id = $2 RETURNING old.status, old.last_error`,
 			m.WorkspaceID, m.ID, msg, failures, fmt.Sprintf("%d seconds", int(backoff.Seconds()))).Scan(&prevStatus, &prevErr)
 		if err != nil {
@@ -641,7 +647,7 @@ func (s *service) setSyncOK(ctx context.Context, m *mailboxRow, validity, lastUI
 		err := tx.QueryRow(ctx, `UPDATE mailboxes m SET status = CASE WHEN m.status = 'error' THEN 'active' ELSE m.status END,
 			last_error = '', sync_failures = 0, next_sync_at = NULL, last_synced_at = now(),
 			imap_uid_validity = $3, imap_last_uid = $4, updated_at = now()
-			FROM (SELECT status FROM mailboxes WHERE id = $2 FOR UPDATE) old
+			FROM (SELECT status FROM mailboxes WHERE id = $2 FOR NO KEY UPDATE) old
 			WHERE m.workspace_id = $1 AND m.id = $2 RETURNING old.status`, m.WorkspaceID, m.ID, validity, lastUID).Scan(&prevStatus)
 		if err != nil {
 			return err

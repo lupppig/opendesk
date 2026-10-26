@@ -1,4 +1,4 @@
-// The Everywhere lists (contracts/api.md "Workspaces together"): tickets assigned to me
+// The Everywhere lists (contracts/api.md "Several workspaces"): tickets assigned to me
 // and all mail, across every workspace the person shows, newest activity first. Each
 // workspace's rows come from its own request (its role, its private teams), keep its
 // badge, and open in that workspace: the focus moves there first.
@@ -20,7 +20,7 @@ import { relShort } from "@/lib/format";
 import { springs } from "@/lib/motion";
 import { api } from "@/lib/api/endpoints";
 import { q, qk } from "@/lib/queries";
-import { mergeByActivity, useOpenInWorkspace, useTogether, type Tagged } from "@/lib/together";
+import { mergeByActivity, useOpenInWorkspace, useWorkspaces, type Tagged } from "@/lib/workspaces";
 
 /** Rows each workspace contributes: its first page, newest first. */
 const PER_WORKSPACE = 50;
@@ -29,9 +29,9 @@ type List = "mine" | "mail";
 
 export default function EverywherePage() {
   const { list } = useParams({ strict: false }) as { list?: List };
-  const { t } = useTranslation("together");
-  const { shown, active } = useTogether();
-  const workspaces = (active ? shown : shown.slice(0, 1)).filter((m) => !m.suspended);
+  const { t } = useTranslation("workspaces");
+  const { shown } = useWorkspaces();
+  const workspaces = shown.filter((m) => !m.suspended);
   const mine = list === "mine";
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -47,7 +47,7 @@ export default function EverywherePage() {
 
 /** The badges of the workspaces the list gathers. */
 function WorkspaceStack({ workspaces }: { workspaces: Membership[] }) {
-  const { t } = useTranslation("together");
+  const { t } = useTranslation("workspaces");
   return (
     <span className="flex items-center gap-1" aria-label={t("everywhere.workspaces")}>
       {workspaces.map((m) => (
@@ -62,7 +62,7 @@ function useWorkspaceMap(workspaces: Membership[]) {
 }
 
 function MineList({ workspaces }: { workspaces: Membership[] }) {
-  const { t } = useTranslation("together");
+  const { t } = useTranslation("workspaces");
   const results = useQueries({
     queries: workspaces.map((m) =>
       inWorkspace(m.workspace.id, () => ({
@@ -90,7 +90,7 @@ function MineList({ workspaces }: { workspaces: Membership[] }) {
 }
 
 function MailList({ workspaces }: { workspaces: Membership[] }) {
-  const { t } = useTranslation("together");
+  const { t } = useTranslation("workspaces");
   // Collab is a plan's: only the workspaces whose overview has mail numbers have it.
   const { data: overview } = useQuery(q.overview());
   const withMail = workspaces.filter((m) => overview?.find((o) => o.id === m.workspace.id)?.mail_counts);
@@ -138,7 +138,7 @@ function Merged<T extends { id: string }>({
   empty: React.ReactNode;
   render: (row: T, ws: Membership["workspace"]) => React.ReactNode;
 }) {
-  const { t } = useTranslation("together");
+  const { t } = useTranslation("workspaces");
   const reduce = useReducedMotion();
   const byId = useWorkspaceMap(workspaces);
   if (loading && !rows.length)
@@ -201,7 +201,7 @@ const lineCls =
   "group flex w-full items-center gap-3 px-5 py-2.5 text-left outline-none transition-colors duration-100 hover:bg-hover focus-visible:bg-hover focus-visible:shadow-[inset_2px_0_0_var(--focus)]";
 
 function TicketLine({ t: tk, ws }: { t: Ticket; ws: Membership["workspace"] }) {
-  const { t } = useTranslation("together");
+  const { t } = useTranslation("workspaces");
   const openIn = useOpenInWorkspace();
   return (
     <button
@@ -238,7 +238,7 @@ function TicketLine({ t: tk, ws }: { t: Ticket; ws: Membership["workspace"] }) {
 }
 
 function ThreadLine({ th, ws }: { th: MailThread; ws: Membership["workspace"] }) {
-  const { t } = useTranslation("together");
+  const { t } = useTranslation("workspaces");
   const openIn = useOpenInWorkspace();
   const from = th.participants[0];
   return (

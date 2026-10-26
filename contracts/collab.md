@@ -501,6 +501,9 @@ interface SidebarPrefs {
 }
 ```
 
+These arrange a workspace's own sidebar. A Space (contracts/spaces.md) picked in the switcher shows
+its own rows instead; a whole section in a Space follows these preferences.
+
 `badges` keys are a row (`box:inbox` for All inboxes, `box:shared`, `box:assigned`, `account:<id>`,
 `folder:<id>`, `ticket_folder:<id>`, `view:<id>`, `team:<id>`) or a section's default (`section:mail`,
 `section:inbox`, `section:teams`, `section:views`, `section:favorites`). A row without its own value
@@ -610,7 +613,7 @@ account or conversation; "act": sees it and is agent or above; "manage": "Who se
 | PATCH | `/v1/collab/folders/{id}` | act | `{name?, color?: tone}`, at least one → `MailFolder`; at the provider first, then stored. `422` for a special folder; `color` only on a Gmail label or an Outlook category (`422 validation_error` otherwise); an Outlook category cannot be renamed (`422 rename_unsupported`) |
 | DELETE | `/v1/collab/folders/{id}` | act | → 204; its conversations stay in their other folders; `422` for a special folder |
 | GET | `/v1/collab/threads` | member | `?box=&account_id=&folder_id=&q=&to=&with=&limit=(1..100, 50)&cursor=` → `Page<MailThread>`, newest first. `to`: only conversations with that address on a message (From, To, Cc or where it was delivered), case-insensitive: one alias's mail. `box`: `inbox` (default), `unread`, `starred`, `sent`, `drafts`, `archive`, `trash`, `spam`, `all`, `shared`, `assigned`. Without `account_id` it spans every account the caller sees (for `shared` and `assigned`, every conversation they see). `folder_id` replaces `box`. `unread` and `all` leave out trash and spam, `starred` leaves out trash, and `shared` (conversations with shares of their own) and `assigned` leave out both. `archive` is the Archive folder, and for Gmail, which archives by removing `INBOX`, what is in none of inbox, trash, spam and drafts. `q` matches each message's subject, sender and text and the conversation's subject and participants ("Search"). `with`: only conversations with that person on a message, like `to`; without `account_id` it spans every conversation the caller sees, those shared with them on their own included ("People") |
-| GET | `/v1/collab/counts` | member | `{boxes: {inbox, unread, shared, assigned, drafts}: number, accounts: Record<id, number>, folders: Record<id, number>}`: unread conversations; `shared` and `assigned` count those still in an inbox, `drafts` every draft conversation; `folders` lists only folders with unread conversations (missing = 0) |
+| GET | `/v1/collab/counts` | member | `{boxes: {inbox, unread, shared, assigned, drafts}: number, accounts: Record<id, number>, folders: Record<id, number>, assigned: Record<account id, number>, addresses: Record<id, Record<address, number>>}`: unread conversations; `shared` and `assigned` count those still in an inbox, `drafts` every draft conversation; `folders` lists only folders with unread conversations, and `assigned` (`boxes.assigned` by account) only accounts with some (missing = 0); `addresses`, for each account with addresses besides its own, the unread conversations in its inbox with each of its addresses (its own included, lower case) on a message, matched like `to=` (missing = 0) |
 | GET | `/v1/collab/threads/{id}` | see | `MailThreadDetail` |
 | GET | `/v1/collab/person` | member | `?email=&exclude=&limit=` → `MailPerson` ("People"); `422 validation_failed` for an address that is not one |
 | POST | `/v1/collab/threads/actions` | act | `{thread_ids: string[1..100], action, folder_id?}` → `{threads: MailThread[]}`. Threads the caller cannot act on are `404` (all or nothing) |
@@ -769,7 +772,9 @@ Both are stored as written and filled for the member writing (`internal/collab/p
 
 Reading: `MailThread.to_address` names the alias a conversation was written to or sent from (a small
 chip in the list and the conversation), and `GET /v1/collab/threads?to=` shows one address's mail
-(the mail page offers it for an account with more than one address).
+(the mail page offers it for an account with more than one address, with each address's unread count from
+`GET /v1/collab/counts`). In the sidebar such an account shows how many addresses it has besides its own
+beside its name (a blue `+N`).
 
 ## Answering tickets
 

@@ -1,4 +1,4 @@
-import { fr } from "date-fns/locale";
+import { dateLocale, datePattern } from "@/i18n/dates";
 import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { getRouteApi } from "@tanstack/react-router";
 import { differenceInCalendarDays, format, parseISO, subDays } from "date-fns";
@@ -291,7 +291,6 @@ function Figure({ label, value, sub }: { label: string; value: ReactNode; sub?: 
 
 function VolumeCard({ d, className }: { d: ReportsOverview; className?: string }) {
   const { t } = useTranslation("reports");
-  const { i18n } = useTranslation("indicators");
   const [view, setView] = useState<"chart" | "table">("chart");
   const avg = d.by_day.length ? d.created / d.by_day.length : 0;
   const busiest = d.by_day.reduce<ReportsOverview["by_day"][number] | null>((m, x) => (!m || x.created > m.created ? x : m), null);
@@ -321,7 +320,7 @@ function VolumeCard({ d, className }: { d: ReportsOverview; className?: string }
         <Figure
           label={t("volume.busiest")}
           value={busiest && busiest.created ? <AnimatedNumber value={busiest.created} /> : "–"}
-          sub={busiest && busiest.created ? format(parseISO(busiest.date), (i18n.language.startsWith("fr") ? "EEE d MMM" : "EEE, MMM d"), { locale: i18n.language.startsWith("fr") ? fr : undefined }) : undefined}
+          sub={busiest && busiest.created ? format(parseISO(busiest.date), datePattern("weekdayDayMonth"), { locale: dateLocale() }) : undefined}
         />
         <Figure label={t("volume.solveRate")} value={rate === null ? "–" : <AnimatedNumber value={rate} format={(n) => `${Math.round(n)}%`} />} sub={t("volume.solvedOfCreated")} />
       </div>

@@ -1,0 +1,88 @@
+{
+  "status": {
+    "open": "Offen",
+    "pending": "Wartend",
+    "on_hold": "Angehalten",
+    "solved": "Gelöst",
+    "closed": "Geschlossen"
+  },
+  "priority": {
+    "urgent": "Dringend",
+    "high": "Hoch",
+    "normal": "Normal",
+    "low": "Niedrig"
+  },
+  "severity": {
+    "sev1": "Sev 1",
+    "sev2": "Sev 2",
+    "sev3": "Sev 3",
+    "sev4": "Sev 4"
+  },
+  "severityHint": {
+    "sev1": "Kritischer Ausfall",
+    "sev2": "Große Auswirkung",
+    "sev3": "Geringe Auswirkung",
+    "sev4": "Kaum Auswirkung"
+  },
+  "channel": {
+    "email": "E-Mail",
+    "chat": "Chat",
+    "api": "API",
+    "portal": "Portal"
+  },
+  "sentiment": {
+    "positive": "Positiv",
+    "neutral": "Neutral",
+    "negative": "Negativ",
+    "frustrated": "Frustriert"
+  },
+  "spam": "Spam",
+  "noPriority": "Keine Priorität",
+  "sla": {
+    "over": "{{duration}} drüber",
+    "firstResponse": {
+      "on_track": "Erste Antwort fällig",
+      "due_soon": "Erste Antwort bald fällig",
+      "breached": "Erste Antwort überfällig"
+    },
+    "resolution": {
+      "on_track": "Lösung fällig",
+      "due_soon": "Lösung bald fällig",
+      "breached": "Lösung überfällig"
+    }
+  },
+  "reports": {
+    "created": "Erstellt",
+    "solved": "Gelöst",
+    "day": "Tag",
+    "tableCaption": "Erstellte und gelöste Tickets pro Tag",
+    "chartLabel_one": "Erstellte und gelöste Tickets pro Tag, {{count}} Tag. Mit den Pfeiltasten liest du jeden Tag.",
+    "chartLabel_other": "Erstellte und gelöste Tickets pro Tag, {{count}} Tage. Mit den Pfeiltasten liest du jeden Tag.",
+    "range": {
+      "last7": "Letzte 7 Tage",
+      "last30": "Letzte 30 Tage",
+      "last90": "Letzte 90 Tage",
+      "thisMonth": "Dieser Monat",
+      "lastMonth": "Letzter Monat",
+      "label": "Zeitraum",
+      "custom": "Eigener Zeitraum",
+      "from": "Von",
+      "to": "Bis",
+      "apply": "Zeitraum anwenden"
+    }
+  },
+  "tickets": {
+    "bulkActions": "Sammelaktionen",
+    "addLabels": "Labels hinzufügen",
+    "closeTicket": "Ticket schließen",
+    "previousTicket": "Vorheriges Ticket",
+    "nextTicket": "Nächstes Ticket",
+    "moreActions": "Weitere Aktionen",
+    "toggleDetails": "Details ein-/ausblenden",
+    "ticketDetails": "Ticketdetails",
+    "conversation": "Unterhaltung",
+    "mentionTeammate": "Teammitglied erwähnen",
+    "mergeSearch": "Nach Betreff, Kunde oder #Nummer suchen",
+    "remove": "{{name}} entfernen"
+  }
+}

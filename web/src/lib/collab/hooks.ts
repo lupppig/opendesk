@@ -4,11 +4,12 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { api } from "../api/endpoints";
-import type { MailAccount, MailFolder, MailThread, MailThreadAction, SidebarPrefs } from "../api/types";
+import type { MailAccount, MailCounts, MailFolder, MailThread, MailThreadAction, SidebarPrefs } from "../api/types";
 import { qk, q, removeFromList, upsertInList } from "../queries";
 import { atLeast, useRole } from "../session";
-import { applyAction } from "./actions";
-import { dropFromLists, mapThreads, patchThreads, restore, snapshotThreads } from "./cache";
+import { applyAction, countsAfter } from "./actions";
+import { cachedFolders, cachedThreads, dropFromLists, mapThreads, patchThreads, restore, snapshotThreads } from "./cache";
+import { aliasesOf, ownEmails } from "./identities";
 import { normalizePrefs } from "./sidebarPrefs";
 
 /** Whether Collab is on for this workspace. Off (and nothing changes) until the API says it is on. */
@@ -102,15 +103,19 @@ export function useCanAct(): boolean {
 
 export type ThreadActionVars = { ids: string[]; action: MailThreadAction; folderId?: string };
 
-/** Applies an action to conversations: in the cache at once, then the API; a refusal puts everything back. */
+/** Applies an action to conversations: in the cache (and the sidebar's numbers) at once, then the API; a refusal puts everything back. */
 export function useThreadAction() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (v: ThreadActionVars) => api.collab.threads.action({ thread_ids: v.ids, action: v.action, folder_id: v.folderId }),
     onMutate: async (v) => {
-      await qc.cancelQueries({ queryKey: qk.mailThreadLists });
+      await Promise.all([qc.cancelQueries({ queryKey: qk.mailThreadLists }), qc.cancelQueries({ queryKey: qk.mailCounts })]);
       const snap = snapshotThreads(qc, v.ids);
       const ids = new Set(v.ids);
+      // The sidebar's numbers follow at once (a conversation opened reads as read there too).
+      const before = cachedThreads(qc, ids);
+      const addresses = Object.fromEntries((qc.getQueryData<MailAccount[]>(qk.mailAccounts) ?? []).filter((a) => aliasesOf(a).length).map((a) => [a.id, ownEmails(a)]));
+      qc.setQueryData<MailCounts>(qk.mailCounts, (c) => (c ? countsAfter(c, before, v.action, cachedFolders(qc), v.folderId, addresses) : c));
       mapThreads(qc, ids, (t) => applyAction(t, v.action, v.folderId));
       dropFromLists(qc, ids, v.action, v.folderId);
       return { snap };

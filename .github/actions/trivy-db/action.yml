@@ -1,0 +1,36 @@
+name: Trivy database
+description: >-
+  Installs Trivy and downloads its vulnerability database before the scans,
+  trying each registry a few times, so one registry's bad moment does not fail
+  a scan. The aquasecurity/trivy-action steps after it take skip-setup-trivy:
+  true and scan with this copy, updating nothing.
+
+runs:
+  using: composite
+  steps:
+    # The version trivy-action v0.36.0 installs; keep the two in step.
+    - uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514 # v0.2.6
+      with:
+        version: v0.70.0
+        cache: true
+        token: ${{ github.token }}
+    - name: Download the vulnerability database
+      shell: bash
+      env:
+        CACHE_DIR: ${{ github.workspace }}/.cache/trivy
+      run: |
+        # Trivy moves on to its next registry only for errors it counts as
+        # temporary, and a registry can answer 404 for a while, so each one
+        # gets three tries here.
+        for repo in mirror.gcr.io/aquasec/trivy-db:2 ghcr.io/aquasecurity/trivy-db:2; do
+          for attempt in 1 2 3; do
+            if trivy image --download-db-only --quiet --cache-dir "$CACHE_DIR" --db-repository "$repo"; then
+              { echo "TRIVY_CACHE_DIR=$CACHE_DIR"; echo "TRIVY_SKIP_DB_UPDATE=true"; } >> "$GITHUB_ENV"
+              exit 0
+            fi
+            echo "::warning::Trivy database from $repo failed (try $attempt of 3)"
+            sleep $((attempt * 10))
+          done
+        done
+        echo "::error::Could not download the Trivy vulnerability database from any registry"
+        exit 1

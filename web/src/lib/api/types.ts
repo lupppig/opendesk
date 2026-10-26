@@ -1104,7 +1104,10 @@ export type NotificationPreferences = {
   unsubscribed_at: string | null;
   /** The types the caller can receive here: owners and admins also get the ai_billing group. */
   types: NotificationTypePrefs[];
+  /** The teams the caller leads or works in, by name. notify false: nothing of its tickets nobody has (new tickets, their replies). */
+  teams: NotificationTeam[];
 };
+export type NotificationTeam = { id: string; name: string; notify: boolean };
 /** PATCH /v1/me/notification-preferences: only what changed. `paused_until: ""` resumes. */
 export type NotificationPreferencesPatch = {
   email_cadence?: EmailCadence;
@@ -1112,6 +1115,7 @@ export type NotificationPreferencesPatch = {
   timezone?: string;
   paused_until?: string;
   types?: ({ type: NotificationType } & Partial<NotificationChannels>)[];
+  teams?: { id: string; notify: boolean }[];
 };
 
 // Lists and envelopes.
@@ -2479,32 +2483,24 @@ export type MailCounts = {
   boxes: { inbox: number; unread: number; shared: number; assigned: number; drafts: number };
   accounts: Record<string, number>;
   folders: Record<string, number>;
+  /** By account with aliases, then address (its own included): unread conversations in its inbox with it on a message; missing = 0. */
+  addresses?: Record<string, Record<string, number>>;
+  /** boxes.assigned by account; only accounts with some. */
+  assigned: Record<string, number>;
 };
 
 /** `collab.changed` event data. */
 export type CollabChangedEvent = { account_id: string | null; thread_ids: string[]; folders: boolean };
 
-// Workspaces together (contracts/api.md "Workspaces together").
-export type TogetherMode = "together" | "separate";
-export type TogetherLayout = "grouped" | "mixed";
+// Several workspaces (contracts/api.md "Several workspaces").
 export type WorkspacePrefs = {
-  mode: TogetherMode;
-  /** Whether the person chose the mode (false: the default, together). */
-  mode_set: boolean;
-  layout: TogetherLayout;
-  /** Workspace ids in sidebar order; the rest follow in joining order. */
+  /** Workspace ids in switcher order; the rest follow in joining order. */
   order: string[];
-  /** Workspaces left out of the sidebar, the Everywhere lists and the bell. */
+  /** Workspaces folded away in the switcher and left out of the bell and the Everywhere lists. */
   hidden: string[];
-  /** Folded sidebar groups: workspace ids, or "everywhere". */
-  collapsed: string[];
-  /** Sidebar items by workspace-qualified id (<workspace id>/view:<id>). */
-  items: { hidden: string[]; order: string[] };
-  /** The Everywhere lists: assigned to me and all mail, across workspaces. */
-  everywhere: boolean;
   updated_at?: string;
 };
-export type WorkspacePrefsInput = Partial<Omit<WorkspacePrefs, "mode_set" | "updated_at" | "mode">> & { mode?: TogetherMode | "" };
+export type WorkspacePrefsInput = Partial<Pick<WorkspacePrefs, "order" | "hidden">>;
 export type WorkspaceOverview = {
   id: string;
   name: string;
@@ -2518,3 +2514,49 @@ export type WorkspaceOverview = {
   /** GET /v1/collab/counts there; null without Collab. */
   mail_counts: MailCounts | null;
 };
+// ─── Spaces (contracts/spaces.md) ───────────────────────────────────────────
+
+/** The colours a Space takes. */
+export type SpaceColor = "grey" | "blue" | "violet" | "teal" | "green" | "amber" | "red" | "pink";
+
+/** What a Space row names: a whole built-in section, or one row of a workspace. */
+export type SpaceItemKind = "section" | "ticket_folder" | "team" | "view" | "box" | "account" | "folder" | "page" | "everywhere";
+
+export type SpaceItem = {
+  /** A workspace the user is a member of; "" for an everywhere row (it spans them all). */
+  workspace_id: string;
+  kind: SpaceItemKind;
+  /** section: favorites | inbox | mail | teams | views | workspace; ticket_folder: a folder id; box: inbox | shared | assigned; page: contacts | knowledge | reports; everywhere: mine | mail; else a uuid. */
+  id: string;
+  /** The person's own label for the row, 1..64 characters. */
+  name?: string;
+  /** The number beside the row; left out: the row's default. */
+  badge?: SidebarBadge;
+};
+
+export type SpaceSection = {
+  /** 1..40 of [A-Za-z0-9_-], once per Space. */
+  id: string;
+  /** 0..40 characters; "" shows no header. */
+  title: string;
+  collapsed: boolean;
+  /** At most 60; at most 300 across the Space. */
+  items: SpaceItem[];
+};
+
+export type Space = {
+  /** A uuid made by the client. */
+  id: string;
+  /** 1..40 characters. */
+  name: string;
+  /** "" (the name's first letter) or one of SPACE_ICONS. */
+  icon: string;
+  color: SpaceColor;
+  /** The workspace's mark beside each row while the Space shows several workspaces. */
+  marks: boolean;
+  /** At most 20. */
+  sections: SpaceSection[];
+};
+
+/** GET and PUT /v1/me/spaces. `saved` false: nothing saved yet (no Spaces). */
+export type SpacesResponse = { spaces: Space[]; saved: boolean };

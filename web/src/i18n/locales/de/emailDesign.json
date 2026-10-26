@@ -1,0 +1,85 @@
+{
+  "title": "E-Mail-Design",
+  "description": "So sieht jede E-Mail an Kunden aus: Antworten, automatische Antworten und die Zufriedenheitsumfrage. Jede Marke hat ihr eigenes Design.",
+  "brand": "Marke",
+  "docs": "Vorlagen-Anleitung",
+  "tabs": {
+    "layout": "Layout",
+    "csat": "Zufriedenheits-E-Mail",
+    "variables": "Variablen"
+  },
+  "readOnly": "Nur Admins können das E-Mail-Design ändern.",
+  "default": "Standard",
+  "customized": "Angepasst",
+  "reset": "Auf Standard zurücksetzen",
+  "resetLayoutConfirm": "Das Layout wird wieder schlicht, ohne Logo oder Fußzeile, und zitiert die vorherige Nachricht.",
+  "resetCsatConfirm": "Die Zufriedenheits-E-Mail erhält wieder den eingebauten Text.",
+  "resetTitle": "Auf Standard zurücksetzen?",
+  "resetDone": "Standard wiederhergestellt",
+  "saved": "E-Mail-Design gespeichert",
+  "layout": {
+    "mode": "Layout",
+    "modeHint": "Einfach reicht für die meisten Teams. Mit eigenem HTML gestaltest du den ganzen E-Mail-Text.",
+    "simple": "Einfach",
+    "custom": "Eigenes HTML",
+    "style": "Stil",
+    "plain": "Schlicht",
+    "plainHint": "Liest sich wie eine E-Mail von einem Menschen. Am besten für Antworten.",
+    "branded": "Mit Marke",
+    "brandedHint": "Eine Karte mit deinem Logo und einer Akzentlinie.",
+    "logo": "Logo anzeigen",
+    "logoHint": "Das Logo der Marke oben in jeder E-Mail.",
+    "noLogo": "Diese Marke hat noch kein Logo.",
+    "addLogo": "Logo hinzufügen",
+    "accent": "Akzentfarbe",
+    "accentHint": "Links, die Akzentlinie und die Buttons der Umfrage.",
+    "useBrand": "Markenfarbe",
+    "accentInvalid": "Verwende eine Farbe wie #2563EB.",
+    "font": "Schrift",
+    "fonts": {
+      "system": "System",
+      "sans": "Helvetica",
+      "serif": "Georgia"
+    },
+    "footer": "Fußzeile",
+    "footerHint": "Kleingedrucktes unter jeder E-Mail, etwa deine Adresse oder ein Link zum Hilfecenter. Variablen sind möglich.",
+    "footerPlaceholder": "Acme Inc, 1 Market Street, San Francisco",
+    "customHtml": "Layout-HTML",
+    "customHint": "Der ganze E-Mail-Text. opendesk setzt die Nachricht dort ein, wo du {{content}} schreibst, die Signatur bei {{signature}} und frühere Nachrichten bei {{history}}.",
+    "history": "Frühere Nachrichten",
+    "historyHint": "Unter jeder Antwort zitiert, damit Kunden den Zusammenhang behalten. Notizen sind nie enthalten.",
+    "historyNone": "Nicht zitieren",
+    "historyLast": "Die vorherige Nachricht",
+    "historyAll": "Die ganze Unterhaltung",
+    "historyHeader": "Zitatzeile",
+    "historyHeaderHint": "Über jeder zitierten Nachricht. Verwende {{author}} und {{date}}."
+  },
+  "csat": {
+    "off": "Zufriedenheitsumfragen sind aus, daher wird diese E-Mail noch nicht gesendet.",
+    "turnOn": "Einschalten",
+    "subject": "Betreff",
+    "subjectHint": "Die Ticketnummer wird ergänzt, wenn sie fehlt, damit Antworten im Verlauf landen.",
+    "body": "E-Mail",
+    "bodyHint": "Muss {{survey}} enthalten, dort stehen die fünf Bewertungsbuttons."
+  },
+  "variables": {
+    "title": "Variablen",
+    "description": "Klicke auf eine, um ihren Tag zu kopieren. Jede Vorlage kennt jede Variable; ein Wert, der nicht passt, bleibt leer.",
+    "logic": "Logik",
+    "logicHint": "Teile nur zeigen, wenn sie passen, nach Wert auswählen, für jeden Eintrag einer Liste wiederholen. Klicke auf ein Beispiel, um es zu kopieren.",
+    "helpers": "Hilfsfunktionen",
+    "helpersHint": "Filter ändern einen Wert: Hänge sie nach einem | an, einen nach dem anderen.",
+    "copy": "Kopieren",
+    "groups": {
+      "text": "Text",
+      "lists": "Listen",
+      "numbers": "Zahlen",
+      "dates": "Datum"
+    }
+  },
+  "loadError": {
+    "title": "E-Mail-Design wurde nicht geladen",
+    "description": "Beim Laden der E-Mails dieser Marke ist etwas schiefgelaufen. Versuch es gleich noch einmal.",
+    "retry": "Erneut versuchen"
+  }
+}

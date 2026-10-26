@@ -79,7 +79,7 @@ const simpleLists: Record<string, { key: () => readonly unknown[]; field: string
 const landed = (x: Import) => x.counts.tickets + x.counts.updated + x.counts.articles + x.counts.contacts;
 
 // Coalescing timers, one per workspace and kind: events of several workspaces arrive
-// together (Together), and a timer runs later, outside the event's scope.
+// at once (several workspaces), and a timer runs later, outside the event's scope.
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
 function later(kind: string, ms: number, fn: () => void) {
   const wid = scopeWorkspace() ?? "none";

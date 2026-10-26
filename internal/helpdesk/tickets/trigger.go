@@ -840,7 +840,20 @@ func unassignedAudience(ctx context.Context, tx pgx.Tx, d *deps.Deps, wid, tid u
 		}
 	}
 	recipients, err = newTicketRecipients(ctx, tx, wid, pool, mode, actor)
-	return recipients, channel, contact, err
+	if err != nil || pool == nil || len(recipients) == 0 {
+		return recipients, channel, contact, err
+	}
+	// Who turned the team's notifications off hears nothing of its tickets nobody has.
+	rows, err := tx.Query(ctx, `SELECT user_id FROM team_members WHERE team_id = $1 AND user_id = ANY($2) AND NOT notify`, *pool, recipients)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	muted, err := pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
+	if err != nil {
+		return nil, "", nil, err
+	}
+	recipients = slices.DeleteFunc(recipients, func(u uuid.UUID) bool { return slices.Contains(muted, u) })
+	return recipients, channel, contact, nil
 }
 
 // newTicketRecipients picks who hears about a new ticket of pool, leaving out actor.

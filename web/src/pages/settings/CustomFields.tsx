@@ -20,6 +20,7 @@ import { ENTITIES, hasOptions, typeIcon, typeTone, useCustomFields, useFieldWrit
 import { cn } from "@/lib/cn";
 import { atLeast, useRole } from "@/lib/session";
 import { tone as tones } from "@/lib/tones";
+import { inSentence } from "@/i18n";
 
 export default function CustomFields() {
   const { t } = useTranslation("settings");
@@ -146,7 +147,7 @@ export default function CustomFields() {
         ) : !active.length ? (
           <SettingsEmpty
             art="settings"
-            title={t("fields.empty.title", { entity: t(`fields.entity.${entity}`).toLowerCase() })}
+            title={t("fields.empty.title", { entity: inSentence(t(`fields.entity.${entity}`)) })}
             description={t(`fields.empty.${entity}`)}
             action={
               canEdit && (

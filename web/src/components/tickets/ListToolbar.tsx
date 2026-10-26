@@ -16,6 +16,7 @@ import { AnimatedNumber } from "@/components/motion";
 import { TagSwatch } from "./TagSwatch";
 import { ChannelIcon, PriorityIcon, SeverityChip, channelLabel, priorityLabel, priorityOrder, severityLabel, severityOrder } from "./bits";
 import { addressLabel, BrandChip, sortTeams, TeamDot, useTeamsCtx } from "./teams";
+import { inSentence } from "@/i18n";
 
 /** Address picker values for an alias: the address a ticket was written to. */
 const TO = "to:";
@@ -205,7 +206,7 @@ export function ListToolbar({
                 }
                 if (e.key === "ArrowDown" || e.key === "Enter") (e.target as HTMLInputElement).blur();
               }}
-              placeholder={t("toolbar.searchIn", { title: title.toLowerCase() })}
+              placeholder={t("toolbar.searchIn", { title: inSentence(title) })}
               aria-label={t("toolbar.searchTickets")}
               className="h-7 min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-fg-4"
             />

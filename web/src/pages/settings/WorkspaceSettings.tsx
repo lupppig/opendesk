@@ -23,6 +23,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
 import { ReauthNotice } from "@/components/settings/ReauthNotice";
 import { SaveBar } from "@/components/settings/SaveBar";
+import { StarterSpaceSection } from "@/components/spaces/StarterSpaceSection";
 import { useBrands } from "@/components/settings2/teams";
 import { bareUrl, defaultHelpUrl, helpCenterHref } from "@/lib/helpCenter";
 import { api } from "@/lib/api/endpoints";
@@ -358,6 +359,8 @@ export default function WorkspaceSettings() {
           />
         </Section>
       </fieldset>
+
+      <StarterSpaceSection />
 
       {role === "owner" && <DangerZone ws={ws} />}
 

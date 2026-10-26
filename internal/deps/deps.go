@@ -46,7 +46,7 @@ type Deps struct {
 }
 
 // OverviewParts load one workspace's numbers for the caller's overview (contracts/api.md
-// "Workspaces together"). Each gets a principal for that workspace alone, with the caller's
+// "Several workspaces"). Each gets a principal for that workspace alone, with the caller's
 // role there, and answers what the area's own route would answer it; nil when the area
 // has nothing there (Collab off for that workspace).
 type OverviewParts struct {

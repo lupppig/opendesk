@@ -1,7 +1,7 @@
 // One socket per signed-in tab. Joins workspace:<wid> and user:<uid> for events,
 // and ticket:<wid>:<id> for presence and typing on the open ticket (and, quietly,
-// the tickets visible in the list). With Together (contracts/api.md "Workspaces
-// together") the token covers the person's other workspaces too: the socket joins
+// the tickets visible in the list). For someone in several workspaces (contracts/api.md
+// "Several workspaces") the token covers the person's other workspaces too: the socket joins
 // each one's workspace and private team channels, tracks seq per workspace, and
 // applies every event to its own workspace's cache.
 
@@ -26,8 +26,8 @@ export type ManagerOptions = {
   /** The focus workspace. */
   workspaceId: string;
   userId: string;
-  /** Follow every workspace the person is in (Together), not only the focus. */
-  together?: boolean;
+  /** Follow every workspace the person is in, not only the focus. */
+  allWorkspaces?: boolean;
   /** A notification for this person, in workspace `workspaceId`. */
   onNotification?: (n: Notification, workspaceId: string) => void;
   onTicketCreated?: (t: Ticket, workspaceId: string) => void;
@@ -108,7 +108,7 @@ export class RealtimeManager {
     return this.opts.workspaceId;
   }
 
-  /** Move the focus (Together keeps one manager across workspaces). */
+  /** Move the focus (one manager follows every workspace). */
   setFocus(wid: string) {
     if (wid === this.opts.workspaceId) return;
     this.opts.workspaceId = wid;
@@ -149,12 +149,12 @@ export class RealtimeManager {
     // The token is asked for in the focus workspace; once the session has moved on
     // (switched account, left or deleted it, logged out) there is nothing to ask for.
     const wid = getWorkspaceId();
-    if (this.stopped || !wid || (!this.opts.together && wid !== this.opts.workspaceId)) throw new Error("realtime: workspace changed");
-    const r = await api.realtimeToken(!!this.opts.together);
+    if (this.stopped || !wid || (!this.opts.allWorkspaces && wid !== this.opts.workspaceId)) throw new Error("realtime: workspace changed");
+    const r = await api.realtimeToken(!!this.opts.allWorkspaces);
     this.token = r.token;
     const covered = tokenWorkspaces(r.token);
     // Separate: the focus alone, whatever the token says.
-    if (!this.opts.together) for (const k of [...covered.keys()]) if (k !== this.opts.workspaceId) covered.delete(k);
+    if (!this.opts.allWorkspaces) for (const k of [...covered.keys()]) if (k !== this.opts.workspaceId) covered.delete(k);
     this.covered = covered;
     this.reconcileWorkspaces();
     this.reconcileTickets();

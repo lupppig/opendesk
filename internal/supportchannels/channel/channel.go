@@ -8,7 +8,52 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
+	"strings"
+	"time"
 )
+
+const (
+	rateLimitFallback = time.Minute
+	rateLimitMaximum  = 15 * time.Minute
+)
+
+// RateLimited asks the caller to retry after the provider's requested delay.
+type RateLimited struct{ RetryAfter time.Duration }
+
+func (e *RateLimited) Error() string { return "provider rate limited for " + e.RetryAfter.String() }
+
+// RateLimitDelay reads Retry-After or a provider's retry_after value, with a
+// one-minute fallback and the same bounds used by helpdesk import providers.
+func RateLimitDelay(header http.Header, retryAfterSeconds float64) time.Duration {
+	var delay time.Duration
+	hasDelay := false
+	if retryAfterSeconds > 0 {
+		delay = secondsDuration(retryAfterSeconds)
+		hasDelay = true
+	}
+	if !hasDelay {
+		value := strings.TrimSpace(header.Get("Retry-After"))
+		if seconds, err := strconv.ParseFloat(value, 64); err == nil && seconds >= 0 {
+			delay = secondsDuration(seconds)
+			hasDelay = true
+		} else if at, err := http.ParseTime(value); err == nil {
+			delay = time.Until(at)
+			hasDelay = true
+		}
+	}
+	if !hasDelay {
+		delay = rateLimitFallback
+	}
+	return min(max(delay, time.Second), rateLimitMaximum)
+}
+
+func secondsDuration(seconds float64) time.Duration {
+	if seconds >= rateLimitMaximum.Seconds() {
+		return rateLimitMaximum
+	}
+	return time.Duration(seconds * float64(time.Second))
+}
 
 type Field struct {
 	Name       string `json:"name"`

@@ -36,7 +36,15 @@ func (w *dispatchWorker) Timeout(*river.Job[jobs.SupportChannelDispatchArgs]) ti
 	return 30 * time.Second
 }
 func (w *dispatchWorker) Work(ctx context.Context, j *river.Job[jobs.SupportChannelDispatchArgs]) error {
-	return w.s.dispatch(ctx, j.Args)
+	return snoozeRateLimit(w.s.dispatch(ctx, j.Args))
+}
+
+func snoozeRateLimit(err error) error {
+	var limited *channel.RateLimited
+	if errors.As(err, &limited) {
+		return river.JobSnooze(limited.RetryAfter)
+	}
+	return err
 }
 
 type inboundWorker struct {
@@ -55,7 +63,7 @@ func (w *inboundWorker) Work(ctx context.Context, j *river.Job[jobs.SupportChann
 		// Waiting for an earlier command is not a failure: it uses no attempt.
 		return river.JobSnooze(2 * time.Second)
 	}
-	return err
+	return snoozeRateLimit(err)
 }
 
 type deliveryTarget struct {
@@ -1212,7 +1220,10 @@ func (r *reply) clearActions(ctx context.Context) {
 const deliveryError = "Couldn't deliver to the provider."
 
 func (s *Service) connectionError(ctx context.Context, id uuid.UUID, cause error) error {
-	_, _ = s.d.DB.Pool.Exec(ctx, `UPDATE support_channel_connections SET status='error',last_error=$2,updated_at=now() WHERE id=$1 AND (status<>'error' OR last_error=$2)`, id, deliveryError)
+	var limited *channel.RateLimited
+	if !errors.As(cause, &limited) {
+		_, _ = s.d.DB.Pool.Exec(ctx, `UPDATE support_channel_connections SET status='error',last_error=$2,updated_at=now() WHERE id=$1 AND (status<>'error' OR last_error=$2)`, id, deliveryError)
+	}
 	return fmt.Errorf("support channel delivery: %w", cause)
 }
 func publicError(err error) string {

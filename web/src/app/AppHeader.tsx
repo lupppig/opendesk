@@ -15,15 +15,23 @@ import { Kbd } from "@/components/ui/kbd";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { desktop } from "@/lib/desktop";
-import { atLeast, useRole } from "@/lib/session";
+import { atLeast, useRole, useWorkspace } from "@/lib/session";
+import { useSpaces } from "@/lib/spaces/hooks";
+import { pickedSpace } from "@/lib/spaces/model";
+import { usePickedSpaceId } from "@/lib/spaces/store";
 import { ConnectionIndicator } from "./ConnectionIndicator";
 import { NotificationsButton } from "./Notifications";
 import { WorkspaceSwitcher } from "./Sidebar";
+import { WorkspaceBadge } from "@/components/workspaces/WorkspaceBadge";
 import { shell, useNav } from "./shellStore";
 import { useBreadcrumbs } from "./useBreadcrumbs";
 
 export function AppHeader() {
   const crumbs = useBreadcrumbs();
+  // With a Space picked the switcher names the Space; the open page's workspace comes first here.
+  const { spaces } = useSpaces();
+  const space = pickedSpace(spaces, usePickedSpaceId());
+  const ws = useWorkspace();
   const collapsed = useNav((s) => s.collapsed);
   const role = useRole();
   const { t } = useTranslation("shell");
@@ -62,6 +70,17 @@ export function AppHeader() {
         <WorkspaceSwitcher />
         <nav aria-label={t("breadcrumb")} className="hidden min-w-0 md:block">
           <ol className="flex min-w-0 items-center gap-1.5">
+            {space && ws && (
+              <>
+                <li aria-hidden>
+                  <ChevronRight className="size-3.5 shrink-0 text-fg-4" />
+                </li>
+                <li className="flex min-w-0 items-center gap-1.5 animate-label-in motion-reduce:animate-none">
+                  <WorkspaceBadge name={ws.name} logo={ws.avatar_url} size="sm" decorative />
+                  <span className="truncate text-[12.5px] text-fg-3">{ws.name}</span>
+                </li>
+              </>
+            )}
             {crumbs.map((c, i) => {
               const last = i === crumbs.length - 1;
               return (

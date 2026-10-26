@@ -15,7 +15,7 @@ import { keyWorkspace } from "./queries";
  * scope when its component rendered (the page keys itself by the focus workspace, so
  * that is the page's own). Requests and the keys the callbacks build then target it,
  * even when the focus moved to another workspace in the meantime: one workspace's
- * answer is never stored under another's key (contracts/api.md "Workspaces together").
+ * answer is never stored under another's key (contracts/api.md "Several workspaces").
  */
 export class WorkspaceQueryClient extends QueryClient {
   override defaultQueryOptions<

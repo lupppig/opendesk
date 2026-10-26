@@ -1,0 +1,157 @@
+{
+  "setup": {
+    "title": "Mach deinen Agenten startklar",
+    "description": "Jeder Schritt macht Ollies Antworten besser. Optionale Schritte helfen, sind aber nicht nötig.",
+    "progress": "{{done}} von {{total}} erledigt",
+    "progressLabel": "{{done}} von {{total}} Pflichtschritten erledigt",
+    "optional": "Optional",
+    "stepDone": "Erledigt",
+    "stepTodo": "Noch offen",
+    "complete": "Dein Agent ist eingerichtet",
+    "completeBody": "Ollie hat, was er braucht. Verbessere ihn weiter mit dem Testbereich und den Fragen unten.",
+    "showSteps": "Schritte anzeigen",
+    "hideSteps": "Schritte ausblenden",
+    "needsAi": "Schalte zuerst KI ein",
+    "error": "Die Einrichtungsschritte konnten nicht geladen werden.",
+    "retry": "Erneut versuchen",
+    "steps": {
+      "ai_on": {
+        "title": "KI einschalten",
+        "why": "Ollie braucht eingeschaltete KI im Workspace, bevor er jemandem antworten kann.",
+        "action": "KI-Einstellungen öffnen"
+      },
+      "identity": {
+        "title": "Gib deinem Agenten einen Namen und sag ihm, wie er helfen soll",
+        "why": "Mit einem Namen, einem Bild und Anweisungen klingen die Antworten nach deinem Team.",
+        "action": "Identität einrichten"
+      },
+      "knowledge": {
+        "title": "Gib ihm Wissen",
+        "why": "Ollie antwortet nur aus veröffentlichten Hilfeartikeln und bereiten Wissensquellen.",
+        "action": "Wissen hinzufügen"
+      },
+      "tools": {
+        "title": "Tools verbinden",
+        "why": "Lass Ollie Bestellungen oder Konten in deinen eigenen Systemen nachschlagen.",
+        "action": "Tool verbinden"
+      },
+      "playground": {
+        "title": "Im Testbereich testen",
+        "why": "Stell ein paar echte Fragen und prüf die Antworten, bevor Besucher es tun.",
+        "action": "Testbereich öffnen"
+      },
+      "widget": {
+        "title": "Chat-Widget installieren",
+        "why": "Besucher erreichen Ollie über das Widget auf deiner Website.",
+        "action": "Widget installieren"
+      },
+      "answers_on": {
+        "title": "Ollie Chats beantworten lassen",
+        "why": "Schalte Antworten ein, damit Ollie Besuchern antwortet und übergibt, wenn es nötig ist.",
+        "action": "Antworten einschalten"
+      },
+      "email_answers": {
+        "title": "Auch E-Mails beantworten",
+        "why": "Schalte Ollie für ein Postfach ein, um E-Mail-Antworten zu entwerfen oder zu senden.",
+        "action": "Postfach wählen"
+      }
+    }
+  },
+  "clients": {
+    "title": "KI-Clients",
+    "description": "Nutze opendesk aus Claude, ChatGPT, Cursor, VS Code und anderen MCP-Clients. Sie bearbeiten deine Tickets, Kontakte und Hilfeartikel mit dem Zugriff, den du ihnen gibst.",
+    "server": "MCP-Server-URL",
+    "serverHint": "Clients, die sich per OAuth anmelden, brauchen nur diese Adresse.",
+    "setupTitle": "Client verbinden",
+    "setupHint": "Wähle deinen Client und folge den Schritten.",
+    "oauthBadge": "Anmelden",
+    "keyBadge": "API-Schlüssel",
+    "keyPlaceholder": "od_live_...",
+    "steps": {
+      "claude": "Öffne in Claude die Einstellungen, dann Konnektoren, und wähle „Benutzerdefinierten Konnektor hinzufügen“. Füge die URL ein und wähle Verbinden. Melde dich bei opendesk an und stimme zu.",
+      "chatgpt": "Füge in ChatGPT im Entwicklermodus einen Konnektor mit dieser URL und OAuth-Authentifizierung hinzu. Melde dich bei opendesk an und stimme zu.",
+      "claudeCode": "Führe das in deinem Terminal aus. Claude Code öffnet opendesk zur Anmeldung, wenn du den Server zum ersten Mal nutzt.",
+      "claudeCodeKey": "Oder sende statt der Anmeldung einen API-Schlüssel als Header:",
+      "claudeDesktop": "Nimm lieber einen Konnektor mit Anmeldung (siehe Claude). Für einen API-Schlüssel öffne Einstellungen, dann Entwickler, dann Konfiguration bearbeiten, füge das hier hinzu und starte Claude Desktop neu. Dafür ist Node.js nötig.",
+      "cursor": "Füge das in ~/.cursor/mcp.json für alle Projekte ein oder in .cursor/mcp.json für ein einzelnes. Prüfe dann Cursor Settings, MCP.",
+      "vscode": "Füge das als .vscode/mcp.json in deinem Workspace hinzu. VS Code fragt beim ersten Mal nach dem Schlüssel und speichert ihn sicher.",
+      "other": "Jeder Client, der Streamable HTTP spricht, funktioniert: mit OAuth, wenn er die MCP-Autorisierungsspezifikation unterstützt, sonst mit einem API-Schlüssel im Authorization-Header."
+    },
+    "keyNeeded": "Dieser Client sendet einen API-Schlüssel in einem Header.",
+    "keyCreate": "Schlüssel dafür erstellen",
+    "keyAskAdmin": "Bitte einen Admin, einen API-Schlüssel dafür zu erstellen.",
+    "keyShownOnce": "Kopiere ihn jetzt. Er wird nur einmal angezeigt und bis zum Verlassen dieser Seite in die Snippets oben eingesetzt.",
+    "keyDialog": {
+      "title": "API-Schlüssel für einen KI-Client erstellen",
+      "description": "Der Client bekommt nur die Tools, die diese Berechtigungen erlauben.",
+      "name": "Name",
+      "namePlaceholder": "Cursor auf meinem Laptop",
+      "access": "Zugriff",
+      "read": "Nur lesen",
+      "readHint": "Tickets, Kontakte und Artikel suchen und lesen.",
+      "write": "Lesen und schreiben",
+      "writeHint": "Außerdem antworten, Notizen hinzufügen, Tickets aktualisieren und Artikel entwerfen.",
+      "expires": "Läuft ab",
+      "in30": "In 30 Tagen",
+      "in90": "In 90 Tagen",
+      "in365": "In einem Jahr",
+      "create": "Schlüssel erstellen",
+      "cancel": "Abbrechen",
+      "nameRequired": "Gib dem Schlüssel einen Namen.",
+      "error": "Der Schlüssel konnte nicht erstellt werden."
+    },
+    "tools": "Angebotene Tools",
+    "toolsHint": "Ein Client sieht ein Tool nur, wenn sein Zugriff die Berechtigungen des Tools umfasst.",
+    "readOnly": "Lesen",
+    "changes": "Ändert Daten",
+    "connections": "Verbundene Clients",
+    "connectionsHint": "Per Anmeldung verbundene Clients. Sie handeln als die Person, die sie verbunden hat.",
+    "connectionsHintAdmin": "Per Anmeldung verbundene Clients aller Mitglieder. Sie handeln als die Person, die sie verbunden hat.",
+    "lastUsed": "Zuletzt verwendet {{when}}",
+    "connectedBy": "Verbunden von {{name}}",
+    "you": "du",
+    "onComputer": "eine App auf diesem Computer",
+    "revoke": "Trennen",
+    "revokeTitle": "{{name}} trennen?",
+    "revokeBody": "Der Client funktioniert sofort nicht mehr und muss sich neu anmelden, um sich wieder zu verbinden.",
+    "revokeError": "Der Client konnte nicht getrennt werden.",
+    "emptyTitle": "Noch keine Clients verbunden",
+    "emptyBody": "Füge opendesk mit der URL oben als Konnektor in Claude oder ChatGPT hinzu. Er erscheint hier, sobald du zustimmst.",
+    "emptyTipSignIn": "Anmelden, kein Schlüssel zum Kopieren",
+    "emptyTipRole": "Nie mehr, als deine Rolle erlaubt",
+    "error": "Verbundene Clients konnten nicht geladen werden.",
+    "retry": "Erneut versuchen"
+  },
+  "scopes": {
+    "tickets:read": "Tickets lesen",
+    "tickets:write": "Tickets beantworten und aktualisieren",
+    "contacts:read": "Kontakte lesen",
+    "contacts:write": "Kontakte aktualisieren",
+    "kb:read": "Hilfeartikel lesen",
+    "kb:write": "Hilfeartikel entwerfen",
+    "settings:read": "Teammitglieder, Teams und Berichte lesen"
+  },
+  "consent": {
+    "title": "{{name}} mit opendesk verbinden",
+    "subtitle": "{{name}} möchte in deinem Namen in opendesk arbeiten.",
+    "workspace": "Workspace",
+    "access": "Damit kann es",
+    "notIncluded": "Nicht enthalten: Deine Rolle in diesem Workspace darf das nicht",
+    "noScopes": "Deine Rolle in diesem Workspace darf nichts davon nutzen. Wähle einen anderen Workspace oder frag einen Admin.",
+    "redirect": "Nach deiner Entscheidung geht es zurück zu {{host}}.",
+    "redirectLocal": "Nach deiner Entscheidung geht es zurück zu einer App auf diesem Computer ({{host}}).",
+    "trust": "Verbinde nur Apps, denen du vertraust. Du kannst sie jederzeit unter Einstellungen, KI-Clients trennen.",
+    "approve": "Zustimmen",
+    "deny": "Ablehnen",
+    "approving": "Wird verbunden",
+    "returning": "Zurück zu {{name}}",
+    "expiredTitle": "Diese Anfrage ist beendet",
+    "expiredBody": "Sie ist abgelaufen oder wurde schon beantwortet. Starte noch einmal in deinem KI-Client.",
+    "invalidTitle": "Diese App kann sich nicht verbinden",
+    "invalidBody": "Die Verbindungsanfrage ist ungültig. Starte noch einmal in deinem KI-Client oder bitte dessen Entwickler um Hilfe.",
+    "noWorkspaceTitle": "Du bist noch in keinem Workspace",
+    "noWorkspaceBody": "Erstelle einen Workspace oder tritt einem bei und verbinde die App dann noch einmal.",
+    "error": "Etwas ist schiefgelaufen. Versuch es noch einmal.",
+    "goHome": "Zu opendesk"
+  }
+}

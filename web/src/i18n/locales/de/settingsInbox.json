@@ -1,0 +1,669 @@
+{
+  "common": {
+    "edit": "Bearbeiten",
+    "delete": "Löschen",
+    "cancel": "Abbrechen",
+    "discard": "Verwerfen",
+    "discardTitle": "Änderungen verwerfen?",
+    "actionsFor": "Aktionen für {{name}}",
+    "enable": "{{name}} aktivieren"
+  },
+  "savedReplies": {
+    "title": "Textbausteine",
+    "descriptionBefore": "Antworten, die dein Team oft sendet. Tippe im Editor",
+    "descriptionAfter": "und ein Kürzel oder wähle einen Baustein aus dem Menü der Textbausteine.",
+    "new": "Neuer Textbaustein",
+    "find": "Textbaustein suchen",
+    "count_one": "{{count}} Textbaustein",
+    "count_other": "{{count}} Textbausteine",
+    "noMatches": "Keine Treffer",
+    "noMatchesHint": "Versuch es mit einem Titel oder einem Kürzel.",
+    "emptyTitle": "Noch keine Textbausteine",
+    "emptyHint": "Speichere die Antworten, die du am häufigsten schreibst, und füge sie mit einem Schrägstrich ein.",
+    "pickTitle": "Wähle einen Textbaustein zum Bearbeiten",
+    "pickHint": "Oder erstelle einen neuen.",
+    "untitled": "Textbaustein ohne Titel",
+    "newBadge": "Neu",
+    "noShortcut": "Kein Kürzel",
+    "titleLabel": "Titel",
+    "titlePlaceholder": "Bestätigung der Rückerstattung",
+    "shortcutLabel": "Kürzel",
+    "bodyPlaceholder": "Hallo, danke für deine Nachricht…",
+    "bodyLabel": "Antworttext",
+    "save": "Speichern",
+    "revert": "Zurücksetzen",
+    "unsaved": "Ungespeicherte Änderungen",
+    "newReply": "Neuer Textbaustein",
+    "saved": "Textbaustein gespeichert",
+    "saveFailed": "Textbaustein konnte nicht gespeichert werden",
+    "deleteFailed": "Textbaustein konnte nicht gelöscht werden",
+    "discardBody": "Deine Änderungen an diesem Textbaustein gehen verloren.",
+    "deleteTitle": "Diesen Textbaustein löschen?",
+    "deleteBody": "ist im Editor dann nicht mehr verfügbar.",
+    "needTitle": "Gib dem Textbaustein einen Titel.",
+    "needBody": "Schreib den Antworttext.",
+    "shortcutTaken": "Ein anderer Textbaustein verwendet bereits /{{shortcut}}.",
+    "updated": "Bearbeitet {{when}}",
+    "emptyTips": {
+      "slash": "Tippe im Editor / und ein Kürzel",
+      "team": "Antworten sind für dein ganzes Team verfügbar"
+    },
+    "variablesHint": "Variablen werden beim Einfügen des Textbausteins für jedes Ticket ausgefüllt."
+  },
+  "views": {
+    "reorderAria": "{{name}} neu anordnen. Halte Alt gedrückt und bewege es mit den Pfeiltasten.",
+    "title": "Ansichten",
+    "description": "Gespeicherte Filter in der Seitenleiste unter Ansichten, mit Live-Anzahl. Eine Ansicht gehört nur dir, einem Team oder allen. Die Reihenfolge hier ist die Reihenfolge in der Seitenleiste.",
+    "new": "Neue Ansicht",
+    "count_one": "{{count}} Ansicht",
+    "count_other": "{{count}} Ansichten",
+    "emptyTitle": "Noch keine Ansichten",
+    "emptyHint": "Eine Ansicht ist ein gespeicherter Filter, etwa dringende Tickets für das Abrechnungsteam.",
+    "shared": "Geteilt",
+    "personal": "Nur du",
+    "showToEveryone": "{{name}} allen zeigen",
+    "open": "Ansicht öffnen",
+    "openThis": "Diese Ansicht öffnen",
+    "deleteTitle": "Diese Ansicht löschen?",
+    "deleteConfirm": "Ansicht löschen",
+    "deleteFrom": {
+      "me": "verschwindet aus deiner Seitenleiste. Tickets bleiben unverändert.",
+      "team": "verschwindet aus der Seitenleiste aller in {{team}}. Tickets bleiben unverändert.",
+      "anyTeam": "verschwindet aus der Seitenleiste aller im Team. Tickets bleiben unverändert.",
+      "everyone": "verschwindet für alle aus der Seitenleiste. Tickets bleiben unverändert."
+    },
+    "updateFailed": "Ansicht konnte nicht aktualisiert werden",
+    "reorderFailed": "Ansichten konnten nicht neu angeordnet werden",
+    "deleteFailed": "Ansicht konnte nicht gelöscht werden",
+    "editTitle": "Ansicht bearbeiten",
+    "nameLabel": "Name",
+    "namePlaceholder": "Abrechnungs-Warteschlange",
+    "needName": "Gib der Ansicht einen Namen.",
+    "visibleTitle": "Für alle sichtbar",
+    "audience": {
+      "me": "Nur du siehst sie in deiner Seitenleiste.",
+      "team": "Alle in {{team}} sehen sie in ihrer Seitenleiste.",
+      "anyTeam": "Alle im Team sehen sie in ihrer Seitenleiste.",
+      "everyone": "Alle im Workspace sehen sie in ihrer Seitenleiste."
+    },
+    "showWhere": "Tickets anzeigen, bei denen",
+    "discardBody": "Deine Änderungen an dieser Ansicht gehen verloren.",
+    "save": "Ansicht speichern",
+    "create": "Ansicht erstellen",
+    "saved": "Ansicht gespeichert",
+    "created": "Ansicht erstellt",
+    "clear": "{{field}} leeren",
+    "allTickets": "Alle Tickets",
+    "filters": {
+      "status": "Status",
+      "priority": "Priorität",
+      "severity": "Schweregrad",
+      "assignee": "Zuständig",
+      "team": "Team",
+      "mailbox": "Postfach",
+      "writtenTo": "Geschrieben an",
+      "tag": "Label",
+      "channel": "Kanal",
+      "keyword": "Stichwort"
+    },
+    "any": {
+      "status": "Jeder Status",
+      "priority": "Jede Priorität",
+      "severity": "Jeder Schweregrad",
+      "assignee": "Alle",
+      "team": "Jedes Team",
+      "mailbox": "Jedes Postfach",
+      "writtenTo": "Jede Adresse",
+      "tag": "Jedes Label",
+      "channel": "Jeder Kanal"
+    },
+    "keywordPlaceholder": "Betreff, Kontakt oder Text",
+    "noSeverity": "Kein Schweregrad",
+    "assigneeViewer": "Die betrachtende Person",
+    "unassigned": "Nicht zugewiesen",
+    "assignedToViewer": "Der betrachtenden Person zugewiesen",
+    "assignedTo": "Zugewiesen an {{name}}",
+    "aTeammate": "ein Teammitglied",
+    "teamNamed": "Team {{name}}",
+    "unknown": "unbekannt",
+    "inMailbox": "In {{name}}",
+    "aMailbox": "ein Postfach",
+    "writtenTo": "Geschrieben an {{address}}",
+    "matching": "Passend zu „{{q}}“",
+    "emptyTips": {
+      "sidebar": "Geteilte Ansichten erscheinen in der Seitenleiste aller",
+      "personal": "Persönliche Ansichten bleiben nur in deiner Seitenleiste"
+    }
+  },
+  "sla": {
+    "reorderAria": "{{name}} neu anordnen. Halte Alt gedrückt und bewege es mit den Pfeiltasten.",
+    "title": "SLA-Richtlinien",
+    "description": "Ziele für Antwort und Lösung. Richtlinien werden von oben nach unten geprüft, und die erste aktive, die zur Priorität und zum Team eines Tickets passt, gilt.",
+    "new": "Neue Richtlinie",
+    "emptyTitle": "Keine SLA-Richtlinien",
+    "emptyHint": "Ohne Richtlinie haben Tickets keine Fälligkeiten.",
+    "allPriorities": "Alle Prioritäten",
+    "firstResponse": "Erste Antwort",
+    "resolution": "Lösung",
+    "replyIn": "Antwort in {{time}}",
+    "resolveIn": "Lösung in {{time}}",
+    "footnote": "Fälligkeiten erscheinen an Tickets und in der Liste. Bei einer Überschreitung wird die zuständige Person benachrichtigt.",
+    "deleteTitle": "Diese Richtlinie löschen?",
+    "deleteConfirm": "Richtlinie löschen",
+    "deleteBodyBefore": "Tickets unter",
+    "deleteBodyAfter": "behalten ihre aktuellen Fälligkeiten. Neue Tickets fallen an die nächste passende Richtlinie.",
+    "updateFailed": "Richtlinie konnte nicht aktualisiert werden",
+    "reorderFailed": "Richtlinien konnten nicht neu angeordnet werden",
+    "deleteFailed": "Richtlinie konnte nicht gelöscht werden",
+    "summary": {
+      "policies": "Richtlinien",
+      "enabled": "Aktiv",
+      "fastestReply": "Schnellste Antwort",
+      "fastestResolve": "Schnellste Lösung",
+      "off": "{{count}} aus"
+    },
+    "off": "Aus",
+    "editTitle": "SLA-Richtlinie bearbeiten",
+    "newTitle": "Neue SLA-Richtlinie",
+    "dialogHint": "Ziele zählen jede Minute, außer die Richtlinie zählt nur Geschäftszeiten.",
+    "save": "Richtlinie speichern",
+    "create": "Richtlinie erstellen",
+    "saved": "Richtlinie gespeichert",
+    "created": "Richtlinie erstellt",
+    "nameLabel": "Name",
+    "namePlaceholder": "Dringende Tickets",
+    "appliesTo": "Gilt für",
+    "anyPriority": "Jede Priorität",
+    "priorityOption": "Priorität {{priority}}",
+    "firstWithin": "Erste Antwort innerhalb von",
+    "resolveWithin": "Lösung innerhalb von",
+    "currently": "Aktuell {{time}}",
+    "needName": "Gib der Richtlinie einen Namen.",
+    "resolutionTooSoon": "Die Lösung kann nicht früher fällig sein als die erste Antwort.",
+    "badDuration": "Gib jede Zeit als Zahl ein, von 1 Minute bis 365 Tage.",
+    "units": {
+      "m": "Minuten",
+      "h": "Stunden",
+      "d": "Tage"
+    },
+    "emptyTips": {
+      "order": "Die erste passende Richtlinie gilt",
+      "calendar": "Richtlinien können außerhalb der Geschäftszeiten pausieren"
+    },
+    "businessHours": "Nur Geschäftszeiten zählen",
+    "businessHoursHint": "Die Uhr pausiert außerhalb der Geschäftszeiten und an Feiertagen.",
+    "businessHoursOff": "Geschäftszeiten sind aus, daher zählt jede Minute, bis du sie einschaltest.",
+    "businessHoursLink": "Geschäftszeiten festlegen",
+    "businessHoursBadge": "Geschäftszeiten"
+  },
+  "automations": {
+    "reorderAria": "{{name}} neu anordnen. Halte Alt gedrückt und bewege es mit den Pfeiltasten.",
+    "title": "Automatisierungen",
+    "description": "Regeln, die von selbst laufen, wenn mit einem Ticket etwas passiert. Sie laufen der Reihe nach, von oben nach unten.",
+    "new": "Neue Automatisierung",
+    "emptyTitle": "Noch keine Automatisierungen",
+    "emptyHint": "Leite Abrechnungs-E-Mails an das Abrechnungsteam, versieh dringende Wörter mit einem Label oder schließe Spam, ohne einen Finger zu rühren.",
+    "conditions_one": "{{count}} Bedingung",
+    "conditions_other": "{{count}} Bedingungen",
+    "actions_one": "{{count}} Aktion",
+    "actions_other": "{{count}} Aktionen",
+    "runs": "{{n}} Ausführungen",
+    "ranTimes": "{{n}}-mal ausgeführt",
+    "active": "Aktiv",
+    "paused": "Pausiert",
+    "deleteTitle": "Diese Automatisierung löschen?",
+    "deleteBody": "läuft dann nicht mehr. Tickets, die sie bereits geändert hat, bleiben, wie sie sind.",
+    "updateFailed": "Automatisierung konnte nicht aktualisiert werden",
+    "reorderFailed": "Automatisierungen konnten nicht neu angeordnet werden",
+    "deleteFailed": "Automatisierung konnte nicht gelöscht werden",
+    "summary": {
+      "total": "Automatisierungen",
+      "active": "Aktiv",
+      "paused": "Pausiert",
+      "runs": "Ausführungen"
+    },
+    "emptyTips": {
+      "order": "Regeln laufen der Reihe nach, von oben nach unten",
+      "trigger": "Jede Regel beginnt mit einem Auslöser, etwa einem neuen Ticket"
+    }
+  },
+  "edit": {
+    "fallbackTitle": "Automatisierung",
+    "back": "Automatisierungen",
+    "newTitle": "Neue Automatisierung",
+    "newHint": "Wähle, wann sie läuft, was zutreffen muss und was sie tut.",
+    "ran": "{{n}}-mal ausgeführt",
+    "notFound": "Automatisierung nicht gefunden",
+    "notFoundHint": "Sie wurde möglicherweise gelöscht.",
+    "backToList": "Zurück zu den Automatisierungen",
+    "create": "Automatisierung erstellen",
+    "save": "Speichern",
+    "created": "Automatisierung erstellt",
+    "saved": "Automatisierung gespeichert",
+    "deleted": "Automatisierung gelöscht",
+    "nameLabel": "Name",
+    "namePlaceholder": "Abrechnungs-E-Mails an das Abrechnungsteam leiten",
+    "on": "An",
+    "off": "Aus",
+    "enabled": "Automatisierung aktiv",
+    "when": "Wenn",
+    "trigger": "Auslöser",
+    "ifAll": "Wenn all das zutrifft",
+    "everyTicket": "Für jedes Ticket",
+    "noConditions": "Keine Bedingungen: Die Aktionen laufen jedes Mal.",
+    "then": "Dann",
+    "addCondition": "Bedingung hinzufügen",
+    "addAction": "Aktion hinzufügen",
+    "removeCondition": "Bedingung entfernen",
+    "removeAction": "Aktion entfernen",
+    "if": "Wenn",
+    "and": "und",
+    "do": "Tue",
+    "field": "Feld",
+    "operator": "Operator",
+    "action": "Aktion",
+    "valueLabel": "Wert für {{field}}",
+    "chooseStatus": "Status wählen",
+    "choosePriority": "Priorität wählen",
+    "chooseChannel": "Kanal wählen",
+    "chooseMailbox": "Postfach wählen",
+    "chooseTag": "Label wählen",
+    "chooseTeammate": "Teammitglied wählen",
+    "chooseTeam": "Team wählen",
+    "markSpamHint": "Verschiebt das Ticket in Spam. Es wird keine Antwort gesendet.",
+    "replyPlaceholder": "Danke für deine Nachricht. Wir haben sie erhalten…",
+    "notePlaceholder": "Interne Notiz für das Team",
+    "replyText": "Antworttext",
+    "noteText": "Notiztext",
+    "problems": {
+      "name": "Gib der Automatisierung einen Namen.",
+      "action": "Füge mindestens eine Aktion hinzu.",
+      "condition": "Jede Bedingung braucht einen Wert, oder entferne sie.",
+      "actionValue": "Jede Aktion braucht einen Wert."
+    },
+    "chooseSeverity": "Schweregrad wählen",
+    "noSeverity": "Kein Schweregrad",
+    "replyVariablesHint": "Absender-Variablen wie der Name des Agenten sind in automatischen Antworten leer."
+  },
+  "triggers": {
+    "ticket_created": "Ein Ticket wird erstellt",
+    "customer_replied": "Der Kunde antwortet",
+    "agent_replied": "Ein Agent antwortet",
+    "ticket_updated": "Ein Ticket wird aktualisiert"
+  },
+  "triggersShort": {
+    "ticket_created": "Ticket erstellt",
+    "customer_replied": "Kunde hat geantwortet",
+    "agent_replied": "Agent hat geantwortet",
+    "ticket_updated": "Ticket aktualisiert"
+  },
+  "fields": {
+    "subject": "Betreff",
+    "body": "Nachrichtentext",
+    "from_email": "Absender-E-Mail",
+    "channel": "Kanal",
+    "mailbox_id": "Postfach",
+    "priority": "Priorität",
+    "severity": "Schweregrad",
+    "status": "Status",
+    "tag": "Label",
+    "received_at": "Empfangsadresse",
+    "team_id": "Team",
+    "brand_id": "Marke",
+    "widget_id": "Chat-Widget",
+    "assignee_id": "Zuständig"
+  },
+  "ops": {
+    "contains": "enthält",
+    "not_contains": "enthält nicht",
+    "equals": "ist",
+    "not_equals": "ist nicht",
+    "eq": "ist",
+    "gt": "ist über",
+    "lt": "ist unter"
+  },
+  "actionTypes": {
+    "set_status": "Status setzen auf",
+    "set_priority": "Priorität setzen auf",
+    "set_severity": "Schweregrad setzen auf",
+    "assign_user": "Zuweisen an",
+    "assign_team": "Team zuweisen",
+    "add_tag": "Label hinzufügen",
+    "remove_tag": "Label entfernen",
+    "send_reply": "Antwort senden",
+    "add_note": "Interne Notiz hinzufügen",
+    "mark_spam": "Als Spam markieren",
+    "set_field": "Feld setzen",
+    "set_reply_address": "Antwortadresse setzen"
+  },
+  "unsaved": {
+    "title": "Ohne Speichern verlassen?",
+    "body": "Deine Änderungen auf dieser Seite gehen verloren.",
+    "keep": "Weiter bearbeiten",
+    "discard": "Änderungen verwerfen"
+  },
+  "pickers": {
+    "search": "Suchen",
+    "andMore": "{{first}} und {{count}} weitere"
+  },
+  "customFields": {
+    "ticketBasics": "Ticket",
+    "ticketGroup": "Ticketfelder",
+    "contactGroup": "Kontaktfelder",
+    "contactPrefix": "Kontakt:",
+    "missing": "Dieses Feld wurde gelöscht",
+    "noValue": "Kein Wert nötig",
+    "chooseOption": "Option wählen",
+    "chooseOptions": "Optionen wählen",
+    "choosePerson": "Person wählen",
+    "choosePeople": "Personen wählen",
+    "yes": "Ja",
+    "no": "Nein",
+    "valueFor": "Wert für {{name}}",
+    "clearHint": "Leer lassen zum Leeren",
+    "chooseField": "Feld wählen",
+    "to": "auf",
+    "ops": {
+      "eq": "ist",
+      "ne": "ist nicht",
+      "contains": "enthält",
+      "not_contains": "enthält nicht",
+      "gt": "ist mehr als",
+      "gte": "ist mindestens",
+      "lt": "ist weniger als",
+      "lte": "ist höchstens",
+      "any": "ist eines von",
+      "all": "hat alle von",
+      "none": "ist keines von",
+      "set": "ist gesetzt",
+      "not_set": "ist leer",
+      "date": {
+        "gt": "ist nach",
+        "gte": "ist am oder nach",
+        "lt": "ist vor",
+        "lte": "ist am oder vor"
+      },
+      "number": {
+        "gt": "ist mehr als",
+        "gte": "ist mindestens",
+        "lt": "ist weniger als",
+        "lte": "ist höchstens"
+      }
+    }
+  },
+  "assignment": {
+    "title": "Zuweisung",
+    "description": "Lege fest, an wen neue Tickets gehen. Ausgewählt werden nur Teammitglieder, die online und unter ihrem Limit sind.",
+    "saveFailed": "Zuweisung konnte nicht gespeichert werden",
+    "defaultTitle": "Standardmodus",
+    "defaultHint": "Gilt für jedes Ticket, außer sein Team oder Postfach hat eine eigene Regel.",
+    "modes": {
+      "none": {
+        "label": "Aus",
+        "hint": "Tickets warten unter Nicht zugewiesen, bis jemand sie übernimmt."
+      },
+      "round_robin": {
+        "label": "Reihum",
+        "hint": "Teammitglieder sind abwechselnd dran, das nächste Ticket geht an die nächste Person."
+      },
+      "load_balanced": {
+        "label": "Nach Auslastung",
+        "hint": "Das nächste Ticket geht an die Person mit den wenigsten offenen Tickets."
+      }
+    },
+    "stats": {
+      "eligible": "Kann Tickets annehmen",
+      "eligibleHint": "Online und unter dem Limit",
+      "atCap": "Am Limit"
+    },
+    "presence": {
+      "online": "Online",
+      "away": "Abwesend",
+      "offline": "Offline",
+      "idle": "Abwesend, inaktiv"
+    },
+    "rules": {
+      "title": "Regeln",
+      "hint": "Gib einem Team oder Postfach einen eigenen Modus. Eine Teamregel geht vor einer Postfachregel.",
+      "add": "Regel hinzufügen",
+      "search": "Team oder Postfach suchen",
+      "noTargets": "Jedes Team und Postfach hat eine Regel",
+      "teams": "Teams",
+      "mailboxes": "Postfächer",
+      "team": "Team",
+      "mailbox": "Postfach",
+      "teamMeta_one": "{{count}} Mitglied",
+      "teamMeta_other": "{{count}} Mitglieder",
+      "missing": "Gelöscht",
+      "modeFor": "Modus für {{name}}",
+      "remove": "Regel entfernen",
+      "removeFor": "Regel für {{name}} entfernen",
+      "removed": "Regel für {{name}} entfernt",
+      "emptyTitle": "Noch keine Regeln",
+      "emptyHint": "Jedes Ticket nutzt den Standardmodus. Füge eine Regel hinzu, wenn ein Team oder Postfach die Arbeit anders verteilen soll, etwa die Abrechnung nach Auslastung.",
+      "tips": {
+        "order": "Zuerst gilt die Teamregel eines Tickets, dann seine Postfachregel",
+        "pool": "Ausgewählt werden nur Mitglieder dieses Teams"
+      }
+    },
+    "notifyTitle": "Neue nicht zugewiesene Tickets",
+    "notifyHint": "Wer erfährt, wenn ein Ticket eingeht und niemand zugewiesen ist. Solange Ollie einen Chat oder eine E-Mail selbst beantwortet, erfahren es alle bei der Übergabe. Jede Person wählt in ihren Benachrichtigungseinstellungen, wo es sie erreicht.",
+    "notify": {
+      "label": "Über neue nicht zugewiesene Tickets benachrichtigen",
+      "options": {
+        "auto": {
+          "label": "Automatisch",
+          "hint": "Alle in kleinen Teams, nur Leitungen, wenn mehr als 5 Personen benachrichtigt würden."
+        },
+        "everyone": {
+          "label": "Alle im Team",
+          "hint": "Alle im Team des Tickets, oder alle im Workspace, wenn es kein Team hat."
+        },
+        "leads": {
+          "label": "Nur Leitungen und Admins",
+          "hint": "Die Leitungen des Teams, oder die Inhaber und Admins, wenn es kein Team oder keine Leitung hat."
+        },
+        "off": {
+          "label": "Aus",
+          "hint": "Niemand wird benachrichtigt. Neue Tickets warten unter Nicht zugewiesen."
+        }
+      }
+    },
+    "awayTitle": "Abwesend",
+    "awayHint": "Teammitglieder, die weg sind, bekommen keine neuen Tickets, bis sie zurück sind.",
+    "away": {
+      "label": "Inaktive Teammitglieder als abwesend markieren",
+      "on_one": "Nach {{count}} Minute ohne Aktivität",
+      "on_other": "Nach {{count}} Minuten ohne Aktivität",
+      "off": "Teammitglieder bleiben online, bis sie es selbst ändern",
+      "after": "Abwesend nach",
+      "afterHint": "Zwischen 10 Minuten und 24 Stunden.",
+      "min": "Min."
+    },
+    "teamTitle": "Verfügbarkeit im Team",
+    "teamHint": "Wer gerade zugewiesen werden kann und wie viel jede Person offen hat. Betrachter werden nie zugewiesen.",
+    "teamEmpty": {
+      "title": "Noch niemand zum Zuweisen",
+      "description": "Lade Agenten oder Admins ein, damit neue Tickets jemanden haben, an den sie gehen.",
+      "action": "Personen einladen",
+      "tips": {
+        "viewers": "Betrachter können Tickets lesen, werden aber nie zugewiesen",
+        "online": "Nur Teammitglieder, die online sind, bekommen neue Tickets"
+      }
+    },
+    "member": {
+      "setAvailability": "Verfügbarkeit für {{name}} festlegen",
+      "noCap": "kein Limit",
+      "open": "offen",
+      "setCap": "Limit festlegen",
+      "capShort_one": "Limit {{count}}",
+      "capShort_other": "Limit {{count}}",
+      "capFor": "Ticket-Limit für {{name}}",
+      "capTitle": "Limit für offene Tickets",
+      "capHint": "{{name}} bekommt keine neuen Tickets mehr, sobald so viele Tickets offen oder wartend sind.",
+      "limit": "Offene Tickets begrenzen",
+      "tickets": "Tickets",
+      "saveCap": "Speichern",
+      "saveFailed": "Teammitglied konnte nicht aktualisiert werden"
+    }
+  },
+  "triage": {
+    "title": "Triage",
+    "description": "{{name}} liest jedes neue Ticket und sortiert es ein, damit dein Team mit der richtigen Priorität und den richtigen Labels startet.",
+    "saveFailed": "Triage-Einstellungen konnten nicht gespeichert werden",
+    "unavailable": {
+      "title": "KI ist nicht eingerichtet",
+      "body": "{{name}} braucht einen KI-Anbieter, bevor Tickets triagiert werden können.",
+      "action": "KI-Einstellungen öffnen"
+    },
+    "explainer": {
+      "title": "So triagiert {{name}}",
+      "on": "An",
+      "off": "Aus",
+      "body": "Jede Änderung von {{name}} erscheint im Verlauf des Tickets als Änderung von {{name}}, sodass alle sehen, warum sich ein Ticket bewegt hat, und es zurückändern können."
+    },
+    "sample": {
+      "aria": "Beispiel für ein triagiertes Ticket",
+      "subject": "Doppelt belastet für meinen Jahrestarif",
+      "from": "Maria Lopez · gerade eben",
+      "priority": "Priorität auf Hoch angehoben",
+      "label": "Abrechnung",
+      "labelAdded": "Label hinzugefügt",
+      "sentiment": "Stimmung und Sprache erfasst",
+      "assigned": "Dem nächsten Teammitglied zugewiesen",
+      "severity": "Schweregrad auf Sev 2 gesetzt"
+    },
+    "section": "Triage",
+    "auto": {
+      "label": "Neue Tickets triagieren",
+      "hint": "{{name}} sieht sich jedes neue Ticket an, sobald es eingeht."
+    },
+    "fields": {
+      "label": "Was {{name}} ändern darf",
+      "hint": "Wähle, was die Triage an einem Ticket setzen darf.",
+      "always": "Immer erfasst:",
+      "sentiment": "Stimmung",
+      "language": "Sprache",
+      "category": "Kategorie",
+      "priority": {
+        "label": "Priorität",
+        "hint": "Hebt die Priorität an, wenn ein Ticket dringend wirkt. Sie wird nie gesenkt."
+      },
+      "severity": {
+        "label": "Schweregrad",
+        "hint": "Setzt Sev 1 bis Sev 4 nach den geschäftlichen Auswirkungen. Ein Schweregrad wird immer nur angehoben."
+      },
+      "labels": {
+        "label": "Labels",
+        "hint": "Fügt Labels hinzu, die zum Thema des Tickets passen."
+      },
+      "team": {
+        "label": "Team",
+        "hint": "Leitet ein Ticket ohne Team an das Team, das am besten passt."
+      }
+    },
+    "after": {
+      "section": "Nach der Triage",
+      "label": "Nach der Triage zuweisen",
+      "hintMode": "Das Ticket wird dann im Modus „{{mode}}“ zugewiesen.",
+      "hintNone": "Die Zuweisung ist aus, daher geht das Ticket an die Person mit den wenigsten offenen Tickets.",
+      "link": "Zuweisungseinstellungen"
+    },
+    "engine": {
+      "section": "Entscheidungs-Engine",
+      "label": "Engine",
+      "jev": "Entscheidungsmodell",
+      "jevHint": "Schnelle, typisierte Entscheidungen mit kalibrierter Konfidenz. {{name}} wendet eine Entscheidung nur an, wenn sie sicher genug ist.",
+      "connected": "Verbunden",
+      "unreachable": "Nicht erreichbar",
+      "llm": "LLM-Fallback",
+      "llmHint": "Dein KI-Modell beantwortet dieselben Fragen, ohne kalibrierte Konfidenz. Setze TYPESAFE_API_KEY, um stattdessen das Entscheidungsmodell zu nutzen.",
+      "none": "Nicht eingerichtet",
+      "noneHint": "Setze TYPESAFE_API_KEY oder einen Schlüssel für einen KI-Anbieter, damit {{name}} triagieren kann.",
+      "model": "Modell"
+    },
+    "threshold": {
+      "label": "Konfidenz zum Anwenden",
+      "hint": "Ab diesem Wert wendet {{name}} eine Entscheidung an. Darunter wartet sie als Vorschlag, den ein Agent mit einem Klick annimmt.",
+      "llmNote": "Der LLM-Fallback hat keine kalibrierte Konfidenz, daher werden seine Entscheidungen direkt angewendet.",
+      "value": "{{pct}} %",
+      "cautious": "Vorsichtig",
+      "eager": "Forsch"
+    }
+  },
+  "hours": {
+    "title": "Geschäftszeiten",
+    "description": "Wann dein Team erreichbar ist. SLA-Richtlinien können nur diese Zeiten zählen, sodass Nächte, Wochenenden und Feiertage die Uhr nicht laufen lassen.",
+    "saved": "Geschäftszeiten gespeichert",
+    "saveFailed": "Geschäftszeiten konnten nicht gespeichert werden",
+    "openNow": "Jetzt geöffnet",
+    "closedNow": "Jetzt geschlossen",
+    "enabled": "Geschäftszeiten verwenden",
+    "enabledOn": "SLA-Richtlinien, die Geschäftszeiten zählen, pausieren außerhalb dieser Zeiten",
+    "enabledOff": "Jede Minute zählt für die SLA-Ziele",
+    "timezone": "Zeitzone",
+    "timezoneHint": "Öffnungszeiten und Feiertage richten sich nach dieser Zeitzone. Sie ist auch die Zeitzone des Workspace.",
+    "searchTimezones": "Zeitzonen suchen",
+    "sla": "SLA-Richtlinien",
+    "slaHint": "Geschäftszeiten pro Richtlinie einschalten.",
+    "slaLink": "SLA-Richtlinien öffnen",
+    "weekTitle": "Wöchentliche Zeiten",
+    "weekHint": "Bis zu drei Zeiträume pro Tag, in Viertelstunden.",
+    "perWeek": "{{hours}} Std. pro Woche",
+    "days": {
+      "mon": "Montag",
+      "tue": "Dienstag",
+      "wed": "Mittwoch",
+      "thu": "Donnerstag",
+      "fri": "Freitag",
+      "sat": "Samstag",
+      "sun": "Sonntag"
+    },
+    "openOn": "Geöffnet am {{day}}",
+    "closed": "Geschlossen",
+    "to": "bis",
+    "startOf": "{{day}}, Zeitraum {{n}}, Beginn",
+    "endOf": "{{day}}, Zeitraum {{n}}, Ende",
+    "addRange": "Zeiten hinzufügen",
+    "addRangeOn": "Zeiten am {{day}} hinzufügen",
+    "maxRanges": "Bis zu drei Zeiträume pro Tag",
+    "removeRange": "Diese Zeiten entfernen",
+    "removeRangeOf": "{{day}}, Zeitraum {{n}} entfernen",
+    "copyMenu": "Mehr für {{day}}",
+    "copyWeekdays": "Auf alle Werktage kopieren",
+    "copyAll": "Auf jeden Tag kopieren",
+    "errors": {
+      "order": "Jeder Zeitraum muss nach seinem Beginn enden.",
+      "overlap": "Diese Zeiträume überschneiden sich."
+    },
+    "holidays": {
+      "title": "Feiertage",
+      "hint": "Den ganzen Tag geschlossen. SLA-Uhren, die Geschäftszeiten zählen, bleiben pausiert.",
+      "add": "Feiertag hinzufügen",
+      "addConfirm": "Hinzufügen",
+      "done": "Fertig",
+      "date": "Datum des Feiertags",
+      "name": "Name des Feiertags",
+      "namePlaceholder": "Neujahr",
+      "needDate": "Wähle ein Datum.",
+      "needName": "Gib dem Feiertag einen Namen.",
+      "duplicate": "An diesem Datum gibt es bereits einen Feiertag.",
+      "tooMany": "Du kannst bis zu {{count}} Feiertage hinzufügen.",
+      "today": "heute",
+      "past": "vergangen",
+      "inDays_one": "in {{count}} Tag",
+      "inDays_other": "in {{count}} Tagen",
+      "remove": "Feiertag entfernen",
+      "removeNamed": "{{name}} entfernen",
+      "pastCount_one": "{{count}} vergangener Feiertag.",
+      "pastCount_other": "{{count}} vergangene Feiertage.",
+      "clearPast": "Vergangene Feiertage entfernen",
+      "emptyTitle": "Noch keine Feiertage",
+      "emptyHint": "Füge die Tage hinzu, an denen dein Team geschlossen hat, etwa gesetzliche Feiertage, damit SLA-Uhren nicht laufen, wenn niemand da ist.",
+      "tips": {
+        "closed": "An einem Feiertag ist den ganzen Tag geschlossen",
+        "sla": "Nur Richtlinien, die Geschäftszeiten zählen, pausieren"
+      }
+    }
+  }
+}

@@ -1,6 +1,7 @@
 package email
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
 	"time"
@@ -231,6 +232,39 @@ func TestAttachmentStored(t *testing.T) {
 	loaded, err := domain.LoadMessage(w.ctx, w.d.DB.Pool, w.wid, msg.ID)
 	if err != nil || len(loaded.Attachments) != 1 {
 		t.Fatalf("message attachments: %v %+v", err, loaded.Attachments)
+	}
+}
+
+// NUL bytes, which Postgres text cannot hold, are dropped from what the email saves; the
+// email becomes a ticket and its files keep their bytes.
+func TestNULBytesDropped(t *testing.T) {
+	w := newWorld(t)
+	m := w.mailbox(InboundForwarding, OutboundSystem, nil)
+	pdf := "%PDF-1.4\x00\x00binary"
+	raw := "From: =?utf-8?Q?Carla=00_Customer?= <" + customer() + ">\r\nTo: " + w.forwardAddr(m, "") +
+		"\r\nSubject: Your parcel\r\nMessage-ID: <nul" + crypto.RandomString(6) + "@carrier.test>\r\n" +
+		"MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=b\r\n\r\n" +
+		"--b\r\nContent-Type: text/plain; charset=us-ascii\r\nContent-Transfer-Encoding: 7bit\r\n\r\nYour parcel is on its way.\x00\x00\x00\r\n" +
+		"--b\r\nContent-Type: application/pdf\r\nContent-Transfer-Encoding: base64\r\nContent-Disposition: attachment; filename=\"label.pdf\"\r\n\r\n" +
+		base64.StdEncoding.EncodeToString([]byte(pdf)) + "\r\n" +
+		"--b--\r\n"
+	id := w.receive(m, raw)
+	if st, reason := w.inbound(id); st != "processed" {
+		t.Fatalf("status %s (%s)", st, reason)
+	}
+	msg := w.messageFor(id)
+	if strings.Contains(msg.BodyText, "\x00") || !strings.Contains(msg.BodyText, "Your parcel is on its way.") {
+		t.Fatalf("body %q", msg.BodyText)
+	}
+	if tk := w.ticket(msg.TicketID); tk.Contact == nil || tk.Contact.Name != "Carla Customer" {
+		t.Fatalf("contact %+v", tk.Contact)
+	}
+	var key string
+	if err := w.d.DB.Pool.QueryRow(w.ctx, `SELECT storage_key FROM attachments WHERE message_id = $1`, msg.ID).Scan(&key); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := w.s.readObject(w.ctx, key, 1<<20); err != nil || string(data) != pdf {
+		t.Fatalf("stored file: %v %q", err, data)
 	}
 }
 

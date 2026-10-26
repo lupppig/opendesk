@@ -73,6 +73,20 @@ type CoreNotificationPreferences struct {
 	// POST /v1/me/notification-preferences/resubscribe restores the choices from before.
 	UnsubscribedAt *time.Time                  `json:"unsubscribed_at"`
 	Types          []CoreNotificationTypePrefs `json:"types"`
+	Teams          []CoreNotificationTeam      `json:"teams"`
+}
+
+// CoreNotificationTeam is a team the caller leads or works in, and whether they hear about
+// its tickets nobody has (new_ticket, and customer_replied on an unassigned ticket).
+type CoreNotificationTeam struct {
+	ID     uuid.UUID `json:"id"`
+	Name   string    `json:"name"`
+	Notify bool      `json:"notify"`
+}
+
+type coreNotificationTeamPatch struct {
+	ID     uuid.UUID `json:"id"`
+	Notify bool      `json:"notify"`
 }
 
 type coreNotificationTypePatch struct {
@@ -88,6 +102,7 @@ type coreNotificationPrefsPatch struct {
 	Timezone     *string                     `json:"timezone,omitempty" maxLength:"64"`
 	PausedUntil  *string                     `json:"paused_until,omitempty" maxLength:"40" doc:"RFC 3339 time, or \"\" to resume"`
 	Types        []coreNotificationTypePatch `json:"types,omitempty" maxItems:"32"`
+	Teams        []coreNotificationTeamPatch `json:"teams,omitempty" maxItems:"200"`
 }
 
 // typesFor are the catalogue types a member with role receives.
@@ -134,7 +149,17 @@ func loadNotificationPrefs(ctx context.Context, q db.Querier, p *auth.Principal)
 		out.Types = append(out.Types, CoreNotificationTypePrefs{Type: t.Type, Group: t.Group, Email: c.Email, Push: c.Push,
 			Desktop: c.Desktop, Defaults: t.Defaults, Urgent: notifyprefs.Urgent(t.Type)})
 	}
-	return out, nil
+	// Observers never hear about a team's new tickets, so only leads and members choose.
+	rows, err := q.Query(ctx, `SELECT t.id, t.name, tm.notify FROM team_members tm JOIN teams t ON t.id = tm.team_id
+		WHERE t.workspace_id = $1 AND tm.user_id = $2 AND tm.role <> 'observer' ORDER BY t.name, t.id`, p.WorkspaceID, p.UserID)
+	if err != nil {
+		return out, err
+	}
+	out.Teams, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (CoreNotificationTeam, error) {
+		var t CoreNotificationTeam
+		return t, r.Scan(&t.ID, &t.Name, &t.Notify)
+	})
+	return out, err
 }
 
 // rescheduleEmails moves the user's waiting notification emails to the schedule in set.
@@ -264,6 +289,14 @@ func (s *svc) registerNotificationPrefs(api huma.API, r chi.Router) {
 						}
 					}
 					if err := notifyprefs.Set(ctx, tx, p.WorkspaceID, p.UserID, t.Type, t.Email, t.Push, t.Desktop); err != nil {
+						return err
+					}
+				}
+				// Only the caller's own memberships of this workspace's teams; another id changes nothing.
+				for _, t := range b.Teams {
+					if _, err := tx.Exec(ctx, `UPDATE team_members tm SET notify = $4 FROM teams t
+						WHERE t.id = tm.team_id AND t.workspace_id = $1 AND tm.team_id = $2 AND tm.user_id = $3`,
+						p.WorkspaceID, t.ID, p.UserID, t.Notify); err != nil {
 						return err
 					}
 				}

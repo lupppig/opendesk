@@ -73,7 +73,7 @@ func (s *service) checkSendAs(ctx context.Context, p *auth.Principal, wid, id uu
 		return err
 	}
 	return s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
-		m, err := scanMailbox(tx.QueryRow(ctx, `SELECT `+mailboxColumns+` FROM mailboxes WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, wid, id))
+		m, err := scanMailbox(tx.QueryRow(ctx, `SELECT `+mailboxColumns+` FROM mailboxes WHERE workspace_id = $1 AND id = $2 FOR NO KEY UPDATE`, wid, id))
 		if err != nil {
 			return err
 		}

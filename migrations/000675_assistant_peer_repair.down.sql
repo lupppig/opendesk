@@ -1,0 +1,1 @@
+-- The tables belong to 000657_assistant_peer, whose down migration drops them.

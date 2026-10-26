@@ -89,6 +89,10 @@ func (a Adapter) call(ctx context.Context, c *http.Client, token, method string,
 		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusTooManyRequests {
+		io.Copy(io.Discard, resp.Body)
+		return fmt.Errorf("slack %s: %w", method, &channel.RateLimited{RetryAfter: channel.RateLimitDelay(resp.Header, 0)})
+	}
 	if resp.StatusCode/100 != 2 {
 		io.Copy(io.Discard, resp.Body)
 		return fmt.Errorf("slack %s: status %d", method, resp.StatusCode)
@@ -103,6 +107,9 @@ func (a Adapter) call(ctx context.Context, c *http.Client, token, method string,
 	}
 	_ = json.Unmarshal(raw, &envelope)
 	if !envelope.OK {
+		if envelope.Error == "ratelimited" || envelope.Error == "rate_limited" {
+			return fmt.Errorf("slack %s: %w", method, &channel.RateLimited{RetryAfter: channel.RateLimitDelay(resp.Header, 0)})
+		}
 		return fmt.Errorf("slack %s: %s", method, envelope.Error)
 	}
 	if out != nil {

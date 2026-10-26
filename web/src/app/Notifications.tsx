@@ -168,7 +168,7 @@ export function NotificationsButton() {
   const [filter, setFilter] = useState<"all" | "unread">("all");
   const navigate = useNavigate();
   const reduce = useReducedMotion();
-  // With Together, every shown workspace's notifications, each with its workspace's badge.
+  // For someone in several workspaces, every shown workspace's notifications, each with its workspace's badge.
   const bell = useBellNotifications();
   const memberships = useSession((s) => s.memberships);
   const wsOf = (wid: string) => memberships.find((m) => m.workspace.id === wid)?.workspace;
@@ -306,7 +306,7 @@ export function NotificationsButton() {
             <AnimatePresence initial={false}>
               {shown.map(({ row: n, workspaceId }) => {
                 const k = kindOf(n);
-                const ws = bell.together ? wsOf(workspaceId) : undefined;
+                const ws = bell.several ? wsOf(workspaceId) : undefined;
                 return (
                   <motion.li
                     key={`${workspaceId}:${n.id}`}

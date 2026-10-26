@@ -260,7 +260,7 @@ func (s *service) setAPISyncOK(ctx context.Context, m *mailboxRow, st apiSyncSta
 		var prevStatus string
 		err := tx.QueryRow(ctx, `UPDATE mailboxes m SET status = CASE WHEN m.status = 'error' THEN 'active' ELSE m.status END,
 			last_error = '', sync_failures = 0, next_sync_at = NULL, last_synced_at = now(), api_sync_state = $3, updated_at = now()
-			FROM (SELECT status FROM mailboxes WHERE id = $2 FOR UPDATE) old
+			FROM (SELECT status FROM mailboxes WHERE id = $2 FOR NO KEY UPDATE) old
 			WHERE m.workspace_id = $1 AND m.id = $2 RETURNING old.status`, m.WorkspaceID, m.ID, b).Scan(&prevStatus)
 		if err != nil {
 			return err

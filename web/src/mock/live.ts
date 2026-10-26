@@ -130,12 +130,29 @@ function typingOnActive() {
   emitOnTicket(tid, "typing", { user_id: mate.user_id, name: mate.name });
 }
 
+/**
+ * A new ticket in one of the signed-in person's other workspaces (Lumen Labs, Pressroom), so a
+ * Space mixing workspaces shows another workspace's numbers moving (contracts/spaces.md "Rows").
+ */
+function randomSideTicket() {
+  const side = db.workspaces.filter((w, i) => i > 0 && w.members.some((m) => m.user_id === db.users[0]?.id) && w.contacts.length);
+  const w = any(side);
+  const contact = w && any(w.contacts);
+  if (!w || !contact) return;
+  const subject = any(NEW_SUBJECTS) ?? GENERATED[0].subject;
+  const t = newTicket(w, { subject, contact: contactRef(contact), channel: "email", team_id: any(w.teams)?.id ?? null });
+  contact.ticket_count++;
+  publish(w, "ticket.created", { ticket: t });
+  addMessage(w, t, { kind: "reply", direction: "inbound", html: textToHtml(`Hi,\n\n${subject}.\n\n${contact.name.split(" ")[0]}`) });
+}
+
 export function startLive() {
   if (running) return;
   running = true;
   if (timers.length) return;
   schedule(randomCustomerReply, 25_000, 45_000);
   schedule(randomNewTicket, 80_000, 110_000);
+  schedule(randomSideTicket, 70_000, 120_000);
   schedule(randomNotification, 60_000, 120_000);
   schedule(teammateWander, 30_000, 60_000);
   schedule(typingOnActive, 12_000, 25_000);

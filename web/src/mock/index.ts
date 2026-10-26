@@ -18,7 +18,7 @@ import { registerAuth, setSignedIn } from "./handlers/auth";
 import { registerBilling } from "./handlers/billing";
 import { registerBots } from "./handlers/bots";
 import { registerCollab } from "./handlers/collab";
-import { registerTogether } from "./handlers/together";
+import { registerWorkspaces } from "./handlers/workspaces";
 import { registerDrafts, stageDraft } from "./handlers/drafts";
 import { registerKnowledge } from "./handlers/knowledge";
 import { registerImports } from "./handlers/imports";
@@ -30,6 +30,7 @@ import { registerNotificationPrefs } from "./handlers/notificationPrefs";
 import { registerSupportChannels } from "./handlers/supportChannels";
 import { registerTemplates } from "./handlers/templates";
 import { registerResources } from "./handlers/resources";
+import { registerSpaces } from "./handlers/spaces";
 import { registerTickets } from "./handlers/tickets";
 import { registerWorkspace } from "./handlers/workspace";
 import { pauseLive, resumeLive, startLive } from "./live";
@@ -44,6 +45,8 @@ declare global {
     __odMock?: {
       db: typeof db;
       emit: (type: string, data: Record<string, unknown>, topics?: string[]) => void;
+      /** Publishes an event in another workspace (by id or name), as a Space's light socket sees it. */
+      emitIn: (workspace: string, type: string, data: Record<string, unknown>) => void;
       pause: () => void;
       resume: () => void;
       dropEvents: (on: boolean) => void;
@@ -97,7 +100,8 @@ export function installMock(): void {
   registerSupportChannels();
   registerTemplates();
   registerCollab();
-  registerTogether();
+  registerWorkspaces();
+  registerSpaces();
 
   setTransport((input, init) => dispatch(input, init));
   setSocketFactory(socketFactory);
@@ -111,6 +115,10 @@ export function installMock(): void {
     db,
     emit: (type, data, topics) => {
       publish(db.workspaces[0], type, data, { topics });
+    },
+    emitIn: (workspace, type, data) => {
+      const w = db.workspaces.find((x) => x.workspace.id === workspace || x.workspace.name === workspace);
+      if (w) publish(w, type, data);
     },
     pause: pauseLive,
     resume: resumeLive,

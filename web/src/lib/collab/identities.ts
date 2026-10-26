@@ -34,6 +34,11 @@ export function identitiesOf(a: IdentityAccount): MailIdentity[] {
   return a.identities?.length ? a.identities : [primaryOf(a)];
 }
 
+/** The account's addresses besides its own (the sidebar's +N). */
+export function aliasesOf(a: IdentityAccount): MailIdentity[] {
+  return identitiesOf(a).filter((i) => !i.primary);
+}
+
 /** The addresses that can send (a Gmail address waiting to be confirmed cannot). */
 export function sendableIdentities(a: IdentityAccount): MailIdentity[] {
   return identitiesOf(a).filter((i) => i.can_send);

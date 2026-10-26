@@ -1,0 +1,340 @@
+{
+  "title": "Import",
+  "description": "Hol den Verlauf deines Teams aus einem anderen Helpdesk oder einer CSV-Datei: jedes Ticket mit der ganzen Unterhaltung, die Personen, die geschrieben haben, und dein Hilfecenter.",
+  "pick": {
+    "title": "Wo ist dein Verlauf jetzt?",
+    "again": "Aus einer anderen Quelle importieren",
+    "hint": "Verbinde das Konto, das du heute nutzt. Dort ändert sich nichts, und du kannst darin weiterarbeiten, bis du wechselst.",
+    "oneAtATime": "Es läuft immer nur ein Import. Starte den nächsten, wenn dieser fertig ist.",
+    "adminsOnly": "Admins können den Verlauf importieren.",
+    "guide": "So funktioniert der Import"
+  },
+  "promise": {
+    "quiet": {
+      "title": "Leise.",
+      "body": "Kein Kunde erhält eine E-Mail, und Automatisierungen, SLA-Timer, Webhooks und Benachrichtigungen bleiben für importierte Tickets still."
+    },
+    "people": {
+      "title": "Deine Leute, zugeordnet.",
+      "body": "Agenten werden zu Mitgliedern und Gruppen zu Teams, abgeglichen nach E-Mail und Name. Du prüfst jede Zuordnung, bevor es losgeht."
+    },
+    "undo": {
+      "title": "Jederzeit rückgängig.",
+      "body": "Ein Klick entfernt, was ein Import gebracht hat, und lässt unberührt, was dein Team seitdem geschrieben hat."
+    }
+  },
+  "sources": {
+    "zendesk": {
+      "with": "API-Token",
+      "blurb": "Tickets mit Antworten und Notizen, Benutzer, Organisationen und Guide-Artikel."
+    },
+    "helpscout": {
+      "with": "App-ID und Secret",
+      "blurb": "Unterhaltungen aus jedem Postfach, Kunden und deine Docs-Artikel."
+    },
+    "freshdesk": {
+      "with": "API-Schlüssel",
+      "blurb": "Tickets mit Antworten und Notizen, Kontakte, Unternehmen und Lösungsartikel."
+    },
+    "intercom": {
+      "with": "Zugriffstoken",
+      "blurb": "Unterhaltungen mit Notizen und Dateien, Kontakte, Unternehmen und Artikel."
+    },
+    "front": {
+      "with": "API-Token",
+      "blurb": "Unterhaltungen aus jedem gemeinsamen Posteingang, mit Kommentaren, Dateien und Kontakten."
+    },
+    "csv": {
+      "with": "Jeder Helpdesk",
+      "blurb": "Ein Export aus einem beliebigen anderen Helpdesk, eine Zeile pro Ticket oder pro Nachricht."
+    }
+  },
+  "steps": {
+    "connect": "Verbinden",
+    "upload": "Hochladen",
+    "columns": "Spalten",
+    "review": "Prüfen",
+    "options": "Auswählen und starten"
+  },
+  "wizard": {
+    "title": "Aus {{name}} importieren",
+    "description": "Verbinde dein {{name}}-Konto. Wir lesen daraus und ändern dort nie etwas.",
+    "csvDescription": "Lade einen Export aus deinem aktuellen Helpdesk hoch und sag uns dann, welche Spalte was enthält.",
+    "whatComes": "Was übernommen wird",
+    "facts": {
+      "conversations": "Jedes Ticket mit allen Antworten, Notizen und Anhängen, mit ihrem ursprünglichen Datum.",
+      "people": "Kunden und Unternehmen, Agenten als Mitglieder und Gruppen als Teams.",
+      "articles": "Sammlungen und Artikel des Hilfecenters.",
+      "quiet": "Niemand erhält eine E-Mail, und keine Automatisierung läuft."
+    },
+    "guide": "Importanleitung lesen",
+    "connect": "Verbinden",
+    "checking": "{{name}} wird geprüft",
+    "preview": "Vorschau",
+    "continue": "Weiter",
+    "start": "Import starten",
+    "back": "Zurück",
+    "cancel": "Abbrechen",
+    "startedToast": "Import gestartet. Du kannst diese Seite verlassen, wir sagen dir Bescheid, wenn er fertig ist.",
+    "leaveTitle": "Diesen Import verlassen?",
+    "leaveBody": "Es wurde noch nichts importiert. Deine Auswahl hier geht verloren.",
+    "leave": "Verlassen"
+  },
+  "connect": {
+    "whereToFind": "Wo du es findest",
+    "show": "Anzeigen",
+    "hide": "Ausblenden",
+    "safety": "Nur lesend. Deine Zugangsdaten werden verschlüsselt und nur zum Lesen von {{name}} verwendet. Sie werden 30 Tage nach dem letzten Lauf entfernt, oder wann immer du willst.",
+    "same": "Wie zuvor"
+  },
+  "review": {
+    "connected": "Verbunden",
+    "tickets_one": "{{n}} Ticket",
+    "tickets_other": "{{n}} Tickets",
+    "ticketsUnknown": "Tickets werden beim Eintreffen gezählt",
+    "articles_one": "{{n}} Artikel",
+    "articles_other": "{{n}} Artikel",
+    "agents_one": "{{count}} Agent",
+    "agents_other": "{{count}} Agenten",
+    "sampleTitle": "So werden deine Tickets aussehen",
+    "noSamples": "Noch keine Tickets für die Vorschau. Der Import bringt trotzdem alles, was er findet.",
+    "noSubject": "(kein Betreff)",
+    "previous": "Vorheriges Ticket",
+    "next": "Nächstes Ticket",
+    "messages_one": "{{count}} Nachricht",
+    "messages_other": "{{count}} Nachrichten",
+    "more_one": "und {{count}} weitere Nachricht",
+    "more_other": "und {{count}} weitere Nachrichten",
+    "note": "Interne Notiz",
+    "unknown": "Unbekannt",
+    "empty": "Kein Text",
+    "agentsTitle": "Agenten",
+    "agentsHint": "Ihre Antworten, Notizen und Tickets gehen an das Mitglied, das du wählst. Wer ausgelassen wird, behält seinen Namen an dem, was er geschrieben hat.",
+    "matched": "{{n}} von {{total}} zugeordnet",
+    "sameEmail": "Gleiche E-Mail",
+    "keepName": "Als Namen behalten",
+    "agentFor": "Mitglied für {{name}}",
+    "groupsTitle": "Gruppen",
+    "groupsHint": "Die Tickets jeder Gruppe gehen an das Team, das du wählst.",
+    "noTeam": "Kein Team",
+    "teamFor": "Team für {{name}}",
+    "ready": "Bereit"
+  },
+  "csv": {
+    "drop": "Leg deine CSV-Datei hier ab oder klick, um eine auszuwählen",
+    "dropNow": "Zum Hochladen ablegen",
+    "dropHint": "Eine Zeile pro Ticket oder eine Zeile pro Nachricht mit einer Ticket-ID, damit wir sie gruppieren können. Eine Kopfzeile benennt die Spalten.",
+    "reading": "{{name}} wird gelesen",
+    "formats": "UTF-8 oder UTF-16, getrennt durch Kommas, Semikolons oder Tabs. Bis 50 MB und 500.000 Zeilen.",
+    "template": "Vorlage herunterladen",
+    "tooLarge": "Diese Datei ist größer als 50 MB. Teil sie in kleinere Dateien auf und importiere sie nacheinander.",
+    "wrongType": "Wähle eine .csv-Datei. Tabellenprogramme können eine über Datei, dann Herunterladen oder Exportieren, als CSV speichern.",
+    "summary": "{{rows}} Zeilen, {{columns}} Spalten",
+    "replace": "Andere Datei wählen",
+    "notInFile": "Nicht in der Datei",
+    "emptyColumn": "Diese Spalte ist in den ersten Zeilen leer",
+    "needBody": "Wähle die Spalte mit der Nachricht, oder zumindest den Betreff.",
+    "grouping": "Zeilen mit derselben Ticket-ID werden zu einem Ticket, jede Zeile als Nachricht in zeitlicher Reihenfolge. Ohne Spalte für die Ticket-ID wird jede Zeile ein eigenes Ticket.",
+    "fields": {
+      "ticket_id": {
+        "label": "Ticket-ID",
+        "hint": "Gruppiert Zeilen zu Tickets"
+      },
+      "subject": {
+        "label": "Betreff",
+        "hint": "Der Titel des Tickets"
+      },
+      "body": {
+        "label": "Nachricht",
+        "hint": "Der Text, als reiner Text oder HTML"
+      },
+      "created_at": {
+        "label": "Datum",
+        "hint": "Wann sie geschrieben wurde"
+      },
+      "from_email": {
+        "label": "Absender-E-Mail",
+        "hint": "Wer sie geschrieben hat"
+      },
+      "from_name": {
+        "label": "Absendername",
+        "hint": "Der Name der Person"
+      },
+      "author": {
+        "label": "Art des Verfassers",
+        "hint": "customer, agent oder note"
+      },
+      "status": {
+        "label": "Status",
+        "hint": "open, pending, solved, closed"
+      },
+      "priority": {
+        "label": "Priorität",
+        "hint": "low, normal, high, urgent"
+      },
+      "tags": {
+        "label": "Labels",
+        "hint": "Durch Kommas getrennt"
+      },
+      "assignee_email": {
+        "label": "E-Mail der zuständigen Person",
+        "hint": "Wird einem Mitglied zugeordnet"
+      },
+      "team": {
+        "label": "Team",
+        "hint": "Wird über den Namen einem Team zugeordnet"
+      },
+      "company": {
+        "label": "Unternehmen",
+        "hint": "Das Unternehmen des Kunden"
+      },
+      "message_id": {
+        "label": "Message-ID",
+        "hint": "Die eigene ID der E-Mail, damit Antworten im Thread landen"
+      },
+      "in_reply_to": {
+        "label": "In-Reply-To",
+        "hint": "Die Message-ID, auf die sie antwortet"
+      },
+      "references": {
+        "label": "References",
+        "hint": "Frühere Message-IDs im Thread"
+      }
+    }
+  },
+  "options": {
+    "what": "Was übernommen wird",
+    "tickets": "Tickets",
+    "ticketsHint_one": "{{n}} Ticket mit seiner Unterhaltung.",
+    "ticketsHint_other": "{{n}} Tickets mit ihren Unterhaltungen.",
+    "ticketsHintUnknown": "Jedes Ticket mit seiner Unterhaltung.",
+    "articles": "Hilfecenter-Artikel",
+    "articlesHint_one": "{{n}} Artikel mit seiner Sammlung. Bilder kommen mit.",
+    "articlesHint_other": "{{n}} Artikel mit ihren Sammlungen. Bilder kommen mit.",
+    "articlesHintUnknown": "Jeder Artikel mit seiner Sammlung.",
+    "articlesNone": "Dieses Konto hat kein Hilfecenter zum Übernehmen.",
+    "articlesNoDocs": "Füge im ersten Schritt einen Docs-API-Schlüssel hinzu, um deine Docs-Artikel zu übernehmen.",
+    "drafts": "Artikel als Entwürfe übernehmen",
+    "draftsHint": "Sieh sie dir an, bevor sie in deinem Hilfecenter live gehen.",
+    "attachments": "Anhänge",
+    "attachmentsHint": "Dateien bis je 25 MB. Ausgeschaltet geht der Import schneller.",
+    "how": "Wie",
+    "since": "Ab wann",
+    "sinceHint": "Ältere Tickets bleiben zurück. Artikel kommen immer vollständig.",
+    "allHistory": "Gesamter Verlauf",
+    "fromDate": "Ab einem Datum",
+    "statuses": "Status",
+    "keep": "Beibehalten",
+    "closeAll": "Alle schließen",
+    "keepHint": "Offene Tickets kommen offen an und landen in deinen Warteschlangen.",
+    "closedHint": "Alles kommt geschlossen an, deine Warteschlangen bleiben also, wie sie sind.",
+    "label": "Label",
+    "labelHint": "Wird jedem importierten Ticket hinzugefügt, damit du sie findest.",
+    "noLabel": "Kein Label",
+    "mailbox": "Antworten von",
+    "mailboxHint": "Antworten auf importierte E-Mail-Tickets werden von diesem Postfach gesendet.",
+    "noMailbox": "Beim Antworten wählen"
+  },
+  "summary": {
+    "lead": "Das übernimmt {{what}}.",
+    "and": " und ",
+    "tickets_one": "{{n}} Ticket",
+    "tickets_other": "{{n}} Tickets",
+    "ticketsUnknown": "alle Tickets",
+    "articles_one": "{{n}} Artikel",
+    "articles_other": "{{n}} Artikel",
+    "articlesUnknown": "alle Artikel",
+    "quiet": "Niemand erhält eine E-Mail, und Automatisierungen, SLA-Timer und Webhooks bleiben still.",
+    "after": "Große Konten brauchen eine Weile. Der Import läuft bei uns, du kannst diese Seite also schließen. Wir sagen dir Bescheid, wenn er fertig ist, und du kannst jederzeit übernehmen, was sich seitdem geändert hat."
+  },
+  "current": {
+    "running": "Läuft",
+    "runningHint": "Aktualisiert live. Du kannst diese Seite verlassen und zurückkommen.",
+    "latest": "Letzter Import"
+  },
+  "state": {
+    "running": "Wird importiert",
+    "paused": "Pausiert",
+    "completed": "Fertig",
+    "failed": "Angehalten",
+    "canceled": "Abgebrochen",
+    "undoing": "Wird rückgängig gemacht",
+    "undone": "Rückgängig gemacht",
+    "waiting": "Wartet",
+    "needsCredentials": "Zugangsdaten nötig"
+  },
+  "status": {
+    "open": "Offen",
+    "pending": "Wartend",
+    "on_hold": "Angehalten",
+    "solved": "Gelöst",
+    "closed": "Geschlossen"
+  },
+  "progress": {
+    "run": "Aktualisierung {{n}}",
+    "startedBy": "Gestartet von {{name}} {{when}}",
+    "started": "Gestartet {{when}}",
+    "finished": "fertig {{when}}",
+    "articles": "Hilfecenter-Artikel werden übernommen",
+    "tickets": "Tickets werden übernommen",
+    "changes": "Änderungen werden übernommen",
+    "threading": "Antworten werden ihren E-Mails zugeordnet: {{done}} von {{total}}",
+    "undoing": "Was der Import gebracht hat, wird entfernt",
+    "paused": "Pausiert. Es geht hier weiter, wenn du fortsetzt.",
+    "waiting": "{{name}} hat uns gebeten, langsamer zu machen. Weiter in {{seconds}} s.",
+    "left": "noch etwa {{time}}",
+    "lessThanMinute": "eine Minute",
+    "minutes_one": "{{count}} Minute",
+    "minutes_other": "{{count}} Minuten",
+    "hours_one": "{{count}} Stunde",
+    "hours_other": "{{count}} Stunden",
+    "pause": "Pausieren",
+    "resume": "Fortsetzen",
+    "retry": "Erneut versuchen",
+    "sync": "Änderungen übernehmen",
+    "actions": "Import-Aktionen",
+    "openSource": "{{name}} öffnen",
+    "cancel": "Import abbrechen",
+    "cancelTitle": "Diesen Import abbrechen?",
+    "cancelBody": "Was schon übernommen wurde, bleibt. Seine Zugangsdaten werden entfernt, und du kannst ihn später rückgängig machen.",
+    "canceledToast": "Import abgebrochen",
+    "undo": "Import rückgängig machen",
+    "undoPauseFirst": "Zum Rückgängigmachen pausieren",
+    "undoTitle": "{{name}}-Import rückgängig machen?",
+    "undoBody_one": "Damit werden das {{tickets}} Ticket und die {{articles}} Artikel entfernt, die er gebracht hat, samt Kontakten, Unternehmen und Labels, die sonst nichts verwendet. Tickets, in die dein Team seitdem geschrieben hat, bleiben.",
+    "undoBody_other": "Damit werden die {{tickets}} Tickets und die {{articles}} Artikel entfernt, die er gebracht hat, samt Kontakten, Unternehmen und Labels, die sonst nichts verwendet. Tickets, in die dein Team seitdem geschrieben hat, bleiben.",
+    "undoneHint": "Rückgängig gemacht. Was dieser Import gebracht hat, wurde entfernt.",
+    "forget": "Zugangsdaten entfernen",
+    "forgetTitle": "Zugangsdaten entfernen?",
+    "forgetBody": "Der Import kann dann keine Änderungen mehr aus {{name}} übernehmen. Was übernommen wurde, bleibt.",
+    "credentialsRemoved": "Zugangsdaten entfernt",
+    "needsCredentials": "{{name}} akzeptiert die Zugangsdaten nicht mehr.",
+    "resumeWith": "Mit diesen fortsetzen",
+    "failedHint": "Was übernommen wurde, bleibt. Versuch es erneut, um dort weiterzumachen, wo es angehalten hat.",
+    "done": "Alles aus {{name}} ist da.",
+    "syncDone_one": "{{count}} Ticket auf den neuesten Stand gebracht.",
+    "syncDone_other": "{{count}} Tickets auf den neuesten Stand gebracht.",
+    "seeTickets": "Importierte Tickets ansehen",
+    "problems_one": "{{count}} Element konnte nicht übernommen werden",
+    "problems_other": "{{count}} Elemente konnten nicht übernommen werden",
+    "moreProblems_one": "und {{count}} weiteres",
+    "moreProblems_other": "und {{count}} weitere",
+    "kept": "Die Zugangsdaten bleiben gespeichert, damit du Änderungen übernehmen kannst, bis du wechselst. Sie werden 30 Tage nach dem letzten Lauf entfernt."
+  },
+  "figures": {
+    "tickets": "Tickets",
+    "messages": "Nachrichten",
+    "contacts": "Kontakte",
+    "articles": "Artikel",
+    "attachments": "Dateien",
+    "updated": "Aktualisiert"
+  },
+  "history": {
+    "title": "Frühere Importe",
+    "hint": "Öffne einen, um Änderungen zu übernehmen, ihn rückgängig zu machen oder zu sehen, was er nicht übernehmen konnte.",
+    "brought_one": "{{tickets}} Ticket, {{articles}} Artikel",
+    "brought_other": "{{tickets}} Tickets, {{articles}} Artikel",
+    "undone": "Entfernt",
+    "none": "Noch keine Importe."
+  }
+}

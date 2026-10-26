@@ -398,6 +398,9 @@ func (s *service) saveOAuthMailbox(ctx context.Context, p *auth.Principal, provi
 	wid := p.WorkspaceID
 	var id uuid.UUID
 	err = s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
+		if err := lockWorkspaceForMailboxWrite(ctx, tx, wid); err != nil {
+			return err
+		}
 		var existing *mailboxRow
 		var err error
 		if mailboxID != nil {

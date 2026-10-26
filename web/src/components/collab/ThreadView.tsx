@@ -189,7 +189,7 @@ export const ThreadView = forwardRef<ThreadViewHandle, ThreadViewProps>(function
   const { t } = useTranslation("collab");
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const { data: detail, isPending, error } = useQuery(q.mailThread(threadId));
+  const { data: detail, isPending, error, isFetching, isFetchedAfterMount, isStale } = useQuery(q.mailThread(threadId));
   const { data: accounts } = useMailAccounts();
   const accountId = detail?.account.id;
   const { data: folders } = useQuery({ ...q.mailFolders(accountId ?? ""), enabled: !!accountId });
@@ -272,12 +272,15 @@ export const ThreadView = forwardRef<ThreadViewHandle, ThreadViewProps>(function
     setFoldedLast(null);
   }, [detail]);
 
-  // Opening shows it read, when the member wants that (and can act).
+  // Opening shows it read, when the member wants that (and can act). It decides on the
+  // current conversation: a copy kept from an earlier visit can predate the new mail
+  // that made it unread, so a stale copy waits for its refetch.
+  const current = !!detail && !isFetching && (isFetchedAfterMount || !isStale);
   useEffect(() => {
-    if (!detail || !detail.can_act || !markReadOnOpen || marked.current === detail.thread.id) return;
+    if (!detail || !current || !detail.can_act || !markReadOnOpen || marked.current === detail.thread.id) return;
     marked.current = detail.thread.id;
     if (detail.thread.unread) onAction("read", { silent: true });
-  }, [detail, markReadOnOpen, onAction]);
+  }, [detail, current, markReadOnOpen, onAction]);
 
   const all = useMemo(() => detail?.messages ?? [], [detail]);
   const messages = useMemo(() => all.filter((m) => !m.draft), [all]);

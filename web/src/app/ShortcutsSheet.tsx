@@ -5,11 +5,13 @@ import { shortcutGroups } from "@/lib/hotkeys";
 import { shell, useShell } from "./shellStore";
 import { quickSwitchKeys } from "./useAccounts";
 import { useCollab } from "@/lib/collab/hooks";
+import { spaceKeys } from "@/components/spaces/actions";
 
 export function ShortcutsSheet() {
   const { t: tNav } = useTranslation("navigation");
   const open = useShell((s) => s.shortcutsOpen);
   const { t } = useTranslation("shell");
+  const { t: ts } = useTranslation("spaces");
   // Shortcuts bound in AppLayout that the shared list may not name yet.
   const extra: Record<string, { keys: string; label: string }[]> = {
     general: [
@@ -17,6 +19,7 @@ export function ShortcutsSheet() {
       { keys: "g m", label: t("shortcuts.goMine") },
       { keys: "g r", label: t("shortcuts.goReports") },
       { keys: quickSwitchKeys("1-9"), label: t("shortcuts.switchWorkspace") },
+      { keys: spaceKeys("1-9"), label: ts("shortcuts.openSpace") },
     ],
   };
   const collab = useCollab();

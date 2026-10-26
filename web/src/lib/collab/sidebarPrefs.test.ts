@@ -202,7 +202,7 @@ describe("numbers beside rows", () => {
       a: [folder("ai", "a", "inbox", { total: 10, unread: 2 }), folder("as", "a", "sent", { total: 4 })],
       b: [folder("bi", "b", "inbox", { total: 5, unread: 1 }), folder("bs", "b", "sent", { total: 6, unread: 1 })],
     };
-    const counts: MailCounts = { boxes: { inbox: 3, unread: 7, shared: 0, assigned: 0, drafts: 2 }, accounts: { a: 2, b: 1 }, folders: { bs: 1 } };
+    const counts: MailCounts = { boxes: { inbox: 3, unread: 7, shared: 0, assigned: 0, drafts: 2 }, accounts: { a: 2, b: 1 }, folders: { bs: 1 }, assigned: {} };
     expect(accountNumbers(a, folders.a, counts)).toEqual({ unread: 2, total: 10 });
     expect(allInboxNumbers([a, b], folders, counts)).toEqual({ unread: 3, total: 15 });
     expect(allInboxNumbers([a], folders, counts).total).toBe(10);

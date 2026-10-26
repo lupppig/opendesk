@@ -581,6 +581,14 @@
     "customize": "Personnaliser la barre latérale",
     "more": "Options pour {{name}}"
   },
+  "address": {
+    "pillTip_one": "{{count}} autre adresse",
+    "pillTip_other": "{{count}} autres adresses",
+    "pillTip_many": "{{count}} autres adresses",
+    "more_one": "et {{count}} autre",
+    "more_other": "et {{count}} autres",
+    "more_many": "et {{count}} autres"
+  },
   "tabs": {
     "title": "Personnaliser les onglets",
     "description": "Choisissez les dossiers affichés comme onglets au-dessus de vos messages, et leur ordre. Tous les autres restent dans Plus.",

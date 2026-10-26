@@ -139,6 +139,8 @@ const verbs: Record<string, string> = {
   "billing.seats_synced": "synced billed seats",
   "billing.plan_changed": "changed the plan",
   "workspace.collab_changed": "changed Collab access",
+  "sidebar.starter_updated": "published the starter Space",
+  "sidebar.starter_removed": "removed the starter Space",
   "collab.account_connected": "connected a mail account",
   "collab.account_updated": "updated a mail account",
   "collab.account_disconnected": "disconnected a mail account",

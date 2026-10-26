@@ -329,6 +329,9 @@ func (s *service) registerMailboxRoutes(api huma.API) {
 				}
 			}
 			err = s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
+				if err := lockWorkspaceForMailboxWrite(ctx, tx, p.WorkspaceID); err != nil {
+					return err
+				}
 				m, err := scanMailbox(tx.QueryRow(ctx, `SELECT `+mailboxColumns+` FROM mailboxes WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, p.WorkspaceID, id))
 				if err != nil {
 					return err
@@ -503,6 +506,9 @@ func (s *service) registerMailboxRoutes(api huma.API) {
 			}
 			var keys []string
 			err = s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
+				if err := lockWorkspaceForMailboxWrite(ctx, tx, p.WorkspaceID); err != nil {
+					return err
+				}
 				var name, addr string
 				if err := tx.QueryRow(ctx, `SELECT name, email FROM mailboxes WHERE workspace_id = $1 AND id = $2 FOR UPDATE`,
 					p.WorkspaceID, id).Scan(&name, &addr); err != nil {

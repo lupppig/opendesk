@@ -25,6 +25,7 @@ import { dur, springs } from "@/lib/motion";
 import { q, qk } from "@/lib/queries";
 import { atLeast, useRole } from "@/lib/session";
 import { AI_TONE, tone } from "@/lib/tones";
+import { inSentence } from "@/i18n";
 
 const FIELDS: TriageField[] = ["priority", "severity", "labels", "team"];
 const fieldIcon: Record<TriageField, ReactNode> = {
@@ -160,7 +161,7 @@ export default function Triage() {
               label={t("triage.after.label")}
               description={
                 <>
-                  {mode === "none" ? t("triage.after.hintNone") : t("triage.after.hintMode", { mode: t(`assignment.modes.${mode}.label`).toLowerCase() })}{" "}
+                  {mode === "none" ? t("triage.after.hintNone") : t("triage.after.hintMode", { mode: inSentence(t(`assignment.modes.${mode}.label`)) })}{" "}
                   <Link to="/settings/assignment" className="text-fg-2 underline decoration-line-strong underline-offset-2 hover:text-fg">
                     {t("triage.after.link")}
                   </Link>

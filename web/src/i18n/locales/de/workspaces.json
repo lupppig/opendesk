@@ -1,0 +1,45 @@
+{
+  "everywhere": {
+    "title": "Überall",
+    "mine": "Meine Tickets",
+    "mail": "Alle E-Mails",
+    "mineTitle": "Meine Tickets überall",
+    "mailTitle": "Alle E-Mails überall",
+    "mineHint": "Dir zugewiesene Tickets in jedem Workspace, neueste Aktivität zuerst.",
+    "mailHint": "Deine Posteingänge in jedem Workspace mit Collab, neueste zuerst.",
+    "emptyMine": "Dir ist nichts zugewiesen",
+    "emptyMineHint": "Tickets, die dir in einem Workspace zugewiesen sind, erscheinen hier.",
+    "emptyMail": "Noch keine E-Mails",
+    "emptyMailHint": "Unterhaltungen aus deinen E-Mail-Konten in jedem Workspace erscheinen hier.",
+    "noMail": "Keiner deiner Workspaces hat Collab",
+    "noMailHint": "Alle E-Mails sammelt die E-Mail-Konten der Workspaces, die Collab haben.",
+    "failed": "{{name}} wurde nicht geladen",
+    "retry": "Erneut versuchen",
+    "openIn": "Öffnet sich in {{name}}",
+    "workspaces": "Workspaces in dieser Liste",
+    "allWorkspaces": "Alle Workspaces",
+    "more": "Ältere findest du in der eigenen Liste jedes Workspace."
+  },
+  "customize": {
+    "arrange": "Workspaces anordnen",
+    "title": "Workspaces",
+    "description": "Wie die Workspaces, zu denen du gehörst, im Workspace-Wechsler angeordnet sind. Nur du siehst diese Einstellungen.",
+    "order": "Reihenfolge und Sichtbarkeit",
+    "orderHint": "Zum Umsortieren ziehen, oder Alt mit der Pfeiltaste nach oben oder unten drücken. Ein ausgeblendeter Workspace wird im Wechsler eingeklappt und erscheint weder unter der Glocke noch in den Überall-Listen.",
+    "drag": "{{name}} verschieben",
+    "show": "{{name}} anzeigen",
+    "failed": "Konnte nicht gespeichert werden. Deine Änderung wurde rückgängig gemacht.",
+    "single": "Du gehörst zu einem Workspace",
+    "singleHint": "Sobald du einem weiteren beitrittst, kannst du sie hier anordnen und in einem Space zusammenbringen.",
+    "moved": "{{name}} ist jetzt Nummer {{n}}",
+    "hiddenNow": "Ausgeblendet",
+    "current": "Jetzt geöffnet"
+  },
+  "badge": {
+    "in": "In {{name}}"
+  },
+  "switcher": {
+    "hidden_one": "{{count}} ausgeblendeter Workspace",
+    "hidden_other": "{{count}} ausgeblendete Workspaces"
+  }
+}
