@@ -304,6 +304,17 @@ func TestProviderFilesAreRefusedAndFailedImportsAreRemoved(t *testing.T) {
 			t.Fatalf("attachments=%d downloads=%d responses=%q", attachments, w.fake.downloads, w.fake.responses)
 		}
 	})
+	t.Run("actual total exceeds limit", func(t *testing.T) {
+		w := newWorkflow(t)
+		w.fake.files = map[string][]byte{"F1": bytes.Repeat([]byte("a"), 13<<20), "F2": bytes.Repeat([]byte("b"), 13<<20)}
+		w.run(t, channel.Inbound{ExternalUserID: "U1", Command: "note", Text: "Files", ExternalMessageID: "provider-total",
+			Files: []channel.Attachment{{ID: "F1", Name: "one.txt", SizeBytes: 1}, {ID: "F2", Name: "two.txt", SizeBytes: 1}}})
+		var attachments int
+		w.e.Scalar(`SELECT count(*) FROM attachments WHERE workspace_id=$1`, &attachments, w.ws.ID)
+		if attachments != 0 || w.fake.downloads != 2 {
+			t.Fatalf("attachments=%d downloads=%d", attachments, w.fake.downloads)
+		}
+	})
 }
 
 func TestProviderMessageRetryDoesNotDownloadAgain(t *testing.T) {

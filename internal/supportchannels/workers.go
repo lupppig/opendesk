@@ -1023,11 +1023,11 @@ func (s *Service) importProviderAttachments(ctx context.Context, adapter channel
 		if saveErr != nil {
 			return saveErr
 		}
+		in.UploadIDs = append(in.UploadIDs, att.ID.String())
 		actualTotal += att.SizeBytes
 		if actualTotal > hd.MaxAttachmentBytes {
 			return httpx.E(413, "too_large", "Attachments are limited to 25 MB per message.")
 		}
-		in.UploadIDs = append(in.UploadIDs, att.ID.String())
 	}
 	return nil
 }
