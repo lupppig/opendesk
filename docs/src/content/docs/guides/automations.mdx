@@ -109,6 +109,8 @@ Text fields compare with **contains**, **doesn't contain**, **contains any of**,
 | **Send a reply** | Sends a reply to the customer. It takes [variables](/guides/email-templates/variables/), with no agent. See [Automatic replies](#automatic-replies). |
 | **Add an internal note** | Adds a note only the team sees. |
 | **Mark as spam** | Moves the ticket to Spam. |
+| **Delete ticket** | Deletes the ticket, as **Delete ticket** in its menu does. Nothing else runs on it: not the automation's other steps, the automations after it, auto-assignment or notifications. For mail you never want to keep, such as form notifications. |
+| **Merge into the contact's open ticket** | On **A ticket is created** only. Merges the new ticket into the same contact's latest open, pending or on hold ticket, within a number of days and, as an option, with the same subject. See [Merge follow-ups](#merge-follow-ups). |
 | **Run AI triage** | Runs [triage](/guides/triage-and-assignment/#triage-by-ollie) on the ticket: one AI call, charged to the AI balance on Cloud. |
 
 <Fold>
@@ -120,6 +122,23 @@ A **Send a reply** action is careful not to start mail loops or answer machines:
 - It goes out marked as an automatic message, so other systems do not reply to it.
 - It is skipped for automatic, bulk or list mail, mail that asks for no automatic answers, mail from a no-reply address or from one of your own addresses, and mail that failed sender checks.
 - It is sent at most 3 times per ticket, and 10 times per customer an hour.
+
+</Fold>
+
+<Fold>
+
+## Merge follow-ups
+
+A customer who writes again in a new email, rather than replying in the thread, opens a second ticket. **Merge into the contact's open ticket** joins it to the one already being worked on, as [Merge into another ticket](/guides/inbox-and-tickets/#snooze-merge-spam-and-delete) does: its messages and side conversations move, its labels are added, and both timelines say which automation merged them.
+
+- It applies to email tickets, and merges into the contact's most recent other email ticket that is open, pending or on hold, of the same brand, created or replied on within the days you choose (1 to 30, 7 by default).
+- With **Same subject only** (on by default), the subjects must match once `Re:`, `Fwd:`, `AW:`, `TR:` and ticket numbers like `[#123]` are left out, ignoring case. A ticket without a subject matches none.
+- A merge never changes who sees a message: both tickets are of the same team, or neither is in a private team.
+- Tickets without a contact, tickets your team started and mail that failed sender checks are never merged.
+- The ticket merged into opens again if it was pending or on hold, and its assignee is notified, as for a reply.
+- Once merged, nothing else runs on the new ticket: not the automation's other actions, the automations below it, auto-assignment or the new ticket notification. When there is nothing to merge into, the other actions run as usual.
+
+Put it at the top of the list, so the automations above it do not act on a ticket that is about to be merged.
 
 </Fold>
 
@@ -150,6 +169,7 @@ A **Send a reply** action is careful not to start mail loops or answer machines:
 - **Major incidents.** When a ticket is updated, if Severity is Sev 1, assign to team On call and add an internal note.
 - **Churn risk.** When the customer replies, if Ollie thinks the customer is at risk of churning with a probability above 70%, add tag Churn risk.
 - **Reopen on reply.** When the customer replies, if Status is Pending, set status to Open.
+- **Follow-ups.** When a ticket is created, merge into the contact's open ticket within 7 days, same subject only.
 
 </Fold>
 

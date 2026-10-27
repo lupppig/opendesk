@@ -5,6 +5,7 @@ import { useState } from "react";
 import { PasswordInput } from "@/components/auth/parts";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import { ReauthNotice } from "@/components/settings/ReauthNotice";
 import { Field, TextInput } from "@/components/ui/input";
 import { api } from "@/lib/api/endpoints";
 import { errorMessage, isApiError } from "@/lib/api/client";
@@ -34,7 +35,9 @@ export function DeleteAccountDialog({ onClose }: { onClose: () => void }) {
       else void navigate({ to: "/login" });
     },
   });
-  const message = del.error
+  // Without a password, a recent sign-in stands in for it: the notice says so.
+  const reauth = isApiError(del.error, "reauth_required");
+  const message = del.error && !reauth
     ? isApiError(del.error, "sole_owner") || isApiError(del.error, "conflict")
       ? a("transferOwnershipOrDeleteTheWorkspacesYouOwn")
       : isApiError(del.error, "invalid_credentials") || isApiError(del.error, "invalid_code")
@@ -79,6 +82,7 @@ export function DeleteAccountDialog({ onClose }: { onClose: () => void }) {
           {({ id }) => <TextInput id={id} value={typed} onChange={(e) => setTyped(e.target.value)} />}
         </Field>
         {message && <p className="text-xs text-danger-fg">{message}</p>}
+        {reauth && <ReauthNotice error={del.error} />}
       </div>
     </Dialog>
   );

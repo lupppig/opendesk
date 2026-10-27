@@ -1,0 +1,86 @@
+---
+title: Inbox categories
+description: Split Collab inboxes into tabs like Primary, Updates and Newsletters, set them once for the workspace or a team, and let Ollie sort new mail without anyone seeing it.
+---
+
+import Steps from '../../../components/Steps.astro';
+import Step from '../../../components/Step.astro';
+import Callout from '../../../components/Callout.astro';
+
+With Collab, an inbox can be split into tabs, like Gmail's: **Primary** for mail from people, and categories such as **Updates**, **Newsletters** and **Promotions** for the rest. New mail is sorted as it arrives. Categories only change where mail shows in opendesk: a conversation in Updates is still in the inbox, still unread, and nothing is written back to Gmail, Outlook or your IMAP server.
+
+The tabs sit above the inbox while an account in view is split. In **All inboxes**, the tabs of every split account are joined, each with its unread count.
+
+## Who decides
+
+Admins set categories once for everyone, so nobody has to set up each person's inbox. An account follows the first of these that applies to it:
+
+1. **Its own choice.** Whoever manages an account can choose its own categories, or turn them off, in the account's settings, unless admins turned off **Members choose their own**.
+2. **Its owner's team.** A team can have its own categories. Someone in several teams gets the first team's, in the order admins set.
+3. **The workspace default.**
+4. **Nothing.** The inbox is one list, and the mail page offers whoever manages the account a short guided set-up.
+
+A new member's accounts follow the workspace or their team from their first sync.
+
+## Set up categories for everyone
+
+<Steps>
+<Step title="Open Inbox categories">
+
+Open **Settings**, **Inbox categories** (under **Channels**, next to **Mail accounts**) and choose **Turn on categories**. You start from Gmail's tabs: Primary, Updates, Newsletters and Promotions.
+
+</Step>
+<Step title="Make them yours">
+
+Rename, recolour, reorder or remove categories, add one of your own, or choose **Suggest with Ollie** and say in a few words what the inboxes are for. Primary always comes first and may be renamed, for example to *Important*. A set has 2 to 8 categories.
+
+Give each category a short description of what belongs in it. Ollie sorts by these descriptions.
+
+</Step>
+<Step title="Decide whether members choose their own">
+
+With **Members choose their own** on, anyone can pick their own categories, or none, for the accounts they manage. With it off, everyone follows the workspace or their team.
+
+</Step>
+<Step title="Save">
+
+Inboxes of the last 30 days are sorted again, except conversations someone moved by hand.
+
+</Step>
+</Steps>
+
+To give a team its own categories, choose **Add a team** under **Teams**. Drag teams to change their order. **Follow the workspace** removes a team's own set.
+
+## Choose your own for an account
+
+Open **Settings**, **Mail accounts**, the account, then **Inbox categories**:
+
+- **Follow** the team's or the workspace's categories.
+- **Choose my own** for this account.
+- **Don't split this inbox**.
+
+If your admins set the categories for everyone, these are locked, and you can still turn Ollie's sorting on or off for the account.
+
+## How mail is sorted
+
+New mail in an inbox is sorted in this order:
+
+1. **Sender rules.** Mail from an address, or from a whole domain written as `@example.com`, always goes to the category you chose. Add rules under **Sender rules** in the account's settings, or choose **Always for this sender** when you move a conversation.
+2. **People you write to stay in Primary.**
+3. **Gmail's own tabs**, for Gmail accounts. Mail Gmail puts in Promotions, Social, Updates or Forums goes to the category of that name when the inbox has it (Forums to Social), and Gmail's Primary to Primary when every category is a built-in one. Newsletters Gmail files under Updates or Promotions are left to the next steps while the inbox has a Newsletters category.
+4. **Ollie**, when AI is on for the workspace and **Let Ollie sort new mail** is on for the account.
+5. **Mail headers.** Mailing lists, bulk mail and automatic mail go to the built-in Newsletters, Promotions and Updates. Everything else stays in Primary.
+
+Mail Ollie is unsure of stays in Primary. A conversation you answer moves to Primary, and one you move by hand stays where you put it. Sorting never archives, reads or moves mail at your provider.
+
+## Privacy
+
+Admins choose the categories but never see anyone's mail or how it was sorted. A category and a sender rule are seen only by whoever sees the account.
+
+To sort a message, Ollie reads its sender, subject and first lines, nothing more, and keeps nothing but the category it chose. Anyone can turn off **Let Ollie sort new mail** for an account they manage, whatever admins set. Sender rules and mail headers still sort it.
+
+<Callout>
+
+Sorting with Ollie uses a small amount of AI per batch of up to 10 conversations. A workspace that brings its own OpenRouter or TypeSafe key in **Settings, AI** sorts on that key, at no charge on opendesk. See [Your own provider key](/guides/ai/#your-own-provider-key).
+
+</Callout>

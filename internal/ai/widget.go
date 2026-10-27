@@ -206,7 +206,7 @@ func (s *Service) WidgetAnswer(ctx context.Context, a jobs.AIWidgetAnswerArgs) e
 		return err
 	}
 	in := ac.input(a.WorkspaceID, a.TicketID, a.PageURL)
-	if s.jev() {
+	if s.jevFor(ctx, a.WorkspaceID) {
 		human, err := s.needsHuman(ctx, a.WorkspaceID, a.TicketID, msgs)
 		if err != nil && !skippable(err) {
 			return err
@@ -578,7 +578,7 @@ func (s *Service) needsHuman(ctx context.Context, wid, tid uuid.UUID, msgs []dom
 			"An assistant with the company's help content and tools can handle it."),
 	}
 	c := s.newCall(wid, nil, &tid, "answer_check")
-	res, err := c.decide(ctx, s.decider, decide.Request{State: state, Questions: qs})
+	res, err := c.decide(ctx, decide.Request{State: state, Questions: qs})
 	if err != nil {
 		return false, err
 	}

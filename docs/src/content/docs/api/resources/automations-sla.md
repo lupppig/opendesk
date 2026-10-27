@@ -25,9 +25,10 @@ type Automation = {
                 value: string /* up to 500 characters; any / none: phrases, one per line */;
                 question?: string /* ai_decide only: 3..300 characters of plain text */ }[];
   actions: { type: "set_status" | "set_priority" | "set_severity" | "assign_user" | "assign_team" | "add_tag" | "remove_tag"
-                 | "send_reply" | "add_note" | "mark_spam" | "ai_triage" | "set_field";
+                 | "send_reply" | "add_note" | "mark_spam" | "delete_ticket" | "merge_into_open_ticket" | "ai_triage" | "set_field";
                  value: string;
-                 field?: string /* set_field: the ticket field key */ }[];
+                 field?: string /* set_field: the ticket field key */;
+                 same_subject?: boolean /* merge_into_open_ticket: default true */ }[];
   enabled: boolean;
   position: number;
   run_count: number;
@@ -50,6 +51,8 @@ type SlaPolicy = {
 ```
 
 Conditions on `field.<key>` (the ticket's custom field) and `contact.field.<key>` (its contact's) take the [operators of the field's type](/api/resources/labels-fields/#filter-and-sort); `equals` and `not_equals` mean `eq` and `ne`. `set_field` writes `value` as a string: `"12.5"`, `"true"`, `"2026-10-11"`, comma separated option ids, or `""` to clear. It is checked when the automation is saved, and skipped at run time if the field was archived or deleted since. `add_tag` respects exclusive label groups.
+
+`merge_into_open_ticket` runs on `ticket_created` only (another trigger is `422`). Its `value` is a window in days, `"1"` to `"30"` (`""` stores `"7"`), and `same_subject` (stored, `true` by default) requires the same subject once reply prefixes and ticket tags are dropped. It merges the new ticket into the contact's most recent earlier open, pending or on hold ticket as [`POST /v1/tickets/{id}/merge`](/api/resources/tickets/) does, by actor `automation`; see [Merge follow-ups](/guides/automations/#merge-follow-ups) for which tickets qualify.
 
 See [Automations](/guides/automations/) and [SLA policies](/guides/sla-policies/) for how they behave.
 

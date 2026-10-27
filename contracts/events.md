@@ -99,6 +99,7 @@ view to its owner.
 | `ai_agent_review.updated` | agents | — | `{ "message_id", "ticket_id", "outcome": "dismissed" \| "improved" }`: an agent reply left the review queue |
 | `billing.updated`        | agents     | —                                     | `Billing` (`contracts/billing.md`): plan, status, seats, limits, usage, AI balance, prices. Sent on subscription changes, seat syncs, AI top-ups and recharges |
 | `saved_reply.*`, `view.*`, `automation.*`, `sla_policy.*`, `kb_article.*`, `kb_collection.*`, `changelog_entry.*`, `team.*` | agents | — (a personal `view.*`: its owner, `private`) | `{ "<resource>": Obj }` / `{ "<resource>_id" }` |
+| `wiki_page.created` / `wiki_page.updated` / `wiki_page.moved` / `wiki_page.deleted` | agents | — | `{ "wiki_page": WikiNode, "updated_by": UserRef \| null }` (no body: refetch the page) / `{ "wiki_page_id", "wiki_page_ids": [...] }` (the page and its subpages, all removed) (`contracts/wiki.md`) |
 | `webhook.*` | agents | admins (`private`, `user:<uid>`) | `{ "webhook": Webhook }` / `{ "webhook_id" }` |
 | `brand.created` / `brand.updated` / `brand.deleted` | agents | — | `{ "brand": Brand }` / `{ "brand_id" }` |
 | `routing_rule.created` / `routing_rule.updated` / `routing_rule.deleted` | agents | — | `{ "routing_rule": RoutingRule }` / `{ "routing_rule_id" }` |

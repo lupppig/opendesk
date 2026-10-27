@@ -15,6 +15,7 @@ import { accountName, isMailBox, mailListQuery, type MailSearch } from "@/lib/co
 import { cachedFolders } from "@/lib/collab/cache";
 import { compose } from "@/lib/collab/compose";
 import { addressNumbers } from "@/lib/collab/badges";
+import { accountCategories, categoryTabs, PRIMARY, ruleSender } from "@/lib/collab/categories";
 import { useAllFolders, useCanAct, useMailAccounts, useSidebarPrefs, useThreadAction } from "@/lib/collab/hooks";
 import { type ComposeMode } from "@/lib/collab/recipients";
 import { identitiesOf, ownEmails as ownEmailsOf } from "@/lib/collab/identities";
@@ -31,13 +32,14 @@ import { SkeletonRows } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
 import { Tooltip } from "@/components/ui/tooltip";
 import { AccountDot, boxIcon, FolderGlyph } from "@/components/collab/bits";
+import { canOfferCategories, CategoryOffer, CategoryTabs, useCategorySettingsTarget } from "@/components/collab/CategoryTabs";
 import { FolderBar } from "@/components/collab/FolderBar";
 import { SearchCoverage, StorageFullBanner } from "@/components/collab/MailNotices";
 import { LabelsPicker, MovePicker, type MoveTarget } from "@/components/collab/pickers";
 import { ThreadRow } from "@/components/collab/ThreadRow";
 import { ThreadView, type ThreadViewHandle } from "@/components/collab/ThreadView";
 
-type ActOpts = { folderId?: string; label?: string; silent?: boolean };
+type ActOpts = { folderId?: string; category?: string; label?: string; silent?: boolean };
 
 const toastKey: Partial<Record<MailThreadAction, "archived" | "trashed" | "spammed" | "moved" | "inboxed" | "notSpam">> = {
   archive: "archived",
@@ -84,22 +86,31 @@ export default function MailPage() {
   const canAct = useCanAct();
   const box = params.box ?? "inbox";
   const openId = params.threadId;
-  const query = useMemo(() => mailListQuery(box, search), [box, search.account, search.folder, search.q, search.to, search.with]); // eslint-disable-line react-hooks/exhaustive-deps
-  const listKey = JSON.stringify(query);
-  const list = useInfiniteQuery(q.mailThreads(query));
   const { data: accounts } = useMailAccounts();
   const { data: counts } = useQuery(q.mailCounts());
-  const prefs = useSidebarPrefs(true);
+  const prefs = useSidebarPrefs();
   const folderMap = useAllFolders(accounts);
   const action = useThreadAction();
 
-  const threads = useMemo(() => list.data?.pages.flatMap((p) => p.data) ?? [], [list.data]);
   const account = search.account ? accounts?.find((a) => a.id === search.account) : undefined;
   const folder: MailFolder | undefined = search.folder ? Object.values(folderMap).flatMap((f) => f ?? []).find((f) => f.id === search.folder) : undefined;
   const folderAccount = folder ? accounts?.find((a) => a.id === folder.account_id) : undefined;
   const spans = !account && !folder && (accounts?.length ?? 0) > 1;
   const ownEmails = useMemo(() => new Set((accounts ?? []).flatMap((a) => ownEmailsOf(a))), [accounts]);
   const accountsById = useMemo(() => new Map((accounts ?? []).map((a) => [a.id, a])), [accounts]);
+
+  // An inbox (no folder, no search) whose accounts are split shows its tabs; Primary when none is chosen.
+  const tabbed = box === "inbox" && !search.folder && !search.q;
+  const tabAccounts = useMemo(() => (!tabbed || !accounts ? [] : account ? [account] : accounts), [tabbed, accounts, account]);
+  const tabs = useMemo(() => categoryTabs(tabAccounts, counts), [tabAccounts, counts]);
+  const category = tabs.length ? (tabs.some((c) => c.key === search.category) ? search.category : PRIMARY) : undefined;
+  const settingsTarget = useCategorySettingsTarget(tabAccounts);
+  const offer = !tabs.length && canAct ? tabAccounts.find(canOfferCategories) : undefined;
+  const query = useMemo(() => mailListQuery(box, { ...search, category }), [box, search.account, search.folder, search.q, search.to, search.with, category]); // eslint-disable-line react-hooks/exhaustive-deps
+  const listKey = JSON.stringify(query);
+  // The inbox waits for the accounts, which say whether it opens on a tab.
+  const list = useInfiniteQuery({ ...q.mailThreads(query), enabled: !tabbed || !!accounts });
+  const threads = useMemo(() => list.data?.pages.flatMap((p) => p.data) ?? [], [list.data]);
 
   const boxLabel = isMailBox(box) ? (box === "inbox" && !account ? t("nav.allInboxes") : t(`box.${box}`)) : t("box.folder");
   const title = folder ? folder.name : account ? `${boxLabel} · ${accountName(account)}` : boxLabel;
@@ -209,13 +220,55 @@ export default function MailPage() {
   };
 
   // ── Actions ─────────────────────────────────────────────────────────────
+  /**
+   * Moved to a category: undo puts them back where they were, and when they are all from one
+   * sender of an account the caller manages, Always makes it a rule for that sender's mail.
+   */
+  const categorized = useCallback(
+    (items: MailThread[], key: string, name: string) => {
+      const ids = items.map((x) => x.id);
+      const before = new Set(items.map((x) => x.category ?? PRIMARY));
+      const back = before.size === 1 ? [...before][0] : null;
+      const undo = back
+        ? () =>
+            action.mutate(
+              { ids, action: "categorize", category: back },
+              { onSuccess: () => void qc.invalidateQueries({ queryKey: qk.mailThreadLists }), onError: (e) => toast.error(e, t("toast.failed")) },
+            )
+        : null;
+      const acc = accountsById.get(items[0].account_id);
+      const senders = new Set(items.map((x) => ruleSender(x.participants, ownEmails)));
+      const sender = senders.size === 1 ? [...senders][0] : null;
+      const msg = t("categories.moved", { count: ids.length, name });
+      if (!acc?.can_manage || !sender || items.some((x) => x.account_id !== acc.id)) {
+        if (undo) toast.undo(msg, undo, t("toast.undo"));
+        else toast.success(msg);
+        return;
+      }
+      const always = () =>
+        void api.collab.categories.addRule(acc.id, { sender, category: key }).then(
+          () => {
+            void qc.invalidateQueries({ queryKey: qk.mailCategoryRules(acc.id) });
+            toast.success(t("categories.ruleSaved", { sender, name }));
+          },
+          (e) => toast.error(e, t("toast.failed")),
+        );
+      toast.success(msg, {
+        description: t("categories.alwaysHint", { sender }),
+        action: { label: t("categories.always"), onClick: always },
+        cancel: undo ? { label: t("toast.undo"), onClick: undo } : undefined,
+      });
+    },
+    [accountsById, ownEmails, action, qc, t],
+  );
+
   const act = useCallback(
     (items: MailThread[], a: MailThreadAction, opts: ActOpts = {}) => {
       if (!canAct || !items.length) return;
       const ids = items.map((x) => x.id);
       const place = listPlace(query, cachedFolders(qc));
       // The open conversation leaving the list: the next one opens (or the list comes back).
-      if (openId && ids.includes(openId) && leavesList(a, place, opts.folderId)) {
+      if (openId && ids.includes(openId) && leavesList(a, place, opts.folderId, opts.category)) {
         const i = threads.findIndex((x) => x.id === openId);
         const rest = threads.filter((x) => !ids.includes(x.id));
         const next = rest[Math.min(Math.max(i, 0), rest.length - 1)];
@@ -224,11 +277,12 @@ export default function MailPage() {
       }
       setSelected((s) => (s.size ? new Set() : s));
       action.mutate(
-        { ids, action: a, folderId: opts.folderId },
+        { ids, action: a, folderId: opts.folderId, category: opts.category },
         {
           onError: (e) => toast.error(e, t("toast.failed")),
         },
       );
+      if (a === "categorize" && opts.category && !opts.silent) return categorized(items, opts.category, opts.label ?? "");
       const key = toastKey[a];
       if (opts.silent || !key) return;
       const msg = t(`toast.${key}`, { count: ids.length, folder: opts.label ?? "" });
@@ -245,7 +299,7 @@ export default function MailPage() {
         );
       else toast.success(msg);
     },
-    [canAct, query, qc, openId, threads, go, close, action, t],
+    [canAct, query, qc, openId, threads, go, close, action, t, categorized],
   );
 
   const onRowAction = useCallback((x: MailThread, a: MailThreadAction) => act([x], a, { silent: a !== "archive" && a !== "trash" }), [act]);
@@ -341,6 +395,8 @@ export default function MailPage() {
   const compact = split || phone;
   const noAccounts = accounts && accounts.length === 0;
 
+  // Off the inbox's tabs (a search, another box), a conversation sorted out of Primary says where to.
+  const categoryOf = (x: MailThread) => (x.category && x.category !== PRIMARY ? accountCategories(accountsById.get(x.account_id)).find((c) => c.key === x.category) : undefined);
   const labelsFor = (x: MailThread): MailFolder[] => {
     const fs = folderMap[x.account_id];
     if (!fs) return [];
@@ -434,6 +490,8 @@ export default function MailPage() {
             prefs={prefs}
           />
         )}
+        {tabs.length > 0 && category && <CategoryTabs tabs={tabs} active={category} search={search} settings={settingsTarget} />}
+        {offer && <CategoryOffer account={offer} />}
         {!noAccounts && <StorageFullBanner />}
         {search.q && !noAccounts && <SearchCoverage accounts={scopeAccount ? [scopeAccount] : (accounts ?? [])} />}
         {(addresses.length > 1 || search.to) && (
@@ -500,9 +558,11 @@ export default function MailPage() {
             <MovePicker
               accountId={targetAccount}
               folders={moveFolders}
+              categories={accountCategories(accountsById.get(targetAccount))}
+              current={category}
               open={pickMove}
               onOpenChange={setPickMove}
-              onMove={(m: MoveTarget) => act(pickTargets(), m.action, { folderId: m.folderId, label: m.label })}
+              onMove={(m: MoveTarget) => act(pickTargets(), m.action, { folderId: m.folderId, category: m.category, label: m.label })}
               trigger={<span aria-hidden className="block h-0 w-0" />}
             />
             {targetLabels && (
@@ -555,6 +615,7 @@ export default function MailPage() {
                       accountColor={spans ? acc?.color : undefined}
                       accountName={acc ? accountName(acc) : undefined}
                       labels={labelsFor(x)}
+                      category={category ? undefined : categoryOf(x)}
                       ownEmails={ownEmails}
                       onOpen={open}
                       onToggle={toggle}

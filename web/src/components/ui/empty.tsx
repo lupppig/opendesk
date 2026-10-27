@@ -12,6 +12,7 @@ import {
   Clock,
   Inbox,
   Layers,
+  NotebookText,
   Search,
   Settings2,
   ShieldCheck,
@@ -37,6 +38,7 @@ export type ArtKind =
   | "views"
   | "contacts"
   | "kb"
+  | "wiki"
   | "reports"
   | "search"
   | "settings"
@@ -52,6 +54,7 @@ const ART: Record<ArtKind, { icon: LucideIcon; hue: Tone; lit: 0 | 1 | 2 | 3 }> 
   views: { icon: Layers, hue: "violet", lit: 0 },
   contacts: { icon: Users, hue: "teal", lit: 1 },
   kb: { icon: BookOpen, hue: "orange", lit: 2 },
+  wiki: { icon: NotebookText, hue: "teal", lit: 0 },
   reports: { icon: BarChart3, hue: "cyan", lit: 3 },
   search: { icon: Search, hue: "gray", lit: 0 },
   settings: { icon: Settings2, hue: "gray", lit: 1 },

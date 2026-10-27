@@ -235,6 +235,7 @@
     "draft": "Brouillon",
     "draftTo": "À {{who}}",
     "draftNoRecipients": "Aucun destinataire pour le moment",
+    "aiDraftBy": "Brouillon IA par {{name}}",
     "toAlias": "À {{email}}",
     "toAliasHint": "Écrit à cette adresse. Afficher ses messages",
     "onTicket": "Sur le ticket #{{number}}",
@@ -434,7 +435,10 @@
     "connectButton": "Connecter le compte",
     "connecting": "Connexion aux deux serveurs",
     "failed": "Impossible de se connecter",
-    "nothingDeleted": "opendesk ne supprime jamais de messages chez votre fournisseur."
+    "nothingDeleted": "opendesk ne supprime jamais de messages chez votre fournisseur.",
+    "history": "Anciens e-mails",
+    "historyHint": "Les 30 derniers jours arrivent d’abord. Les e-mails plus anciens suivent en arrière-plan, et vous pouvez changer ce choix dans les paramètres du compte.",
+    "historyNone": "Seulement les 30 derniers jours"
   },
   "detail": {
     "back": "Comptes de messagerie",
@@ -588,6 +592,7 @@
     "unpin": "Retirer des favoris",
     "hide": "Masquer dans la barre latérale",
     "customize": "Personnaliser la barre latérale",
+    "accountSettings": "Paramètres du compte",
     "more": "Options pour {{name}}"
   },
   "address": {
@@ -713,5 +718,22 @@
       "workspace": "Le nom de l’espace de travail"
     },
     "signatureVars": "Tapez une variable pour ajouter le nom, le poste ou le téléphone de l’expéditeur : les messages de chacun portent les siens."
+  },
+  "categories": {
+    "group": "Catégories",
+    "tabs": "Catégories de la boîte de réception",
+    "settings": "Réglages des catégories",
+    "moved_one": "Conversation déplacée vers {{name}}",
+    "moved_many": "{{count}} conversations déplacées vers {{name}}",
+    "moved_other": "{{count}} conversations déplacées vers {{name}}",
+    "always": "Toujours",
+    "alwaysHint": "Envoyer ici aussi les prochains e-mails de {{sender}}",
+    "ruleSaved": "Les e-mails de {{sender}} vont désormais dans {{name}}",
+    "offer": {
+      "title": "Répartissez votre boîte de réception en onglets.",
+      "body": "Les e-mails des personnes restent dans Principale, tandis que les newsletters, les notifications et les promotions ont leurs propres onglets. Ollie peut proposer des catégories à partir de vos e-mails.",
+      "action": "Configurer les catégories",
+      "dismiss": "Plus tard"
+    }
   }
 }

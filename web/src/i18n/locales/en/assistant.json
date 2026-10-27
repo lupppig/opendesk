@@ -43,6 +43,8 @@
     "unassigned": "Show unassigned tickets older than a day and suggest assignees",
     "report": "How are we doing this week? Volume, response times, SLA and CSAT.",
     "kb": "Draft a help article from recently solved tickets about the most common question",
+    "wiki": "Summarize this wiki page in a few bullets",
+    "wikiProcess": "What's our escalation process? Check the wiki.",
     "label": "Label all billing tickets from this week",
     "breach": "Which tickets breach SLA in the next hour?",
     "mine": "Which of my tickets are waiting on me?"
@@ -108,6 +110,8 @@
     "unassigned": "Suggest assignees for old tickets",
     "report": "How are we doing this week?",
     "kb": "Draft a help article",
+    "wiki": "Summarize this page",
+    "wikiProcess": "What's our escalation process?",
     "label": "Label this week's billing tickets",
     "breach": "What breaches SLA soon?",
     "mine": "What's waiting on me?"

@@ -102,6 +102,8 @@
       "team": "Team",
       "mailbox": "Mailbox",
       "writtenTo": "Written to",
+      "contact": "Contact",
+      "company": "Company",
       "tag": "Label",
       "channel": "Channel",
       "keyword": "Keyword"
@@ -128,6 +130,8 @@
     "unknown": "unknown",
     "inMailbox": "In {{name}}",
     "aMailbox": "a mailbox",
+    "aContact": "a contact",
+    "aCompany": "a company",
     "writtenTo": "Written to {{address}}",
     "matching": "Matching “{{q}}”",
     "ops": {
@@ -143,12 +147,16 @@
       "tag": "Choose labels",
       "team": "Choose teams",
       "mailbox": "Choose mailboxes",
+      "contact": "Choose contacts",
+      "company": "Choose companies",
       "channel": "Choose channels"
     },
     "myTeams": "my teams",
     "noTeam": "no team",
     "notTeamNamed": "Not team {{name}}",
     "notInMailbox": "Not in {{name}}",
+    "notContact": "Not from {{name}}",
+    "notCompany": "Not from {{name}}",
     "withoutLabels": "Without {{labels}}",
     "noLabel": "No label",
     "notChannel": "Not {{channel}}",
@@ -297,6 +305,11 @@
     "chooseTeammate": "Choose a teammate",
     "chooseTeam": "Choose a team",
     "markSpamHint": "Moves the ticket to Spam. No reply is sent.",
+    "deleteTicketHint": "Deletes the ticket: it leaves every view, and nothing else runs on it.",
+    "mergeHint": "Merges a new ticket into the same contact's latest open, pending or on hold ticket. Nothing else runs on it after that.",
+    "mergeWindow_one": "Within {{count}} day",
+    "mergeWindow_other": "Within {{count}} days",
+    "mergeSameSubject": "Same subject only",
     "replyPlaceholder": "Thanks for writing in. We've received your message…",
     "notePlaceholder": "Internal note for the team",
     "replyText": "Reply text",
@@ -306,7 +319,8 @@
       "action": "Add at least one action.",
       "condition": "Every condition needs a value, or remove it.",
       "actionValue": "Every action needs a value.",
-      "phrases": "A phrase list takes 1 to 100 phrases, one per line, of up to 500 characters each."
+      "phrases": "A phrase list takes 1 to 100 phrases, one per line, of up to 500 characters each.",
+      "mergeTrigger": "Merge into the contact's open ticket runs only when a ticket is created."
     },
     "chooseSeverity": "Choose a severity",
     "noSeverity": "No severity",
@@ -362,6 +376,8 @@
     "send_reply": "Send a reply",
     "add_note": "Add an internal note",
     "mark_spam": "Mark as spam",
+    "delete_ticket": "Delete ticket",
+    "merge_into_open_ticket": "Merge into the contact's open ticket",
     "set_field": "Set field",
     "set_reply_address": "Set reply address"
   },
@@ -373,6 +389,8 @@
   },
   "pickers": {
     "search": "Search",
+    "searchContacts": "Search name or email",
+    "searchCompanies": "Search name or domain",
     "andMore": "{{first}} and {{count}} more"
   },
   "customFields": {

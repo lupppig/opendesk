@@ -107,7 +107,8 @@ func optionKeys(raw json.RawMessage) []string {
 
 func (f *fakeTypeSafe) serve(w http.ResponseWriter, r *http.Request) {
 	raw, _ := io.ReadAll(r.Body)
-	if r.URL.Path != "/v1/systemone" {
+	// TypeSafe's own path, or OpenRouter's Decisions API (the same request).
+	if r.URL.Path != "/v1/systemone" && !strings.HasSuffix(r.URL.Path, "/alpha/decisions") {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}

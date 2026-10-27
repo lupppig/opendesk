@@ -145,6 +145,13 @@ interaction responses without provider branches in the engine. Adding a provider
 implementing this interface, registering it and adding its settings metadata. It does
 not require a schema change: provider keys are data, not a database enum.
 
+Google Chat uses app authentication with the `chat.bot` scope, which limits the app to
+spaces it belongs to. For a standard Chat app (not a Google Workspace add-on), the HTTP
+connection URL and authentication audience are the connection's webhook URL. The inbound
+request is accepted only when its Google-signed OIDC token has that audience and the
+`chat@system.gserviceaccount.com` identity. Add the Chat app to each space used as a
+destination.
+
 Adapters are compiled into the binary. They are plugin-shaped Go packages, not Go
 runtime `.so` plugins, which keeps builds portable and self-hosting predictable.
 

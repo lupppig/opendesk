@@ -50,7 +50,7 @@ var spaceItemIDs = map[string][]string{
 	"section":       collab.SidebarSectionIDs,
 	"ticket_folder": {"unassigned", "mine", "open", "pending", "solved", "spam"},
 	"box":           {"inbox", "shared", "assigned"},
-	"page":          {"contacts", "knowledge", "reports"},
+	"page":          {"contacts", "knowledge", "wiki", "reports"},
 	"everywhere":    {"mine", "mail"},
 }
 

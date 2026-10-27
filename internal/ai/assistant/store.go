@@ -26,12 +26,13 @@ type Session struct {
 
 // PageContext is what the panel says about the page the user is on.
 type PageContext struct {
-	Path     string            `json:"path,omitempty" maxLength:"300"`
-	Page     string            `json:"page,omitempty" maxLength:"60" doc:"inbox, ticket, view, contacts, kb, reports, settings, other"`
-	TicketID string            `json:"ticket_id,omitempty" maxLength:"64" doc:"The open ticket (uuid)"`
-	ViewID   string            `json:"view_id,omitempty" maxLength:"64"`
-	Folder   string            `json:"folder,omitempty" maxLength:"60"`
-	Filters  map[string]string `json:"filters,omitempty" maxProperties:"20"`
+	Path       string            `json:"path,omitempty" maxLength:"300"`
+	Page       string            `json:"page,omitempty" maxLength:"60" doc:"inbox, ticket, view, contacts, kb, wiki, reports, settings, other"`
+	TicketID   string            `json:"ticket_id,omitempty" maxLength:"64" doc:"The open ticket (uuid)"`
+	WikiPageID string            `json:"wiki_page_id,omitempty" maxLength:"64" doc:"The open wiki page (uuid)"`
+	ViewID     string            `json:"view_id,omitempty" maxLength:"64"`
+	Folder     string            `json:"folder,omitempty" maxLength:"60"`
+	Filters    map[string]string `json:"filters,omitempty" maxProperties:"20"`
 }
 
 // turnBody is a stored turn. User turns hold Text (and Context) or Results; assistant
@@ -70,7 +71,7 @@ type Step struct {
 
 // Ref is a clickable reference to something in the workspace.
 type Ref struct {
-	Kind   string `json:"kind" enum:"ticket,contact,article,view,automation,member,external" doc:"external: ID is the https link"`
+	Kind   string `json:"kind" enum:"ticket,contact,article,wiki_page,view,automation,member,external" doc:"external: ID is the https link"`
 	ID     string `json:"id"`
 	Label  string `json:"label"`
 	Number int64  `json:"number,omitempty"`

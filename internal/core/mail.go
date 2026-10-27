@@ -209,6 +209,8 @@ func (w *cleanupWorker) Work(ctx context.Context, _ *river.Job[cleanupArgs]) err
 		// Asks made to a member's Ollie by teammates' (contracts/ai.md "Asking a teammate").
 		`DELETE FROM assistant_peer_asks WHERE created_at < now() - interval '90 days'`,
 		`DELETE FROM passkey_challenges WHERE expires_at < now()`,
+		// Online time, past the longest report range (366 days) and a margin.
+		`DELETE FROM agent_presence WHERE ended_at < now() - interval '400 days'`,
 		// Visitor sessions past auth.VisitorSessionLive.
 		`DELETE FROM widget_sessions WHERE last_seen_at < now() - interval '90 days' OR (verified AND created_at < now() - interval '30 days')`,
 		// Shared sign-in throttle windows; every period is shorter than a day.

@@ -1,0 +1,152 @@
+{
+  "title": "Wiki",
+  "untitled": "Untitled",
+  "tree": {
+    "label": "Pages",
+    "open": "Show pages",
+    "search": "Search pages",
+    "newPage": "New page",
+    "empty": "No pages yet.",
+    "searching": "Searching",
+    "searchFailed": "Couldn't search. Try again.",
+    "noMatches": "No pages match “{{term}}”.",
+    "results": "Search results",
+    "expand": "Show subpages",
+    "collapse": "Hide subpages",
+    "actions": "Actions for {{title}}",
+    "addSubpage": "Add a subpage",
+    "addSubpageTo": "Add a subpage to {{title}}",
+    "moveTo": "Move to…"
+  },
+  "icon": {
+    "label": "Emoji",
+    "add": "Add icon",
+    "change": "Change icon",
+    "search": "Search emoji",
+    "remove": "Remove",
+    "none": "No emoji match.",
+    "groups": {
+      "work": "Work",
+      "symbols": "Symbols",
+      "people": "People",
+      "objects": "Objects",
+      "nature": "Nature",
+      "travel": "Places"
+    }
+  },
+  "page": {
+    "breadcrumbs": "Where this page sits",
+    "more": "More actions",
+    "copyLink": "Copy link",
+    "delete": "Delete page",
+    "body": "Page text",
+    "bodyPlaceholder": "Write something, or paste it in. The toolbar adds headings, lists, links and images.",
+    "bodyEmpty": "This page has no text yet.",
+    "subpages": "Subpages",
+    "addSubpage": "Add a subpage",
+    "editedBy": "Last edited by {{name}}, {{when}}",
+    "edited": "Last edited {{when}}",
+    "uploading": "Uploading",
+    "uploadFailed": "Couldn't upload the image.",
+    "notFound": "This page is gone",
+    "notFoundHint": "It was deleted, or the link belongs to another workspace.",
+    "loadFailed": "Couldn't open this page",
+    "backHome": "Back to the wiki"
+  },
+  "save": {
+    "saving": "Saving",
+    "saved": "Saved",
+    "retrying": "Couldn't save, retrying",
+    "notSaved": "Not saved"
+  },
+  "conflict": {
+    "title": "Someone else edited this page.",
+    "titleBy": "{{name}} edited this page.",
+    "body": "What you typed is still here. Load their version, or keep yours and save it over theirs.",
+    "loadTheirs": "Load their version",
+    "keepMine": "Keep mine"
+  },
+  "unsent": {
+    "forbidden": "You can't edit this page.",
+    "deleted": "This page was deleted.",
+    "body": "What you typed wasn't saved. Copy it to keep it.",
+    "copy": "Copy my text",
+    "copied": "Your text is copied",
+    "discard": "Discard"
+  },
+  "move": {
+    "title": "Move “{{title}}”",
+    "description": "It goes last under the page you pick, with its subpages.",
+    "search": "Search pages",
+    "top": "Top level",
+    "none": "No page matches.",
+    "here": "Here now"
+  },
+  "history": {
+    "open": "History",
+    "title": "Page history",
+    "list": "Versions",
+    "current": "Current",
+    "api": "An API key",
+    "by": "{{name}}, {{when}}",
+    "empty": "No history yet",
+    "emptyHint": "Versions show up here as the page is edited.",
+    "blank": "This version had no text.",
+    "restore": "Restore this version",
+    "restoreTitle": "Restore this version?",
+    "restoreBody": "The page goes back to this version. What it says now stays in the history, so you can go back to it.",
+    "restored": "Version restored"
+  },
+  "delete": {
+    "title": "Delete “{{title}}”?",
+    "body": "The page and its history are deleted for good.",
+    "withSubpages_one": "Its subpage goes with it. Both pages and their history are deleted for good.",
+    "withSubpages_other": "Its {{count}} subpages go with it. All of them and their history are deleted for good.",
+    "confirm": "Delete page",
+    "confirmAll_one": "Delete {{count}} page",
+    "confirmAll_other": "Delete {{count}} pages",
+    "adminOnlyPage": "Someone else created this page, so only an admin can delete it.",
+    "adminOnlySubpages": "Someone else created pages under this one, so only an admin can delete it."
+  },
+  "toast": {
+    "createFailed": "Couldn't create the page.",
+    "moveFailed": "Couldn't move the page.",
+    "deleted": "Deleted “{{title}}”",
+    "linkCopied": "Link copied"
+  },
+  "empty": {
+    "title": "Write down how your team works",
+    "body": "The wiki holds your team's runbooks, policies and how-tos. Only members see it: customers, the help center and the chat widget never do.",
+    "viewer": "Your team hasn't written any pages yet. Agents and admins can add the first one.",
+    "create": "Create the first page",
+    "tipNest": "Pages nest under each other",
+    "tipOllie": "Ollie reads the wiki to answer your questions"
+  },
+  "home": {
+    "intro": "Your team's runbooks, policies and how-tos. Only members see the wiki; customers never do.",
+    "recent": "Recently edited",
+    "all": "All pages",
+    "subpages_one": "{{count}} subpage",
+    "subpages_other": "{{count}} subpages",
+    "noSubpages": "No subpages",
+    "paletteHint": "Find any page from the command menu:"
+  },
+  "templates": {
+    "heading": "Start from a template",
+    "escalation": {
+      "title": "Escalation process",
+      "hint": "When and how to hand a ticket up.",
+      "body": "<p>Escalate when a customer is blocked, money is at stake, or you have tried twice without progress.</p><h2>Before you escalate</h2><ul><li><p>Read the ticket's history and search the wiki.</p></li><li><p>Write down what you tried.</p></li></ul><h2>Steps</h2><ol><li><p>Set the ticket to urgent.</p></li><li><p>Leave an internal note with what the customer needs.</p></li><li><p>Assign it to the lead on call.</p></li><li><p>Tell the customer who has it now and when they will hear back.</p></li></ol><h2>Who is on call</h2><p>Add your rota, or a link to it, here.</p>"
+    },
+    "refunds": {
+      "title": "Refund policy",
+      "hint": "Who can refund what, and when.",
+      "body": "<p>Who can refund what, and when.</p><h2>The rule</h2><p>Refund any charge within 30 days, no questions asked.</p><h2>Exceptions</h2><ul><li><p>Duplicate charges: refund at once and apologize.</p></li><li><p>Over 100 euros: a lead approves it first.</p></li><li><p>Chargebacks: don't refund twice. Hand the ticket to billing.</p></li></ul><h2>How to refund</h2><ol><li><p>Find the charge in the billing tool.</p></li><li><p>Refund it and note the amount on the ticket.</p></li></ol>"
+    },
+    "onboarding": {
+      "title": "Onboarding checklist",
+      "hint": "A new teammate's first two weeks.",
+      "body": "<p>What a new teammate does in their first two weeks.</p><h2>Week one</h2><ul><li><p>Get access to the helpdesk, chat and billing tools.</p></li><li><p>Read the escalation process and the refund policy.</p></li><li><p>Shadow a teammate for two shifts.</p></li></ul><h2>Week two</h2><ul><li><p>Answer tickets with a buddy reviewing your drafts.</p></li><li><p>Take your own queue for half a day.</p></li></ul>"
+    }
+  }
+}

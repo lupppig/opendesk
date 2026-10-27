@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ArrowUpRight, AtSign, Globe, Inbox, Layers, Lock, MoreHorizontal, Pencil, Plus, Search, Tag, Trash2, UserRound, Users, UsersRound, X } from "lucide-react";
+import { ArrowUpRight, AtSign, Building2, Globe, Inbox, Layers, Lock, MoreHorizontal, Pencil, Plus, Search, Tag, Trash2, UserRound, Users, UsersRound, X } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { SettingsPage, Section, ListRow } from "@/components/layout";
@@ -24,12 +24,16 @@ import { Segmented } from "@/components/ui/tabs";
 import { viewAudience, viewAudienceHint, viewDeleteBody } from "@/components/settings2/viewAudience";
 import { cleanFilters, clearField, fieldOps, filterOp, hasFilter, joinList, splitList, withOp, type FilterOp, type OpField } from "@/components/settings2/viewFilters";
 import {
+  CompaniesPick,
+  ContactsPick,
   MultiPick,
   SinglePick,
   channelItems,
   priorityItems,
   severityFilterItems,
   statusItems,
+  useCompanyItems,
+  useContactItems,
   useMailboxItems,
   useMemberItems,
   useTagItems,
@@ -54,6 +58,8 @@ function FilterChips({ f }: { f: TicketFilters }) {
   const teams = useQuery(q.teams()).data;
   const mailboxes = useQuery(q.mailboxes()).data;
   const tags = useQuery(q.tags()).data;
+  const contacts = useContactItems(splitList(f.contact_not));
+  const companies = useCompanyItems(splitList(f.company_not));
   const or = (xs: string[]) => xs.join(" / ");
   const out: ReactNode[] = [];
   if (f.status?.length)
@@ -138,6 +144,20 @@ function FilterChips({ f }: { f: TicketFilters }) {
       <span key="r" className={chip}>
         <AtSign />
         <span className="truncate">{t("views.writtenTo", { address: f.received_at })}</span>
+      </span>,
+    );
+  if (contacts.length)
+    out.push(
+      <span key="ctn" className={chip}>
+        <UserRound />
+        <span className="truncate">{t("views.notContact", { name: or(contacts.map((c) => c.label)) })}</span>
+      </span>,
+    );
+  if (companies.length)
+    out.push(
+      <span key="cpn" className={chip}>
+        <Building2 />
+        <span className="truncate">{t("views.notCompany", { name: or(companies.map((c) => c.label)) })}</span>
       </span>,
     );
   const tagColor = (name: string) => tags?.find((x) => x.name.toLowerCase() === name.toLowerCase())?.color;
@@ -561,6 +581,14 @@ function ViewDrawer({ view, nextPosition, onClose }: { view: View | null; nextPo
               <FilterRow label={t("views.filters.writtenTo")} onClear={f.received_at ? () => set("received_at", undefined) : undefined}>
                 <SinglePick items={addresses} value={f.received_at} onChange={(v) => set("received_at", v)} placeholder={t("views.any.writtenTo")} width={300} />
               </FilterRow>
+              <FilterRow label={t("views.filters.contact")} onClear={f.contact_not ? () => set("contact_not", undefined) : undefined}>
+                <NotOp />
+                <ContactsPick values={splitList(f.contact_not)} onChange={(v) => set("contact_not", joinList(v))} placeholder={t("views.choose.contact")} />
+              </FilterRow>
+              <FilterRow label={t("views.filters.company")} onClear={f.company_not ? () => set("company_not", undefined) : undefined}>
+                <NotOp />
+                <CompaniesPick values={splitList(f.company_not)} onChange={(v) => set("company_not", joinList(v))} placeholder={t("views.choose.company")} />
+              </FilterRow>
               <FilterRow label={t("views.filters.tag")} onClear={hasFilter(f, "tag") ? clearRow("tag") : undefined}>
                 {opPick("tag")}
                 {ops.tag === "not" ? (
@@ -635,6 +663,12 @@ function FilterRow({ label, children, onClear }: { label: string; children: Reac
       </button>
     </div>
   );
+}
+
+/** The operator of a row that only leaves tickets out, in the place of OpSelect. */
+function NotOp() {
+  const { t } = useTranslation("settingsInbox");
+  return <span className="w-[104px] shrink-0 px-2 text-[12.5px] text-fg-2">{t("views.ops.not")}</span>;
 }
 
 /** A row's operator: is / is not, and for labels any of / none of / empty. */

@@ -1,0 +1,152 @@
+{
+  "title": "Wiki",
+  "untitled": "Ohne Titel",
+  "tree": {
+    "label": "Seiten",
+    "open": "Seiten anzeigen",
+    "search": "Seiten durchsuchen",
+    "newPage": "Neue Seite",
+    "empty": "Noch keine Seiten.",
+    "searching": "Suche läuft",
+    "searchFailed": "Die Suche hat nicht geklappt. Versuch es noch einmal.",
+    "noMatches": "Keine Seite passt zu „{{term}}“.",
+    "results": "Suchergebnisse",
+    "expand": "Unterseiten zeigen",
+    "collapse": "Unterseiten ausblenden",
+    "actions": "Aktionen für {{title}}",
+    "addSubpage": "Unterseite hinzufügen",
+    "addSubpageTo": "Unterseite zu {{title}} hinzufügen",
+    "moveTo": "Verschieben nach…"
+  },
+  "icon": {
+    "label": "Emoji",
+    "add": "Symbol hinzufügen",
+    "change": "Symbol ändern",
+    "search": "Emoji suchen",
+    "remove": "Entfernen",
+    "none": "Kein Emoji passt.",
+    "groups": {
+      "work": "Arbeit",
+      "symbols": "Symbole",
+      "people": "Menschen",
+      "objects": "Gegenstände",
+      "nature": "Natur",
+      "travel": "Orte"
+    }
+  },
+  "page": {
+    "breadcrumbs": "Wo diese Seite liegt",
+    "more": "Weitere Aktionen",
+    "copyLink": "Link kopieren",
+    "delete": "Seite löschen",
+    "body": "Seitentext",
+    "bodyPlaceholder": "Schreib los oder füge Text ein. Über die Leiste kommen Überschriften, Listen, Links und Bilder dazu.",
+    "bodyEmpty": "Diese Seite hat noch keinen Text.",
+    "subpages": "Unterseiten",
+    "addSubpage": "Unterseite hinzufügen",
+    "editedBy": "Zuletzt bearbeitet von {{name}}, {{when}}",
+    "edited": "Zuletzt bearbeitet {{when}}",
+    "uploading": "Wird hochgeladen",
+    "uploadFailed": "Das Bild ließ sich nicht hochladen.",
+    "notFound": "Diese Seite gibt es nicht mehr",
+    "notFoundHint": "Sie wurde gelöscht, oder der Link gehört zu einem anderen Workspace.",
+    "loadFailed": "Die Seite ließ sich nicht öffnen",
+    "backHome": "Zurück zum Wiki"
+  },
+  "save": {
+    "saving": "Wird gespeichert",
+    "saved": "Gespeichert",
+    "retrying": "Speichern fehlgeschlagen, neuer Versuch",
+    "notSaved": "Nicht gespeichert"
+  },
+  "conflict": {
+    "title": "Jemand anderes hat diese Seite bearbeitet.",
+    "titleBy": "{{name}} hat diese Seite bearbeitet.",
+    "body": "Was du geschrieben hast, ist noch da. Lade die andere Fassung oder behalte deine und speichere sie darüber.",
+    "loadTheirs": "Andere Fassung laden",
+    "keepMine": "Meine behalten"
+  },
+  "unsent": {
+    "forbidden": "Du kannst diese Seite nicht bearbeiten.",
+    "deleted": "Diese Seite wurde gelöscht.",
+    "body": "Was du geschrieben hast, wurde nicht gespeichert. Kopiere es, um es zu behalten.",
+    "copy": "Meinen Text kopieren",
+    "copied": "Dein Text ist kopiert",
+    "discard": "Verwerfen"
+  },
+  "move": {
+    "title": "„{{title}}“ verschieben",
+    "description": "Sie kommt mit ihren Unterseiten als letzte unter die gewählte Seite.",
+    "search": "Seiten suchen",
+    "top": "Oberste Ebene",
+    "none": "Keine Seite passt.",
+    "here": "Liegt hier"
+  },
+  "history": {
+    "open": "Verlauf",
+    "title": "Seitenverlauf",
+    "list": "Fassungen",
+    "current": "Aktuell",
+    "api": "Ein API-Schlüssel",
+    "by": "{{name}}, {{when}}",
+    "empty": "Noch kein Verlauf",
+    "emptyHint": "Fassungen erscheinen hier, sobald die Seite bearbeitet wird.",
+    "blank": "Diese Fassung hatte keinen Text.",
+    "restore": "Diese Fassung wiederherstellen",
+    "restoreTitle": "Diese Fassung wiederherstellen?",
+    "restoreBody": "Die Seite springt auf diese Fassung zurück. Der jetzige Stand bleibt im Verlauf, du kannst also zurück.",
+    "restored": "Fassung wiederhergestellt"
+  },
+  "delete": {
+    "title": "„{{title}}“ löschen?",
+    "body": "Die Seite und ihr Verlauf werden endgültig gelöscht.",
+    "withSubpages_one": "Ihre Unterseite wird mitgelöscht. Beide Seiten und ihr Verlauf sind dann endgültig weg.",
+    "withSubpages_other": "Ihre {{count}} Unterseiten werden mitgelöscht. Alle Seiten und ihr Verlauf sind dann endgültig weg.",
+    "confirm": "Seite löschen",
+    "confirmAll_one": "{{count}} Seite löschen",
+    "confirmAll_other": "{{count}} Seiten löschen",
+    "adminOnlyPage": "Jemand anderes hat diese Seite angelegt, daher kann nur ein Admin sie löschen.",
+    "adminOnlySubpages": "Jemand anderes hat Seiten darunter angelegt, daher kann nur ein Admin sie löschen."
+  },
+  "toast": {
+    "createFailed": "Die Seite ließ sich nicht anlegen.",
+    "moveFailed": "Die Seite ließ sich nicht verschieben.",
+    "deleted": "„{{title}}“ gelöscht",
+    "linkCopied": "Link kopiert"
+  },
+  "empty": {
+    "title": "Halte fest, wie dein Team arbeitet",
+    "body": "Das Wiki sammelt die Abläufe, Regeln und Anleitungen deines Teams. Nur Mitglieder sehen es, nie Kunden, das Hilfecenter oder das Chat-Widget.",
+    "viewer": "Dein Team hat noch keine Seiten geschrieben. Agents und Admins können die erste anlegen.",
+    "create": "Erste Seite anlegen",
+    "tipNest": "Seiten lassen sich ineinander verschachteln",
+    "tipOllie": "Ollie liest das Wiki, um deine Fragen zu beantworten"
+  },
+  "home": {
+    "intro": "Die Abläufe, Regeln und Anleitungen deines Teams. Nur Mitglieder sehen das Wiki, Kunden nie.",
+    "recent": "Zuletzt bearbeitet",
+    "all": "Alle Seiten",
+    "subpages_one": "{{count}} Unterseite",
+    "subpages_other": "{{count}} Unterseiten",
+    "noSubpages": "Keine Unterseiten",
+    "paletteHint": "Jede Seite findest du auch über das Befehlsmenü:"
+  },
+  "templates": {
+    "heading": "Mit einer Vorlage beginnen",
+    "escalation": {
+      "title": "Eskalationsablauf",
+      "hint": "Wann und wie ein Ticket nach oben geht.",
+      "body": "<p>Eskaliere, wenn Kunden feststecken, Geld auf dem Spiel steht oder zwei Versuche nichts gebracht haben.</p><h2>Vor dem Eskalieren</h2><ul><li><p>Lies den Verlauf des Tickets und durchsuche das Wiki.</p></li><li><p>Schreib auf, was du versucht hast.</p></li></ul><h2>Schritte</h2><ol><li><p>Setz das Ticket auf dringend.</p></li><li><p>Hinterlass eine interne Notiz mit dem, was der Kunde braucht.</p></li><li><p>Weise es der Leitung in Bereitschaft zu.</p></li><li><p>Sag dem Kunden, wer es jetzt hat und wann er hört.</p></li></ol><h2>Wer hat Bereitschaft</h2><p>Trag hier euren Plan ein oder verlinke ihn.</p>"
+    },
+    "refunds": {
+      "title": "Erstattungsregeln",
+      "hint": "Wer was wann erstatten darf.",
+      "body": "<p>Wer was wann erstatten darf.</p><h2>Die Regel</h2><p>Jede Zahlung innerhalb von 30 Tagen wird ohne Rückfragen erstattet.</p><h2>Ausnahmen</h2><ul><li><p>Doppelte Zahlungen: sofort erstatten und entschuldigen.</p></li><li><p>Über 100 Euro: zuerst gibt eine Leitung frei.</p></li><li><p>Rückbuchungen: nicht doppelt erstatten. Das Ticket geht an die Buchhaltung.</p></li></ul><h2>So erstattest du</h2><ol><li><p>Such die Zahlung im Abrechnungstool.</p></li><li><p>Erstatte sie und notiere den Betrag im Ticket.</p></li></ol>"
+    },
+    "onboarding": {
+      "title": "Einarbeitungsliste",
+      "hint": "Die ersten zwei Wochen im Team.",
+      "body": "<p>Was neue Teammitglieder in ihren ersten zwei Wochen tun.</p><h2>Erste Woche</h2><ul><li><p>Zugang zu Helpdesk, Chat und Abrechnungstool bekommen.</p></li><li><p>Den Eskalationsablauf und die Erstattungsregeln lesen.</p></li><li><p>Zwei Schichten bei einer Kollegin oder einem Kollegen mitlaufen.</p></li></ul><h2>Zweite Woche</h2><ul><li><p>Tickets beantworten, während jemand die Entwürfe gegenliest.</p></li><li><p>Einen halben Tag die eigene Queue übernehmen.</p></li></ul>"
+    }
+  }
+}

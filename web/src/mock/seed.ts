@@ -1397,6 +1397,8 @@ function seedMargin(): WsData {
   place(byNum(1072), meta("priya", "replying"));
   place(unassigned[3], meta("sam", "viewing"));
   place(byNum(1068), meta("lea", "viewing"));
+  // Two teammates on an assigned ticket: the live pill and the assignee on one row.
+  place(byNum(1068), meta("theo", "viewing"));
 
   seedTicketTypes(ws);
   seedMarginFields(ws, { maya: uid("maya"), jonas: uid("jonas"), lea: uid("lea"), priya: uid("priya") });

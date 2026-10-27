@@ -2,7 +2,7 @@ import { useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useWaitingAlerts } from "@/components/tickets/useWaitingAlerts";
 import { Outlet, useNavigate, useRouter, useRouterState } from "@tanstack/react-router";
-import { lazy, Suspense, useEffect, useRef } from "react";
+import { lazy, Suspense, useEffect, useRef, type CSSProperties } from "react";
 import { Dialog as D } from "radix-ui";
 import { identify } from "@/lib/analytics";
 import { formatUsd } from "@/lib/format";
@@ -27,6 +27,8 @@ import { Sidebar } from "./Sidebar";
 import { SuspendedWorkspace } from "./SuspendedWorkspace";
 import { AppHeader } from "./AppHeader";
 import { cn } from "@/lib/cn";
+import { paneCss, setLiveWidth, usePaneWidth } from "@/lib/panes";
+import { ResizeHandle } from "@/components/ui/resize-handle";
 import { CommandPalette } from "./CommandPalette";
 import { ShortcutsSheet } from "./ShortcutsSheet";
 import { ConnectionBanner } from "./ConnectionBanner";
@@ -34,14 +36,16 @@ import { notifyDesktop, useDesktopBadge, useDesktopPreferences } from "./useDesk
 import { AiBalanceBanner } from "@/components/billing/AiBalanceBanner";
 import { DesktopUpdateBanner } from "@/components/desktop/UpdateBanner";
 import { AllowNotificationsBanner } from "@/components/notifications/AllowBanner";
-import { shell, toggleNav, useNav, useShell } from "./shellStore";
+import { NEW_TICKET_PATH, shell, toggleNav, useNav, useShell } from "./shellStore";
 import { useCollab } from "@/lib/collab/hooks";
 import { useSpaceUi } from "@/lib/spaces/store";
 import { compose } from "@/lib/collab/compose";
 
 const NewTicketDialog = lazy(() => import("@/components/tickets/NewTicketDialog"));
-// Collab's dialogs (customize sidebar, new mail) load only for workspaces with Collab.
+// Collab's new mail composer loads only for workspaces with Collab.
 const CollabRoot = lazy(() => import("@/components/collab/CollabRoot"));
+// Customize sidebar is every member's, with or without Collab.
+const CustomizeSidebar = lazy(() => import("@/components/collab/CustomizeSidebar").then((m) => ({ default: m.CustomizeSidebar })));
 const SpaceEditorRoot = lazy(() => import("@/components/spaces/SpaceEditor"));
 const UpgradeDialog = lazy(() => import("@/components/billing/UpgradeDialog"));
 
@@ -246,6 +250,10 @@ export function AppLayout() {
   const sidebarOpen = useShell((s) => s.sidebarOpen);
   const upgradeReason = useUpgrade((s) => s.reason);
   const collapsed = useNav((s) => s.collapsed);
+  // The expanded sidebar's width (`--pane-nav`, `--pane-nav-live` while dragged), shared with the header's logo above it.
+  const [navWidth, setNavWidth] = usePaneWidth("nav");
+  const shellRef = useRef<HTMLDivElement>(null);
+  const navRef = useRef<HTMLElement>(null);
   // Logging out, or deleting or leaving the last workspace, clears the session
   // before the router leaves the app; render nothing in between rather than
   // pages that read the signed-in user and the current workspace.
@@ -257,12 +265,20 @@ export function AppLayout() {
   const spaceEditor = useSpaceUi((s) => !!s.editor);
   // On the mail pages, c writes new mail and g i goes to the mail inbox.
   const onMail = collab.enabled && section === "mail";
+  // The new ticket page is the dialog's draft on a full page: New ticket there opens nothing more.
+  const onNewTicket = useRouterState({ select: (s) => s.location.pathname === NEW_TICKET_PATH });
+  useEffect(() => {
+    if (onNewTicket && newTicketOpen) shell.newTicket(false);
+  }, [onNewTicket, newTicketOpen]);
 
   useHotkeys({
     "mod+k": () => shell.palette(!useShell.getState().paletteOpen),
     "?": () => shell.shortcuts(),
     "shift+?": () => shell.shortcuts(),
-    c: () => (onMail ? compose.open() : shell.newTicket()),
+    c: () => {
+      if (onMail) compose.open();
+      else if (!onNewTicket) shell.newTicket();
+    },
     b: () => toggleNav(),
     "g i": () =>
       onMail
@@ -271,6 +287,7 @@ export function AppLayout() {
     "g m": () => void navigate({ to: "/inbox/$folder/{-$ticketId}", params: { folder: "mine", ticketId: undefined } }),
     "g c": () => void navigate({ to: "/contacts/{-$contactId}", params: { contactId: undefined } }),
     "g k": () => void navigate({ to: "/kb" }),
+    "g w": () => void navigate({ to: "/wiki" }),
     "g r": () => void navigate({ to: "/reports" }),
     "g s": () => void navigate({ to: "/settings" }),
   });
@@ -279,13 +296,25 @@ export function AppLayout() {
   if (suspended) return <SuspendedWorkspace />;
 
   return (
-    <div className="fixed inset-0 flex flex-col bg-frame text-fg">
+    <div ref={shellRef} className="fixed inset-0 flex flex-col bg-frame text-fg" style={navWidth === null ? undefined : ({ "--pane-nav": paneCss("nav", navWidth, "vw") } as CSSProperties)}>
       <AppHeader />
       {/* In the desktop app the work panel floats inset in the window frame. */}
       <div className="flex min-h-0 flex-1 desktop:pb-2 desktop:pr-2">
-        <aside className={cn("hidden shrink-0 transition-[width] duration-200 ease-out motion-reduce:transition-none md:flex", collapsed ? "w-14" : "w-60")}>
+        <aside ref={navRef} className={cn("hidden shrink-0 transition-[width] duration-200 ease-out motion-reduce:transition-none md:flex", collapsed ? "w-14" : "w-[var(--pane-nav-live,var(--pane-nav,15rem))]")}>
           <Sidebar />
         </aside>
+        {!collapsed && (
+          <ResizeHandle
+            pane="nav"
+            side="before"
+            target={navRef}
+            room={() => window.innerWidth}
+            width={navWidth}
+            onLive={(px) => setLiveWidth(shellRef.current, "nav", px === null ? null : paneCss("nav", px, "vw"))}
+            onWidth={setNavWidth}
+            className="hidden md:block"
+          />
+        )}
 
         {/* Phone: the sidebar is a sheet. */}
         <D.Root open={sidebarOpen} onOpenChange={(o) => shell.sidebar(o)}>
@@ -325,7 +354,7 @@ export function AppLayout() {
           <UpgradeDialog />
         </Suspense>
       )}
-      {newTicketOpen && (
+      {newTicketOpen && !onNewTicket && (
         <Suspense fallback={null}>
           <NewTicketDialog />
         </Suspense>
@@ -335,6 +364,9 @@ export function AppLayout() {
           <CollabRoot />
         </Suspense>
       )}
+      <Suspense fallback={null}>
+        <CustomizeSidebar />
+      </Suspense>
       {spaceEditor && (
         <Suspense fallback={null}>
           <SpaceEditorRoot />

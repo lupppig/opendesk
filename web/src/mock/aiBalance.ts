@@ -9,7 +9,7 @@ import { OUT_OF_BALANCE_BELOW } from "@/components/billing/model";
 import type { AiUsageRow, WsData } from "./db";
 import { db } from "./db";
 import { afterSpend, billingOut } from "./handlers/billing";
-import { aiKeyOf, checkKeyOnUse, keyModels, OWN_DEFAULTS } from "./aiKey";
+import { aiKeyOf, checkKeyOnUse, decisionKeyOf, decisionsOnOwnKey, keyModels, OWN_DEFAULTS } from "./aiKey";
 import { HttpError } from "./router";
 import { nowIso } from "./util";
 
@@ -151,13 +151,17 @@ export function modelFor(ws: WsData, feature: AIFeature): string {
 }
 
 /** GET /v1/ai/config `costs`: a typical call of each feature on the workspace's chosen models, in US dollars. */
+/** Whether a call on model runs on the workspace's own credentials ($0). */
+function onOwnKey(ws: WsData, model: string): boolean {
+  return model === JEV ? decisionsOnOwnKey(ws) : !!aiKeyOf(ws);
+}
+
 export function configCosts(ws: WsData): Partial<Record<AIFeature, number>> {
-  const ownKey = !!aiKeyOf(ws);
   const out: Partial<Record<AIFeature, number>> = {};
   for (const f of Object.keys(TYPICAL_TOKENS) as AIFeature[]) {
     const m = modelFor(ws, f);
-    // On the workspace's own key only Jev decisions are charged.
-    if (ownKey && m !== JEV) continue;
+    // On the workspace's own credentials a call costs nothing.
+    if (onOwnKey(ws, m)) continue;
     out[f] = typicalUsd(f, m);
   }
   return out;
@@ -187,8 +191,9 @@ export function estimateUsd(ws: WsData, feature: AIFeature): number {
  * workspace on its own key is never refused for LLM calls (Jev decisions still are),
  * but a key its provider rejects fails the call with 502. */
 export function reserve(ws: WsData, feature: AIFeature) {
-  if (aiKeyOf(ws) && modelFor(ws, feature) !== JEV) {
-    checkKeyOnUse(ws);
+  const model = modelFor(ws, feature);
+  if (onOwnKey(ws, model)) {
+    if (model !== JEV || !decisionKeyOf(ws)) checkKeyOnUse(ws);
     return;
   }
   const ai = billingOut(ws).ai; // remaining derived from the plan, allowance and top-ups
@@ -204,7 +209,7 @@ export function reserve(ws: WsData, feature: AIFeature) {
  */
 export function spend(ws: WsData, feature: AIFeature, userId: string | null = db.meId, model = modelFor(ws, feature)): number {
   const row = meter(feature, model);
-  if (aiKeyOf(ws) && model !== JEV) {
+  if (onOwnKey(ws, model)) {
     // On the workspace's own key: recorded, $0.
     ws.aiUsage.push({ ...row, micro_usd: 0, source: "own_key", user_id: userId, at: nowIso() });
     return 0;

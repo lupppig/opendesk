@@ -405,6 +405,15 @@ type CollabSendTicketReplyArgs struct {
 
 func (CollabSendTicketReplyArgs) Kind() string { return "collab.send_ticket_reply" }
 
+// CollabCategorizeArgs sorts an account's new inbox mail into its categories, and its
+// recent mail again when they changed (contracts/collab.md "Categories"). Unique per
+// account. Owner: collab.
+type CollabCategorizeArgs struct {
+	AccountID uuid.UUID `json:"account_id"`
+}
+
+func (CollabCategorizeArgs) Kind() string { return "collab.categorize" }
+
 // CollabTicketAnswerArgs takes a Collab message that answers a ticket reply sent from the
 // account into that ticket, as an email to its reply address (contracts/collab.md
 // "Answering tickets"). Owner: collab.

@@ -3,7 +3,9 @@ package collab
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -12,6 +14,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/auth"
 	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/httpx"
+	"github.com/useopendesk/opendesk/internal/plan"
 )
 
 // maxSidebarBytes bounds the stored sidebar preferences.
@@ -20,10 +23,11 @@ const maxSidebarBytes = 16 << 10
 // maxSidebarItem bounds one id in the sidebar preferences ("folder:<uuid>" and the like).
 const maxSidebarItem = 100
 
-// maxSidebarBadges bounds the chosen numbers; maxMailTabs the folder bar's tabs.
+// maxSidebarBadges bounds the chosen numbers; maxMailTabs the folder bar's tabs; maxPins Favorites.
 const (
 	maxSidebarBadges = 300
 	maxMailTabs      = 30
+	maxPins          = 30
 )
 
 // defaultMailTabs is the folder bar of a member who never arranged it.
@@ -47,7 +51,7 @@ var (
 func defaultSidebar() SidebarPrefs {
 	return SidebarPrefs{Order: []string{"favorites", "inbox", "mail", "teams", "views", "workspace"}, Hidden: []string{},
 		Pinned: []SidebarPin{}, ExpandedAccounts: []string{}, MarkReadOnOpen: true, UnifiedInbox: true,
-		Badges: map[string]string{}, MailTabs: defaultMailTabs()}
+		Badges: map[string]string{}, MailTabs: defaultMailTabs(), AutoPins: []string{}}
 }
 
 // normalized fills missing lists so the shape always has arrays.
@@ -69,6 +73,9 @@ func (p SidebarPrefs) normalized() SidebarPrefs {
 	}
 	if p.MailTabs == nil {
 		p.MailTabs = defaultMailTabs()
+	}
+	if p.AutoPins == nil {
+		p.AutoPins = []string{}
 	}
 	return p
 }
@@ -151,11 +158,16 @@ func (s *service) registerSidebarRoutes(api huma.API) {
 	collabOp(api, huma.Operation{OperationID: "get-collab-sidebar", Method: http.MethodGet, Path: "/v1/collab/sidebar",
 		Summary: "Get my sidebar"},
 		func(ctx context.Context, _ *struct{}) (*sidebarBody, error) {
-			p, err := s.require(ctx, auth.RoleViewer)
+			// Every member arranges their sidebar, with or without Collab.
+			p, err := s.member(ctx, auth.RoleViewer)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
 			out, err := s.loadSidebar(ctx, p.WorkspaceID, p.UserID)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			out, err = s.pinAllInboxes(ctx, p.WorkspaceID, p.UserID, out)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
@@ -165,12 +177,14 @@ func (s *service) registerSidebarRoutes(api huma.API) {
 	collabOp(api, huma.Operation{OperationID: "put-collab-sidebar", Method: http.MethodPut, Path: "/v1/collab/sidebar",
 		Summary: "Save my sidebar"},
 		func(ctx context.Context, in *sidebarBody) (*sidebarBody, error) {
-			p, err := s.require(ctx, auth.RoleViewer)
+			// Every member arranges their sidebar, with or without Collab.
+			p, err := s.member(ctx, auth.RoleViewer)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			// A client that does not know the numbers or the tabs leaves them as saved.
-			if in.Body.Badges == nil || in.Body.MailTabs == nil {
+			// A client that does not know the numbers, the tabs or the pins added by themselves
+			// leaves them as saved.
+			if in.Body.Badges == nil || in.Body.MailTabs == nil || in.Body.AutoPins == nil {
 				saved, err := s.loadSidebar(ctx, p.WorkspaceID, p.UserID)
 				if err != nil {
 					return nil, httpx.Wrap(err)
@@ -181,12 +195,15 @@ func (s *service) registerSidebarRoutes(api huma.API) {
 				if in.Body.MailTabs == nil {
 					in.Body.MailTabs = saved.MailTabs
 				}
+				if in.Body.AutoPins == nil {
+					in.Body.AutoPins = saved.AutoPins
+				}
 			}
 			prefs := in.Body.normalized()
 			if err := validateSidebar(prefs); err != nil {
 				return nil, err
 			}
-			for _, list := range [][]string{prefs.Order, prefs.Hidden, prefs.ExpandedAccounts} {
+			for _, list := range [][]string{prefs.Order, prefs.Hidden, prefs.ExpandedAccounts, prefs.AutoPins} {
 				for _, item := range list {
 					if !sidebarItemOK(item) {
 						return nil, httpx.Validation("Each sidebar item is 1 to 100 characters.")
@@ -205,14 +222,53 @@ func (s *service) registerSidebarRoutes(api huma.API) {
 			if len(raw) > maxSidebarBytes {
 				return nil, httpx.Validation("The sidebar settings are too large.")
 			}
-			if _, err := s.d.DB.Pool.Exec(ctx, `INSERT INTO collab_sidebar_prefs (workspace_id, user_id, prefs, updated_at)
-				VALUES ($1, $2, $3, now())
-				ON CONFLICT (workspace_id, user_id) DO UPDATE SET prefs = EXCLUDED.prefs, updated_at = now()`,
-				p.WorkspaceID, p.UserID, raw); err != nil {
+			if err := saveSidebar(ctx, s.d.DB.Pool, p.WorkspaceID, p.UserID, raw); err != nil {
 				return nil, httpx.Wrap(err)
 			}
 			return &sidebarBody{prefs}, nil
 		})
+}
+
+func saveSidebar(ctx context.Context, q db.Querier, wid, uid uuid.UUID, raw []byte) error {
+	_, err := q.Exec(ctx, `INSERT INTO collab_sidebar_prefs (workspace_id, user_id, prefs, updated_at)
+		VALUES ($1, $2, $3, now())
+		ON CONFLICT (workspace_id, user_id) DO UPDATE SET prefs = EXCLUDED.prefs, updated_at = now()`, wid, uid, raw)
+	return err
+}
+
+// autoPinAllInboxes is All inboxes' entry in SidebarPrefs.AutoPins.
+const autoPinAllInboxes = "box:inbox"
+
+// pinAllInboxes pins All inboxes to the top of Favorites once, when the member first sees
+// two accounts, unless they turned it off, hid it or pinned it already. It is remembered in
+// AutoPins either way, so All inboxes unpinned afterwards stays unpinned. Mail is Collab's:
+// without Collab it reads no accounts and records nothing, so the pin waits for Collab.
+func (s *service) pinAllInboxes(ctx context.Context, wid, uid uuid.UUID, prefs SidebarPrefs) (SidebarPrefs, error) {
+	if slices.Contains(prefs.AutoPins, autoPinAllInboxes) {
+		return prefs, nil
+	}
+	if err := s.d.Plan.RequireCollab(ctx, s.d.DB.Pool, wid); err != nil {
+		if errors.Is(err, plan.ErrCollab) {
+			return prefs, nil
+		}
+		return prefs, err
+	}
+	var n int
+	if err := s.d.DB.Pool.QueryRow(ctx, `SELECT count(*) FROM collab_accounts a WHERE a.workspace_id = $1 AND `+accountVisibleSQL("a", "$2"),
+		wid, uid).Scan(&n); err != nil || n < 2 {
+		return prefs, err
+	}
+	pin := SidebarPin{Kind: "box", ID: "inbox"}
+	if prefs.UnifiedInbox && !slices.Contains(prefs.Hidden, autoPinAllInboxes) && !slices.Contains(prefs.Pinned, pin) &&
+		len(prefs.Pinned) < maxPins {
+		prefs.Pinned = append([]SidebarPin{pin}, prefs.Pinned...)
+	}
+	prefs.AutoPins = append(slices.Clone(prefs.AutoPins), autoPinAllInboxes)
+	raw, err := json.Marshal(prefs)
+	if err != nil {
+		return prefs, err
+	}
+	return prefs, saveSidebar(ctx, s.d.DB.Pool, wid, uid, raw)
 }
 
 func sidebarItemOK(s string) bool {

@@ -108,6 +108,7 @@ func TestSpacesRoundTrip(t *testing.T) {
 				map[string]any{"workspace_id": wid, "kind": "team", "id": team, "name": "Billing  crew", "badge": "awaiting"},
 				spaceItem(wid, "box", "inbox"),
 				spaceItem(wid, "page", "reports"),
+				spaceItem(wid, "page", "wiki"),
 				spaceItem("", "everywhere", "mine"),
 			}}}},
 		spaceBody(uuid.NewString(), "Second"),
@@ -136,7 +137,7 @@ func TestSpacesRoundTrip(t *testing.T) {
 	}
 
 	// An everywhere row belongs to no workspace, and stays whatever workspaces the user leaves.
-	if got := sectionItems(spacesOf(t, g)[0], 0); !slices.Contains(got, "everywhere:mine") {
+	if got := sectionItems(spacesOf(t, g)[0], 0); !slices.Contains(got, "everywhere:mine") || !slices.Contains(got, "page:wiki") {
 		t.Fatalf("everywhere row: %v", got)
 	}
 

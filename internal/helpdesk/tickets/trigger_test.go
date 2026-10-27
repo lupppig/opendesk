@@ -216,6 +216,44 @@ func TestAutomationLoopGuard(t *testing.T) {
 	}
 }
 
+func TestAutomationDeletesTicket(t *testing.T) {
+	e, ws := newEnv(t)
+	// Form notifications are deleted, not just closed; the automations after it skip the ticket.
+	del := addAutomation(t, e, ws, jobs.TriggerTicketCreated, 0,
+		[]map[string]string{{"field": "subject", "op": "contains", "value": "New message from"}},
+		[]map[string]string{{"type": "send_reply", "value": "<p>Thanks</p>"}, {"type": "delete_ticket", "value": ""}})
+	tag := addAutomation(t, e, ws, jobs.TriggerTicketCreated, 1,
+		[]map[string]string{{"field": "body", "op": "not_contains", "value": "zzz"}},
+		[]map[string]string{{"type": "add_tag", "value": "seen"}})
+	updated := addAutomation(t, e, ws, jobs.TriggerTicketUpdated, 2,
+		[]map[string]string{{"field": "subject", "op": "contains", "value": "New message from"}},
+		[]map[string]string{{"type": "set_priority", "value": "high"}})
+
+	form := createTicket(t, e, ws, map[string]any{"subject": "New message from Jane", "body_html": "<p>Name: Jane</p>"})
+	kept := createTicket(t, e, ws, map[string]any{"subject": "Where is my parcel?", "body_html": "<p>Hello</p>"})
+	runTriggers(t, e, ws.ID)
+
+	e.Do("GET", "/v1/tickets/"+form.ID.String(), ws.Agent.As(ws), nil).Want(t, 404)
+	var deleted bool
+	e.Scalar(`SELECT deleted_at IS NOT NULL FROM tickets WHERE id = $1`, &deleted, form.ID)
+	if !deleted {
+		t.Fatal("form ticket not deleted")
+	}
+	var replies int
+	e.Scalar(`SELECT count(*) FROM messages WHERE ticket_id = $1 AND author_type = 'system'`, &replies, form.ID)
+	if replies != 0 {
+		t.Fatalf("%d automation messages on a deleted ticket", replies)
+	}
+	if got := getTicket(t, e, ws, kept.ID); len(got.Tags) != 1 || got.Tags[0].Name != "seen" {
+		t.Fatalf("other ticket tags %+v", got.Tags)
+	}
+	var runs []int64
+	e.Scalar(`SELECT array_agg(run_count ORDER BY position) FROM automations WHERE id = ANY($1)`, &runs, []uuid.UUID{del, tag, updated})
+	if !slices.Equal(runs, []int64{1, 1, 0}) {
+		t.Fatalf("run counts %v: nothing runs on a deleted ticket", runs)
+	}
+}
+
 func TestRoundRobinAndReplies(t *testing.T) {
 	e, ws := newEnv(t)
 	e.SetSettings(ws, map[string]any{"auto_assign": "round_robin"})
@@ -452,12 +490,14 @@ func TestReportsAndSearch(t *testing.T) {
 
 	// Search: five of each kind; another workspace's rows never appear.
 	e.Exec(`INSERT INTO kb_articles (id, workspace_id, title, slug, body_html, status) VALUES ($1, $2, 'Shipping times', 'shipping-times', '<p>days</p>', 'published')`, ids.New(), ws.ID)
+	e.Exec(`INSERT INTO wiki_pages (id, workspace_id, title, body_html) VALUES ($1, $2, 'Shipping carriers', '<p>Which carrier for what</p>')`, ids.New(), ws.ID)
 	other := e.NewWorkspace()
+	e.Exec(`INSERT INTO wiki_pages (id, workspace_id, title) VALUES ($1, $2, 'Shipping elsewhere')`, ids.New(), other.ID)
 	createTicket(t, e, other, map[string]any{"subject": "Shipping everywhere"})
 	var res tickets.SearchResults
 	e.Do("GET", "/v1/search?q=shipping", ws.Agent.As(ws), nil).Want(t, 200).JSON(t, &res)
-	if len(res.Tickets) != 2 || len(res.Contacts) != 0 || len(res.Articles) != 1 {
-		t.Fatalf("search %d %d %d", len(res.Tickets), len(res.Contacts), len(res.Articles))
+	if len(res.Tickets) != 2 || len(res.Contacts) != 0 || len(res.Articles) != 1 || len(res.WikiPages) != 1 {
+		t.Fatalf("search %d %d %d %d", len(res.Tickets), len(res.Contacts), len(res.Articles), len(res.WikiPages))
 	}
 	e.Do("GET", "/v1/search?q=ship", ws.Agent.As(ws), nil).Want(t, 200).JSON(t, &res)
 	if len(res.Tickets) != 2 || len(res.Contacts) != 1 {
@@ -465,8 +505,26 @@ func TestReportsAndSearch(t *testing.T) {
 	}
 	key := e.APIKey(ws, auth.ScopeKBRead)
 	e.Do("GET", "/v1/search?q=shipping", hdtest.Auth{Bearer: key}, nil).Want(t, 200).JSON(t, &res)
-	if len(res.Tickets) != 0 || len(res.Contacts) != 0 || len(res.Articles) != 1 {
+	if len(res.Tickets) != 0 || len(res.Contacts) != 0 || len(res.Articles) != 1 || len(res.WikiPages) != 0 {
 		t.Fatalf("scoped search %+v", res)
+	}
+	// Knowledge base scopes don't reach the wiki, nor does an AI client's grant without wiki:read.
+	e.Do("GET", "/v1/search?q=shipping", hdtest.Auth{Bearer: e.APIKey(ws, auth.ScopeKBRead, auth.ScopeKBWrite)}, nil).Want(t, 200).JSON(t, &res)
+	if len(res.Articles) != 1 || len(res.WikiPages) != 0 {
+		t.Fatalf("kb key search %+v", res)
+	}
+	grant := &auth.Principal{Kind: auth.KindUser, UserID: ws.Viewer.ID, WorkspaceID: ws.ID, Role: auth.RoleViewer,
+		GrantID: uuid.New(), Scopes: []string{auth.ScopeTicketsRead, auth.ScopeKBRead}}
+	if got, err := tickets.Search(e.Ctx, e.D.DB.Pool, grant, "shipping", nil); err != nil || len(got.Articles) != 1 || len(got.WikiPages) != 0 {
+		t.Fatalf("grant search %v %+v", err, got)
+	}
+	grant.Scopes = append(grant.Scopes, auth.ScopeWikiRead)
+	if got, err := tickets.Search(e.Ctx, e.D.DB.Pool, grant, "shipping", nil); err != nil || len(got.WikiPages) != 1 {
+		t.Fatalf("grant with wiki:read %v %+v", err, got)
+	}
+	e.Do("GET", "/v1/search?q=shipping", hdtest.Auth{Bearer: e.APIKey(ws, auth.ScopeWikiRead)}, nil).Want(t, 200).JSON(t, &res)
+	if len(res.Articles) != 0 || len(res.WikiPages) != 1 || res.WikiPages[0].Title != "Shipping carriers" {
+		t.Fatalf("wiki search %+v", res)
 	}
 	e.Do("GET", "/v1/search?q=shipping", hdtest.Auth{Bearer: e.APIKey(ws, auth.ScopeRealtime)}, nil).Want(t, 403)
 	e.Do("GET", "/v1/search", ws.Agent.As(ws), nil).Want(t, 422)

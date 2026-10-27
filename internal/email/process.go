@@ -270,7 +270,7 @@ func (s *service) processInbound(ctx context.Context, wid, inboundID uuid.UUID) 
 				subject = baseSubject(pm.Subject)
 			}
 			if subject = strings.Join(strings.Fields(subject), " "); subject == "" {
-				subject = "(no subject)"
+				subject = NoSubject
 			}
 			// An alias with a brand of its own gives its new tickets that brand.
 			brand, err := domain.ResolveBrand(ctx, tx, wid, m.aliasSettings(receivedAt).BrandID, &m.ID, nil)

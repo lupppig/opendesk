@@ -233,6 +233,7 @@
     "draft": "Draft",
     "draftTo": "To {{who}}",
     "draftNoRecipients": "No recipients yet",
+    "aiDraftBy": "AI draft by {{name}}",
     "toAlias": "To {{email}}",
     "toAliasHint": "Written to this address. Show its mail",
     "onTicket": "On ticket #{{number}}",
@@ -430,7 +431,10 @@
     "connectButton": "Connect account",
     "connecting": "Signing in to both servers",
     "failed": "Could not sign in",
-    "nothingDeleted": "opendesk never deletes mail at your provider."
+    "nothingDeleted": "opendesk never deletes mail at your provider.",
+    "history": "Older mail",
+    "historyHint": "The last 30 days arrive first. Older mail follows in the background, and you can change this in the account's settings.",
+    "historyNone": "Only the last 30 days"
   },
   "detail": {
     "back": "Mail accounts",
@@ -585,6 +589,7 @@
     "unpin": "Unpin from favorites",
     "hide": "Hide from sidebar",
     "customize": "Customize sidebar",
+    "accountSettings": "Account settings",
     "more": "Options for {{name}}"
   },
   "address": {
@@ -653,10 +658,14 @@
   },
   "addresses": {
     "title": "Addresses",
-    "hint_google": "The addresses Gmail lets this account send as. Add or remove them in Gmail's settings (Accounts, Send mail as); changes show here within 15 minutes.",
+    "hint_google": "The addresses Gmail lets this account send as. Add or remove them in Gmail's settings (Accounts, Send mail as); changes show here within 15 minutes, or now with Check Gmail.",
     "hint_microsoft": "Aliases this mailbox sends from. Microsoft does not share them with opendesk, so add them here. Its organization has to allow sending from aliases, or Outlook refuses the message.",
     "hint_imap": "Other addresses this account sends from. Its SMTP server decides whether it accepts them.",
     "add": "Add address",
+    "check": "Check Gmail",
+    "checked_one": "Found {{count}} new address.",
+    "checked_other": "Found {{count}} new addresses.",
+    "checkedNone": "No new addresses in Gmail.",
     "addTitle": "Add an address",
     "editTitle": "Edit {{email}}",
     "email": "Address",
@@ -803,6 +812,24 @@
       "runningPercent": "Importing history {{percent}}",
       "paused": "History paused",
       "limited": "History waiting for storage"
+    },
+    "changeHint": "Changing it starts the import again with the new range. Mail already imported stays.",
+    "changed": "Import range changed"
+  },
+  "categories": {
+    "group": "Categories",
+    "tabs": "Inbox categories",
+    "settings": "Category settings",
+    "moved_one": "Conversation moved to {{name}}",
+    "moved_other": "{{count}} conversations moved to {{name}}",
+    "always": "Always",
+    "alwaysHint": "Send future mail from {{sender}} here too",
+    "ruleSaved": "Mail from {{sender}} now goes to {{name}}",
+    "offer": {
+      "title": "Split your inbox into tabs.",
+      "body": "Mail from people stays in Primary, while newsletters, updates and promotions get their own tabs. Ollie can suggest categories from your mail.",
+      "action": "Set up categories",
+      "dismiss": "Not now"
     }
   }
 }

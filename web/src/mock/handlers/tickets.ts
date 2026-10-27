@@ -1,12 +1,13 @@
 // Tickets, messages, activities, attachments, search and reports.
 
-import type { Attachment, Channel, Message, Priority, ReportsOverview, Severity, SuggestionField, Thread, Ticket, TicketPatch, TicketStatus } from "@/lib/api/types";
+import type { Attachment, Channel, Message, Priority, ReportsAgents, ReportsOverview, Severity, SuggestionField, Thread, Ticket, TicketPatch, TicketStatus } from "@/lib/api/types";
 import { contactRef, db, me, userRef, type WsData } from "../db";
 import { publish } from "../gateway";
 import { HttpError, del, forbidden, get, invalid, notFound, paginate, patch, post, required, respond, s, strArr, type Ctx } from "../router";
+import { searchWiki } from "./wiki";
 import { canCreateLabels, checkRequiredOnSolve, mergeFields } from "../labels";
-import { canSeeTicket, defaultBrand, teamRole } from "../teams";
-import { addActivity, addMessage, applyPatch, buildMessage, canSendFrom, counts, fieldFiltersFromQuery, findTicket, matches, newTicket, notify, publishTicketUpdated, sortTickets, type ListFilters } from "../tickets";
+import { canSeeTicket, defaultBrand, isAdmin, teamRole } from "../teams";
+import { addActivity, addMessage, applyPatch, buildMessage, canSendFrom, counts, fieldFiltersFromQuery, findTicket, matches, newTicket, notify, publishTicketUpdated, resolveFilters, sortTickets, ticketSummary, type ListFilters } from "../tickets";
 import { DAY, isRecord, nowIso, uuid } from "../util";
 import { clearDraft } from "./drafts";
 import { renderSentReply } from "./templates";
@@ -44,6 +45,8 @@ function filtersFrom(ctx: Ctx): ListFilters {
     channel: (q.get("channel") as Channel | null) ?? undefined,
     channel_not: csv(q.get("channel_not"), CHANNELS),
     contact_id: q.get("contact_id") ?? undefined,
+    contact_not: q.get("contact_not") ?? undefined,
+    company_not: q.get("company_not") ?? undefined,
     view_id: q.get("view_id") ?? undefined,
     q: q.get("q") ?? undefined,
     spam: q.get("spam") === "true",
@@ -253,6 +256,10 @@ export function registerTickets() {
     return paginate(ctx, sortTickets(list, ctx.query.get("sort") ?? "last_message_at", ctx.query.get("order"), ctx.ws));
   });
   get("/v1/tickets/counts", (ctx) => counts(ctx.ws, db.meId));
+  get("/v1/tickets/summary", (ctx) => {
+    const f = filtersFrom(ctx);
+    return ticketSummary(ctx.ws.tickets.filter((t) => matches(ctx.ws, t, f, db.meId)), resolveFilters(ctx.ws, f));
+  });
 
   post("/v1/tickets", (ctx) => {
     const subject = required(ctx, "subject").slice(0, 250);
@@ -306,7 +313,10 @@ export function registerTickets() {
     const body = s(ctx, "body_html");
     if (body) {
       const kind = s(ctx, "kind") === "note" ? "note" : "reply";
-      const msg = addMessage(ws, t, { kind, direction: "outbound", html: body, user: userRef(db.meId), delivery: "pending" }, { status: p.status, actor: userRef(db.meId) });
+      // Copies go with an emailed reply only, like the API's.
+      const copies = kind === "reply" && channel === "email" ? { cc: strArr(ctx.body.cc), bcc: strArr(ctx.body.bcc) } : {};
+      const attachments = attachmentsFor(strArr(ctx.body.attachment_ids));
+      const msg = addMessage(ws, t, { kind, direction: "outbound", html: body, user: userRef(db.meId), ...copies, attachments, delivery: "pending" }, { status: p.status, actor: userRef(db.meId) });
       if (msg.delivery_status === "pending") simulateDelivery(ws, t, msg.id);
     } else if (p.status && p.status !== t.status) {
       applyPatch(ws, t, { status: p.status }, userRef(db.meId));
@@ -565,15 +575,16 @@ export function registerTickets() {
 
   get("/v1/search", (ctx) => {
     const q = (ctx.query.get("q") ?? "").trim().toLowerCase();
-    if (!q) return { tickets: [], contacts: [], articles: [] };
+    if (!q) return { tickets: [], contacts: [], articles: [], wiki_pages: [] };
     const ws = ctx.ws;
     const tickets = sortTickets(ws.tickets.filter((t) => matches(ws, t, { q }, db.meId)), "last_message_at", "desc").slice(0, 5);
     const contacts = ws.contacts.filter((c) => [c.name, c.email ?? "", c.company?.name ?? ""].join(" ").toLowerCase().includes(q)).slice(0, 5);
     const articles = ws.articles.filter((a) => (a.title + " " + a.excerpt).toLowerCase().includes(q)).slice(0, 5);
-    return { tickets, contacts, articles };
+    return { tickets, contacts, articles, wiki_pages: searchWiki(ws, q, 5) };
   });
 
   get("/v1/reports/overview", (ctx) => reports(ctx));
+  get("/v1/reports/agents", (ctx) => agentReports(ctx));
 }
 
 function hash(s: string): number {
@@ -693,6 +704,53 @@ function reports(ctx: Ctx): ReportsOverview {
 }
 
 const OPENISH_REPORT: TicketStatus[] = ["open", "pending", "on_hold"];
+
+/**
+ * GET /v1/reports/agents: owners, admins and agents (with a team, its leads and members),
+ * sharing the overview's volume. Online time is the member's own, whatever the filter. Only
+ * admins see everyone's rows; other members get their own.
+ */
+function agentReports(ctx: Ctx): ReportsAgents {
+  const o = reports(ctx);
+  const ws = ctx.ws;
+  const teamF = (ctx.query.get("team_id") ?? "").trim();
+  const team = teamF && teamF !== "none" ? ws.teams.find((t) => t.id === teamF) : undefined;
+  const roster = ws.members.filter((m) => m.role !== "viewer" && (!team || team.members.some((x) => x.user_id === m.user_id && x.role !== "observer")));
+  const weight = shares(
+    roster.map((m) => m.user_id),
+    (id) => 0.3 + hash(id),
+  );
+  const days = o.by_day.length;
+  const key = `${o.by_day[0]?.date}-${days}-${teamF}-${ctx.query.get("brand_id") ?? ""}`;
+  const all = isAdmin(ws, db.meId);
+  const data = roster.flatMap((m) => {
+    const user = userRef(m.user_id);
+    if (!user || (!all && m.user_id !== db.meId)) return [];
+    const h = (k: string) => hash(key + m.user_id + k);
+    const share = weight.get(m.user_id) ?? 0;
+    const solved = Math.round(o.solved * share);
+    const assigned = Math.round(o.created * share * (0.95 + h("a") * 0.2));
+    const perSolved = Math.round((1.4 + h("p") * 1.6) * 10) / 10;
+    const replies = Math.round(solved * perSolved + assigned * 0.2);
+    // About 2 to 7 hours online a weekday.
+    const online = Math.round(days * (5 / 7) * 60 * (2 + hash(m.user_id + o.by_day[0]?.date + days) * 5));
+    return [
+      {
+        user,
+        assigned,
+        solved,
+        replies,
+        notes: Math.round(replies * (0.15 + h("n") * 0.25)),
+        replies_per_solved: solved ? perSolved : null,
+        first_response_p50_minutes: assigned ? Math.round(18 + h("f") * 50) : null,
+        handle_p50_minutes: solved ? Math.round(90 + h("h") * 420) : null,
+        online_minutes: online,
+      },
+    ];
+  });
+  data.sort((a, b) => b.solved - a.solved || b.replies - a.replies || a.user.name.localeCompare(b.user.name));
+  return { data, online_time: all ? "all" : "self" };
+}
 
 /** Used by the live simulator. */
 export function customerReply(ws: WsData, t: Ticket, html: string) {

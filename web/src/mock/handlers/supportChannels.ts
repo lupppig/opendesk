@@ -34,6 +34,13 @@ const providers: SupportChannelProvider[] = [
       { name: "webhook_secret", label: "Webhook secret", secret: true, generated: true },
     ],
   },
+  {
+    key: "google_chat",
+    name: "Google Chat",
+    description: "Mirror email tickets into Google Chat spaces and work them by talking to Ollie.",
+    configures: false,
+    fields: [{ name: "service_account_json", label: "Service account JSON", secret: true }],
+  },
 ];
 
 const connections: SupportChannelConnection[] = [];
@@ -50,11 +57,12 @@ const discovered: Record<string, { id: string; name: string; kind: string; avail
     { id: "1290000000000000002", name: "escalations", kind: "text", available: true },
   ],
   telegram: [],
+  google_chat: [{ id: "spaces/AAAAsupport", name: "Support", kind: "space", available: true }],
 };
 
 const health = (provider: string) =>
-  provider === "slack"
-    ? { health_status: "action_required" as const, health_detail: "Credentials work. Verify the Events API, interactivity and /opendesk request URLs in Slack." }
+  provider === "slack" || provider === "google_chat"
+    ? { health_status: "action_required" as const, health_detail: provider === "slack" ? "Credentials work. Verify the Events API, interactivity and /opendesk request URLs in Slack." : "Set the Chat app's connection URL and authentication audience to the webhook address." }
     : { health_status: "healthy" as const, health_detail: provider === "discord" ? "Discord's interactions endpoint and commands are configured." : "Telegram's webhook is configured and accepting updates." };
 const destinations: SupportChannelDestination[] = [];
 const deliveries: SupportChannelDelivery[] = [
@@ -116,7 +124,7 @@ export function registerSupportChannels() {
       provider: provider.key,
       name: "",
       external_account_id: provider.key === "discord" ? String(credentials.guild_id) : `demo-${provider.key}`,
-      external_account_name: provider.key === "telegram" ? "Margin support" : provider.key === "discord" ? "Margin community" : "Margin",
+      external_account_name: provider.key === "telegram" ? "Margin support" : provider.key === "discord" ? "Margin community" : provider.key === "google_chat" ? "Margin Chat app" : "Margin",
       external_account_handle: provider.key === "telegram" ? "@margin_support_bot" : "",
       status: "connected",
       last_error: "",

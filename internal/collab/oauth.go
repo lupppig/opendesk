@@ -502,6 +502,8 @@ type providerError struct {
 	status    int
 	permanent bool
 	notFound  bool
+	busy      bool // a rate limit or a 5xx: it passes
+	limited   bool // a rate limit: the request was refused before it was carried out
 }
 
 func (e *providerError) Error() string { return e.msg }

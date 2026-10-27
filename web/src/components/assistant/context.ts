@@ -39,6 +39,10 @@ export function contextFor(pathname: string, search = ""): PageContext {
     case "kb":
       ctx.page = "kb";
       break;
+    case "wiki":
+      ctx.page = "wiki";
+      if (parts[1] && UUID.test(parts[1])) ctx.wiki_page_id = parts[1];
+      break;
     case "reports":
       ctx.page = "reports";
       break;

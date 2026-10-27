@@ -104,6 +104,8 @@
       "team": "Équipe",
       "mailbox": "Boîte mail",
       "writtenTo": "Adresse destinataire",
+      "contact": "Contact",
+      "company": "Entreprise",
       "tag": "Étiquette",
       "channel": "Canal",
       "keyword": "Mot-clé"
@@ -130,6 +132,8 @@
     "unknown": "inconnu",
     "inMailbox": "Dans {{name}}",
     "aMailbox": "une boîte mail",
+    "aContact": "un contact",
+    "aCompany": "une entreprise",
     "writtenTo": "Envoyé à {{address}}",
     "matching": "Correspondant à « {{q}} »",
     "ops": {
@@ -145,12 +149,16 @@
       "tag": "Choisir des étiquettes",
       "team": "Choisir des équipes",
       "mailbox": "Choisir des boîtes mail",
+      "contact": "Choisir des contacts",
+      "company": "Choisir des entreprises",
       "channel": "Choisir des canaux"
     },
     "myTeams": "mes équipes",
     "noTeam": "aucune équipe",
     "notTeamNamed": "Pas l’équipe {{name}}",
     "notInMailbox": "Pas dans {{name}}",
+    "notContact": "Sauf {{name}}",
+    "notCompany": "Sauf {{name}}",
     "withoutLabels": "Sans {{labels}}",
     "noLabel": "Aucune étiquette",
     "notChannel": "Pas {{channel}}",
@@ -302,6 +310,12 @@
     "chooseTeammate": "Choisir un collègue",
     "chooseTeam": "Choisir une équipe",
     "markSpamHint": "Déplace le ticket dans les indésirables. Aucune réponse n’est envoyée.",
+    "deleteTicketHint": "Supprime le ticket : il quitte toutes les vues et plus rien ne s’exécute dessus.",
+    "mergeHint": "Fusionne un nouveau ticket dans le dernier ticket ouvert, en attente ou en pause du même contact. Plus rien ne s’exécute ensuite dessus.",
+    "mergeWindow_one": "Dans un délai de {{count}} jour",
+    "mergeWindow_many": "Dans un délai de {{count}} jours",
+    "mergeWindow_other": "Dans un délai de {{count}} jours",
+    "mergeSameSubject": "Même objet uniquement",
     "replyPlaceholder": "Merci de nous avoir écrit. Nous avons bien reçu votre message…",
     "notePlaceholder": "Note interne pour l’équipe",
     "replyText": "Texte de la réponse",
@@ -311,7 +325,8 @@
       "action": "Ajoutez au moins une action.",
       "condition": "Renseignez une valeur pour chaque condition, ou supprimez-la.",
       "actionValue": "Chaque action doit avoir une valeur.",
-      "phrases": "Une liste compte de 1 à 100 expressions, une par ligne, de 500 caractères au plus chacune."
+      "phrases": "Une liste compte de 1 à 100 expressions, une par ligne, de 500 caractères au plus chacune.",
+      "mergeTrigger": "La fusion dans le ticket ouvert du contact ne s’exécute qu’à la création d’un ticket."
     },
     "chooseSeverity": "Choisir une gravité",
     "noSeverity": "Aucune gravité",
@@ -366,6 +381,8 @@
     "send_reply": "Envoyer une réponse",
     "add_note": "Ajouter une note interne",
     "mark_spam": "Marquer comme spam",
+    "delete_ticket": "Supprimer le ticket",
+    "merge_into_open_ticket": "Fusionner dans le ticket ouvert du contact",
     "set_field": "Définir un champ",
     "set_reply_address": "Définir l’adresse de réponse"
   },
@@ -377,6 +394,8 @@
   },
   "pickers": {
     "search": "Rechercher",
+    "searchContacts": "Rechercher un nom ou un e-mail",
+    "searchCompanies": "Rechercher un nom ou un domaine",
     "andMore": "{{first}} et {{count}} de plus"
   },
   "customFields": {

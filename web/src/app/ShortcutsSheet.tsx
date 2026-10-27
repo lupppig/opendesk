@@ -18,6 +18,7 @@ export function ShortcutsSheet() {
       { keys: "b", label: t("shortcuts.toggleSidebar") },
       { keys: "g m", label: t("shortcuts.goMine") },
       { keys: "g r", label: t("shortcuts.goReports") },
+      { keys: "g w", label: t("shortcuts.goWiki") },
       { keys: quickSwitchKeys("1-9"), label: t("shortcuts.switchWorkspace") },
       { keys: spaceKeys("1-9"), label: ts("shortcuts.openSpace") },
     ],

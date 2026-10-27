@@ -10,6 +10,7 @@ import type {
   MailAddress,
   MailAttachment,
   MailAudience,
+  MailCategoryRule,
   MailComment,
   MailFolder,
   MailFolderRole,
@@ -32,10 +33,16 @@ import { publish } from "../gateway";
 import { del, get, HttpError, invalid, notFound, patch, post, put, respond, strArr, type Ctx } from "../router";
 import { escapeHtml, isRecord, nowIso, uuid } from "../util";
 import { collabSignatureProblems, fillForSender } from "./templates";
+import { defaultChoice, newRule, parseCategories, parseSender, registerCollabCategories, resolveCategories, sortMail, type AccountChoice } from "./collabCategories";
+import { PRIMARY } from "@/lib/collab/categories";
 
-/** The account's addresses besides its own live in `aliases`; its own is built from the account (contracts/collab.md "Addresses"). */
-type Account = Omit<MailAccount, "identities" | "default_from"> & { ownerId: string | null; aliases: MailIdentity[]; defaultFrom: string };
-type ThreadMeta = { id: string; account_id: string; subject: string; shares: MailAudience; assignees: string[]; comments: MailComment[]; needsAction?: boolean };
+/**
+ * The account's addresses besides its own live in `aliases`; its own is built from the account (contracts/collab.md "Addresses").
+ * Its categories are its own choice and sender rules, resolved for the API (handlers/collabCategories.ts).
+ */
+type Account = Omit<MailAccount, "identities" | "default_from" | "categories"> & { ownerId: string | null; aliases: MailIdentity[]; defaultFrom: string; catChoice: AccountChoice; catRules: MailCategoryRule[] };
+/** category: its tab once sorted (undefined: not yet); byPerson: someone moved it, so sorting leaves it. */
+type ThreadMeta = { id: string; account_id: string; subject: string; shares: MailAudience; assignees: string[]; comments: MailComment[]; needsAction?: boolean; category?: string; categoryByPerson?: boolean };
 type State = { accounts: Account[]; folders: MailFolder[]; threads: Map<string, ThreadMeta>; messages: MailMessage[]; prefs: Record<string, SidebarPrefs> };
 
 const states = new Map<string, State>();
@@ -196,6 +203,8 @@ function seedState(ws: WsData): State {
     history: null,
     oldest_message_at: new Date(now - 30 * DAY).toISOString(),
     folders_left_out: 0,
+    catChoice: defaultChoice(),
+    catRules: [],
     ...p,
   });
   const work = mk({
@@ -277,6 +286,8 @@ function seedState(ws: WsData): State {
     imap: { imap_host: "imap.fastmail.com", imap_port: 993, imap_tls: "tls", imap_username: `${local}@fastmail.com`, smtp_host: "smtp.fastmail.com", smtp_port: 465, smtp_tls: "tls", smtp_username: `${local}@fastmail.com` },
   });
   const accounts = [work, sales, personal];
+  // A sender rule, as "Always for this sender" leaves one (contracts/collab.md "Categories").
+  work.catRules.push(newRule("@linear.app", "updates"));
   providerSignature.set(work.id, work.signature_html);
   providerName.set(work.id, work.display_name);
   for (const x of work.aliases) {
@@ -659,6 +670,35 @@ function storage(): CollabStatus["storage"] {
   return { used_bytes: 9.4 * 1024 ** 3, limit_bytes: 0, history_limited: false, full: false };
 }
 
+/** A history import's start: null for all mail; a date in the past, else 422. */
+function historySince(v: unknown): string | null {
+  if (v === null || v === undefined) return null;
+  const d = new Date(String(v));
+  if (Number.isNaN(d.getTime()) || d.getTime() > Date.now()) throw invalid("since must be a date in the past");
+  return d.toISOString();
+}
+
+/** Starts (or starts again) an account's history import. */
+function startHistory(ws: WsData, a: Account, since: string | null, spamTrash: boolean) {
+  const history: MailHistory = {
+    status: "running",
+    since,
+    include_spam_trash: spamTrash,
+    requested_by: userRef(db.meId),
+    started_at: nowIso(),
+    finished_at: null,
+    reached: null,
+    imported: 0,
+    present: 0,
+    too_large: 0,
+    unreadable: 0,
+    total: a.provider === "microsoft" && since ? null : since ? 2_400 : 9_800,
+    last_error: "",
+  };
+  a.history = history;
+  runHistory(ws, a);
+}
+
 /** A history import moving on: a batch every couple of seconds while it runs, until its total. */
 const historyTimers = new Map<string, ReturnType<typeof setInterval>>();
 function runHistory(ws: WsData, a: Account) {
@@ -728,9 +768,18 @@ function seesThread(ws: WsData, t: ThreadMeta, uid: string) {
 
 function accountOut(ws: WsData, a: Account): MailAccount {
   const me = db.meId;
-  const { ownerId, aliases: _aliases, defaultFrom: _default, ...rest } = a;
+  const { ownerId, aliases: _aliases, defaultFrom: _default, catChoice, catRules: _rules, ...rest } = a;
   const manage = (!!ownerId && ownerId === me) || (a.visibility === "shared" && isAdmin(ws, me));
-  return { ...rest, owner: userRef(ownerId), can_manage: manage, unread: unreadInbox(ws, a.id), imap: manage ? a.imap : undefined, identities: identitiesOut(ws, a), default_from: defaultOf(a) };
+  return {
+    ...rest,
+    owner: userRef(ownerId),
+    can_manage: manage,
+    unread: unreadInbox(ws, a.id),
+    imap: manage ? a.imap : undefined,
+    identities: identitiesOut(ws, a),
+    default_from: defaultOf(a),
+    categories: resolveCategories(ws, catChoice, ownerId),
+  };
 }
 
 /** An address of the account that can send, if email is one. */
@@ -845,7 +894,28 @@ function threadOut(ws: WsData, t: ThreadMeta): MailThread {
     assignees: t.assignees.map((id) => userRef(id)).filter((x): x is NonNullable<typeof x> => !!x),
     comment_count: t.comments.length,
     to_address: people.map((p) => p.email.toLowerCase()).find((e) => aliases.has(e)) ?? null,
+    category: categoryOf(ws, t),
   };
+}
+
+/** A conversation's tab (contracts/collab.md "Categories"): sorted on first read, null while its account's inbox is not split. */
+function categoryOf(ws: WsData, t: ThreadMeta): string | null {
+  const s = state(ws);
+  const a = s.accounts.find((x) => x.id === t.account_id);
+  const c = a && resolveCategories(ws, a.catChoice, a.ownerId);
+  if (!a || !c?.enabled) return null;
+  if (t.category === undefined) {
+    const first = msgsOf(s, t.id).find((m) => !m.outgoing);
+    t.category = first ? sortMail({ from: first.from.email, name: first.from.name, subject: t.subject, text: first.body_text }, c.categories, a.catRules) : PRIMARY;
+  }
+  return c.categories.some((x) => x.key === t.category) ? t.category : PRIMARY;
+}
+
+/** Categories changed for these accounts (or all): what sorting chose is sorted again, what a person chose stays. */
+function recategorize(ws: WsData, accountId?: string) {
+  const s = state(ws);
+  for (const t of s.threads.values()) if ((!accountId || t.account_id === accountId) && !t.categoryByPerson) t.category = undefined;
+  for (const a of s.accounts) if (!accountId || a.id === accountId) emit(ws, "collab.accounts", { account_id: a.id }, audienceOf(ws, a.id, []));
 }
 
 function detailOut(ws: WsData, t: ThreadMeta): MailThreadDetail {
@@ -917,6 +987,12 @@ function listThreads(ws: WsData, ctx: Ctx) {
           return false;
       }
     });
+  }
+  // One tab of the inbox; primary also holds what is not sorted and accounts not split.
+  const category = ctx.query.get("category");
+  if (category) {
+    if (box !== "inbox" || folderId) throw invalid("category goes with box=inbox only");
+    rows = rows.filter((t) => (t.category ?? PRIMARY) === category);
   }
   const to = (ctx.query.get("to") ?? "").trim().toLowerCase();
   if (to) rows = rows.filter((t) => msgsOf(s, t.id).some((m) => [m.from, ...m.to, ...m.cc].some((x) => x.email.toLowerCase() === to)));
@@ -992,6 +1068,16 @@ function counts(ws: WsData) {
     }
     addresses[a.id] = out;
   }
+  // Each split account's unread inbox conversations by tab, primary included.
+  const categories: Record<string, Record<string, number>> = {};
+  for (const a of s.accounts) {
+    if (!seeAcc.has(a.id)) continue;
+    const c = resolveCategories(ws, a.catChoice, a.ownerId);
+    if (!c.enabled) continue;
+    const out: Record<string, number> = Object.fromEntries(c.categories.map((x) => [x.key, 0]));
+    for (const t of inbox) if (t.account_id === a.id && t.unread) out[t.category ?? PRIMARY] = (out[t.category ?? PRIMARY] ?? 0) + 1;
+    categories[a.id] = out;
+  }
   const assignedOpen = all.filter((t) => t.assignees.some((a) => a.id === me) && inRole(s, t, "inbox"));
   const assigned: Record<string, number> = {};
   for (const t of assignedOpen) assigned[t.account_id] = (assigned[t.account_id] ?? 0) + 1;
@@ -1008,6 +1094,7 @@ function counts(ws: WsData) {
     folders,
     addresses,
     assigned,
+    categories,
   };
 }
 
@@ -1141,6 +1228,7 @@ export function registerCollab() {
     requireCollab(ctx.ws);
     requireAct(ctx.ws);
     if (ctx.params.provider !== "google" && ctx.params.provider !== "microsoft") throw new HttpError(422, "provider_not_configured", "That provider is not set up on this instance.");
+    if (ctx.body.history) historySince((ctx.body.history as { since?: unknown }).since);
     // The mock has no provider to visit: come straight back as if one was connected.
     const existing = visibleAccounts(ctx.ws).find((a) => a.provider === ctx.params.provider);
     const back = new URL("/settings/mail-accounts", location.origin);
@@ -1157,6 +1245,7 @@ export function registerCollab() {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw invalid("email is not an address");
     if (String(b.password ?? "") === "wrong") throw new HttpError(422, "connection_failed", "Failed to connect", { detail: "IMAP imap.example.com:993: authentication failed (AUTHENTICATIONFAILED)" });
     if (String(b.imap_host ?? "").includes("unreachable")) throw new HttpError(422, "connection_failed", "IMAP: dial tcp: lookup unreachable: no such host");
+    const since = b.history ? historySince((b.history as { since?: unknown }).since) : undefined;
     const s = state(ctx.ws);
     if (s.accounts.some((a) => a.email.toLowerCase() === email.toLowerCase())) throw new HttpError(409, "account_conflict", "That address is already connected in this workspace.");
     const me = db.meId;
@@ -1189,6 +1278,8 @@ export function registerCollab() {
       history: null,
       oldest_message_at: null,
       folders_left_out: 0,
+      catChoice: defaultChoice(),
+      catRules: [],
       imap: {
         imap_host: String(b.imap_host),
         imap_port: Number(b.imap_port),
@@ -1203,6 +1294,7 @@ export function registerCollab() {
     };
     s.accounts.push(a);
     for (const [n, role] of [["Inbox", "inbox"], ["Sent", "sent"], ["Drafts", "drafts"], ["Archive", "archive"], ["Spam", "spam"], ["Trash", "trash"]] as [string, MailFolderRole][]) s.folders.push(folder(a.id, n, role));
+    if (since !== undefined) startHistory(ctx.ws, a, since, false);
     emit(ctx.ws, "collab.accounts", { account_id: a.id }, audienceOf(ctx.ws, a.id, []));
     setTimeout(() => {
       a.status = "active";
@@ -1404,6 +1496,14 @@ export function registerCollab() {
     emit(ctx.ws, "collab.accounts", { account_id: a.id }, audienceOf(ctx.ws, a.id, []));
     return accountOut(ctx.ws, a);
   });
+  // The mock's Gmail addresses are all here already: a check finds nothing new.
+  post("/v1/collab/accounts/:id/identities/refresh", (ctx) => {
+    requireCollab(ctx.ws);
+    const a = accountOr404(ctx.ws, ctx.params.id);
+    requireManage(ctx.ws, a);
+    if (a.provider !== "google") throw new HttpError(422, "identities_by_hand", "This account's addresses are added here by hand.");
+    return accountOut(ctx.ws, a);
+  });
   get("/v1/collab/accounts/:id/identities/suggestions", (ctx) => {
     requireCollab(ctx.ws);
     const a = accountOr404(ctx.ws, ctx.params.id);
@@ -1444,30 +1544,7 @@ export function registerCollab() {
     requireCollab(ctx.ws);
     const a = accountOr404(ctx.ws, ctx.params.id);
     requireManage(ctx.ws, a);
-    const b = ctx.body;
-    let since: string | null = null;
-    if (b.since !== null && b.since !== undefined) {
-      const d = new Date(String(b.since));
-      if (Number.isNaN(d.getTime()) || d.getTime() > Date.now()) throw invalid("since must be a date in the past");
-      since = d.toISOString();
-    }
-    const history: MailHistory = {
-      status: "running",
-      since,
-      include_spam_trash: b.include_spam_trash === true,
-      requested_by: userRef(db.meId),
-      started_at: nowIso(),
-      finished_at: null,
-      reached: null,
-      imported: 0,
-      present: 0,
-      too_large: 0,
-      unreadable: 0,
-      total: a.provider === "microsoft" && since ? null : since ? 2_400 : 9_800,
-      last_error: "",
-    };
-    a.history = history;
-    runHistory(ctx.ws, a);
+    startHistory(ctx.ws, a, historySince(ctx.body.since), ctx.body.include_spam_trash === true);
     emit(ctx.ws, "collab.accounts", { account_id: a.id }, audienceOf(ctx.ws, a.id, []));
     return accountOut(ctx.ws, a);
   });
@@ -1498,6 +1575,67 @@ export function registerCollab() {
     runHistory(ctx.ws, a);
     emit(ctx.ws, "collab.accounts", { account_id: a.id }, audienceOf(ctx.ws, a.id, []));
     return accountOut(ctx.ws, a);
+  });
+
+  registerCollabCategories({ requireCollab, changed: (ws) => recategorize(ws) });
+
+  put("/v1/collab/accounts/:id/categories", (ctx) => {
+    requireCollab(ctx.ws);
+    const a = accountOr404(ctx.ws, ctx.params.id);
+    requireManage(ctx.ws, a);
+    const b = ctx.body;
+    const mode = b.mode === "custom" || b.mode === "off" || b.mode === "follow" ? b.mode : null;
+    if (!mode) throw invalid("mode must be follow, custom or off");
+    const admin = isAdmin(ctx.ws, db.meId);
+    const before = resolveCategories(ctx.ws, a.catChoice, a.ownerId);
+    const own = mode === "custom" ? parseCategories(b.categories) : a.catChoice.own;
+    const changes = mode !== a.catChoice.mode || (mode === "custom" && JSON.stringify(own) !== JSON.stringify(a.catChoice.own));
+    if (changes && before.locked) throw new HttpError(422, "categories_locked", "Your workspace's admins set the categories. You can still turn Ollie's sorting on or off.");
+    a.catChoice = { mode, own, ai: typeof b.ai === "boolean" ? b.ai : a.catChoice.ai, byAdmin: changes ? admin : a.catChoice.byAdmin };
+    if (changes) recategorize(ctx.ws, a.id);
+    return accountOut(ctx.ws, a);
+  });
+
+  get("/v1/collab/accounts/:id/category-rules", (ctx) => {
+    requireCollab(ctx.ws);
+    const a = accountOr404(ctx.ws, ctx.params.id);
+    requireManage(ctx.ws, a);
+    return { rules: a.catRules };
+  });
+
+  post("/v1/collab/accounts/:id/category-rules", (ctx) => {
+    requireCollab(ctx.ws);
+    const a = accountOr404(ctx.ws, ctx.params.id);
+    requireManage(ctx.ws, a);
+    const sender = parseSender(ctx.body.sender);
+    const category = String(ctx.body.category ?? "");
+    if (!resolveCategories(ctx.ws, a.catChoice, a.ownerId).categories.some((c) => c.key === category)) throw invalid("category must be one of the account's");
+    if (a.catRules.length >= 500 && !a.catRules.some((r) => r.sender === sender)) throw invalid("an account has at most 500 sender rules");
+    // One rule per sender: a second replaces the first.
+    const rule = newRule(sender, category);
+    a.catRules = [rule, ...a.catRules.filter((r) => r.sender !== sender)];
+    // The sender's inbox conversations move now.
+    const s = state(ctx.ws);
+    const moved: string[] = [];
+    for (const t of s.threads.values()) {
+      if (t.account_id !== a.id) continue;
+      const first = msgsOf(s, t.id).find((m) => !m.outgoing)?.from.email.toLowerCase() ?? "";
+      if (first && (first === sender || (sender.startsWith("@") && first.endsWith(sender)))) {
+        t.category = category;
+        moved.push(t.id);
+      }
+    }
+    if (moved.length) changed(ctx.ws, a.id, moved, false);
+    return rule;
+  });
+
+  del("/v1/collab/accounts/:id/category-rules/:ruleId", (ctx) => {
+    requireCollab(ctx.ws);
+    const a = accountOr404(ctx.ws, ctx.params.id);
+    requireManage(ctx.ws, a);
+    if (!a.catRules.some((r) => r.id === ctx.params.ruleId)) throw notFound("Rule");
+    a.catRules = a.catRules.filter((r) => r.id !== ctx.params.ruleId);
+    return respond(204);
   });
 
   get("/v1/collab/accounts/:id/folders", (ctx) => {
@@ -1621,6 +1759,19 @@ export function registerCollab() {
       for (const t of ts) if (s.accounts.find((a) => a.id === t.account_id)?.provider === "imap") throw new HttpError(422, "labels_unsupported", "IMAP accounts have no labels. Move the conversation to a folder instead.");
     }
     if ((action === "move" || action === "label" || action === "unlabel") && (!folderId || !s.folders.some((f) => f.id === folderId))) throw invalid("folder_id is required");
+    if (action === "categorize") {
+      // A person's choice, which sorting never changes after (contracts/collab.md "Categories").
+      const category = typeof ctx.body.category === "string" ? ctx.body.category : "";
+      for (const t of ts) {
+        const a = s.accounts.find((x) => x.id === t.account_id)!;
+        const c = resolveCategories(ctx.ws, a.catChoice, a.ownerId);
+        if (!c.enabled || !c.categories.some((x) => x.key === category)) throw invalid("category must be one every conversation's account has");
+      }
+      for (const t of ts) {
+        t.category = category;
+        t.categoryByPerson = true;
+      }
+    }
     for (const t of ts) applyAction(ctx.ws, t, action, folderId);
     const accountIds = [...new Set(ts.map((t) => t.account_id))];
     for (const acc of accountIds) changed(ctx.ws, acc, ts.filter((t) => t.account_id === acc).map((t) => t.id), true);
@@ -1881,18 +2032,24 @@ export function registerCollab() {
     return m;
   });
 
+  // Every member's, with or without Collab (contracts/collab.md SidebarPrefs).
   get("/v1/collab/sidebar", (ctx) => {
-    requireCollab(ctx.ws);
-    return state(ctx.ws).prefs[db.meId] ?? defaultSidebarPrefs();
+    const p = state(ctx.ws).prefs[db.meId] ?? defaultSidebarPrefs();
+    // Like the API: with Collab, All inboxes is pinned once, when the member first sees two accounts.
+    if (p.auto_pins.includes("box:inbox") || !status(ctx.ws).enabled || visibleAccounts(ctx.ws).length < 2) return p;
+    const pinned = p.pinned.some((x) => x.kind === "box" && x.id === "inbox");
+    const pin = p.unified_inbox && !p.hidden.includes("box:inbox") && !pinned && p.pinned.length < 30;
+    const next = { ...p, pinned: pin ? [{ kind: "box" as const, id: "inbox" }, ...p.pinned] : p.pinned, auto_pins: [...p.auto_pins, "box:inbox"] };
+    state(ctx.ws).prefs[db.meId] = next;
+    return next;
   });
 
   put("/v1/collab/sidebar", (ctx) => {
-    requireCollab(ctx.ws);
     if (JSON.stringify(ctx.body).length > 16 * 1024) throw invalid("Sidebar preferences are limited to 16 KB");
     const body = ctx.body as Partial<SidebarPrefs>;
     const saved = state(ctx.ws).prefs[db.meId] ?? defaultSidebarPrefs();
-    // Like the API: a client that leaves out the numbers or the tabs keeps them as saved.
-    const p = normalizePrefs({ ...body, badges: body.badges ?? saved.badges, mail_tabs: body.mail_tabs ?? saved.mail_tabs });
+    // Like the API: a client that leaves out the numbers, the tabs or the pins added by themselves keeps them as saved.
+    const p = normalizePrefs({ ...body, badges: body.badges ?? saved.badges, mail_tabs: body.mail_tabs ?? saved.mail_tabs, auto_pins: body.auto_pins ?? saved.auto_pins });
     if (p.pinned.length > 30) throw invalid("At most 30 favorites");
     if (Object.keys(p.badges).length > 300) throw invalid("Numbers can be chosen for at most 300 rows.");
     if (p.mail_tabs.length > 30) throw invalid("The folder bar holds at most 30 tabs.");

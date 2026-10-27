@@ -25,6 +25,7 @@ import { toast } from "@/components/ui/toast";
 import { ImageUpload } from "@/components/ui/image-upload";
 import { Stepper } from "@/components/settings2/Stepper";
 import { SaveBar } from "@/components/settings/SaveBar";
+import { ReauthNotice, isReauthError } from "@/components/settings/ReauthNotice";
 import { UnsavedGuard } from "@/components/settings2/UnsavedGuard";
 import { BrandMark, Note, TeamPick, useBrands, useTeams } from "@/components/settings2/teams";
 import { OllieMark } from "@/components/assistant/OllieMark";
@@ -37,7 +38,7 @@ import { BotSelect, resolveBot } from "@/components/bots/BotSelect";
 import { topicProblem, topicsForSave, TopicsEditor } from "@/components/widget/TopicsEditor";
 import { ALL_FILE_TYPES, FILE_TYPES } from "@/components/widget/fileTypes";
 import { api } from "@/lib/api/endpoints";
-import { ApiError, errorMessage } from "@/lib/api/client";
+import { errorMessage } from "@/lib/api/client";
 import type { Brand, Widget, WidgetSettings as WS } from "@/lib/api/types";
 import { useAI } from "@/lib/ai";
 import { appOrigin, config } from "@/lib/config";
@@ -175,6 +176,7 @@ function WidgetEditor({ widget, brand, back }: { widget: Widget; brand: Brand | 
   const navigate = useNavigate();
   const confirm = useConfirm();
   const { data: members } = useQuery(q.members());
+  const { data: mailboxes } = useQuery(q.mailboxes());
   const { teams } = useTeams();
   const base = useMemo(() => toDraft(widget), [widget]);
   const [draft, setDraft] = useState<Draft>(base);
@@ -199,6 +201,12 @@ function WidgetEditor({ widget, brand, back }: { widget: Widget; brand: Brand | 
   const s = draft.settings;
   const dirty = JSON.stringify(draft) !== JSON.stringify(base);
   const agentOn = ai.enabled && agentSettings(ai.features).widget_answers;
+  const hasFollowUpMailbox = mailboxes?.some(
+    (m) =>
+      (m.brand_id === widget.brand_id || Object.values(m.alias_settings ?? {}).some((alias) => alias.brand_id === widget.brand_id)) &&
+      m.status === "active" &&
+      m.sending !== "system_off",
+  );
   const team = teams.find((x) => x.id === draft.team_id);
   const { t: tb } = useTranslation("bots");
   const { data: bots } = useQuery(q.bots());
@@ -507,7 +515,19 @@ function WidgetEditor({ widget, brand, back }: { widget: Widget; brand: Brand | 
                   </div>
                 </div>
               </Row>
-              <Row label={tt("widget.followUp")} description={tt("widget.followUpHint")}>
+              <Row
+                label={tt("widget.followUp")}
+                description={
+                  <>
+                    {tt("widget.followUpHint")}
+                    {s.email_follow_up && mailboxes && !hasFollowUpMailbox && (
+                      <span className="mt-1 block text-fg-2">
+                        {tt("widget.followUpMailboxMissing")} <Link className="underline underline-offset-2" to="/settings/mailboxes/new" search={{ brand: widget.brand_id }}>{tt("widget.followUpAddMailbox")}</Link>
+                      </span>
+                    )}
+                  </>
+                }
+              >
                 <Switch checked={s.email_follow_up} onCheckedChange={(email_follow_up) => set({ email_follow_up })} aria-label={tt("widget.followUp")} />
               </Row>
             </Section>
@@ -756,7 +776,7 @@ function RotateSecret({ widget }: { widget: Widget }) {
   const { t: tt } = useTranslation("settingsTeams");
   const confirm = useConfirm();
   const [secret, setSecret] = useState<string | null>(null);
-  const [blocked, setBlocked] = useState<string | null>(null);
+  const [blocked, setBlocked] = useState<unknown>(null);
   // Arrived from creating the widget without its secret: say why, and point at the rotate button.
   const pending = useLocation({ select: (l) => l.hash === WIDGET_SECRET_ANCHOR });
   const [showPending, setShowPending] = useState(pending);
@@ -775,8 +795,7 @@ function RotateSecret({ widget }: { widget: Widget }) {
       setSecret(r.secret);
       setShowPending(false);
     } catch (e) {
-      if (e instanceof ApiError && e.code === "mfa_required") return setBlocked(t("widget.rotateMfa"));
-      if (e instanceof ApiError && e.code === "reauth_required") return setBlocked(t("widget.rotateReauth"));
+      if (isReauthError(e)) return setBlocked(e);
       throw new Error(errorMessage(e, t("widget.rotateError")), { cause: e });
     }
   };
@@ -805,12 +824,7 @@ function RotateSecret({ widget }: { widget: Widget }) {
           {t("widget.rotate")}
         </Button>
       </div>
-      {blocked && (
-        <p role="alert" className="flex items-start gap-2 rounded-md bg-tone-amber-soft px-3 py-2 text-[12.5px] text-tone-amber">
-          <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-tone-amber-solid" />
-          {blocked}
-        </p>
-      )}
+      {!!blocked && <ReauthNotice error={blocked} />}
       <WidgetSecretDialog secret={secret} onClose={() => setSecret(null)} />
     </>
   );

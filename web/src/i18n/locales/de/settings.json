@@ -256,6 +256,10 @@
     "resend": "Bestätigung erneut senden",
     "appearance": "Darstellung",
     "appearanceHint": "Gilt für diesen Browser.",
+    "conversation": {
+      "label": "Gesprächsansicht",
+      "hint": "Nachrichten des Kunden links, Antworten und Notizen deines Teams rechts, wie in einem Chat. Volle Breite auf schmalen Bildschirmen."
+    },
     "sounds": {
       "title": "Töne",
       "hint": "Gilt für diesen Browser. Live-Chat hat einen helleren Klang; alles andere ist leise.",
@@ -268,6 +272,13 @@
       "replyHint": "Ein Kunde antwortet auf einem deiner Tickets, außer du hast es gerade offen.",
       "assigned": "Zuweisungen und Erwähnungen",
       "assignedHint": "Dir wird etwas zugewiesen, jemand erwähnt dich, oder bei deinem Ticket wird ein SLA überschritten."
+    },
+    "assignee": {
+      "label": "Zuständige Person in der Ticketliste",
+      "hint": "Teammitglieder, die gerade an einem Ticket sind, erscheinen immer grün, mit dem, was sie tun.",
+      "photo": "Foto",
+      "name": "Vorname",
+      "none": "Nichts"
     },
     "theme": {
       "label": "Design",

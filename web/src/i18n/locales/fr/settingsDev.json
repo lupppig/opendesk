@@ -358,8 +358,6 @@
     "rotate": "Renouveler le secret",
     "rotateTitle": "Renouveler le secret du widget ?",
     "rotateBody": "Les sessions identifiées ne sont plus vérifiées tant que vous n’avez pas déployé le nouveau secret. Les chats existants continuent de fonctionner.",
-    "rotateMfa": "Le renouvellement du secret nécessite l’authentification à deux facteurs. Activez la 2FA dans Sécurité, puis reconnectez-vous.",
-    "rotateReauth": "Par sécurité, déconnectez-vous puis reconnectez-vous avant de réessayer. Cette action exige une connexion datant de moins de 12 heures.",
     "secretLater": "Un propriétaire peut afficher le secret après avoir confirmé sa connexion.",
     "secretLaterHint": "Le renouvellement affiche un nouveau secret. D’ici là, le widget fonctionne mais ne peut pas vérifier les utilisateurs connectés.",
     "revealSecret": "Afficher le secret",

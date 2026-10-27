@@ -43,6 +43,8 @@ type Service struct {
 	catalog catalog
 	// own caches the providers built from workspaces' own keys (byok.go).
 	own ownKeys
+	// decKeys caches the deciders built from workspaces' own TypeSafe keys (decisions_key.go).
+	decKeys decisionKeys
 	// anthropicBase is the Anthropic API root (ANTHROPIC_BASE_URL, "" = the public API).
 	anthropicBase string
 	// guardDev relaxes the SSRF guard for user-chosen endpoints on a development instance.
@@ -202,6 +204,9 @@ type call struct {
 	rt *route
 	// onKey marks a call that ran on the workspace's own key: nothing is charged.
 	onKey bool
+	// calibrated marks a decision answered by a calibrated engine (Jev): its
+	// probabilities can be gated on.
+	calibrated bool
 }
 
 func (s *Service) newCall(wid uuid.UUID, userID, ticketID *uuid.UUID, feature string) *call {
@@ -300,22 +305,25 @@ func (c *call) run(ctx context.Context, req Request, onDelta func(string)) (Resp
 	return c.resp, err
 }
 
-// decide reserves the feature's typical cost and asks the decision engine. Usage is recorded by charge
-// with the engine's name as the model ("jev", counts only). Jev stays on the instance and
-// is charged even for a workspace on its own key; the LLM adapter follows the workspace's
-// provider like any LLM call.
-func (c *call) decide(ctx context.Context, dc decide.Decider, req decide.Request) (decide.Result, error) {
-	var rt *route
-	if _, ok := dc.(*llmDecider); ok {
-		r, err := c.route(ctx)
-		if err != nil {
-			return decide.Result{}, err
-		}
-		if r.own {
-			rt, c.onKey = r, true
-			dc = &llmDecider{s: c.s, rt: r}
-		}
+// decide asks the workspace's decision engine (decisionsFor). Usage is recorded by charge
+// with the engine's name as the model ("jev", counts only). On the instance's engine the
+// feature's typical cost is reserved first; on the workspace's own TypeSafe or OpenRouter
+// key, or the LLM adapter on its own provider key, nothing is charged and a refused key
+// is recorded like any call on it.
+func (c *call) decide(ctx context.Context, req decide.Request) (decide.Result, error) {
+	rt, err := c.route(ctx)
+	if err != nil {
+		return decide.Result{}, err
 	}
+	dr, err := c.s.decisionsFor(ctx, c.wid, rt)
+	if err != nil {
+		return decide.Result{}, err
+	}
+	if dr.dc == nil {
+		return decide.Result{}, ErrUnavailable
+	}
+	dc := dr.dc
+	c.onKey, c.calibrated = dr.own, dc.Calibrated()
 	if !c.onKey {
 		if err := c.reserveBalance(ctx, plan.Typical[c.feature]); err != nil {
 			return decide.Result{}, err
@@ -323,7 +331,7 @@ func (c *call) decide(ctx context.Context, dc decide.Decider, req decide.Request
 	}
 	start := time.Now()
 	res, err := dc.Decide(ctx, req)
-	err = c.s.keyResult(ctx, c.wid, rt, err)
+	err = c.s.decisionKeyResult(ctx, c.wid, dr, err)
 	c.resp = Response{Model: dc.Name(), InputTokens: res.InputTokens, OutputTokens: res.OutputTokens, CostUSD: res.CostUSD}
 	if dc.Name() != "jev" {
 		c.resp.Model = res.Model
@@ -338,6 +346,8 @@ func decisionErr(err error) error {
 	switch {
 	case err == nil:
 		return nil
+	case errors.As(err, new(*ownKeyError)):
+		return err // names the workspace's key; it unwraps to ErrUnavailable
 	case errors.Is(err, decide.ErrBusy), errors.Is(err, ErrBusy):
 		return ErrBusy
 	case errors.Is(err, decide.ErrBadOutput), errors.Is(err, ErrBadOutput):

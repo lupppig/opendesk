@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/mail"
 	"net/url"
@@ -56,6 +57,8 @@ type listIn struct {
 	Channel    string `query:"channel" enum:"email,chat,api,portal,"`
 	ChannelNot string `query:"channel_not" doc:"Comma-separated channels: tickets on none of them"`
 	ContactID  string `query:"contact_id"`
+	ContactNot string `query:"contact_not" doc:"Comma-separated contact ids: tickets whose contact is none of them"`
+	CompanyNot string `query:"company_not" doc:"Comma-separated company ids: tickets whose contact belongs to none of them"`
 	ViewID     string `query:"view_id" doc:"Apply a saved view's filters; explicit filters override it"`
 	Q          string `query:"q" maxLength:"200" doc:"Full text over subjects and messages, or #number"`
 	Spam       string `query:"spam" enum:"true,false,any," doc:"Default false (spam hidden); true lists only spam"`
@@ -86,6 +89,8 @@ type ticketBulkQuery struct {
 	Channel    string           `json:"channel,omitempty"`
 	ChannelNot []string         `json:"channel_not,omitempty"`
 	ContactID  string           `json:"contact_id,omitempty"`
+	ContactNot string           `json:"contact_not,omitempty"`
+	CompanyNot string           `json:"company_not,omitempty"`
 	ViewID     string           `json:"view_id,omitempty"`
 	Q          string           `json:"q,omitempty" maxLength:"200"`
 	Spam       string           `json:"spam,omitempty" enum:"true,false,any,"`
@@ -95,7 +100,8 @@ type ticketBulkQuery struct {
 func (q ticketBulkQuery) listInput() listIn {
 	return listIn{Status: strings.Join(q.Status, ","), Priority: strings.Join(q.Priority, ","), Severity: strings.Join(q.Severity, ","), Assignee: q.Assignee,
 		TeamID: q.TeamID, TeamNot: q.TeamNot, MailboxID: q.MailboxID, MailboxNot: q.MailboxNot, ReceivedAt: q.ReceivedAt, BrandID: q.BrandID, WidgetID: q.WidgetID, Tag: q.Tag, TagNot: q.TagNot, Untagged: q.Untagged,
-		Channel: q.Channel, ChannelNot: strings.Join(q.ChannelNot, ","), ContactID: q.ContactID, ViewID: q.ViewID, Q: q.Q, Spam: q.Spam, fields: q.Fields}
+		Channel: q.Channel, ChannelNot: strings.Join(q.ChannelNot, ","), ContactID: q.ContactID, ContactNot: q.ContactNot, CompanyNot: q.CompanyNot, ViewID: q.ViewID,
+		Q: q.Q, Spam: q.Spam, fields: q.Fields}
 }
 
 func ticketListQuery(ctx context.Context, q db.Querier, p *auth.Principal, in listIn) (listQuery, error) {
@@ -103,7 +109,8 @@ func ticketListQuery(ctx context.Context, q db.Querier, p *auth.Principal, in li
 		return listQuery{}, in.fieldsErr
 	}
 	req := hd.TicketFilters{Status: hd.SplitCSV(in.Status), Priority: hd.SplitCSV(in.Priority), Severity: hd.SplitCSV(in.Severity), Assignee: in.Assignee,
-		TeamID: in.TeamID, TeamNot: in.TeamNot, MailboxID: in.MailboxID, MailboxNot: in.MailboxNot, ReceivedAt: in.ReceivedAt, BrandID: in.BrandID, WidgetID: in.WidgetID, Tag: in.Tag, TagNot: in.TagNot, Untagged: in.Untagged, Channel: in.Channel, ChannelNot: hd.SplitCSV(in.ChannelNot), Q: in.Q, Fields: in.fields}
+		TeamID: in.TeamID, TeamNot: in.TeamNot, MailboxID: in.MailboxID, MailboxNot: in.MailboxNot, ReceivedAt: in.ReceivedAt, BrandID: in.BrandID, WidgetID: in.WidgetID, Tag: in.Tag, TagNot: in.TagNot, Untagged: in.Untagged, Channel: in.Channel, ChannelNot: hd.SplitCSV(in.ChannelNot),
+		ContactNot: in.ContactNot, CompanyNot: in.CompanyNot, Q: in.Q, Fields: in.fields}
 	f := req
 	if in.ViewID != "" {
 		view, err := loadView(ctx, q, p, in.ViewID)
@@ -331,6 +338,25 @@ func registerTickets(d *deps.Deps, api huma.API) {
 				return nil, httpx.Wrap(err)
 			}
 			return &struct{ Body TicketCounts }{c}, nil
+		})
+
+	huma.Register(api, huma.Operation{OperationID: "ticket-list-summary", Method: http.MethodGet, Path: "/v1/tickets/summary",
+		Summary: "Summarize a ticket list", Tags: tags,
+		Description: "Counts every ticket GET /v1/tickets lists for the same filters, all pages together: the total, awaiting a reply, urgent, overdue and due within the hour, as the caller sees them. sort, order, limit and cursor are ignored. complete is false, with every count 0, when more than 10000 tickets match or q is set."},
+		func(ctx context.Context, in *listIn) (*struct{ Body TicketListSummary }, error) {
+			p, err := auth.RequireWorkspace(ctx, auth.RoleViewer, auth.ScopeTicketsRead)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			lq, err := ticketListQuery(ctx, d.DB.Pool, p, *in)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			s, err := ticketListSummary(ctx, d.DB.Pool, p.WorkspaceID, p.ActorUserID(), lq)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			return &struct{ Body TicketListSummary }{s}, nil
 		})
 
 	huma.Register(api, huma.Operation{OperationID: "create-ticket", Method: http.MethodPost, Path: "/v1/tickets",
@@ -972,11 +998,14 @@ func mergeTickets(ctx context.Context, tx pgx.Tx, d *deps.Deps, wid, src, dst uu
 			into = map[string]any{"into": nil, "into_number": nil}
 		}
 	}
+	from := map[string]any{"from": src.String(), "from_number": srcState.Number}
+	// An automation's merge names it on both timelines, as its other changes do.
+	maps.Copy(into, actor.Meta)
+	maps.Copy(from, actor.Meta)
 	if _, err := domain.LogActivity(ctx, tx, wid, src, actor.Type, actor.UserID, "merged", into); err != nil {
 		return err
 	}
-	if _, err := domain.LogActivity(ctx, tx, wid, dst, actor.Type, actor.UserID, "merged",
-		map[string]any{"from": src.String(), "from_number": srcState.Number}); err != nil {
+	if _, err := domain.LogActivity(ctx, tx, wid, dst, actor.Type, actor.UserID, "merged", from); err != nil {
 		return err
 	}
 	if err := domain.PublishTicketUpdated(ctx, tx, wid, src, []string{"merged_into", "message_count"}); err != nil {

@@ -3,6 +3,7 @@
 // OpenAI-compatible endpoint, or Anthropic). A key is tested before it is saved,
 // is never shown again past its last 4 characters, and its state ("Rejected by
 // OpenRouter 2 minutes ago") comes back live through the ai_key_failed notification.
+// Below it, where decisions run and the workspace's own TypeSafe key (DecisionsKey.tsx).
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Eye, EyeOff, KeyRound, TriangleAlert } from "lucide-react";
@@ -18,11 +19,12 @@ import { Segmented } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api/client";
 import { api } from "@/lib/api/endpoints";
-import type { AIKeyKind, AIProvider, AIProviderKey, AIProviderKeyInput, AIProviderTest } from "@/lib/api/types";
+import type { AIKeyKind, AIKeyStatus, AIProvider, AIProviderKey, AIProviderKeyInput, AIProviderTest } from "@/lib/api/types";
 import { cn } from "@/lib/cn";
 import { relLong } from "@/lib/format";
 import { q, qk } from "@/lib/queries";
 import { tone } from "@/lib/tones";
+import { DecisionsBlock } from "./DecisionsKey";
 
 const KINDS: AIKeyKind[] = ["openrouter", "openai", "anthropic"];
 const PLACEHOLDER: Record<AIKeyKind, string> = { openrouter: "sk-or-v1-…", openai: "sk-…", anthropic: "sk-ant-…" };
@@ -100,6 +102,7 @@ export function ProviderSection({ canEdit }: { canEdit: boolean }) {
             />
           )}
           {own && <p className="py-3 text-[11.5px] leading-[17px] text-fg-4">{billing ? t("provider.stays") : t("provider.stays_self_hosted")}</p>}
+          {data.decisions && <DecisionsBlock route={data.decisions} billing={billing} />}
         </>
       )}
     </Section>
@@ -164,7 +167,7 @@ export function SavedKey({ k, onReplace, onRemove }: { k: AIProviderKey; onRepla
   );
 }
 
-function StatusPill({ k, name, when }: { k: AIProviderKey; name: string; when: string }) {
+export function StatusPill({ k, name, when }: { k: { status: AIKeyStatus }; name: string; when: string }) {
   const { t } = useTranslation("ai");
   const hue = k.status === "ok" ? "green" : k.status === "no_funds" ? "amber" : "red";
   const label = k.status === "ok" ? t("provider.status_ok") : k.status === "no_funds" ? t("provider.status_no_funds", { provider: name, when }) : t("provider.status_rejected", { provider: name, when });
@@ -310,7 +313,7 @@ function KeyForm({ onCancel, onSaved }: { onCancel: () => void; onSaved: (p: AIP
   );
 }
 
-function TestResult({ result, error }: { result: AIProviderTest | null; error: string | null }) {
+export function TestResult({ result, error }: { result: AIProviderTest | null; error: string | null }) {
   const { t } = useTranslation("ai");
   const ok = !!result?.ok && !error;
   const text = error ?? (result?.ok ? (result.models.length ? t("provider.test_ok", { count: result.models.length }) : t("provider.test_ok_none")) : result?.message);

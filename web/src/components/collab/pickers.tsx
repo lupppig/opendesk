@@ -6,9 +6,11 @@ import { Archive, Check, Globe, Inbox, Plus, ShieldAlert, Trash2, Users, X } fro
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "@/lib/api/endpoints";
-import type { MailAudience, MailFolder, MailThreadAction, Member } from "@/lib/api/types";
+import type { MailAudience, MailCategory, MailFolder, MailThreadAction, Member } from "@/lib/api/types";
 import { buildFolderTree, flattenTree } from "@/lib/collab/boxes";
+import { categoryTone } from "@/lib/collab/categories";
 import { cn } from "@/lib/cn";
+import { tone } from "@/lib/tones";
 import { qk, q, upsertInList } from "@/lib/queries";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -17,7 +19,7 @@ import { toast } from "@/components/ui/toast";
 import { TeamDot } from "@/components/tickets/teams";
 import { FolderGlyph } from "./bits";
 
-export type MoveTarget = { action: MailThreadAction; folderId?: string; label: string };
+export type MoveTarget = { action: MailThreadAction; folderId?: string; category?: string; label: string };
 
 /** Move to: the inbox, archive, spam, trash or any folder of the account; typing a new name creates it at the provider first. */
 export function MovePicker({
@@ -29,9 +31,14 @@ export function MovePicker({
   trigger,
   side = "bottom",
   align = "start",
+  categories = [],
+  current,
 }: {
   accountId: string | null;
   folders: MailFolder[];
+  /** The inbox's categories, when it is split (contracts/collab.md "Categories"); current: the conversations' own. */
+  categories?: MailCategory[];
+  current?: string | null;
   open?: boolean;
   onOpenChange?: (o: boolean) => void;
   onMove: (t: MoveTarget) => void;
@@ -65,7 +72,16 @@ export function MovePicker({
       group: t("action.move"),
       target: { action: "move" as const, folderId: node.folder!.id, label: node.name },
     }));
-  const all = [...special.map((s) => ({ ...s, group: t("nav.mail") })), ...user];
+  const tabs = categories
+    .filter((c) => c.key !== current)
+    .map((c) => ({
+      value: `c:${c.key}`,
+      label: c.name,
+      icon: <span aria-hidden className={cn("size-2 rounded-full", tone[categoryTone(c)].solid)} />,
+      group: t("categories.group"),
+      target: { action: "categorize" as const, category: c.key, label: c.name },
+    }));
+  const all = [...tabs, ...special.map((s) => ({ ...s, group: t("nav.mail") })), ...user];
   return (
     <Picker
       open={open}

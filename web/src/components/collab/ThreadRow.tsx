@@ -6,10 +6,12 @@ import { motion, useReducedMotion } from "motion/react";
 import { Archive, Mail, MailOpen, MessageSquare, Paperclip, Star, Trash2, Users } from "lucide-react";
 import { forwardRef, memo, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import type { MailFolder, MailThread, MailThreadAction } from "@/lib/api/types";
+import type { MailCategory, MailFolder, MailThread, MailThreadAction } from "@/lib/api/types";
 import { cn } from "@/lib/cn";
 import { fullDate, relShort } from "@/lib/format";
+import { categoryTone } from "@/lib/collab/categories";
 import { participantsLine } from "@/lib/collab/recipients";
+import { tone } from "@/lib/tones";
 import { AvatarStack } from "@/components/ui/avatar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -28,6 +30,8 @@ export type ThreadRowProps = {
   accountName?: string;
   /** Labels to show as pills (Gmail labels on the conversation, not the folder being viewed). */
   labels: MailFolder[];
+  /** The inbox category it is sorted into, when the list is not that category's tab. */
+  category?: MailCategory;
   ownEmails: Set<string>;
   onOpen: (t: MailThread) => void;
   onToggle: (t: MailThread, shift: boolean) => void;
@@ -55,7 +59,7 @@ function Quick({ label, shortcut, onClick, children }: { label: string; shortcut
 }
 
 const Row = forwardRef<HTMLDivElement, ThreadRowProps>(function ThreadRow(
-  { thread: t, active, focused, selected, selecting, compact, accountColor, accountName, labels, ownEmails, onOpen, onToggle, onHover, onAction },
+  { thread: t, active, focused, selected, selecting, compact, accountColor, accountName, labels, category, ownEmails, onOpen, onToggle, onHover, onAction },
   ref,
 ) {
   const { t: tr } = useTranslation("collab");
@@ -155,7 +159,12 @@ const Row = forwardRef<HTMLDivElement, ThreadRowProps>(function ThreadRow(
       </span>
     </Tooltip>
   ) : null;
-  const pills = [alias, ...labels.slice(0, compact ? 2 : 3).map((l) => <LabelPill key={l.id} name={l.name} color={l.color} />)];
+  const tab = category ? (
+    <span key="category" className={cn("inline-flex h-[18px] max-w-[120px] shrink-0 items-center rounded-sm px-1.5 text-[10.5px] font-medium", tone[categoryTone(category)].chip)}>
+      <span className="truncate">{category.name}</span>
+    </span>
+  ) : null;
+  const pills = [tab, alias, ...labels.slice(0, compact ? 2 : 3).map((l) => <LabelPill key={l.id} name={l.name} color={l.color} />)];
 
   const end = (
     <span className={cn("relative flex shrink-0 items-center justify-end", compact ? "h-4 min-w-[52px]" : "h-6 min-w-[72px]")}>

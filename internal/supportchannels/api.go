@@ -799,6 +799,8 @@ func (s *Service) webhook(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
 		return
 	}
+	// Google Chat binds its signed request audience to this connection's URL.
+	cr["webhook_url"] = s.webhookURL(c)
 	if e = a.Verify(r.Header, body, cr); e != nil {
 		s.recordWebhookRejection(r.Context(), c.ID)
 		w.WriteHeader(http.StatusUnauthorized)

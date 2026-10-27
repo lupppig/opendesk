@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/useopendesk/opendesk/internal/audit"
+	"github.com/useopendesk/opendesk/internal/auth"
 	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/httpx"
 )
@@ -435,6 +436,38 @@ func historiesOut(ctx context.Context, q db.Querier, wid uuid.UUID, list []*acco
 	return hist, oldest, leftOut, nil
 }
 
+// historySince checks the start of an import's scope: in the past, from 1970 on.
+func historySince(since *time.Time) (*time.Time, error) {
+	if since == nil {
+		return nil, nil
+	}
+	if !since.Before(time.Now()) || since.Year() < 1970 {
+		return nil, httpx.Validation("Choose a date in the past.")
+	}
+	t := since.UTC()
+	return &t, nil
+}
+
+// startHistory starts the account's history import in tx (contracts/collab.md "History"),
+// audited. again starts one that exists again with this scope; otherwise an existing import
+// is left as it is and started reports false. The caller queues the sync and publishes.
+func startHistory(ctx context.Context, tx pgx.Tx, p *auth.Principal, accountID uuid.UUID, since *time.Time, spamTrash, again bool) (bool, error) {
+	conflict := `DO NOTHING`
+	if again {
+		conflict = `DO UPDATE SET requested_by = $3, status = 'running', since = $4, include_spam_trash = $5,
+			started_at = now(), finished_at = NULL, cursor = '{}', reached = NULL, imported = 0, present = 0, too_large = 0,
+			unreadable = 0, total = NULL, last_error = '', updated_at = now()`
+	}
+	tag, err := tx.Exec(ctx, `INSERT INTO collab_history (account_id, workspace_id, requested_by, status, since, include_spam_trash)
+		VALUES ($1, $2, $3, 'running', $4, $5) ON CONFLICT (account_id) `+conflict,
+		accountID, p.WorkspaceID, p.UserID, since, spamTrash)
+	if err != nil || tag.RowsAffected() == 0 {
+		return false, err
+	}
+	return true, audit.Log(ctx, tx, p, p.WorkspaceID, "collab.history_import", "collab_account", &accountID,
+		map[string]any{"action": "started", "since": since, "include_spam_trash": spamTrash})
+}
+
 // Routes.
 
 type historyStartInput struct {
@@ -463,25 +496,12 @@ func (s *service) registerHistoryRoutes(api huma.API) {
 			if a.Config.Demo {
 				return nil, httpx.E(422, "history_unavailable", "A sample account has no older mail to import.")
 			}
-			since := in.Body.Since
-			if since != nil {
-				if !since.Before(time.Now()) || since.Year() < 1970 {
-					return nil, httpx.Validation("Choose a date in the past.")
-				}
-				t := since.UTC()
-				since = &t
+			since, err := historySince(in.Body.Since)
+			if err != nil {
+				return nil, err
 			}
 			err = s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
-				if _, err := tx.Exec(ctx, `INSERT INTO collab_history (account_id, workspace_id, requested_by, status, since, include_spam_trash)
-					VALUES ($1, $2, $3, 'running', $4, $5)
-					ON CONFLICT (account_id) DO UPDATE SET requested_by = $3, status = 'running', since = $4, include_spam_trash = $5,
-						started_at = now(), finished_at = NULL, cursor = '{}', reached = NULL, imported = 0, present = 0, too_large = 0,
-						unreadable = 0, total = NULL, last_error = '', updated_at = now()`,
-					a.ID, p.WorkspaceID, p.UserID, since, in.Body.IncludeSpamTrash); err != nil {
-					return err
-				}
-				if err := audit.Log(ctx, tx, p, p.WorkspaceID, "collab.history_import", "collab_account", &a.ID,
-					map[string]any{"action": "started", "since": since, "include_spam_trash": in.Body.IncludeSpamTrash}); err != nil {
+				if _, err := startHistory(ctx, tx, p, a.ID, since, in.Body.IncludeSpamTrash, true); err != nil {
 					return err
 				}
 				if err := s.queueSync(ctx, tx, a.ID); err != nil {

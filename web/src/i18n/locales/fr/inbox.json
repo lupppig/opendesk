@@ -64,7 +64,8 @@
     "priority": "Priorité {{priority}}",
     "awaiting": "En attente d’une réponse",
     "severity": "{{severity}}",
-    "receivedAt": "Envoyé à {{address}}"
+    "receivedAt": "Envoyé à {{address}}",
+    "assignedTo": "Attribué à {{name}}"
   },
   "waiting": {
     "label": "En attente depuis {{time}}",
@@ -100,7 +101,11 @@
   },
   "presence": {
     "viewing": "{{name}} consulte",
-    "replying": "{{name}} répond"
+    "replying": "{{name}} répond",
+    "oneViewing": "{{name}} consulte",
+    "oneReplying": "{{name}} répond…",
+    "manyViewing": "{{n}} consultent",
+    "manyReplying": "{{name}} répond… +{{others}}"
   },
   "empty": {
     "unassigned": {
@@ -237,6 +242,8 @@
     "total_one": "{{count}} ticket",
     "total_other": "{{count}} tickets",
     "total_many": "{{count}} tickets",
+    "firstShown": "Les {{count}} premiers affichés",
+    "firstShownHint": "Ces chiffres ne comptent que les tickets déjà chargés. Faites défiler pour en charger plus.",
     "awaiting": "en attente de réponse",
     "urgent": "urgents",
     "overdue": "en retard",
@@ -615,6 +622,13 @@
     "discardTitle": "Abandonner ce ticket ?",
     "discardBody": "Votre brouillon sera perdu.",
     "discard": "Abandonner",
+    "keepWriting": "Continuer à écrire",
+    "openPage": "Ouvrir en pleine page",
+    "moreOnPage_one": "{{count}} autre depuis la pleine page",
+    "moreOnPage_many": "{{count}} autres depuis la pleine page",
+    "moreOnPage_other": "{{count}} autres depuis la pleine page",
+    "newContact": "Nouveau contact, créé avec le ticket",
+    "recipientHint": "Choisissez à qui il s’adresse : ses coordonnées et ses tickets précédents s’affichent ici.",
     "needTo": "Ajoutez un destinataire.",
     "needSubject": "Ajoutez un objet.",
     "needBody": "Rédigez un message.",

@@ -187,8 +187,9 @@ Owners and admins can run the workspace's AI on their own key instead of the AI 
 - The key is checked with a small test call before it is saved, stored encrypted, and never shown again except its last 4 characters. An endpoint's base URL must use HTTPS on a public address.
 - Every AI request of the workspace then goes to your provider, and the model pickers list your provider's models.
 - Requests on your key cost $0 on opendesk and are never refused for the AI balance. They still appear in the usage report, marked as on your key.
-- Search embeddings stay on opendesk at no charge. The decision model (triage and automation questions) stays on opendesk and costs a little from the AI balance.
-- If your provider rejects the key or the account runs out of funds, AI features stop (they never fall back to the AI balance), admins get a notification, and the Provider section shows what happened. Replace the key, or remove it to go back to the AI balance.
+- Search embeddings stay on opendesk at no charge.
+- Decisions (triage, automation questions, the chat agent's handoff check, mail categories) run on the decision model. With an OpenRouter key they run on your key too, through OpenRouter. With another provider they stay on opendesk and cost a little from the AI balance, unless you add a **TypeSafe key** under **Decisions** in the same section: then they run on that key, at $0 on opendesk. A TypeSafe key is used for decisions whichever provider runs the rest.
+- If your provider (or TypeSafe) rejects the key or the account runs out of funds, the features on that key stop (they never fall back to the AI balance), admins get a notification, and the Provider section shows what happened. Replace the key, or remove it to go back to the AI balance.
 
 ## AI usage on Cloud
 

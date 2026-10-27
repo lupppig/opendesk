@@ -6,7 +6,7 @@
 // everywhere row (assigned to me, all mail) spans every workspace and opens its list.
 
 import { Link, useRouterState, type NavigateOptions } from "@tanstack/react-router";
-import { BarChart3, BookOpen, CircleCheck, CircleDashed, Clock, Inbox, Layers, Lock, Mails, ShieldAlert, User, UserCheck, Users } from "lucide-react";
+import { BarChart3, BookOpen, CircleCheck, CircleDashed, Clock, Inbox, Layers, Lock, Mails, NotebookText, ShieldAlert, User, UserCheck, Users } from "lucide-react";
 import { forwardRef, type ReactElement, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ActivePill, Count, Label, NavTip, rowActive, rowBase, rowIdle, rowShape, WaitingBadge } from "@/app/sidebarParts";
@@ -34,6 +34,9 @@ export type RowLink =
   | { kind: "page"; page: SpacePage }
   | { kind: "everywhere"; list: EverywhereList };
 
+const pagePaths: Record<SpacePage, string> = { contacts: "/contacts", knowledge: "/kb", wiki: "/wiki", reports: "/reports" };
+const pageLabels = { contacts: "nav.contacts", knowledge: "nav.kb", wiki: "nav.wiki", reports: "nav.reports" } as const satisfies Record<SpacePage, string>;
+
 /** The app URL a row opens; with `ws`, in that workspace (web/src/lib/workspaceParam.ts). */
 export function rowHref(l: RowLink, ws?: string): string {
   const p = new URLSearchParams();
@@ -54,7 +57,7 @@ export function rowHref(l: RowLink, ws?: string): string {
       if (l.folder) p.set("folder", l.folder);
       break;
     case "page":
-      path = l.page === "contacts" ? "/contacts" : l.page === "knowledge" ? "/kb" : "/reports";
+      path = pagePaths[l.page];
       break;
     case "everywhere":
       path = `/everywhere/${l.list}`;
@@ -77,7 +80,7 @@ export function rowNavigate(l: RowLink): NavigateOptions {
     case "mail":
       return { to: "/mail/$box/{-$threadId}", params: { box: l.box, threadId: undefined }, search: { account: l.account, folder: l.folder } } as NavigateOptions;
     case "page":
-      return (l.page === "contacts" ? { to: "/contacts/{-$contactId}", params: { contactId: undefined } } : { to: l.page === "knowledge" ? "/kb" : "/reports" }) as NavigateOptions;
+      return (l.page === "contacts" ? { to: "/contacts/{-$contactId}", params: { contactId: undefined } } : { to: pagePaths[l.page] }) as NavigateOptions;
     case "everywhere":
       return { to: "/everywhere/$list", params: { list: l.list } } as NavigateOptions;
   }
@@ -112,7 +115,7 @@ export const ticketFolderIcons: Record<FolderId, ReactNode> = {
   spam: <ShieldAlert />,
 };
 
-export const pageIcons: Record<SpacePage, ReactNode> = { contacts: <Users />, knowledge: <BookOpen />, reports: <BarChart3 /> };
+export const pageIcons: Record<SpacePage, ReactNode> = { contacts: <Users />, knowledge: <BookOpen />, wiki: <NotebookText />, reports: <BarChart3 /> };
 export const everywhereIcons: Record<EverywhereList, ReactNode> = { mine: <UserCheck />, mail: <Mails /> };
 
 const dotIcon = (n: ReactNode) => <span className="flex size-[15px] shrink-0 items-center justify-center">{n}</span>;
@@ -142,7 +145,7 @@ export function useRowLabels(): RowLabels {
     box: (b) => tc(`box.${b}`),
     allInboxes: tc("nav.allInboxes"),
     myTeams: tShell("nav.myTeams"),
-    page: (p) => (p === "contacts" ? tShell("nav.contacts") : p === "knowledge" ? tShell("nav.kb") : tShell("nav.reports")),
+    page: (p) => tShell(pageLabels[p]),
     section: (id) =>
       id === "favorites" ? tc("nav.favorites") : id === "mail" ? tc("nav.mail") : id === "inbox" ? tShell("nav.inbox") : id === "teams" ? tShell("nav.teams") : id === "views" ? tShell("nav.views") : tShell("nav.workspace"),
   };

@@ -18,6 +18,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/domain"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
 	"github.com/useopendesk/opendesk/internal/helpdesk/kb"
+	"github.com/useopendesk/opendesk/internal/helpdesk/wiki"
 	"github.com/useopendesk/opendesk/internal/httpx"
 )
 
@@ -127,6 +128,37 @@ func round1(v *float64) *float64 {
 	return &r
 }
 
+// reportPeriod reads a report's from and to in the workspace's timezone: the last 30 days
+// by default, at most 366 days.
+func reportPeriod(ctx context.Context, q db.Querier, wid uuid.UUID, fromS, toS string) (from, to time.Time, loc *time.Location, err error) {
+	s, err := hd.LoadSettings(ctx, q, wid)
+	if err != nil {
+		return from, to, nil, err
+	}
+	loc = s.Location()
+	to, ok, err := parseBound(toS, loc, true)
+	if err != nil {
+		return from, to, loc, err
+	}
+	if !ok {
+		to = time.Now()
+	}
+	from, ok, err = parseBound(fromS, loc, false)
+	if err != nil {
+		return from, to, loc, err
+	}
+	if !ok {
+		from = to.AddDate(0, 0, -30)
+	}
+	if !from.Before(to) {
+		return from, to, loc, httpx.Validation("from must be before to")
+	}
+	if to.Sub(from) > 366*24*time.Hour {
+		return from, to, loc, httpx.Validation("the range can be at most 366 days")
+	}
+	return from, to, loc, nil
+}
+
 func overview(ctx context.Context, q db.Querier, wid uuid.UUID, fromS, toS string, rf reportFilter) (ReportOverview, error) {
 	o := ReportOverview{ByDay: []ReportDay{}, ByAgent: []ReportAgent{}, ByChannel: map[string]int{}, BySeverity: map[string]int{},
 		ByTeam: []ReportTeam{}, ByBrand: []ReportBrand{}}
@@ -134,30 +166,9 @@ func overview(ctx context.Context, q db.Querier, wid uuid.UUID, fromS, toS strin
 	if err != nil {
 		return o, err
 	}
-	s, err := hd.LoadSettings(ctx, q, wid)
+	from, to, loc, err := reportPeriod(ctx, q, wid, fromS, toS)
 	if err != nil {
 		return o, err
-	}
-	loc := s.Location()
-	to, ok, err := parseBound(toS, loc, true)
-	if err != nil {
-		return o, err
-	}
-	if !ok {
-		to = time.Now()
-	}
-	from, ok, err := parseBound(fromS, loc, false)
-	if err != nil {
-		return o, err
-	}
-	if !ok {
-		from = to.AddDate(0, 0, -30)
-	}
-	if !from.Before(to) {
-		return o, httpx.Validation("from must be before to")
-	}
-	if to.Sub(from) > 366*24*time.Hour {
-		return o, httpx.Validation("the range can be at most 366 days")
 	}
 	tz := loc.String()
 
@@ -326,12 +337,14 @@ type SearchResults struct {
 	Tickets  []domain.Ticket  `json:"tickets"`
 	Contacts []domain.Contact `json:"contacts"`
 	Articles []kb.KbArticle   `json:"articles"`
+	// WikiPages are the team's internal pages (contracts/wiki.md).
+	WikiPages []wiki.WikiSearchHit `json:"wiki_pages"`
 }
 
-// search finds the caller's tickets, contacts and articles. brand narrows the articles to
+// search finds the caller's tickets, contacts, articles and wiki pages. brand narrows the articles to
 // what that brand shows (its own and shared ones).
 func search(ctx context.Context, q db.Querier, p *auth.Principal, query string, brand *uuid.UUID) (SearchResults, error) {
-	res := SearchResults{Tickets: []domain.Ticket{}, Contacts: []domain.Contact{}, Articles: []kb.KbArticle{}}
+	res := SearchResults{Tickets: []domain.Ticket{}, Contacts: []domain.Contact{}, Articles: []kb.KbArticle{}, WikiPages: []wiki.WikiSearchHit{}}
 	// A person signed in directly sees what their role allows; an API key or a person
 	// acting through an OAuth grant only what its scopes allow.
 	allowed := func(scope string) bool {
@@ -375,18 +388,25 @@ func search(ctx context.Context, q db.Querier, p *auth.Principal, query string, 
 		}
 		res.Articles = arts
 	}
+	if allowed(auth.ScopeWikiRead) {
+		pages, err := wiki.Search(ctx, q, p.WorkspaceID, query, 5)
+		if err != nil {
+			return res, err
+		}
+		res.WikiPages = pages
+	}
 	return res, nil
 }
 
 func registerInsights(d *deps.Deps, api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "search", Method: http.MethodGet, Path: "/v1/search",
-		Summary: "Search tickets, contacts and articles", Tags: []string{"Search"},
+		Summary: "Search tickets, contacts, articles and wiki pages", Tags: []string{"Search"},
 		Description: "Top 5 of each. API keys see only the kinds their scopes allow."},
 		func(ctx context.Context, in *struct {
 			Q       string `query:"q" required:"true" minLength:"1" maxLength:"200"`
 			BrandID string `query:"brand_id" doc:"Articles of this brand and of every brand only"`
 		}) (*struct{ Body SearchResults }, error) {
-			p, err := requireAnyScope(ctx, auth.ScopeTicketsRead, auth.ScopeContactsRead, auth.ScopeKBRead)
+			p, err := requireAnyScope(ctx, auth.ScopeTicketsRead, auth.ScopeContactsRead, auth.ScopeKBRead, auth.ScopeWikiRead)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}

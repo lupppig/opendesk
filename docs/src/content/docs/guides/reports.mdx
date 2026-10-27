@@ -1,6 +1,6 @@
 ---
 title: Reports
-description: Ticket volume, backlog, response and resolution times, SLA breaches, CSAT and the leaderboard for any date range, plus figures by team and brand.
+description: Ticket volume, backlog, response and resolution times, SLA breaches, CSAT, the leaderboard and each agent's work for any date range, plus figures by team and brand.
 ---
 
 import Screenshot from '../../../components/Screenshot.astro';
@@ -81,6 +81,27 @@ Medians are used rather than averages, so one very slow ticket does not hide how
 
 </Fold>
 
+## Agents
+
+**Agents**, at the bottom of the page, has a row for each owner, admin and agent, with what they did in the period. With a team filter it lists that team's leads and members, plus anyone else who worked its tickets. Click a column heading to sort by it, and again to reverse the order; hover a heading to see what it counts.
+
+| Column | Meaning |
+| --- | --- |
+| Assigned | Tickets assigned to them in the period, and new tickets created already assigned to them. |
+| Solved | Tickets solved in the period that are assigned to them, as in the leaderboard. |
+| Replies | Replies they sent to customers in the period. |
+| Notes | Internal notes they wrote in the period. Messages in [side conversations](/guides/inbox-and-tickets/#ask-someone-outside-your-team) are neither replies nor notes. |
+| Replies per solve | Their replies on the tickets they solved, including replies sent before the period, divided by those tickets. Fewer replies per solve usually means clearer answers. |
+| First response | Median time to the first reply on their tickets created in the period. |
+| Handle time | Median time from the last assignment to them until the ticket was solved, over the tickets they solved. A ticket created already assigned to them counts from its creation. |
+| Online | Time they had opendesk open, in the browser, the desktop app or the iPhone app, with their status set to **Online**. |
+
+<Callout>
+
+Each agent's work is personal, so owners and admins see every row and everyone else sees only their own. **Online** counts while the app is open and checking in: the web app checks in every 2 minutes while its tab is visible and the iPhone app every 5 while it is open, and a silence of more than 10 minutes ends the stretch. Being **Away** or **Offline** does not count. Online time is the whole time in the app, so the team and brand filters do not narrow it. It is kept for 400 days.
+
+</Callout>
+
 ## Private teams
 
 [Private teams](/guides/teams-and-roles/) you are not on are left out of **By team** and the team filter. Their tickets still count in the totals and by brand, but never with their subjects or customers.
@@ -89,7 +110,7 @@ Medians are used rather than averages, so one very slow ticket does not hide how
 
 ## By team and by brand in the API
 
-The [Reports API](/api/resources/search-reports/) returns the same breakdowns (`by_team` and `by_brand`) and narrows every figure with `team_id` and `brand_id`. `team_id=none` reports on tickets with no team. The API lists every team, private ones included.
+The [Reports API](/api/resources/search-reports/) returns the same breakdowns (`by_team` and `by_brand`) and narrows every figure with `team_id` and `brand_id`. `team_id=none` reports on tickets with no team. The API lists every team, private ones included. `GET /v1/reports/agents` returns the **Agents** table, with the same filters.
 
 </Fold>
 

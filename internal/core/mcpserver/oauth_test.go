@@ -17,6 +17,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/useopendesk/opendesk/internal/auth"
+	"github.com/useopendesk/opendesk/internal/core/oauthgrant"
 	"github.com/useopendesk/opendesk/internal/crypto"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hdtest"
 )
@@ -266,7 +267,7 @@ func TestOAuthFullFlow(t *testing.T) {
 	var r OAuthRequest
 	e.Do("GET", "/v1/oauth/requests/"+req.String(), e.WS.Agent.As(e.WS), nil).Want(t, 200).JSON(t, &r)
 	if r.Client.Name != "Claude" || r.Client.RedirectHost != "client.example.com" || r.Client.Local || len(r.Workspaces) != 1 ||
-		r.Workspaces[0].ID != e.WS.ID || r.Workspaces[0].Role != auth.RoleAgent || len(r.Scopes) != 7 || len(r.Workspaces[0].Scopes) != 7 {
+		r.Workspaces[0].ID != e.WS.ID || r.Workspaces[0].Role != auth.RoleAgent || len(r.Scopes) != 9 || len(r.Workspaces[0].Scopes) != 9 {
 		t.Fatalf("request: %+v", r)
 	}
 	// Only a workspace the user belongs to.
@@ -347,7 +348,7 @@ func TestOAuthFullFlow(t *testing.T) {
 	// The server description lists every tool.
 	var srv AIClientServer
 	e.Do("GET", "/v1/ai-clients/server", e.WS.Viewer.As(e.WS), nil).Want(t, 200).JSON(t, &srv)
-	if srv.URL != "http://api.test/mcp" || len(srv.Tools) != len(catalog()) || len(srv.Scopes) != 7 {
+	if srv.URL != "http://api.test/mcp" || len(srv.Tools) != len(catalog()) || len(srv.Scopes) != len(oauthgrant.Scopes) {
 		t.Fatalf("server: %+v", srv)
 	}
 }
@@ -584,10 +585,10 @@ func TestOAuthScopesFollowRoleAndGrant(t *testing.T) {
 	// A viewer gets the read tools only, whatever the client asked for.
 	_, vt := e.connectAs(e.WS.Viewer, "")
 	got := toolNames(t, e.session(vt.AccessToken))
-	if !slices.Equal(got, []string{"get_contact", "get_report", "get_ticket", "search_contacts", "search_knowledge", "search_tickets"}) {
+	if !slices.Equal(got, []string{"get_contact", "get_report", "get_ticket", "get_wiki_page", "search_contacts", "search_knowledge", "search_tickets", "search_wiki"}) {
 		t.Fatalf("viewer tools: %v", got)
 	}
-	if vt.Scope != "tickets:read contacts:read kb:read settings:read" {
+	if vt.Scope != "tickets:read contacts:read kb:read wiki:read settings:read" {
 		t.Fatalf("viewer scope %q", vt.Scope)
 	}
 
@@ -626,6 +627,16 @@ func TestOAuthScopesFollowRoleAndGrant(t *testing.T) {
 	}
 	if _, err := auth.RequireWorkspace(ctx, auth.RoleViewer, auth.ScopeTicketsRead); err != nil {
 		t.Fatalf("granted scope refused: %v", err)
+	}
+}
+
+// collab:draft is an API key scope for now (contracts/collab.md "AI drafts"): an OAuth
+// client that asks for it is not granted it and gets no Collab tools.
+func TestOAuthNoCollabDraft(t *testing.T) {
+	e := newEnv(t)
+	_, ct := e.connectAs(e.WS.Agent, "collab:draft tickets:read")
+	if got := toolNames(t, e.session(ct.AccessToken)); slices.Contains(got, "list_collab_conversations") || strings.Contains(ct.Scope, "collab") {
+		t.Fatalf("collab:draft over OAuth: %q %v", ct.Scope, got)
 	}
 }
 

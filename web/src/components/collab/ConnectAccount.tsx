@@ -1,6 +1,7 @@
 // Connecting a mail account: where it is (Google, Microsoft or any IMAP server the
 // instance offers), then who sees it (only you, or shared with everyone or the
-// teams and people you pick), then the sign-in or the IMAP form.
+// teams and people you pick) and how much older mail to import, then the sign-in or
+// the IMAP form.
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Lock, Server, Users } from "lucide-react";
@@ -8,7 +9,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api, type CollabImapBody } from "@/lib/api/endpoints";
 import { ApiError, errorMessage } from "@/lib/api/client";
-import type { CollabStatus, MailAudience, MailProvider, MailTls } from "@/lib/api/types";
+import type { CollabStatus, ConnectHistory, MailAudience, MailProvider, MailTls } from "@/lib/api/types";
 import { defaultPort, guessServers, presetForEmail } from "@/lib/collab/imapPresets";
 import { isEmail } from "@/lib/collab/recipients";
 import { isDesktop, openInBrowser } from "@/lib/desktop";
@@ -21,11 +22,18 @@ import { PortInput, validPort } from "@/components/mailboxes/PortInput";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, TextInput } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Segmented } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/toast";
+import { HISTORY_SCOPES, sinceOf, type HistoryScope } from "./HistorySection";
 import { audienceIsEmpty, ChoiceCard, SharedAudience } from "./pickers";
 
 type Step = "provider" | "audience" | "imap";
+
+/** How much older mail a new account imports: none past the first sync's 30 days, or a history scope. */
+type ConnectScope = "none" | HistoryScope;
+const CONNECT_SCOPES: ConnectScope[] = ["none", ...HISTORY_SCOPES];
+const connectHistory = (s: ConnectScope): ConnectHistory | undefined => (s === "none" ? undefined : { since: sinceOf(s) });
 
 export type ImapForm = {
   email: string;
@@ -175,6 +183,7 @@ export function ConnectAccountDialog({ open, onOpenChange, status }: { open: boo
   const [visibility, setVisibility] = useState<"private" | "shared">("private");
   const [audience, setAudience] = useState<MailAudience>({ everyone: true, team_ids: [], user_ids: [] });
   const [hint, setHint] = useState("");
+  const [scope, setScope] = useState<ConnectScope>("1y");
   const [imap, setImap] = useState<ImapForm>(emptyImap);
   const [failure, setFailure] = useState<string | null>(null);
   const [openedInBrowser, setOpenedInBrowser] = useState(false);
@@ -185,6 +194,7 @@ export function ConnectAccountDialog({ open, onOpenChange, status }: { open: boo
     setVisibility("private");
     setAudience({ everyone: true, team_ids: [], user_ids: [] });
     setHint("");
+    setScope("1y");
     setImap(emptyImap);
     setFailure(null);
     setOpenedInBrowser(false);
@@ -198,7 +208,7 @@ export function ConnectAccountDialog({ open, onOpenChange, status }: { open: boo
   const audienceOk = visibility === "private" || !audienceIsEmpty(audience);
 
   const oauth = useMutation({
-    mutationFn: (p: "google" | "microsoft") => startOAuth(p, { visibility, shared_with: shared, email: hint.trim() || undefined }),
+    mutationFn: (p: "google" | "microsoft") => startOAuth(p, { visibility, shared_with: shared, email: hint.trim() || undefined, history: connectHistory(scope) }),
     onSuccess: (left) => !left && setOpenedInBrowser(true),
     onError: (e) => setFailure(errorMessage(e)),
   });
@@ -220,6 +230,7 @@ export function ConnectAccountDialog({ open, onOpenChange, status }: { open: boo
         smtp_password: imap.smtp_password || undefined,
         visibility,
         shared_with: shared,
+        history: connectHistory(scope),
       };
       return api.collab.accounts.createImap(body);
     },
@@ -297,6 +308,17 @@ export function ConnectAccountDialog({ open, onOpenChange, status }: { open: boo
               </ChoiceCard>
             </div>
             {visibility === "shared" && !audienceOk && <p className="text-[11.5px] text-danger-fg">{t("audience.needSomeone")}</p>}
+            <Field label={t("connect.history")} hint={t("connect.historyHint")} className="mt-1">
+              {(p) => (
+                <Select<ConnectScope>
+                  id={p.id}
+                  className="w-[220px]"
+                  value={scope}
+                  onChange={setScope}
+                  options={CONNECT_SCOPES.map((s) => ({ value: s, label: s === "none" ? t("connect.historyNone") : t(`history.scopes.${s}`) }))}
+                />
+              )}
+            </Field>
             {provider !== "imap" && (
               <Field label={t("connect.loginHint")} optional className="mt-1">
                 {(p) => <TextInput {...p} type="email" value={hint} onChange={(e) => setHint(e.target.value)} placeholder="you@company.com" />}

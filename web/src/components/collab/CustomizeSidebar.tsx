@@ -2,7 +2,8 @@
 // is in them (accounts, folders, boxes, views, teams), pins favorites, chooses the number
 // beside each section's rows (and any one row's), and turns All inboxes and mark-as-read
 // on and off. Each change shows at once and is saved with
-// PUT /v1/collab/sidebar.
+// PUT /v1/collab/sidebar. Every member has it; without Collab it arranges the ticket side
+// (Favorites, Inbox, Teams, Views, Workspace) and leaves out Mail and the mail options.
 
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Eye, EyeOff, Hash, Layers, Pin, PinOff } from "lucide-react";
@@ -10,7 +11,7 @@ import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { SidebarBadge, SidebarPin, SidebarPrefs, SidebarSectionId } from "@/lib/api/types";
 import { ACCOUNT_BOXES, accountName, buildFolderTree, flattenTree, folderWithRole, isMailBox } from "@/lib/collab/boxes";
-import { useAllFolders, useMailAccounts, useSaveSidebarPrefs, useSidebarPrefs } from "@/lib/collab/hooks";
+import { useAllFolders, useCollab, useMailAccounts, useSaveSidebarPrefs, useSidebarPrefs } from "@/lib/collab/hooks";
 import {
   badgeChoices,
   badgeFor,
@@ -22,6 +23,7 @@ import {
   movePin,
   moveSection,
   sectionOrder,
+  sectionsOffered,
   setBadge,
   setHidden,
   togglePin,
@@ -201,7 +203,8 @@ export function CustomizeSidebar() {
   const { t: tNav } = useTranslation("navigation");
   const { t } = useTranslation("collab");
   const open = useCollabUi((s) => s.customizeOpen);
-  const prefs = useSidebarPrefs(true);
+  const collab = useCollab().enabled;
+  const prefs = useSidebarPrefs();
   const save = useSaveSidebarPrefs();
   const { data: accounts } = useMailAccounts();
   const folderMap = useAllFolders(accounts);
@@ -214,7 +217,8 @@ export function CustomizeSidebar() {
   const wsName = useSession((s) => s.memberships.find((m) => m.workspace.id === s.workspaceId)?.workspace.name ?? "");
 
   const change = (p: SidebarPrefs) => save.mutate(p, { onError: (e) => toast.error(e, t("customize.saveFailed")) });
-  const order = sectionOrder(prefs);
+  const offered = sectionsOffered(collab);
+  const order = sectionOrder(prefs).filter((id) => offered.includes(id));
   const name = (id: SidebarSectionId) => t(`customize.section.${id}`);
 
   const mailBadge = (key: string, fallback?: MailBadge): ItemBadge => ({ key, kind: "mail", sections: ["mail"], fallback });
@@ -272,7 +276,8 @@ export function CustomizeSidebar() {
   const pinLabel = (p: SidebarPin): string | null => {
     switch (p.kind) {
       case "box":
-        return isMailBox(p.id) ? (p.id === "inbox" ? t("nav.allInboxes") : t(`box.${p.id}`)) : null;
+        // Mail favorites are Collab's: without it they stay saved but are not listed.
+        return collab && isMailBox(p.id) ? (p.id === "inbox" ? t("nav.allInboxes") : t(`box.${p.id}`)) : null;
       case "account": {
         const a = accounts?.find((x) => x.id === p.id);
         return a ? accountName(a) : null;
@@ -327,25 +332,27 @@ export function CustomizeSidebar() {
             </Button>
           </div>
         )}
-        <section>
-          <h3 className="label-caps mb-1.5">{t("customize.options")}</h3>
-          <div className="rounded-lg border border-line">
-            <label className="flex items-start justify-between gap-4 border-b border-line-soft px-3.5 py-3">
-              <span>
-                <span className="block text-[12.5px] font-medium">{t("customize.unified")}</span>
-                <span className="mt-0.5 block text-[12px] text-fg-3">{t("customize.unifiedHint")}</span>
-              </span>
-              <Switch checked={prefs.unified_inbox} onCheckedChange={(v) => change({ ...prefs, unified_inbox: v })} aria-label={t("customize.unified")} />
-            </label>
-            <label className="flex items-start justify-between gap-4 px-3.5 py-3">
-              <span>
-                <span className="block text-[12.5px] font-medium">{t("customize.markRead")}</span>
-                <span className="mt-0.5 block text-[12px] text-fg-3">{t("customize.markReadHint")}</span>
-              </span>
-              <Switch checked={prefs.mark_read_on_open} onCheckedChange={(v) => change({ ...prefs, mark_read_on_open: v })} aria-label={t("customize.markRead")} />
-            </label>
-          </div>
-        </section>
+        {collab && (
+          <section>
+            <h3 className="label-caps mb-1.5">{t("customize.options")}</h3>
+            <div className="rounded-lg border border-line">
+              <label className="flex items-start justify-between gap-4 border-b border-line-soft px-3.5 py-3">
+                <span>
+                  <span className="block text-[12.5px] font-medium">{t("customize.unified")}</span>
+                  <span className="mt-0.5 block text-[12px] text-fg-3">{t("customize.unifiedHint")}</span>
+                </span>
+                <Switch checked={prefs.unified_inbox} onCheckedChange={(v) => change({ ...prefs, unified_inbox: v })} aria-label={t("customize.unified")} />
+              </label>
+              <label className="flex items-start justify-between gap-4 px-3.5 py-3">
+                <span>
+                  <span className="block text-[12.5px] font-medium">{t("customize.markRead")}</span>
+                  <span className="mt-0.5 block text-[12px] text-fg-3">{t("customize.markReadHint")}</span>
+                </span>
+                <Switch checked={prefs.mark_read_on_open} onCheckedChange={(v) => change({ ...prefs, mark_read_on_open: v })} aria-label={t("customize.markRead")} />
+              </label>
+            </div>
+          </section>
+        )}
 
         <section>
           <h3 className="label-caps mb-1.5">{t("customize.sections")}</h3>
@@ -358,7 +365,7 @@ export function CustomizeSidebar() {
               return (
                 <li key={id} className="border-b border-line-soft last:border-0">
                   <div className="flex h-10 items-center gap-2 px-2">
-                    <ReorderButtons label={name(id)} first={i === 0} last={i === order.length - 1} onUp={() => change(moveSection(prefs, id, -1))} onDown={() => change(moveSection(prefs, id, 1))} />
+                    <ReorderButtons label={name(id)} first={i === 0} last={i === order.length - 1} onUp={() => change(moveSection(prefs, id, -1, collab))} onDown={() => change(moveSection(prefs, id, 1, collab))} />
                     {hasBody ? (
                       <button
                         type="button"

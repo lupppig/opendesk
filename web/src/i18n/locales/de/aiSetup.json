@@ -129,6 +129,8 @@
     "contacts:write": "Kontakte aktualisieren",
     "kb:read": "Hilfeartikel lesen",
     "kb:write": "Hilfeartikel entwerfen",
+    "wiki:read": "Das Team-Wiki lesen",
+    "wiki:write": "Im Team-Wiki schreiben",
     "settings:read": "Teammitglieder, Teams und Berichte lesen"
   },
   "consent": {

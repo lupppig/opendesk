@@ -1,5 +1,5 @@
 import { i18n } from "@/i18n";
-import type { ActionType, AutomationTrigger, ConditionField, ConditionOp, Sentiment } from "@/lib/api/types";
+import type { Action, ActionType, AutomationTrigger, ConditionField, ConditionOp, Sentiment } from "@/lib/api/types";
 import type { Tone } from "@/lib/tones";
 
 const tr = i18n.t as unknown as (key: string) => string;
@@ -90,7 +90,7 @@ export function validPhrases(value: string): boolean {
   return list.length > 0 && list.length <= MAX_PHRASES && list.every((p) => [...p].length <= MAX_PHRASE) && [...list.join("\n")].length <= MAX_PHRASE_LIST;
 }
 
-const plainActions = ["set_status", "set_priority", "set_severity", "assign_user", "assign_team", "set_reply_address", "add_tag", "remove_tag", "set_field", "send_reply", "add_note", "mark_spam"] as const;
+const plainActions = ["set_status", "set_priority", "set_severity", "assign_user", "assign_team", "set_reply_address", "add_tag", "remove_tag", "set_field", "send_reply", "add_note", "mark_spam", "delete_ticket", "merge_into_open_ticket"] as const;
 export const actionLabel: Record<ActionType, string> = Object.defineProperty(labels(plainActions, "actionTypes"), "ai_triage", {
   get: () => i18n.t("ai:automation.ai_triage"),
   enumerable: true,
@@ -98,7 +98,35 @@ export const actionLabel: Record<ActionType, string> = Object.defineProperty(lab
 
 /** Whether the action's `value` must be filled. set_field may write "" to clear, so it needs only its field. */
 export function actionNeedsValue(t: ActionType) {
-  return t !== "mark_spam" && t !== "ai_triage" && t !== "set_field";
+  return t !== "mark_spam" && t !== "delete_ticket" && t !== "ai_triage" && t !== "set_field";
+}
+
+/** A new action of a type, with its defaults. */
+export function newAction(type: ActionType): Action {
+  return type === "merge_into_open_ticket" ? { type, value: String(MERGE_WINDOW_DEFAULT), same_subject: true } : { type, value: "" };
+}
+
+/** Actions that run on one trigger only: a merge joins a new ticket to an earlier one. */
+const onlyOn: Partial<Record<ActionType, AutomationTrigger>> = { merge_into_open_ticket: "ticket_created" };
+/** Whether an action can run on a trigger (contracts/api.md). */
+export function actionFitsTrigger(type: ActionType, trigger: AutomationTrigger): boolean {
+  const only = onlyOn[type];
+  return !only || only === trigger;
+}
+
+/** merge_into_open_ticket: how recent the ticket it joins must be, in days (contracts/api.md). */
+export const MERGE_WINDOW_DEFAULT = 7;
+const MERGE_WINDOW_MAX = 30;
+const mergeWindowChoices = [1, 2, 3, 7, 14, 30];
+/** A window the API takes: a whole number of days from 1 to 30. */
+export function validMergeWindow(v: string): boolean {
+  const n = Number(v);
+  return /^\d+$/.test(v) && n >= 1 && n <= MERGE_WINDOW_MAX;
+}
+/** The windows the editor offers, with one saved through the API outside them. */
+export function mergeWindows(current: string): number[] {
+  const n = Number(current);
+  return validMergeWindow(current) && !mergeWindowChoices.includes(n) ? [...mergeWindowChoices, n].sort((a, b) => a - b) : mergeWindowChoices;
 }
 
 /** Picker items for a builder list: AI entries only when AI is on, but an entry already in use always shows. */

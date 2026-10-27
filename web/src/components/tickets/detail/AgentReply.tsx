@@ -66,7 +66,7 @@ export function AiRating({ rating }: { rating: "up" | "down" }) {
  * The agent's reply while it is being written. It gives way to the real
  * message once that is in the thread (message.created).
  */
-export function LiveAgentReply({ ticketId, messages }: { ticketId: string; messages: Message[] | undefined }) {
+export function LiveAgentReply({ ticketId, messages, className }: { ticketId: string; messages: Message[] | undefined; className?: string }) {
   const { t } = useTranslation("inbox");
   const reduce = useReducedMotion();
   const live = useRealtime((s) => s.live[ticketId]);
@@ -85,7 +85,7 @@ export function LiveAgentReply({ ticketId, messages }: { ticketId: string; messa
           transition={springs.snap}
           aria-live="polite"
           aria-label={t("agent.writing", { name: live.bot })}
-          className={cn("rounded-lg border", tone[AI_TONE].soft, tone[AI_TONE].line)}
+          className={cn("rounded-lg border", tone[AI_TONE].soft, tone[AI_TONE].line, className)}
         >
           <header className="flex items-center gap-2.5 px-4 pt-3">
             {live.botLook ? <BotFace look={live.botLook} image={live.botAvatar} size={24} state={live.ended ? "idle" : "thinking"} /> : <OllieAvatar size={24} />}

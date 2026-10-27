@@ -1,5 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { actionLabel, actionNeedsValue, aiActions, fieldLabel, isPhraseOp, offered, opLabel, opsFor, phrases, sentimentLabel, triggerLabel, validPhrases } from "./automation";
+import {
+  actionFitsTrigger,
+  actionLabel,
+  actionNeedsValue,
+  aiActions,
+  fieldLabel,
+  isPhraseOp,
+  mergeWindows,
+  newAction,
+  offered,
+  opLabel,
+  opsFor,
+  phrases,
+  sentimentLabel,
+  triggerLabel,
+  validMergeWindow,
+  validPhrases,
+} from "./automation";
 
 describe("automation AI helpers", () => {
   it("offers AI actions only when AI is on, but keeps one in use", () => {
@@ -13,6 +30,7 @@ describe("automation AI helpers", () => {
     expect(opsFor("sentiment")).toEqual(["equals", "not_equals"]);
     expect(actionNeedsValue("ai_triage")).toBe(false);
     expect(actionNeedsValue("set_field")).toBe(false);
+    expect(actionNeedsValue("delete_ticket")).toBe(false);
     expect(sentimentLabel("frustrated")).toBe("Frustrated");
     expect(sentimentLabel("custom")).toBe("custom");
   });
@@ -29,6 +47,7 @@ describe("automation labels", () => {
     expect(Object.keys(fieldLabel)).toContain("sentiment");
     expect(Object.keys(actionLabel).at(-1)).toBe("ai_triage");
     expect(actionLabel.set_field).toBe("Set field");
+    expect(actionLabel.delete_ticket).toBe("Delete ticket");
     expect(opLabel.any).toBe("contains any of");
     expect(opLabel.none).toBe("contains none of");
   });
@@ -55,5 +74,26 @@ describe("phrase lists", () => {
     expect(validPhrases("x".repeat(500))).toBe(true);
     expect(validPhrases("x".repeat(501))).toBe(false);
     expect(validPhrases(Array.from({ length: 11 }, () => "x".repeat(500)).join("\n"))).toBe(false);
+  });
+});
+
+describe("merge into the contact's open ticket", () => {
+  it("starts at 7 days with the same subject, and runs only when a ticket is created", () => {
+    expect(actionLabel.merge_into_open_ticket).toBe("Merge into the contact's open ticket");
+    expect(newAction("merge_into_open_ticket")).toEqual({ type: "merge_into_open_ticket", value: "7", same_subject: true });
+    expect(newAction("add_tag")).toEqual({ type: "add_tag", value: "" });
+    expect(actionFitsTrigger("merge_into_open_ticket", "ticket_created")).toBe(true);
+    for (const t of ["customer_replied", "agent_replied", "ticket_updated"] as const) {
+      expect(actionFitsTrigger("merge_into_open_ticket", t)).toBe(false);
+      expect(actionFitsTrigger("add_tag", t)).toBe(true);
+    }
+  });
+
+  it("takes a window of 1 to 30 whole days, and offers one saved outside the choices", () => {
+    for (const v of ["1", "7", "30"]) expect(validMergeWindow(v)).toBe(true);
+    for (const v of ["", "0", "31", "1.5", "-2", " 7"]) expect(validMergeWindow(v)).toBe(false);
+    expect(mergeWindows("7")).toEqual([1, 2, 3, 7, 14, 30]);
+    expect(mergeWindows("10")).toEqual([1, 2, 3, 7, 10, 14, 30]);
+    expect(mergeWindows("99")).toEqual([1, 2, 3, 7, 14, 30]);
   });
 });

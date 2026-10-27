@@ -465,6 +465,8 @@ input.field:focus { border-color: var(--fg-4); box-shadow: 0 0 0 3px var(--ring)
 
 ${BOT_LOOK_CSS}
 
+/* Touch screens: 16px fields, the size below which iOS Safari zooms in on focus. */
+@media (pointer: coarse) { textarea.input, input.field { font-size: max(16px, 1em); } }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
   .t-running span:last-child { -webkit-text-fill-color: currentColor; background: none; }

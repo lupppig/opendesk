@@ -585,4 +585,25 @@ func TestAutomations(t *testing.T) {
 	if v := phrased.Conditions[0]["value"]; v != "Your parcel has shipped\nnewsletter" {
 		t.Fatalf("phrase list stored as %q", v)
 	}
+
+	// merge_into_open_ticket: a window of 1..30 days (7 by default), same_subject stored,
+	// and only on ticket_created.
+	var merge automation
+	e.Do("POST", "/v1/automations", ad, map[string]any{"name": "Follow-ups", "trigger": "ticket_created",
+		"actions": []map[string]any{{"type": "merge_into_open_ticket", "value": ""}, {"type": "add_tag", "value": "new"}}}).Want(t, 201).JSON(t, &merge)
+	if a := merge.Actions[0]; a["value"] != "7" || a["same_subject"] != true {
+		t.Fatalf("merge action stored as %v", a)
+	}
+	if _, ok := merge.Actions[1]["same_subject"]; ok {
+		t.Fatalf("same_subject on another action %v", merge.Actions[1])
+	}
+	e.Do("PATCH", "/v1/automations/"+merge.ID, ad, map[string]any{"actions": []map[string]any{{"type": "merge_into_open_ticket", "value": "14", "same_subject": false}}}).
+		Want(t, 200).JSON(t, &merge)
+	if a := merge.Actions[0]; a["value"] != "14" || a["same_subject"] != false {
+		t.Fatalf("merge action patched to %v", a)
+	}
+	e.Do("PATCH", "/v1/automations/"+merge.ID, ad, map[string]any{"trigger": "customer_replied"}).Want(t, 422)
+	e.Do("PATCH", "/v1/automations/"+merge.ID, ad, map[string]any{"actions": []map[string]any{{"type": "merge_into_open_ticket", "value": "31"}}}).Want(t, 422)
+	e.Do("POST", "/v1/automations", ad, map[string]any{"name": "x", "trigger": "ticket_updated",
+		"actions": []map[string]any{{"type": "merge_into_open_ticket", "value": "7"}}}).Want(t, 422)
 }

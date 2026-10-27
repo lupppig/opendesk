@@ -363,8 +363,6 @@
     "rotate": "Rotate secret",
     "rotateTitle": "Rotate the widget secret?",
     "rotateBody": "Identified sessions stop verifying until you deploy the new secret. Existing chats keep working.",
-    "rotateMfa": "Rotating the secret needs two-factor authentication. Turn on 2FA in Security, then sign in again.",
-    "rotateReauth": "For safety, sign out and sign back in, then try again. This needs a login from the last 12 hours.",
     "secretLater": "An owner can reveal the secret after confirming their sign-in.",
     "secretLaterHint": "Rotating the secret shows a new one. Until then, the widget works but cannot verify signed-in users.",
     "revealSecret": "Reveal the secret",

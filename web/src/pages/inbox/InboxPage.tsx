@@ -2,7 +2,7 @@ import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-quer
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { CircleCheck, CircleDashed, Clock, Inbox, Layers, ShieldAlert, User, Users } from "lucide-react";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { Ticket } from "@/lib/api/types";
 import { folderById, listQuery, teamQuery, type FolderId, type InboxSearch } from "@/lib/folders";
@@ -16,17 +16,19 @@ import { snoozeOptions } from "@/components/tickets/detail/SnoozeMenu";
 import { InboxEmpty } from "./InboxEmpty";
 import { Skeleton, SkeletonRows } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { ResizeHandle } from "@/components/ui/resize-handle";
 import { toast } from "@/components/ui/toast";
-import { TicketRow, awaitingReply, type QuickAction } from "@/components/tickets/TicketRow";
+import { TicketRow, type QuickAction } from "@/components/tickets/TicketRow";
 import { BulkBar } from "@/components/tickets/BulkBar";
 import { ListToolbar, type InboxLayout } from "@/components/tickets/ListToolbar";
 import { TicketPreview } from "@/components/tickets/TicketPreview";
-import { SummaryStrip } from "@/components/tickets/SummaryStrip";
+import { SummaryStrip, loadedCounts, stripCounts } from "@/components/tickets/SummaryStrip";
 import { WaitingBanner, chatWait, useAgentOn } from "@/components/tickets/waiting";
 import { useUpdateTicket } from "@/components/tickets/useTicketActions";
 import { intent } from "@/components/tickets/motion";
 import { focusField, missingForSolve, useTicketFields } from "@/components/tickets/fields";
 import { atLeast, useRole, useSession } from "@/lib/session";
+import { paneCss, setLiveWidth, usePaneWidth } from "@/lib/panes";
 import { useDocumentTitle } from "@/app/RootLayout";
 import { TeamDot, useTeamsCtx } from "@/components/tickets/teams";
 import { TeamTabs } from "./TeamTabs";
@@ -188,6 +190,10 @@ export default function InboxPage() {
   const previewing = !openId && wide && layout === "split" && tickets.length > 0;
   const split = !!openId || previewing;
   const compact = split || phone;
+  // Beside a ticket the list keeps the width its edge was dragged to, at most half the inbox.
+  const [listWidth, setListWidth] = usePaneWidth("list");
+  const pageRef = useRef<HTMLDivElement>(null);
+  const listPaneRef = useRef<HTMLElement>(null);
 
   // ── Selection and keyboard focus ────────────────────────────────────────
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -416,32 +422,24 @@ export default function InboxPage() {
   const selecting = selected.size > 0 || allMatching;
   const idx = tickets.findIndex((t) => t.id === openId || String(t.number) === openId);
   const focusedTicket = tickets[focusIdx];
-  const summary = useMemo(() => {
-    const now = Date.now();
-    let awaiting = 0,
-      urgent = 0,
-      overdue = 0,
-      dueSoon = 0;
-    for (const t of tickets) {
-      if (awaitingReply(t)) awaiting++;
-      if (t.priority === "urgent") urgent++;
-      const due = t.status === "solved" || t.status === "closed" ? null : t.sla ? (!t.first_responded_at ? t.sla.first_response_due_at : t.sla.resolution_due_at) : null;
-      if (due) {
-        const left = Date.parse(due) - now;
-        if (t.sla?.breached || left < 0) overdue++;
-        else if (left < 3_600_000) dueSoon++;
-      }
-    }
-    return { awaiting, urgent, overdue, dueSoon };
-  }, [tickets]);
+  // The strip counts the whole list (GET /v1/tickets/summary), whatever its order. A search
+  // is not counted by the server, so it is not asked.
+  const summaryQuery = useMemo(() => ({ ...query, sort: undefined, order: undefined }), [query]);
+  const { data: listSummary } = useQuery({ ...q.ticketSummary(summaryQuery), enabled: !query.q });
+  const loaded = useMemo(() => loadedCounts(tickets), [tickets]);
+  const summary = stripCounts(listSummary, loaded, !!list.hasNextPage);
 
   return (
-    <div className="relative flex h-full min-h-0">
+    <div ref={pageRef} className="relative flex h-full min-h-0">
       <section
+        ref={listPaneRef}
         aria-label={title}
+        style={listWidth === null ? undefined : ({ "--pane-list": paneCss("list", listWidth, "%") } as CSSProperties)}
         className={cn(
           "relative flex min-h-0 flex-col",
-          split ? "hidden w-[340px] shrink-0 border-r border-line lg:flex xl:w-[380px] 2xl:w-[420px]" : "min-w-0 flex-1",
+          split
+            ? "hidden w-[var(--pane-list-live,var(--pane-list,340px))] shrink-0 border-r border-line lg:flex xl:w-[var(--pane-list-live,var(--pane-list,380px))] 2xl:w-[var(--pane-list-live,var(--pane-list,420px))]"
+            : "min-w-0 flex-1",
         )}
       >
         <ListToolbar
@@ -466,7 +464,7 @@ export default function InboxPage() {
           onLayout={setLayout}
         />
         {tickets.length > 0 && <WaitingBanner tickets={tickets} onOpen={open} />}
-        {!openId && tickets.length > 0 && <SummaryStrip {...summary} total={tickets.length} search={search} onSearch={setSearch} />}
+        {!openId && tickets.length > 0 && <SummaryStrip {...summary} search={search} onSearch={setSearch} />}
         <div ref={listRef} role="listbox" aria-label={tr("list.label")} aria-multiselectable className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           {list.isPending ? (
             <SkeletonRows rows={compact ? 7 : 12} />
@@ -522,6 +520,18 @@ export default function InboxPage() {
           compact={compact}
         />
       </section>
+      {split && (
+        <ResizeHandle
+          pane="list"
+          side="before"
+          target={listPaneRef}
+          room={() => pageRef.current?.clientWidth}
+          width={listWidth}
+          onLive={(px) => setLiveWidth(listPaneRef.current, "list", px === null ? null : paneCss("list", px, "%"))}
+          onWidth={setListWidth}
+          className="hidden lg:block"
+        />
+      )}
 
       {openId ? (
         <section aria-label={tr("detail.label")} className="flex min-w-0 flex-1 flex-col">

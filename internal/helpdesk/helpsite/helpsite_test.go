@@ -192,6 +192,12 @@ func TestLanguages(t *testing.T) {
 	if !strings.Contains(ar.body, `<html lang="ar" dir="rtl"`) {
 		t.Fatal("arabic is right to left")
 	}
+	// Azerbaijani dates are written with its month names, which browsers may not have.
+	s.Exec(`UPDATE kb_articles SET published_at = '2024-10-22T12:00:00Z' WHERE id = $1`, s.article)
+	az := s.get(t, "app.test", "/help/"+s.slug+"/?lang=az")
+	if !strings.Contains(az.body, `data-format="short">22 okt 2024</time>`) {
+		t.Fatalf("azerbaijani dates\n%s", az.body)
+	}
 	// The brand's language is the default, without a parameter.
 	s.Exec(`UPDATE brands SET locale = 'fr' WHERE id = $1`, s.brandID)
 	fr := s.get(t, "app.test", "/help/"+s.slug+"/")

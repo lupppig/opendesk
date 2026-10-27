@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ContactRef, Message, UserRef } from "@/lib/api/types";
-import { messageAuthor, messageFrame } from "./messageFrame";
+import { messageAuthor, messageFrame, messageSide, sideClass } from "./messageFrame";
 
 type Shape = Pick<Message, "kind" | "direction" | "author" | "thread_id">;
 
@@ -63,5 +63,46 @@ describe("messageFrame", () => {
   });
   it("never lets a note look failed", () => {
     expect(messageFrame("note", true)).toBe("border-dashed border-note-line bg-note");
+  });
+});
+
+describe("messageSide", () => {
+  it("puts the customer's messages on the customer's side", () => {
+    expect(messageSide(msg())).toBe("customer");
+    expect(messageSide(msg({ type: "api" }))).toBe("customer");
+  });
+  it("puts mail that came in from a system, such as a bounce, on the customer's side", () => {
+    expect(messageSide(msg({ type: "system" }))).toBe("customer");
+  });
+  it("puts every reply we send on the team's: agents, Ollie and bots, automations, auto-replies and the API", () => {
+    expect(messageSide(msg({ type: "user", direction: "outbound" }))).toBe("team");
+    expect(messageSide(msg({ type: "system", direction: "outbound" }))).toBe("team");
+    expect(messageSide(msg({ type: "api", direction: "outbound" }))).toBe("team");
+  });
+  it("puts internal notes on the team's side, whoever wrote them", () => {
+    expect(messageSide(msg({ type: "user", kind: "note", direction: "outbound" }))).toBe("team");
+    expect(messageSide(msg({ type: "system", kind: "note", direction: "outbound" }))).toBe("team");
+  });
+  it("splits a side conversation between what we wrote and what the third party answered", () => {
+    expect(messageSide(msg({ type: "user", kind: "note", direction: "outbound", thread_id: "th1" }))).toBe("team");
+    expect(messageSide(msg({ kind: "note", thread_id: "th1" }))).toBe("customer");
+  });
+});
+
+describe("sideClass", () => {
+  it("leaves every card full width when the layout is off", () => {
+    expect(sideClass("customer", false)).toBeUndefined();
+    expect(sideClass("team", false)).toBeUndefined();
+  });
+  it("narrows both sides to the same width, from a wide enough timeline only", () => {
+    for (const side of ["customer", "team"] as const) {
+      const c = sideClass(side, true)!;
+      expect(c).toContain("@md:w-(--conversation-card)");
+      expect(c.split(" ").every((x) => x.startsWith("@md:"))).toBe(true);
+    }
+  });
+  it("sends the customer to the start and the team to the end", () => {
+    expect(sideClass("customer", true)).toContain("@md:me-auto");
+    expect(sideClass("team", true)).toContain("@md:ms-auto");
   });
 });

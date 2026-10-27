@@ -23,9 +23,9 @@ import { atLeast, useRole } from "@/lib/session";
 
 // Providers and credential fields with their own copy; another provider shows
 // the name, description and labels its adapter describes.
-const PROVIDERS = ["slack", "discord", "telegram"] as const;
+const PROVIDERS = ["slack", "discord", "telegram", "google_chat"] as const;
 type ProviderKey = (typeof PROVIDERS)[number];
-const FIELDS = ["bot_token", "signing_secret", "public_key", "guild_id", "webhook_secret"] as const;
+const FIELDS = ["bot_token", "signing_secret", "public_key", "guild_id", "webhook_secret", "service_account_json"] as const;
 type FieldKey = (typeof FIELDS)[number];
 const knownProvider = (k: string): k is ProviderKey => (PROVIDERS as readonly string[]).includes(k);
 const knownField = (k: string): k is FieldKey => (FIELDS as readonly string[]).includes(k);
@@ -497,13 +497,12 @@ function DeliveryRow({ delivery, retrying, onRetry }: { delivery: SupportChannel
   );
 }
 
-// Where a provider can't be set up by opendesk (Slack), the steps an admin takes
-// there, with the address to paste. Folded away once the provider has called in.
+// Provider-specific setup steps, folded away once the provider has called in.
 function SetupSteps({ provider, webhookUrl, done }: { provider: string; webhookUrl: string; done: boolean }) {
   const { t } = useTranslation("settingsChannels");
   const [open, setOpen] = useState(!done);
-  // Only Slack needs steps of its own; any other provider without a Configurer gets the generic one.
-  const steps: unknown = provider === "slack" ? t("supportChannels.provider.slack.steps", { returnObjects: true }) : null;
+  const providerSteps = provider === "slack" || provider === "google_chat" ? provider : "";
+  const steps: unknown = providerSteps ? t(`supportChannels.provider.${providerSteps}.steps`, { returnObjects: true }) : null;
   const list = Array.isArray(steps) ? (steps as string[]) : [t("supportChannels.setup.generic")];
   if (!open)
     return (

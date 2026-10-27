@@ -17,7 +17,7 @@ import { Field, TextInput } from "@/components/ui/input";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
 import { QrCode } from "@/components/settings/QrCode";
-import { ReauthNotice } from "@/components/settings/ReauthNotice";
+import { ReauthNotice, isReauthError } from "@/components/settings/ReauthNotice";
 import { describeUserAgent } from "@/components/settings/userAgent";
 import { api } from "@/lib/api/endpoints";
 import { errorMessage, isApiError } from "@/lib/api/client";
@@ -252,7 +252,11 @@ function SetupDialog({ onClose }: { onClose: () => void }) {
           >
             {step === 0 && (
               <div className="flex flex-col items-center gap-4 py-2">
-                {setup.isError ? (
+                {isReauthError(setup.error) ? (
+                  <div className="w-full py-12">
+                    <ReauthNotice error={setup.error} />
+                  </div>
+                ) : setup.isError ? (
                   <p className="py-16 text-xs text-danger-fg">{errorMessage(setup.error)}</p>
                 ) : setup.data ? (
                   <QrCode value={setup.data.otpauth_url} label={a("authenticatorSetupQRCode")} />

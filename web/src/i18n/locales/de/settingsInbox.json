@@ -102,6 +102,8 @@
       "team": "Team",
       "mailbox": "Postfach",
       "writtenTo": "Geschrieben an",
+      "contact": "Kontakt",
+      "company": "Unternehmen",
       "tag": "Label",
       "channel": "Kanal",
       "keyword": "Stichwort"
@@ -128,8 +130,20 @@
     "unknown": "unbekannt",
     "inMailbox": "In {{name}}",
     "aMailbox": "ein Postfach",
+    "aContact": "ein Kontakt",
+    "aCompany": "ein Unternehmen",
     "writtenTo": "Geschrieben an {{address}}",
     "matching": "Passend zu „{{q}}“",
+    "ops": {
+      "is": "ist",
+      "not": "ist nicht"
+    },
+    "choose": {
+      "contact": "Kontakte wählen",
+      "company": "Unternehmen wählen"
+    },
+    "notContact": "Nicht von {{name}}",
+    "notCompany": "Nicht von {{name}}",
     "emptyTips": {
       "sidebar": "Geteilte Ansichten erscheinen in der Seitenleiste aller",
       "personal": "Persönliche Ansichten bleiben nur in deiner Seitenleiste"
@@ -275,6 +289,11 @@
     "chooseTeammate": "Teammitglied wählen",
     "chooseTeam": "Team wählen",
     "markSpamHint": "Verschiebt das Ticket in Spam. Es wird keine Antwort gesendet.",
+    "deleteTicketHint": "Löscht das Ticket: Es verschwindet aus allen Ansichten, und nichts weiter läuft darauf.",
+    "mergeHint": "Führt ein neues Ticket mit dem letzten offenen, wartenden oder angehaltenen Ticket desselben Kontakts zusammen. Danach läuft nichts weiter darauf.",
+    "mergeWindow_one": "Innerhalb von {{count}} Tag",
+    "mergeWindow_other": "Innerhalb von {{count}} Tagen",
+    "mergeSameSubject": "Nur bei gleichem Betreff",
     "replyPlaceholder": "Danke für deine Nachricht. Wir haben sie erhalten…",
     "notePlaceholder": "Interne Notiz für das Team",
     "replyText": "Antworttext",
@@ -284,7 +303,8 @@
       "action": "Füge mindestens eine Aktion hinzu.",
       "condition": "Jede Bedingung braucht einen Wert, oder entferne sie.",
       "actionValue": "Jede Aktion braucht einen Wert.",
-      "phrases": "Eine Liste enthält 1 bis 100 Begriffe, einen pro Zeile, mit je höchstens 500 Zeichen."
+      "phrases": "Eine Liste enthält 1 bis 100 Begriffe, einen pro Zeile, mit je höchstens 500 Zeichen.",
+      "mergeTrigger": "Das Zusammenführen mit dem offenen Ticket des Kontakts läuft nur, wenn ein Ticket erstellt wird."
     },
     "chooseSeverity": "Schweregrad wählen",
     "noSeverity": "Kein Schweregrad",
@@ -340,6 +360,8 @@
     "send_reply": "Antwort senden",
     "add_note": "Interne Notiz hinzufügen",
     "mark_spam": "Als Spam markieren",
+    "delete_ticket": "Ticket löschen",
+    "merge_into_open_ticket": "Mit dem offenen Ticket des Kontakts zusammenführen",
     "set_field": "Feld setzen",
     "set_reply_address": "Antwortadresse setzen"
   },
@@ -351,6 +373,8 @@
   },
   "pickers": {
     "search": "Suchen",
+    "searchContacts": "Name oder E-Mail suchen",
+    "searchCompanies": "Name oder Domain suchen",
     "andMore": "{{first}} und {{count}} weitere"
   },
   "customFields": {

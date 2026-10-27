@@ -129,6 +129,8 @@
     "contacts:write": "Mettre à jour les contacts",
     "kb:read": "Lire les articles d’aide",
     "kb:write": "Rédiger des articles d’aide",
+    "wiki:read": "Lire le wiki de l’équipe",
+    "wiki:write": "Écrire dans le wiki de l’équipe",
     "settings:read": "Lire les collègues, les équipes et les rapports"
   },
   "consent": {

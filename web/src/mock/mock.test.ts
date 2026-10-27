@@ -60,6 +60,35 @@ describe("mock backend", () => {
     expect((await call("GET", `/v1/reports/overview?${range}&team_id=nope`)).status).toBe(422);
   });
 
+  it("reports each agent's work to admins, and only your own to other members", async () => {
+    const range = "from=2026-09-12&to=2026-10-11";
+    const all = (await call("GET", `/v1/reports/agents?${range}`)).body;
+    const ws = db.workspaces[0];
+    const roster = ws.members.filter((m) => m.role !== "viewer").map((m) => m.user_id);
+    expect(all.online_time).toBe("all");
+    expect(all.data.map((r: { user: { id: string } }) => r.user.id).sort()).toEqual([...roster].sort());
+    expect(all.data.every((r: { online_minutes: number | null }) => r.online_minutes !== null)).toBe(true);
+    const solved = all.data.map((r: { solved: number }) => r.solved);
+    expect(solved).toEqual([...solved].sort((a: number, b: number) => b - a));
+    const team = ws.teams.find((t) => t.members.some((m) => m.role !== "observer"))!;
+    const one = (await call("GET", `/v1/reports/agents?${range}&team_id=${team.id}`)).body;
+    expect(one.data.length).toBeLessThanOrEqual(team.members.length);
+    expect(one.data.every((r: { user: { id: string } }) => team.members.some((m) => m.user_id === r.user.id && m.role !== "observer"))).toBe(true);
+    expect((await call("GET", `/v1/reports/agents?${range}&team_id=nope`)).status).toBe(422);
+    // An agent sees only their own row, with the figures an admin sees on it.
+    const me = db.meId;
+    const agent = ws.members.find((m) => m.role === "agent")!.user_id;
+    db.meId = agent;
+    try {
+      const mine = (await call("GET", `/v1/reports/agents?${range}`)).body;
+      expect(mine.online_time).toBe("self");
+      expect(mine.data).toEqual(all.data.filter((r: { user: { id: string } }) => r.user.id === agent));
+      expect(mine.data[0].online_minutes).not.toBeNull();
+    } finally {
+      db.meId = me;
+    }
+  });
+
   it("gives collections and articles a brand, and scopes help centers by it", async () => {
     const brands = (await call("GET", "/v1/brands")).body.data as { id: string; slug: string; is_default: boolean }[];
     const press = brands.find((b) => b.slug === "pressroom")!;
@@ -95,6 +124,14 @@ describe("mock backend", () => {
     }
   });
 
+  it("summarizes a whole list, every page of it", async () => {
+    const all = (await call("GET", "/v1/tickets?status=open,pending&limit=100")).body.data as { priority: string }[];
+    const s = (await call("GET", "/v1/tickets/summary?status=open,pending&sort=due&limit=1")).body;
+    expect(s).toMatchObject({ complete: true, total: all.length, urgent: all.filter((t) => t.priority === "urgent").length });
+    expect(s.awaiting + s.overdue + s.due_soon).toBeGreaterThan(0);
+    expect((await call("GET", "/v1/tickets/summary?q=sso")).body).toMatchObject({ complete: false, total: 0 });
+  });
+
   it("updates every ticket matching a bulk query", async () => {
     const open = (await call("GET", "/v1/tickets?status=open")).body.data as { id: string }[];
     const result = await call("POST", "/v1/tickets/bulk", { query: { status: ["open"] }, patch: { priority: "high" } });
@@ -104,13 +141,36 @@ describe("mock backend", () => {
     expect((await call("GET", `/v1/tickets/${open[0]!.id}`)).body.priority).toBe("high");
   });
 
+  it("leaves out tickets of chosen contacts and companies, in lists and views", async () => {
+    type Row = { id: string; contact: { id: string } | null };
+    const all = (await call("GET", "/v1/tickets?limit=100")).body.data as Row[];
+    const contacts = (await call("GET", "/v1/contacts?limit=100")).body.data as { id: string; company: { id: string } | null }[];
+    const companyOf = (t: Row) => contacts.find((c) => c.id === t.contact?.id)?.company?.id;
+    const from = all.find((t) => companyOf(t));
+    expect(from).toBeDefined();
+    const contactId = from!.contact!.id;
+    const companyId = companyOf(from!)!;
+
+    const notContact = (await call("GET", `/v1/tickets?contact_not=${contactId}&limit=100`)).body.data as Row[];
+    expect(notContact.length).toBeGreaterThan(0);
+    for (const t of notContact) expect(t.contact?.id).not.toBe(contactId);
+    const notCompany = (await call("GET", `/v1/tickets?company_not=${companyId}&limit=100`)).body.data as Row[];
+    expect(notCompany.length).toBeGreaterThan(0);
+    expect(notCompany.map((t) => t.id)).not.toContain(from!.id);
+    for (const t of notCompany) if (companyOf(t)) expect(companyOf(t)).not.toBe(companyId);
+
+    const v = (await call("POST", "/v1/views", { name: "Not them", shared: true, filters: { company_not: companyId } })).body;
+    const inView = (await call("GET", `/v1/tickets?view_id=${v.id}&limit=100`)).body.data as Row[];
+    expect(inView.map((t) => t.id)).toEqual(notCompany.map((t) => t.id));
+  });
+
   it("serves every list endpoint the app reads", async () => {
     for (const path of [
-      "/v1/me", "/v1/tickets", "/v1/tickets/counts", "/v1/contacts", "/v1/companies", "/v1/tags", "/v1/views",
+      "/v1/me", "/v1/tickets", "/v1/tickets/counts", "/v1/tickets/summary", "/v1/contacts", "/v1/companies", "/v1/tags", "/v1/views",
       "/v1/sla-policies", "/v1/automations", "/v1/mailboxes", "/v1/members", "/v1/invitations", "/v1/teams",
       "/v1/api-keys", "/v1/webhooks", "/v1/audit-logs", "/v1/notifications", "/v1/kb/collections", "/v1/kb/articles",
       "/v1/saved-replies", "/v1/me/sessions", "/v1/widget/settings", "/v1/workspace", "/v1/search?q=sso",
-      "/v1/reports/overview?from=2026-09-12&to=2026-10-11", "/v1/public/help/margin", "/v1/auth/config",
+      "/v1/reports/overview?from=2026-09-12&to=2026-10-11", "/v1/reports/agents?from=2026-09-12&to=2026-10-11", "/v1/public/help/margin", "/v1/auth/config",
       "/v1/integrations", "/v1/integrations/catalog",
       "/v1/support-channels/providers", "/v1/support-channels/connections", "/v1/support-channels/destinations",
     ]) {
@@ -134,6 +194,17 @@ describe("mock backend", () => {
     expect(empty.status).toBe(422);
     const status = await call("POST", "/v1/automations", { name: "x", trigger: "ticket_created", conditions: [{ field: "status", op: "any", value: "open" }], actions: action });
     expect(status.status).toBe(422);
+  });
+
+  it("keeps a merge action's window and subject option, on ticket_created only", async () => {
+    const made = await call("POST", "/v1/automations", { name: "Follow-ups", trigger: "ticket_created", actions: [{ type: "merge_into_open_ticket", value: "" }] });
+    expect(made.status).toBe(201);
+    expect(made.body.actions).toEqual([{ type: "merge_into_open_ticket", value: "7", same_subject: true }]);
+    const edited = await call("PATCH", `/v1/automations/${made.body.id}`, { actions: [{ type: "merge_into_open_ticket", value: "14", same_subject: false }] });
+    expect(edited.body.actions).toEqual([{ type: "merge_into_open_ticket", value: "14", same_subject: false }]);
+    expect((await call("PATCH", `/v1/automations/${made.body.id}`, { trigger: "customer_replied" })).status).toBe(422);
+    expect((await call("GET", `/v1/automations/${made.body.id}`)).body.trigger).toBe("ticket_created");
+    expect((await call("PATCH", `/v1/automations/${made.body.id}`, { actions: [{ type: "merge_into_open_ticket", value: "31" }] })).status).toBe(422);
   });
 
   it("publishes contiguous events for mutations", async () => {
@@ -195,6 +266,24 @@ describe("mock backend", () => {
     expect((await call("DELETE", `/v1/support-channels/destinations/${plain.body.id}`)).status).toBe(204);
     expect((await call("DELETE", `/v1/support-channels/connections/${created.body.id}`)).status).toBe(204);
     expect((await call("GET", "/v1/support-channels/destinations")).body.data).toEqual([]);
+  });
+
+  it("connects Google Chat and discovers named spaces", async () => {
+    const providers = (await call("GET", "/v1/support-channels/providers")).body.data;
+    expect(providers.find((p: { key: string }) => p.key === "google_chat").fields).toContainEqual(
+      expect.objectContaining({ name: "service_account_json", secret: true }),
+    );
+    const created = await call("POST", "/v1/support-channels/connections", {
+      provider: "google_chat",
+      credentials: { service_account_json: "{\"type\":\"service_account\"}" },
+    });
+    expect(created.status).toBe(201);
+    expect(created.body).toMatchObject({ provider: "google_chat", health_status: "action_required", external_account_name: "Margin Chat app" });
+    expect(created.body).not.toHaveProperty("credentials");
+    expect((await call("GET", `/v1/support-channels/connections/${created.body.id}/destinations`)).body.data).toEqual([
+      { id: "spaces/AAAAsupport", name: "Support", kind: "space", available: true },
+    ]);
+    expect((await call("DELETE", `/v1/support-channels/connections/${created.body.id}`)).status).toBe(204);
   });
 
   it("sends presence_state when a ticket topic is joined", async () => {

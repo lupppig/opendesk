@@ -4,7 +4,7 @@
 // The work is split by resource: tickets (tickets, messages, triggers, SLA, automations
 // engine, CSAT, search, reports), contacts (contacts, companies), resources (tags, saved
 // replies, views, SLA policies, automations), kb (knowledge base and help center) and
-// widget (chat widget API and attachments), brands, helpdomains (help center custom
+// widget (chat widget API and attachments), wiki (the team's internal pages), brands, helpdomains (help center custom
 // domains), helpsite (the rendered help centers) and imports (history from other helpdesks
 // and CSV files, contracts/imports.md). Shared helpers live in hd.
 package helpdesk
@@ -28,6 +28,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/helpdesk/routing"
 	"github.com/useopendesk/opendesk/internal/helpdesk/tickets"
 	"github.com/useopendesk/opendesk/internal/helpdesk/widget"
+	"github.com/useopendesk/opendesk/internal/helpdesk/wiki"
 	"github.com/useopendesk/opendesk/internal/images"
 )
 
@@ -38,6 +39,7 @@ func Register(d *deps.Deps, api huma.API, r chi.Router) {
 	contacts.Register(d, api, r)
 	resources.Register(d, api, r)
 	kb.Register(d, api, r)
+	wiki.Register(d, api, r)
 	widget.Register(d, api, r)
 	brands.Register(d, api, r)
 	helpdomains.Register(d, api)

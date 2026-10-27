@@ -69,6 +69,21 @@ describe("ticketMatches", () => {
     expect(ticketMatches({ channel_not: ["chat"] }, t, "u1")).toBe(true);
   });
 
+  it("leaves out tickets of excluded contacts, and asks the server about excluded companies", () => {
+    const contact = (id: string) => ({ id, name: id, email: `${id}@customer.test`, avatar_url: null });
+    const t = ticket({ contact: contact("c1") });
+    expect(ticketMatches({ contact_not: "c2,c1" }, t, "u1")).toBe(false);
+    expect(ticketMatches({ contact_not: "c2" }, t, "u1")).toBe(true);
+    expect(ticketMatches({ contact_not: "c1" }, ticket({ contact: null }), "u1")).toBe(true);
+    // A ticket carries its contact but not the contact's company.
+    expect(ticketMatches({ company_not: "co1" }, t, "u1")).toBeNull();
+    expect(ticketMatches({ company_not: "co1", contact_not: "c1" }, t, "u1")).toBe(false);
+    expect(ticketMatches({ company_not: "co1" }, ticket({ contact: null }), "u1")).toBe(true);
+    const views = [{ id: "v1", name: "Not Ann", shared: true, position: 0, filters: { contact_not: "c1" } }];
+    expect(ticketMatches({ view_id: "v1" }, t, "u1", views)).toBe(false);
+    expect(ticketMatches({ view_id: "v1" }, ticket({ contact: contact("c2") }), "u1", views)).toBe(true);
+  });
+
   it("can't decide full-text or unknown views", () => {
     expect(ticketMatches({ q: "refund" }, ticket(), "u1")).toBeNull();
     expect(ticketMatches({ view_id: "v1" }, ticket(), "u1", [])).toBeNull();

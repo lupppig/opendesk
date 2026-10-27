@@ -51,7 +51,7 @@ type SpaceItemKind =
   | "box"            // a Collab box across accounts: id "inbox" (All inboxes) | "shared" | "assigned"
   | "account"        // a Collab account's inbox: id: account uuid
   | "folder"         // a Collab folder or label: id: folder uuid
-  | "page"           // a workspace page: id "contacts" | "knowledge" | "reports"
+  | "page"           // a workspace page: id "contacts" | "knowledge" | "wiki" | "reports"
   | "everywhere"     // an Everywhere list across every workspace: id "mine" (assigned to me) | "mail" (all mail);
                      // workspace_id "" (the one kind of no workspace); never in a starter Space
 

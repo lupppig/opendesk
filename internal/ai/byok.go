@@ -2,8 +2,8 @@ package ai
 
 // A workspace's own AI provider key (contracts/ai.md "Provider per workspace"). With a
 // key, every LLM call of the workspace goes to its provider and charges nothing to the
-// AI balance.
-// Embeddings and Jev decisions stay on the instance.
+// AI balance. Jev decisions run on an OpenRouter key too, or on the workspace's own
+// TypeSafe key (decisions_key.go); embeddings stay on the instance.
 
 import (
 	"bytes"
@@ -24,6 +24,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/useopendesk/opendesk/internal/ai/decide"
 	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
 	"github.com/useopendesk/opendesk/internal/httpx"
@@ -77,6 +78,10 @@ type ownEntry struct {
 	baseURL string
 	key     string
 	models  struct{ Default, Fast string }
+
+	// jev is Jev through OpenRouter's Decisions API on an OpenRouter key, built once.
+	jevOnce sync.Once
+	jev     *decide.TypeSafe
 
 	catMu      sync.Mutex
 	catFetched time.Time
@@ -192,38 +197,51 @@ func (s *Service) keyResult(ctx context.Context, wid uuid.UUID, rt *route, err e
 	if rt == nil || !rt.own {
 		return err
 	}
+	return s.keyResultOn(ctx, wid, tableProviderKeys, rt.kind, &rt.status, err)
+}
+
+// Tables of a workspace's own keys, one row per workspace, each with status, status_at
+// and notified_at.
+const (
+	tableProviderKeys = "ai_provider_keys"
+	tableDecisionKeys = "ai_decision_keys"
+)
+
+// keyResultOn is keyResult for the key in table (one of the key tables above); status
+// is the caller's copy of the key's state, updated in place.
+func (s *Service) keyResultOn(ctx context.Context, wid uuid.UUID, table, kind string, status *string, err error) error {
 	ctx = context.WithoutCancel(ctx)
 	if err == nil {
-		if rt.status != keyOK {
-			if _, e := s.d.DB.Pool.Exec(ctx, `UPDATE ai_provider_keys SET status = 'ok', status_at = now() WHERE workspace_id = $1 AND status <> 'ok'`, wid); e != nil {
+		if *status != keyOK {
+			if _, e := s.d.DB.Pool.Exec(ctx, `UPDATE `+table+` SET status = 'ok', status_at = now() WHERE workspace_id = $1 AND status <> 'ok'`, wid); e != nil {
 				s.d.Log.Warn("ai key status", "workspace_id", wid, "err", e)
 			}
-			rt.status = keyOK
+			*status = keyOK
 		}
 		return nil
 	}
-	status := ""
+	next := ""
 	switch {
 	case errors.Is(err, ErrKeyRejected):
-		status = keyRejected
+		next = keyRejected
 	case errors.Is(err, ErrNoFunds):
-		status = keyNoFunds
+		next = keyNoFunds
 	default:
 		return err
 	}
-	if e := s.markKey(ctx, wid, rt.kind, status); e != nil {
+	if e := s.markKey(ctx, wid, table, kind, next); e != nil {
 		s.d.Log.Warn("ai key status", "workspace_id", wid, "err", e)
 	}
-	rt.status = status
-	return &ownKeyError{status: status, err: err}
+	*status = next
+	return &ownKeyError{status: next, err: err}
 }
 
 // markKey stores a failed key state and notifies owners and admins unless they were
 // told within keyNotifyEvery. The conditional update makes concurrent failures notify once.
-func (s *Service) markKey(ctx context.Context, wid uuid.UUID, kind, status string) error {
+func (s *Service) markKey(ctx context.Context, wid uuid.UUID, table, kind, status string) error {
 	return s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
 		var notify bool
-		err := tx.QueryRow(ctx, `UPDATE ai_provider_keys SET status = $2, status_at = now(),
+		err := tx.QueryRow(ctx, `UPDATE `+table+` SET status = $2, status_at = now(),
 				notified_at = CASE WHEN notified_at IS NULL OR notified_at < now() - $3 * interval '1 second' THEN now() ELSE notified_at END
 			WHERE workspace_id = $1
 			RETURNING notified_at = now()`, wid, status, int(keyNotifyEvery.Seconds())).Scan(&notify)

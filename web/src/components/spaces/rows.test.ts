@@ -45,6 +45,7 @@ describe("Space rows", () => {
     expect(rowHref({ kind: "mail", box: "folder", account: "a1", folder: "f1" }, "w1")).toBe("/mail/folder?account=a1&folder=f1&ws=w1");
     expect(rowHref({ kind: "page", page: "knowledge" }, "w1")).toBe("/kb?ws=w1");
     expect(rowHref({ kind: "page", page: "contacts" })).toBe("/contacts");
+    expect(rowHref({ kind: "page", page: "wiki" }, "w1")).toBe("/wiki?ws=w1");
   });
 
   it("names and numbers each kind from the workspace's data", () => {

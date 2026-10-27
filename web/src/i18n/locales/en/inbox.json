@@ -64,7 +64,8 @@
     "priority": "{{priority}} priority",
     "awaiting": "Waiting for a reply",
     "severity": "{{severity}}",
-    "receivedAt": "Sent to {{address}}"
+    "receivedAt": "Sent to {{address}}",
+    "assignedTo": "Assigned to {{name}}"
   },
   "waiting": {
     "label": "Waiting {{time}}",
@@ -97,7 +98,11 @@
   },
   "presence": {
     "viewing": "{{name}} is viewing",
-    "replying": "{{name}} is replying"
+    "replying": "{{name}} is replying",
+    "oneViewing": "{{name}} viewing",
+    "oneReplying": "{{name}} replying…",
+    "manyViewing": "{{n}} viewing",
+    "manyReplying": "{{name}} replying… +{{others}}"
   },
   "empty": {
     "unassigned": {
@@ -230,6 +235,8 @@
     "label": "Summary",
     "total_one": "{{count}} ticket",
     "total_other": "{{count}} tickets",
+    "firstShown": "First {{count}} shown",
+    "firstShownHint": "These numbers count only the tickets loaded so far. Scroll down to load more.",
     "awaiting": "awaiting reply",
     "urgent": "urgent",
     "overdue": "overdue",
@@ -638,6 +645,12 @@
     "discardTitle": "Discard this ticket?",
     "discardBody": "Your draft will be lost.",
     "discard": "Discard",
+    "keepWriting": "Keep writing",
+    "openPage": "Open full page",
+    "moreOnPage_one": "{{count}} more from the full page",
+    "moreOnPage_other": "{{count}} more from the full page",
+    "newContact": "New contact, created with the ticket",
+    "recipientHint": "Choose who it goes to, and their details and earlier tickets show here.",
     "needTo": "Add a recipient.",
     "needSubject": "Add a subject.",
     "needBody": "Write a message.",

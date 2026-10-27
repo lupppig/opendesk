@@ -22,6 +22,7 @@ import { IconTile, ListSkeleton, MonoChip } from "@/components/settings2/bits";
 import { MotionList, MotionRow } from "@/components/settings2/motion";
 import { SettingsEmpty } from "@/components/settings2/SettingsEmpty";
 import { useListMutation } from "@/components/settings2/optimistic";
+import { ReauthNotice, isReauthError } from "@/components/settings/ReauthNotice";
 import { clientSetups, READ_SCOPES, WRITE_SCOPES, type ClientId, type ClientSetup } from "@/components/aiClients/snippets";
 import { api } from "@/lib/api/endpoints";
 import { errorMessage } from "@/lib/api/client";
@@ -138,7 +139,7 @@ function ClientPanel({ setup, admin, apiKey, onCreateKey }: { setup: ClientSetup
 
 type Expiry = "30" | "90" | "365";
 
-function CreateKeyDialog({ client, onClose, onCreated }: { client: string; onClose: () => void; onCreated: (secret: string) => void }) {
+export function CreateKeyDialog({ client, onClose, onCreated }: { client: string; onClose: () => void; onCreated: (secret: string) => void }) {
   const { t } = useTranslation("aiSetup");
   const qc = useQueryClient();
   const [name, setName] = useState(client ? `${client}` : "");
@@ -157,7 +158,10 @@ function CreateKeyDialog({ client, onClose, onCreated }: { client: string; onClo
       upsertInList(qc, qk.apiKeys, row as ApiKey, { prepend: true });
       onCreated(secret);
     },
-    onError: (e) => setError(errorMessage(e) || t("clients.keyDialog.error")),
+    // A key needs a recent sign-in (with 2FA when on): the notice below says why and signs in again.
+    onError: (e) => {
+      if (!isReauthError(e)) setError(errorMessage(e) || t("clients.keyDialog.error"));
+    },
   });
   const submit = () => {
     setError(null);
@@ -232,6 +236,7 @@ function CreateKeyDialog({ client, onClose, onCreated }: { client: string; onClo
             />
           )}
         </Field>
+        {isReauthError(create.error) && <ReauthNotice error={create.error} />}
         <button type="submit" className="hidden" />
       </form>
     </Dialog>

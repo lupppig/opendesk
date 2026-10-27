@@ -6,6 +6,7 @@
     "workspace": "Espace de travail",
     "contacts": "Contacts",
     "kb": "Base de connaissances",
+    "wiki": "Wiki",
     "reports": "Rapports",
     "settings": "Paramètres",
     "manageViews": "Gérer les vues",
@@ -138,6 +139,7 @@
     "toggleSidebar": "Afficher ou masquer la barre latérale",
     "goMine": "Aller à mes tickets",
     "goReports": "Aller aux rapports",
+    "goWiki": "Aller au wiki",
     "switchWorkspace": "Ouvrir l’espace de travail 1 à 9"
   },
   "route": {
@@ -161,8 +163,7 @@
     "openApi": "Ouvrir sur l’API"
   },
   "connection": {
-    "lost": "Connexion perdue. Reconnexion en cours ; les modifications seront synchronisées au retour de la connexion.",
-    "back": "Connexion rétablie"
+    "lost": "Connexion perdue. Reconnexion en cours ; les modifications seront synchronisées au retour de la connexion."
   },
   "desktop": {
     "switchServer": "Changer de serveur",

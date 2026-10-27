@@ -97,6 +97,8 @@
     "contacts:write": "Update contacts",
     "kb:read": "Read help articles",
     "kb:write": "Draft help articles",
+    "wiki:read": "Read the team wiki",
+    "wiki:write": "Write the team wiki",
     "settings:read": "Read teammates, teams and reports"
   },
   "consent": {

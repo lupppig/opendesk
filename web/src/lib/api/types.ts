@@ -549,6 +549,10 @@ export type TicketFilters = {
   mailbox_id?: string;
   /** Mailbox ids, comma separated: tickets whose reply address is none of them. */
   mailbox_not?: string;
+  /** Contact ids, comma separated: tickets whose contact is none of them. */
+  contact_not?: string;
+  /** Company ids, comma separated: tickets whose contact belongs to none of them. */
+  company_not?: string;
   /** The address a ticket was first written to: a mailbox's address or an alias. */
   received_at?: string;
   brand_id?: string;
@@ -688,12 +692,19 @@ export type ActionType =
   | "send_reply"
   | "add_note"
   | "mark_spam"
+  /** Soft-deletes the ticket; later steps and automations skip it. */
+  | "delete_ticket"
+  /** ticket_created only. value: the window in days, "1".."30"; same_subject (default true). */
+  | "merge_into_open_ticket"
   | "ai_triage"
   /** value: a mailbox id of the ticket's brand (contracts/api.md). */
   | "set_reply_address"
   | "set_field";
-/** set_field: `field` is the ticket field key, `value` its string form ("12.5", "true", "2026-10-11", "a,b"; "" clears). */
-export type Action = { type: ActionType; value: string; field?: string };
+/**
+ * set_field: `field` is the ticket field key, `value` its string form ("12.5", "true", "2026-10-11", "a,b"; "" clears).
+ * merge_into_open_ticket: `same_subject` merges only into a ticket with the same subject (contracts/api.md).
+ */
+export type Action = { type: ActionType; value: string; field?: string; same_subject?: boolean };
 export type Automation = {
   id: string;
   name: string;
@@ -1259,7 +1270,69 @@ export type TicketCounts = {
 /** A sidebar row's tickets awaiting a reply (the customer wrote last), urgent, and overdue. */
 export type TicketStats = { awaiting: number; urgent: number; overdue: number };
 
-export type SearchResults = { tickets: Ticket[]; contacts: Contact[]; articles: KbArticle[] };
+/**
+ * A whole ticket list, every page of it (GET /v1/tickets/summary). `complete` is false, with
+ * every count 0, when the server did not count it: too many tickets match, or it is a search.
+ */
+export type TicketListSummary = TicketStats & { complete: boolean; total: number; due_soon: number };
+
+/** `wiki_pages` is left out by servers without the wiki and for callers without `wiki:read`. */
+export type SearchResults = { tickets: Ticket[]; contacts: Contact[]; articles: KbArticle[]; wiki_pages?: WikiSearchHit[] };
+
+// ─── Wiki (contracts/wiki.md) ───────────────────────────────────────────────
+
+/** A page in the tree, without its body. */
+export type WikiNode = {
+  id: string;
+  parent_id: string | null;
+  /** "" until named: shown as "Untitled". */
+  title: string;
+  /** One emoji, or "". */
+  icon: string;
+  /** Order among its siblings, from 0. */
+  position: number;
+  /** Moves on every change of title, icon or body; PATCH sends it back. */
+  version: number;
+  updated_at: string;
+  /** Who created it; null for an API key or a deleted account. */
+  created_by_id: string | null;
+};
+
+export type WikiRef = { id: string; title: string; icon: string };
+
+export type WikiPage = WikiNode & {
+  body_html: string;
+  created_by: UserRef | null;
+  updated_by: UserRef | null;
+  created_at: string;
+  /** Its ancestors, the top-level page first. */
+  breadcrumbs: WikiRef[];
+  children: WikiRef[];
+};
+
+export type WikiRevision = {
+  id: string;
+  title: string;
+  icon: string;
+  /** Only when one revision is read. */
+  body_html?: string;
+  author: UserRef | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type WikiSearchHit = {
+  id: string;
+  parent_id: string | null;
+  title: string;
+  icon: string;
+  /** Plain text around the match. */
+  snippet: string;
+  path: WikiRef[];
+  updated_at: string;
+};
+
+export type WikiPagePatch = { title?: string; icon?: string; body_html?: string; version?: number };
 
 export type ReportsOverview = {
   created: number;
@@ -1282,6 +1355,29 @@ export type ReportsOverview = {
 };
 /** One team's or brand's row of the overview. */
 export type ReportsGroup = { created: number; solved: number; open_now: number; first_response_p50_minutes: number | null };
+
+/** One member's row of GET /v1/reports/agents (contracts/api.md "Agents report"). */
+export type ReportsAgentRow = {
+  user: UserRef;
+  /** Tickets assigned to them in the range, or created in it assigned to them. */
+  assigned: number;
+  /** Tickets solved in the range that are assigned to them. */
+  solved: number;
+  /** Public replies they sent in the range. */
+  replies: number;
+  /** Internal notes they wrote in the range. */
+  notes: number;
+  /** Their public replies on the tickets they solved, per ticket. */
+  replies_per_solved: number | null;
+  first_response_p50_minutes: number | null;
+  /** Median time from the last assignment to them until solved. */
+  handle_p50_minutes: number | null;
+  /** Time in the app with availability online; null when `online_time` is none. */
+  online_minutes: number | null;
+};
+/** Whose rows and online time the caller sees: everyone's (admins), their own row only, or every row without online time (API keys). */
+export type ReportsOnlineTime = "all" | "self" | "none";
+export type ReportsAgents = { data: ReportsAgentRow[]; online_time: ReportsOnlineTime };
 
 export type MailboxTestLeg = { ok: boolean; error: string; /** The server's reply, scrubbed. */ detail?: string };
 /** GET /v1/mailboxes/{id}/usage: the tickets that reply from a mailbox, before removing it. */
@@ -1645,6 +1741,8 @@ export type AIConfig = {
   decisions?: DecisionEngine;
   /** LLM calls run on the workspace's own provider key and cost $0 (GET /v1/ai/provider). */
   own_key?: boolean;
+  /** Decisions run on the workspace's own TypeSafe or provider key and cost $0. */
+  decisions_own_key?: boolean;
 };
 
 // The workspace's AI provider (contracts/ai.md "Provider per workspace").
@@ -1671,6 +1769,23 @@ export type AIProvider = {
   /** Calls on the instance's provider are charged to the AI balance, in US dollars. */
   billing: boolean;
   key: AIProviderKey | null;
+  /** Where decisions run; missing on older servers. */
+  decisions?: AIDecisionsRoute;
+};
+/** Where the workspace's decisions (Jev) run, and its own TypeSafe key. */
+export type AIDecisionsRoute = {
+  runs_on: "instance" | "provider_key" | "typesafe_key" | "none";
+  engine: "jev" | "llm" | "none";
+  key: AIDecisionsKey | null;
+};
+/** A saved TypeSafe key, never the key itself. */
+export type AIDecisionsKey = {
+  last4: string;
+  status: AIKeyStatus;
+  status_at: string | null;
+  created_by: UserRef | null;
+  created_at: string;
+  updated_at: string;
 };
 export type AIProviderKeyInput = { kind: AIKeyKind; api_key: string; base_url?: string; model?: string; fast_model?: string };
 export type AIProviderTestReason = "invalid_key" | "no_funds" | "unreachable" | "busy" | "model_unavailable";
@@ -2222,12 +2337,54 @@ export type MailAccount = {
   oldest_message_at: string | null;
   /** IMAP: folders past the 30 the sync reads; 0 otherwise. */
   folders_left_out: number;
+  /** How its inbox is split into tabs (contracts/collab.md "Categories"). */
+  categories: MailAccountCategories;
 };
+
+/** One tab of an inbox (contracts/collab.md "Categories"). "primary" is always the first. */
+export type MailCategory = { key: string; name: string; description: string; color: MailColor };
+
+export type MailCategorySet = { enabled: boolean; categories: MailCategory[]; updated_at: string; updated_by: UserRef | null };
+
+/** GET /v1/collab/categories. */
+export type MailCategorySettings = {
+  /** The workspace's default; null when there is none. locked: members who are not admins cannot choose their own. */
+  workspace: (MailCategorySet & { locked: boolean }) | null;
+  /** Admins: every team with its own; others: their own teams'. The first in position order the owner is in decides. */
+  teams: (MailCategorySet & { team_id: string; team_name: string; position: number })[];
+  presets: MailCategory[];
+  /** ai: Ollie sorts new mail; rules: sender rules and headers only. */
+  sorting: "ai" | "rules";
+  /** Ollie can suggest categories. */
+  suggest: boolean;
+};
+
+export type MailAccountCategories = {
+  enabled: boolean;
+  /** What its inbox shows; [] when not split. */
+  categories: MailCategory[];
+  source: "account" | "team" | "workspace" | "none";
+  team: { id: string; name: string } | null;
+  /** The account's own choice. */
+  mode: "follow" | "custom" | "off";
+  /** Its own categories, kept while it follows. */
+  own: MailCategory[];
+  /** Ollie may sort its new mail. */
+  ai: boolean;
+  /** The caller cannot change mode or categories: the workspace locks them. */
+  locked: boolean;
+};
+
+/** A sender rule: mail from an address, or from "@domain", goes to a category. */
+export type MailCategoryRule = { id: string; sender: string; category: string; created_at: string };
 
 /** limited: at the workspace's Collab storage allowance (contracts/collab.md "Storage"). */
 export type MailHistoryStatus = "running" | "paused" | "limited" | "done" | "canceled" | "error";
 
 /** A history import: older mail brought into opendesk (contracts/collab.md "History"). */
+/** The older mail a new account imports once connected: from since on, or all of it (null). */
+export type ConnectHistory = { since: string | null };
+
 export type MailHistory = {
   status: MailHistoryStatus;
   /** Mail received from then on; null = all mail. */
@@ -2368,6 +2525,8 @@ export type MailThread = {
   comment_count: number;
   /** The account's address other than its own the conversation was written to or sent from (an alias); null when none. */
   to_address?: string | null;
+  /** Its category key (contracts/collab.md "Categories"); null when its account's inbox is not split. */
+  category?: string | null;
 };
 
 export type MailAttachment = {
@@ -2409,6 +2568,8 @@ export type MailMessage = {
   sent_by: UserRef | null;
   /** Drafts: the id the /v1/collab/drafts routes take. */
   draft_id?: string | null;
+  /** Drafts an AI key saved and no person has saved since: the key's name, shown "AI draft by" (contracts/collab.md "AI drafts"). */
+  drafted_by_ai?: string | null;
   /** The message of the conversation it answers (its In-Reply-To), when stored. */
   in_reply_to_id?: string | null;
   /** The account's address (its own or an alias) it was sent from or written to; null when none. */
@@ -2529,6 +2690,8 @@ export type SidebarPrefs = {
   badges: Record<string, SidebarBadge>;
   /** The mail page's folder bar, in order: box names and "folder:<id>". */
   mail_tabs: string[];
+  /** Pins the sidebar added once by itself ("box:inbox": All inboxes, at a second account), so one unpinned stays so. */
+  auto_pins: string[];
 };
 
 /** unread / total / none for mail rows; count / awaiting / urgent / overdue / none for ticket rows, and open for team rows. */
@@ -2547,6 +2710,7 @@ export type MailThreadAction =
   | "spam"
   | "not_spam"
   | "move"
+  | "categorize"
   | "label"
   | "unlabel"
   | "done"
@@ -2561,6 +2725,8 @@ export type MailCounts = {
   addresses?: Record<string, Record<string, number>>;
   /** boxes.assigned by account; only accounts with some. */
   assigned: Record<string, number>;
+  /** By split account, then category key (primary included): unread conversations in its inbox; missing = 0. */
+  categories?: Record<string, Record<string, number>>;
 };
 
 /** `collab.changed` event data. */

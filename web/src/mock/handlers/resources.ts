@@ -241,20 +241,27 @@ export function registerResources() {
     resource: "automation",
     list: (ws) => ws.automations,
     sort: (a, b) => a.position - b.position,
-    create: (ctx, id) => ({
-      id,
-      name: required(ctx, "name").slice(0, 80),
-      trigger: (s(ctx, "trigger") as Automation["trigger"] | undefined) ?? "ticket_created",
-      conditions: conditions(ctx.body.conditions),
-      actions: actions(ctx.body.actions, true),
-      enabled: ctx.body.enabled !== false,
-      position: ctx.ws.automations.length,
-      run_count: 0,
-    }),
+    create: (ctx, id) => {
+      const trigger = (s(ctx, "trigger") as Automation["trigger"] | undefined) ?? "ticket_created";
+      const acts = actions(ctx.body.actions, true);
+      checkActionTrigger(trigger, acts);
+      return {
+        id,
+        name: required(ctx, "name").slice(0, 80),
+        trigger,
+        conditions: conditions(ctx.body.conditions),
+        actions: acts,
+        enabled: ctx.body.enabled !== false,
+        position: ctx.ws.automations.length,
+        run_count: 0,
+      };
+    },
     update: (ctx, row) => {
+      const acts = "actions" in ctx.body ? actions(ctx.body.actions, true) : row.actions;
+      checkActionTrigger((s(ctx, "trigger") as Automation["trigger"] | undefined) ?? row.trigger, acts);
       assign(row, ctx.body, ["name", "trigger", "enabled", "position"]);
       if ("conditions" in ctx.body) row.conditions = conditions(ctx.body.conditions);
-      if ("actions" in ctx.body) row.actions = actions(ctx.body.actions, true);
+      row.actions = acts;
     },
   });
 
@@ -611,8 +618,21 @@ function actions(v: unknown, requireOne: boolean): Action[] {
   if (requireOne && !list.length) throw invalid("Add at least one action");
   return list.map((a) => {
     if (typeof a.type !== "string" || typeof a.value !== "string") throw invalid("Each action needs a type and value");
+    if (a.type === "merge_into_open_ticket") return mergeAction(a.value, a.same_subject);
     return { type: a.type, value: a.value } as Action;
   });
+}
+
+/** merge_into_open_ticket: a window of 1 to 30 days, 7 when empty, and same_subject, true unless false (contracts/api.md). */
+function mergeAction(value: string, sameSubject: unknown): Action {
+  const v = value.trim() || "7";
+  if (!/^\d+$/.test(v) || Number(v) < 1 || Number(v) > 30) throw invalid("merge_into_open_ticket value must be a number of days from 1 to 30");
+  return { type: "merge_into_open_ticket", value: String(Number(v)), same_subject: sameSubject !== false };
+}
+
+/** A merge joins a new ticket to an earlier one: it runs only when a ticket is created. */
+function checkActionTrigger(trigger: Automation["trigger"], acts: Action[]) {
+  if (trigger !== "ticket_created" && acts.some((a) => a.type === "merge_into_open_ticket")) throw invalid("merge_into_open_ticket runs only on the ticket_created trigger");
 }
 
 function uniqueSlug(rows: { slug: string }[], base: string): string {

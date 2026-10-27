@@ -23,6 +23,8 @@ type ProviderView struct {
 	InstanceProvider string       `json:"instance_provider" doc:"The instance's provider (openrouter, anthropic, openai)"`
 	Billing          bool         `json:"billing" doc:"Calls on the instance's provider are charged to the AI balance, in US dollars"`
 	Key              *ProviderKey `json:"key"`
+	// Decisions is where the workspace's decisions (Jev) run, and its TypeSafe key.
+	Decisions DecisionsView `json:"decisions"`
 }
 
 // ProviderKey describes a saved key without revealing it.
@@ -43,16 +45,23 @@ var errTestFailed = func(t *ProviderTest) error {
 	return httpx.E(http.StatusUnprocessableEntity, "provider_test_failed", t.Message)
 }
 
+// providerView reads the workspace's provider and decisions; q must see what is
+// committed (decisions are routed through the pool).
 func (s *Service) providerView(ctx context.Context, q db.Querier, wid uuid.UUID) (ProviderView, error) {
 	out := ProviderView{Mode: "instance", InstanceProvider: "none", Billing: s.d.Plan != nil && s.d.Plan.Billing}
 	if s.provider != nil {
 		out.InstanceProvider = s.provider.Name()
 	}
+	dv, err := s.decisionsView(ctx, q, wid)
+	if err != nil {
+		return out, err
+	}
+	out.Decisions = dv
 	var k ProviderKey
 	var baseURL string
 	var uid *uuid.UUID
 	var name, email, avatar *string
-	err := q.QueryRow(ctx, `SELECT k.kind, k.base_url, k.key_last4, k.model, k.fast_model, k.status, k.status_at, k.created_at, k.updated_at,
+	err = q.QueryRow(ctx, `SELECT k.kind, k.base_url, k.key_last4, k.model, k.fast_model, k.status, k.status_at, k.created_at, k.updated_at,
 			u.id, u.name, u.email, u.avatar_url
 		FROM ai_provider_keys k LEFT JOIN users u ON u.id = k.created_by WHERE k.workspace_id = $1`, wid).
 		Scan(&k.Kind, &baseURL, &k.Last4, &k.Model, &k.FastModel, &k.Status, &k.StatusAt, &k.CreatedAt, &k.UpdatedAt, &uid, &name, &email, &avatar)
@@ -86,6 +95,7 @@ func last4(key string) string {
 
 func (s *Service) registerProvider(api huma.API) {
 	tags := []string{"AI"}
+	s.registerDecisionsKey(api)
 
 	huma.Register(api, huma.Operation{OperationID: "ai-get-provider", Method: http.MethodGet, Path: "/v1/ai/provider",
 		Summary: "AI provider", Description: "Whether the workspace's AI runs on the instance's provider or its own key. The key itself is never returned.", Tags: tags},
@@ -149,7 +159,6 @@ func (s *Service) registerProvider(api huma.API) {
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			var out ProviderView
 			err = s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
 				var replaced bool
 				if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM ai_provider_keys WHERE workspace_id = $1)`, p.WorkspaceID).Scan(&replaced); err != nil {
@@ -173,12 +182,12 @@ func (s *Service) registerProvider(api huma.API) {
 						data["base_url_host"] = u.Host
 					}
 				}
-				if err := audit.Log(ctx, tx, p, p.WorkspaceID, action, "workspace", &p.WorkspaceID, data); err != nil {
-					return err
-				}
-				out, err = s.providerView(ctx, tx, p.WorkspaceID)
-				return err
+				return audit.Log(ctx, tx, p, p.WorkspaceID, action, "workspace", &p.WorkspaceID, data)
 			})
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			out, err := s.providerView(ctx, s.d.DB.Pool, p.WorkspaceID)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}

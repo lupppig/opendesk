@@ -315,6 +315,8 @@
     "offlinePlaceholder": "Nous sommes absents pour le moment. Laissez un message et nous vous répondrons par e-mail.",
     "followUp": "Répondre par e-mail après leur départ",
     "followUpHint": "Un visiteur ayant laissé son adresse e-mail et quitté le site reçoit vos réponses par e-mail, depuis l’adresse de la marque pour l’équipe.",
+    "followUpMailboxMissing": "Ajoutez une boîte d’envoi active à cette marque pour envoyer les e-mails de suivi.",
+    "followUpAddMailbox": "Ajouter une boîte mail",
     "installHint": "Collez ce code avant </body> sur chaque page de ce site.",
     "secretHint": "Signe les appels identify pour {{name}}. Chaque widget possède son propre secret.",
     "rotateBody": "Le secret actuel de {{name}} cesse de fonctionner immédiatement. Mettez votre serveur à jour avant que les visiteurs se reconnectent.",

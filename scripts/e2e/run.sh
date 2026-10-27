@@ -32,6 +32,7 @@ cleanup() {
 trap cleanup EXIT
 
 [[ -d node_modules/playwright ]] || pnpm install --ignore-workspace --frozen-lockfile
+node --test mail-links.test.mjs
 npx playwright install chromium >/dev/null
 [[ -f "$root/web/dist/widget/v1.js" ]] || (cd "$root/web" && pnpm build:widget)
 

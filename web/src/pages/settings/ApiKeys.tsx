@@ -19,6 +19,7 @@ import { IconTile, ListSkeleton, MonoChip, StatePill, SummaryStrip } from "@/com
 import { MotionList, MotionRow } from "@/components/settings2/motion";
 import { useListMutation } from "@/components/settings2/optimistic";
 import { GrantedTeams, PrivateTeamsField } from "@/components/settings2/teams";
+import { ReauthNotice, isReauthError } from "@/components/settings/ReauthNotice";
 import { api } from "@/lib/api/endpoints";
 import { errorMessage } from "@/lib/api/client";
 import type { ApiKey } from "@/lib/api/types";
@@ -32,10 +33,15 @@ const scopeGroups: { resource: string; label: string; scopes: { id: string; labe
   { resource: "contacts", label: "Contacts", scopes: [{ id: "contacts:read", label: "Read" }, { id: "contacts:write", label: "Write" }] },
   { resource: "kb", label: "Knowledge base", scopes: [{ id: "kb:read", label: "Read" }, { id: "kb:write", label: "Write" }] },
   { resource: "changelog", label: "Changelog", scopes: [{ id: "changelog:read", label: "Read" }, { id: "changelog:write", label: "Write" }] },
+  { resource: "wiki", label: "Wiki", scopes: [{ id: "wiki:read", label: "Read" }, { id: "wiki:write", label: "Write" }] },
   { resource: "settings", label: "Settings", scopes: [{ id: "settings:read", label: "Read" }, { id: "settings:write", label: "Write" }] },
   { resource: "realtime", label: "Realtime", scopes: [{ id: "realtime", label: "Subscribe" }] },
+  // Acts as the key's creator in Collab: reads the mail they see and saves reply drafts, never sends.
+  { resource: "collab", label: "Collab (as you)", scopes: [{ id: "collab:draft", label: "Draft replies" }] },
 ];
-const allScopes = scopeGroups.flatMap((g) => g.scopes.map((s) => s.id));
+// collab:draft reaches the creator's mail, so no preset includes it: it is chosen by hand.
+const optInScopes = ["collab:draft"];
+const allScopes = scopeGroups.flatMap((g) => g.scopes.map((s) => s.id)).filter((s) => !optInScopes.includes(s));
 const readScopes = allScopes.filter((s) => s.endsWith(":read"));
 
 type Expiry = "never" | "30" | "90" | "365";
@@ -312,7 +318,7 @@ function InlineName({ initial, onDone }: { initial: string; onDone: (v: string |
   );
 }
 
-function CreateKeyDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (k: ApiKey & { secret: string }) => void }) {
+export function CreateKeyDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (k: ApiKey & { secret: string }) => void }) {
   const { t } = useTranslation("settingsDev");
   const qc = useQueryClient();
   const [name, setName] = useState("");
@@ -336,7 +342,10 @@ function CreateKeyDialog({ onClose, onCreated }: { onClose: () => void; onCreate
       upsertInList(qc, qk.apiKeys, row as ApiKey, { prepend: true });
       onCreated(k);
     },
-    onError: (e) => setError(errorMessage(e)),
+    // A key needs a recent sign-in (with 2FA when on): the notice below says why and signs in again.
+    onError: (e) => {
+      if (!isReauthError(e)) setError(errorMessage(e));
+    },
   });
 
   const toggle = (id: string, on: boolean) => setScopes((s) => (on ? [...new Set([...s, id])] : s.filter((x) => x !== id)));
@@ -422,6 +431,7 @@ function CreateKeyDialog({ onClose, onCreated }: { onClose: () => void; onCreate
           )}
         </Field>
         <PrivateTeamsField value={privateTeams} onChange={setPrivateTeams} />
+        {isReauthError(create.error) && <ReauthNotice error={create.error} />}
         <button type="submit" className="hidden" />
       </form>
     </Dialog>

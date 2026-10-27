@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/google/uuid"
 
 	"github.com/useopendesk/opendesk/internal/auth"
 	"github.com/useopendesk/opendesk/internal/httpx"
@@ -15,13 +14,10 @@ func (s *service) registerStatusRoutes(api huma.API) {
 	collabOp(api, huma.Operation{OperationID: "get-collab", Method: http.MethodGet, Path: "/v1/collab",
 		Summary: "Whether Collab is on, and what can be connected"},
 		func(ctx context.Context, _ *struct{}) (*struct{ Body CollabStatus }, error) {
-			// The only Collab route without the Collab check: it says whether it is on.
-			p, err := auth.RequireWorkspace(ctx, auth.RoleViewer, "")
+			// Without the Collab check: it says whether it is on.
+			p, err := s.member(ctx, auth.RoleViewer)
 			if err != nil {
 				return nil, httpx.Wrap(err)
-			}
-			if p.Kind != auth.KindUser || p.Assistant || p.ViaAssistant || p.GrantID != uuid.Nil {
-				return nil, httpx.Wrap(auth.ErrForbidden)
 			}
 			ent, err := s.d.Plan.Entitlements(ctx, s.d.DB.Pool, p.WorkspaceID)
 			if err != nil {

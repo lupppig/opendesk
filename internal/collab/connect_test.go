@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -183,6 +184,57 @@ func TestOAuthConnect(t *testing.T) {
 	}
 	if got := w.s.providersOffered(); !got.Google || got.Microsoft || !got.IMAP {
 		t.Fatalf("offered: %+v", got)
+	}
+}
+
+// TestConnectStartsHistory: the older mail chosen while connecting is imported from the
+// first sync on; none chosen, none is.
+func TestConnectStartsHistory(t *testing.T) {
+	w := newWorld(t)
+	srv := w.api(w.agent)
+	address := "adam-" + uuid.NewString()[:6] + "@gmail.test"
+	fakeGoogleOAuth(t, w, address, "Adam Agent")
+	since := time.Now().AddDate(-1, 0, 0).UTC().Truncate(time.Second)
+	loc := connectGoogle(t, w, srv.URL, map[string]any{"history": map[string]any{"since": since}}, "good-code")
+	id, err := uuid.Parse(loc.Query().Get("connected"))
+	if err != nil {
+		t.Fatalf("redirect: %s", loc)
+	}
+	h, err := loadHistory(w.ctx, w.d.DB.Pool, id)
+	if err != nil || h == nil || h.Status != HistoryRunning || h.Since == nil || !h.Since.Equal(since) || h.RequestedBy == nil || *h.RequestedBy != w.agent.UserID {
+		t.Fatalf("history: %+v %v", h, err)
+	}
+	if n := w.count(`SELECT count(*) FROM audit_logs WHERE workspace_id = $1 AND action = 'collab.history_import' AND entity_id = $2`, w.wid, id); n != 1 {
+		t.Fatal("the import was not audited")
+	}
+	// Connecting it again keeps the import as it is.
+	mustExec(t, w.d, `UPDATE collab_history SET status = 'done' WHERE account_id = $1`, id)
+	connectGoogle(t, w, srv.URL, map[string]any{"history": map[string]any{}}, "good-code")
+	if h, _ = loadHistory(w.ctx, w.d.DB.Pool, id); h.Status != HistoryDone || h.Since == nil {
+		t.Fatalf("reconnected: %+v", h)
+	}
+
+	// All mail, for an account connected without a range: none.
+	other := "bea-" + uuid.NewString()[:6] + "@gmail.test"
+	fakeGoogleOAuth(t, w, other, "Bea Agent")
+	loc = connectGoogle(t, w, w.api(w.agent2).URL, map[string]any{"history": map[string]any{"since": nil}}, "good-code")
+	id2, _ := uuid.Parse(loc.Query().Get("connected"))
+	if h, _ := loadHistory(w.ctx, w.d.DB.Pool, id2); h == nil || h.Since != nil {
+		t.Fatalf("all mail: %+v", h)
+	}
+	third := "olive-" + uuid.NewString()[:6] + "@gmail.test"
+	fakeGoogleOAuth(t, w, third, "Olive Owner")
+	loc = connectGoogle(t, w, w.api(w.owner).URL, map[string]any{}, "good-code")
+	id3, _ := uuid.Parse(loc.Query().Get("connected"))
+	if h, _ := loadHistory(w.ctx, w.d.DB.Pool, id3); h != nil {
+		t.Fatalf("none chosen: %+v", h)
+	}
+	// A start in the future is refused before the sign-in.
+	var e struct {
+		Status int `json:"status"`
+	}
+	if st := doJSON(t, "POST", srv.URL+"/v1/collab/accounts/oauth/google/start", map[string]any{"history": map[string]any{"since": time.Now().Add(time.Hour)}}, &e); st != 422 {
+		t.Fatalf("future: %d", st)
 	}
 }
 

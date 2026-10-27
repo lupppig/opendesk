@@ -688,7 +688,7 @@ func (s *service) applyGmailChanges(ctx context.Context, p *pass, g *gmailProvid
 				return nil, err
 			}
 			c.LabelIDs, c.Labels, c.ThreadID = m.LabelIDs, true, m.ThreadID
-			fetched[c.ID] = &newMessage{RemoteID: c.ID, ThreadRemoteID: m.ThreadID, Raw: raw, Date: m.date()}
+			fetched[c.ID] = &newMessage{RemoteID: c.ID, ThreadRemoteID: m.ThreadID, Raw: raw, Date: m.date(), Signals: gmailSignals(m.LabelIDs)}
 		}
 		err = p.batch(ctx, func(tx pgx.Tx) error {
 			for _, c := range chunk {

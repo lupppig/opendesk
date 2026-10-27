@@ -1,0 +1,81 @@
+---
+title: Wiki
+description: Write your team's runbooks, policies and how-tos in pages only members see.
+---
+
+import Steps from '../../../components/Steps.astro';
+import Step from '../../../components/Step.astro';
+import Callout from '../../../components/Callout.astro';
+
+The wiki holds your team's internal documentation: escalation steps, refund rules, on-call rotas, onboarding, how-tos. Pages nest under each other, so a handbook can hold its chapters and a chapter its details.
+
+The wiki is for members only. Customers never see it: it is not part of the [help center](/guides/knowledge-base/), the chat widget, email answers or anything the AI agent tells a customer. For articles customers read, use the knowledge base.
+
+Open **Wiki** in the sidebar, or press <kbd>g</kbd> then <kbd>w</kbd>.
+
+## Write a page
+
+<Steps>
+<Step title="Create it">
+
+Click **New page** (or **+** at the top of the page list). A new wiki starts with **Create the first page** and three starter pages: an escalation process, a refund policy and an onboarding checklist, outlines to fill in.
+
+</Step>
+<Step title="Name it and pick an icon">
+
+Type the title at the top. Hover above it and click **Add icon** to give the page an emoji; it shows in the page list and the breadcrumbs.
+
+</Step>
+<Step title="Write">
+
+Write the body with the same editor as help articles: headings, lists, quotes, code, links and images. There is no save button: the page saves a moment after you stop typing, and the header says **Saving** and then **Saved**. Leaving the page, or closing the tab, sends anything not saved yet. <kbd>Ctrl</kbd> <kbd>S</kbd> (<kbd>Cmd</kbd> <kbd>S</kbd> on a Mac) saves at once.
+
+</Step>
+</Steps>
+
+## Organize pages
+
+- **Add a subpage** with the **+** beside a page in the list, from the page's **more actions** menu, or at the bottom of the page.
+- **Drag a page** in the list onto another to put it inside, or above or below one to reorder. Its subpages move with it. Pages nest up to 10 levels.
+- **Move to…** in a page's menu, in the list or in the page header, picks where it goes from a searchable list of pages, or **Top level**. The page goes last under the one you pick. On a phone or tablet this is how pages move.
+- **With the keyboard**: in the page list, the arrow keys move between pages, <kbd>Right</kbd> opens a page's subpages and <kbd>Left</kbd> closes them, and <kbd>Enter</kbd> opens a page. <kbd>Alt</kbd> with <kbd>Up</kbd> or <kbd>Down</kbd> moves the page among its neighbours, <kbd>Alt</kbd> <kbd>Right</kbd> puts it inside the page above, and <kbd>Alt</kbd> <kbd>Left</kbd> moves it out a level.
+- **Copy link** in the page header gives an address teammates can open.
+
+## Find a page
+
+Type in **Search pages** above the list: it matches titles and text, also partly typed words, and shows a passage around each match. The command menu (<kbd>Ctrl</kbd> <kbd>K</kbd>) finds wiki pages too, next to tickets, contacts and articles.
+
+You can also ask [Ollie](/guides/ollie/): "What's our refund escalation process?" Ollie searches the wiki, reads the page and says which one the answer comes from.
+
+## Editing together
+
+Pages update live for everyone who has them open. If a teammate saves the page while you have changes that are not saved yet, opendesk keeps your text and asks: **Load their version** to take theirs, or **Keep mine** to save yours over it. Nothing is overwritten without that choice. When you can't edit a page (a viewer, or your role changed), or the page was deleted while you had changes not saved yet, the page says so and offers **Copy my text**, so nothing you typed is lost.
+
+## History
+
+Click **History** in the page header to see earlier versions, who wrote them and when, and to read each one. One person's edits a few minutes apart are kept as one version; up to 100 versions are kept per page. **Restore this version** puts an older version back; the version it replaces stays in the history.
+
+## Who can do what
+
+| Role | Read | Create, edit, move, restore | Delete |
+| --- | --- | --- | --- |
+| Viewer | Yes | No | No |
+| Agent | Yes | Yes | Pages they created, with only their own pages under them |
+| Admin, owner | Yes | Yes | Any page |
+
+Deleting a page deletes its subpages and their history for good, so when someone else created the page or any page under it, only an admin can delete it. opendesk asks first and says how many subpages go with it. Creating and deleting pages is recorded in the [audit log](/security/).
+
+<Callout>
+
+- A workspace holds up to 5,000 pages, of up to 512 KB of text each.
+- Page text is cleaned before it is stored, so only safe formatting is kept.
+- API keys and AI clients reach the wiki with the `wiki:read` and `wiki:write` scopes ([Wiki API](/api/resources/wiki/), [MCP server](/api/mcp/)).
+
+</Callout>
+
+## Related
+
+- [Knowledge base and help center](/guides/knowledge-base/)
+- [Ollie, the assistant](/guides/ollie/)
+- [Keyboard shortcuts](/guides/keyboard-shortcuts/)
+- [Wiki API](/api/resources/wiki/)

@@ -6,14 +6,14 @@ import type { Ticket } from "@/lib/api/types";
 import { cn } from "@/lib/cn";
 import { relShort, fullDate } from "@/lib/format";
 import { ease } from "@/lib/motion";
-import { Avatar, AvatarStack } from "@/components/ui/avatar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip } from "@/components/ui/tooltip";
 import { ChannelIcon, channelLabel, PriorityIcon, SeverityChip, severityLabel, SlaPill, slaState, StatusIcon } from "./bits";
 import { useDisplay } from "./fields";
 import { SetByOllie, useOllieNote } from "./ollie";
 import { aiDecisions } from "@/lib/decisions";
-import { useTicketViewers } from "./presence";
+import { useAssigneeDisplay } from "@/lib/listDisplay";
+import { AssigneeMark, Viewers } from "./people";
 import { rowMotion } from "./motion";
 import { Labels } from "@/components/contacts/bits";
 import { LiveChatBadge, NewCount, UrgentEdge, WaitPill, urgentWash, useChatWait, useHandoffBot } from "./waiting";
@@ -45,20 +45,6 @@ export function awaitingReply(t: Ticket) {
     (t.status === "open" || t.status === "pending") &&
     !!t.last_customer_message_at &&
     Date.parse(t.last_customer_message_at) >= Date.parse(t.last_message_at) - 1000
-  );
-}
-
-function Viewers({ ticketId }: { ticketId: string }) {
-  const { t } = useTranslation("inbox");
-  const v = useTicketViewers(ticketId);
-  if (!v.length) return null;
-  const label = v.map((x) => t(x.state === "replying" ? "presence.replying" : "presence.viewing", { name: x.name })).join(", ");
-  return (
-    <Tooltip content={label}>
-      <span className="flex shrink-0 animate-pop-in motion-reduce:animate-none">
-        <AvatarStack size="xs" max={3} people={v.map((x) => ({ id: x.user_id, name: x.name, avatar: x.avatar, state: x.state }))} />
-      </span>
-    </Tooltip>
   );
 }
 
@@ -114,7 +100,13 @@ const Row = forwardRef<HTMLDivElement, RowProps>(function TicketRow(
   const decisions = aiDecisions(t);
   const aiSet = decisions ? !!decisions.fields.priority?.applied : !!t.custom?.ai_triaged_at;
   const aiSeverity = !!decisions?.fields.severity?.applied && decisions.fields.severity.value === t.severity;
-  const assignee = !hideAssignee && t.assignee;
+  // Who it is assigned to sits at the row's end, as this browser chose; who is on it
+  // right now shows live in green (./people), so the two never read alike.
+  const assigneeMode = useAssigneeDisplay();
+  const named = !hideAssignee && assigneeMode === "name";
+  const assignee = !hideAssignee && assigneeMode !== "none" && t.assignee;
+  // A handled chat's wait pill already says who is on it: the live mark keeps to its avatars.
+  const handledLive = wait?.handler?.how === "viewing" || wait?.handler?.how === "replying";
   const motionProps = rowMotion(reduced);
   const initial = fresh && !reduced ? { ...motionProps.initial, backgroundColor: "var(--tone-blue-soft)" } : motionProps.initial;
   const animate = fresh && !reduced ? { ...motionProps.animate, backgroundColor: "rgba(0,0,0,0)" } : motionProps.animate;
@@ -192,15 +184,9 @@ const Row = forwardRef<HTMLDivElement, RowProps>(function TicketRow(
 
   // Time and avatar, replaced in place by quick actions on hover or focus.
   const end = (
-    <span className={cn("relative flex shrink-0 items-center justify-end", compact ? "h-4 w-[60px]" : "h-6 w-[84px]")}>
+    <span className={cn("relative flex shrink-0 items-center justify-end", compact ? (named ? "h-4 min-w-[60px]" : "h-4 w-[60px]") : named ? "h-6 w-[148px]" : "h-6 w-[84px]")}>
       <span className={cn("flex items-center gap-2 transition-opacity duration-100", onQuick && "md:group-hover:opacity-0 md:group-focus-within:opacity-0")}>
-        {assignee && (
-          <Tooltip content={assignee.name}>
-            <span className="flex">
-              <Avatar name={assignee.name} src={assignee.avatar_url} size={compact ? "xs" : "sm"} />
-            </span>
-          </Tooltip>
-        )}
+        {assignee && <AssigneeMark assignee={assignee} mode={assigneeMode} compact={compact} />}
         <span className={cn("mono text-right tabular-nums", compact ? "whitespace-nowrap text-[10.5px] text-fg-4" : "min-w-9 whitespace-nowrap text-[11px] text-fg-3")} title={fullDate(t.last_message_at)}>
           {relShort(t.last_message_at)}
         </span>
@@ -266,7 +252,7 @@ const Row = forwardRef<HTMLDivElement, RowProps>(function TicketRow(
               </span>
               {channel}
               <TicketTeamChips t={t} ctx={teams} plain className="ml-0.5 shrink" />
-              <Viewers ticketId={t.id} />
+              <Viewers ticketId={t.id} bare />
               <span className="flex-1" />
               {end}
             </div>
@@ -303,7 +289,6 @@ const Row = forwardRef<HTMLDivElement, RowProps>(function TicketRow(
               {contactName}
             </span>
             {channel}
-            <Viewers ticketId={t.id} />
           </span>
           <span className="flex min-w-0 flex-1 items-center gap-2">
             {severity}
@@ -312,6 +297,7 @@ const Row = forwardRef<HTMLDivElement, RowProps>(function TicketRow(
             </span>
             {wait && <Labels labels={t.tags} className="shrink-0" />}
             {chips}
+            <Viewers ticketId={t.id} bare={handledLive} />
             <NewCount count={newCount} urgent={urgent} />
             {wait ? <WaitPill wait={wait} /> : <SlaIfAtRisk ticket={t} />}
             <span className={cn("min-w-0 flex-1 truncate text-[12.5px]", urgent ? "text-fg-3" : "text-fg-4")} data-ph-mask>

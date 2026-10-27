@@ -26,7 +26,7 @@ const (
 // featureTier maps an AI feature to its model tier.
 func featureTier(feature string) string {
 	switch feature {
-	case "rewrite", "translate", "triage", "decide", "assistant_peer":
+	case "rewrite", "translate", "triage", "decide", "assistant_peer", "mail_categorize", "mail_categories":
 		return tierFast
 	case "answer", "answer_email", "playground":
 		return tierWidget
@@ -284,6 +284,9 @@ var typicalTokens = map[string]tokenCount{
 	"assistant":    {6000, 400},
 	// One answer of a teammate's Ollie: mail excerpts in, a short answer out.
 	"assistant_peer": {4000, 400},
+	// Sorting up to 10 new Collab conversations (decisions), and suggesting an inbox's categories.
+	"mail_categorize": {3000, 100},
+	"mail_categories": {3000, 500},
 }
 
 // estimateMaxOutput caps the output tokens an estimate counts: features allow long
@@ -359,6 +362,19 @@ func chatTokens(req ChatRequest) int {
 	return n
 }
 
+// decisionFeatures are the features answered by the decision engine.
+var decisionFeatures = []string{"triage", "decide", "answer_check", "mail_categorize"}
+
+// ownDecisionCosts sets the decision features to $0: they run on the workspace's own
+// credentials (decisionsFor).
+func ownDecisionCosts(costs map[string]float64) {
+	for _, f := range decisionFeatures {
+		if _, ok := costs[f]; ok {
+			costs[f] = 0
+		}
+	}
+}
+
 // featureCosts sets costs[feature] to what a typical call costs on the workspace's
 // model for its tier (GET /v1/ai/config). Features answered by Jev keep their typical
 // cost, which does not depend on the model. On the workspace's own key, LLM features
@@ -367,7 +383,7 @@ func (s *Service) featureCosts(ctx context.Context, set hd.AISettings, costs map
 	jev := hd.Engine(s.d.Cfg).Provider == "typesafe"
 	for feature := range typicalTokens {
 		switch {
-		case jev && (feature == "triage" || feature == "decide"):
+		case jev && (feature == "triage" || feature == "decide" || feature == "mail_categorize"):
 		case ownKey:
 			costs[feature] = 0
 		default:

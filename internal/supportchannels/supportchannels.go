@@ -18,6 +18,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/deps"
 	"github.com/useopendesk/opendesk/internal/jobs"
 	"github.com/useopendesk/opendesk/internal/supportchannels/providers/discord"
+	"github.com/useopendesk/opendesk/internal/supportchannels/providers/googlechat"
 	"github.com/useopendesk/opendesk/internal/supportchannels/providers/slack"
 	"github.com/useopendesk/opendesk/internal/supportchannels/providers/telegram"
 )
@@ -36,7 +37,7 @@ func For(d *deps.Deps) *Service {
 	if got, ok := services.Load(d); ok {
 		return got.(*Service)
 	}
-	r, err := NewRegistry(slack.Adapter{}, discord.Adapter{}, telegram.Adapter{})
+	r, err := NewRegistry(slack.Adapter{}, discord.Adapter{}, telegram.Adapter{}, googlechat.New())
 	if err != nil {
 		panic(err)
 	}

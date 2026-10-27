@@ -50,7 +50,7 @@ export function AppHeader() {
       </button>
       {desktop?.platform === "darwin" && (
         // The traffic lights sit here, over the sidebar column; full screen hides them.
-        <div aria-hidden className={cn("hidden h-full shrink-0 md:block md:transition-[width] md:duration-200 md:ease-out window-full:hidden!", collapsed ? "w-[max(3.5rem,var(--window-inset-left))]" : "w-60")} />
+        <div aria-hidden className={cn("hidden h-full shrink-0 md:block md:transition-[width] md:duration-200 md:ease-out window-full:hidden!", collapsed ? "w-[max(3.5rem,var(--window-inset-left))]" : "w-[var(--pane-nav-live,var(--pane-nav,15rem))]")} />
       )}
       <Link
         to="/inbox/$folder/{-$ticketId}"
@@ -58,7 +58,7 @@ export function AppHeader() {
         aria-label="opendesk"
         className={cn(
           "group flex h-full shrink-0 items-center gap-2 pl-2 pr-3 outline-none md:transition-[width,padding] md:duration-200 md:ease-out",
-          collapsed ? "md:w-14 md:justify-center md:px-0" : "md:w-60 md:px-[18px]",
+          collapsed ? "md:w-14 md:justify-center md:px-0" : "md:w-[var(--pane-nav-live,var(--pane-nav,15rem))] md:px-[18px]",
           desktop?.platform === "darwin" && "hidden window-full:flex!",
         )}
       >

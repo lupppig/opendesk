@@ -103,6 +103,8 @@ export function cleanFilters(f: TicketFilters): TicketFilters {
   if (f.team_not) out.team_not = f.team_not;
   if (f.mailbox_id) out.mailbox_id = f.mailbox_id;
   if (f.mailbox_not) out.mailbox_not = f.mailbox_not;
+  if (f.contact_not) out.contact_not = f.contact_not;
+  if (f.company_not) out.company_not = f.company_not;
   if (f.received_at) out.received_at = f.received_at;
   if (f.tag) out.tag = f.tag;
   if (f.tag_not) out.tag_not = f.tag_not;

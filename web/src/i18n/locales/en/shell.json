@@ -6,6 +6,7 @@
     "workspace": "Workspace",
     "contacts": "Contacts",
     "kb": "Knowledge base",
+    "wiki": "Wiki",
     "reports": "Reports",
     "settings": "Settings",
     "manageViews": "Manage views",
@@ -133,6 +134,7 @@
     "toggleSidebar": "Toggle sidebar",
     "goMine": "Go to my tickets",
     "goReports": "Go to reports",
+    "goWiki": "Go to the wiki",
     "switchWorkspace": "Open workspace 1 to 9"
   },
   "route": {
@@ -156,8 +158,7 @@
     "openApi": "Open it on the API"
   },
   "connection": {
-    "lost": "Connection lost. Reconnecting, changes will sync when it is back.",
-    "back": "Back online"
+    "lost": "Connection lost. Reconnecting, changes will sync when it is back."
   },
   "desktop": {
     "switchServer": "Switch server",

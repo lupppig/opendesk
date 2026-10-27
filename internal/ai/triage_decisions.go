@@ -172,7 +172,7 @@ func (s *Service) triage(ctx context.Context, q db.Querier, wid uuid.UUID, userI
 	if err != nil {
 		return nil, nil, err
 	}
-	if s.jev() {
+	if s.jevFor(ctx, wid) {
 		t, c, err := s.triageJev(ctx, wid, userID, tid, tc, o)
 		// Out of AI balance for Jev, a workspace on its own key still triages on its LLM.
 		if err == nil || s.provider == nil || !skippable(err) || (isNoBalance(err) && !s.usesOwnKey(ctx, wid)) {
@@ -362,7 +362,7 @@ func categoryOptions() decide.Options {
 func (s *Service) triageJev(ctx context.Context, wid uuid.UUID, userID *uuid.UUID, tid uuid.UUID, tc *ticketCtx, o triageOptions) (*Triage, *call, error) {
 	req := decide.Request{State: decisionState(tc), Questions: triageQuestions(o)}
 	c := s.newCall(wid, userID, &tid, "triage")
-	res, err := c.decide(ctx, s.decider, req)
+	res, err := c.decide(ctx, req)
 	if err != nil {
 		return nil, nil, err
 	}

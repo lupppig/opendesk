@@ -256,6 +256,10 @@
     "resend": "Renvoyer l’e-mail de vérification",
     "appearance": "Apparence",
     "appearanceHint": "S’applique à ce navigateur.",
+    "conversation": {
+      "label": "Disposition en conversation",
+      "hint": "Les messages du client à gauche, les réponses et notes de votre équipe à droite, comme dans un chat. Pleine largeur sur un écran étroit."
+    },
     "sounds": {
       "title": "Sons",
       "hint": "S’applique à ce navigateur. Le chat en direct utilise un son plus marqué ; les autres sons sont discrets.",
@@ -268,6 +272,13 @@
       "replyHint": "Un client répond à l’un de vos tickets, sauf si vous le consultez déjà.",
       "assigned": "Attributions et mentions",
       "assignedHint": "Un élément vous est attribué, quelqu’un vous mentionne ou un SLA n’est pas respecté sur votre ticket."
+    },
+    "assignee": {
+      "label": "Responsable dans la liste des tickets",
+      "hint": "Les collègues présents sur un ticket s’affichent toujours en vert, avec ce qu’ils font.",
+      "photo": "Photo",
+      "name": "Prénom",
+      "none": "Rien"
     },
     "theme": {
       "label": "Thème",

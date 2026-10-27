@@ -108,6 +108,10 @@ func (s *service) accountsOut(ctx context.Context, q db.Querier, p *auth.Princip
 		return nil, err
 	}
 	fill := s.fillerFor(q, p.WorkspaceID, p.UserID)
+	cats, err := loadCategorySets(ctx, q, p.WorkspaceID, accountIDs, owners)
+	if err != nil {
+		return nil, err
+	}
 	for _, a := range list {
 		m := MailAccount{ID: a.ID, Provider: a.Provider, Email: a.Email, Name: a.Name, DisplayName: a.DisplayName, Color: a.Color,
 			Owner: refOf(refs, a.OwnerID), Visibility: a.Visibility, SharedWith: Audience{TeamIDs: []uuid.UUID{}, UserIDs: []uuid.UUID{}},
@@ -118,6 +122,7 @@ func (s *service) accountsOut(ctx context.Context, q db.Querier, p *auth.Princip
 			m.Name = a.Email
 		}
 		applySettings(&m, a)
+		m.Categories = cats.resolve(a).forCaller(p, cats)
 		if m.Identities, m.DefaultFrom, err = identitiesOut(ctx, fill, a, identities[a.ID]); err != nil {
 			return nil, err
 		}
@@ -224,11 +229,15 @@ func threadsOut(ctx context.Context, q db.Querier, list []*threadRow) ([]MailThr
 	if err != nil {
 		return nil, err
 	}
+	keys, err := accountCategoryKeys(ctx, q, list)
+	if err != nil {
+		return nil, err
+	}
 	for _, t := range list {
 		m := MailThread{ID: t.ID, AccountID: t.AccountID, Subject: t.Subject, Snippet: t.Snippet, Participants: t.Participants,
 			LastMessageAt: t.LastMessageAt, MessageCount: t.MessageCount, Unread: t.Unread, Starred: t.Starred,
 			HasAttachments: t.HasAttachments, NeedsAction: t.NeedsAction, FolderIDs: t.FolderIDs, Shared: slices.Contains(sharedList, t.ID),
-			Assignees: assignees[t.ID], CommentCount: comments[t.ID]}
+			Assignees: assignees[t.ID], CommentCount: comments[t.ID], Category: effectiveCategory(keys[t.AccountID], t.Category)}
 		if m.Assignees == nil {
 			m.Assignees = []domain.UserRef{}
 		}
@@ -241,6 +250,29 @@ func threadsOut(ctx context.Context, q db.Querier, list []*threadRow) ([]MailThr
 		out = append(out, m)
 	}
 	return out, nil
+}
+
+// accountCategoryKeys is the category keys the conversations' accounts are sorted with.
+func accountCategoryKeys(ctx context.Context, q db.Querier, list []*threadRow) (map[uuid.UUID][]string, error) {
+	var accountIDs []uuid.UUID
+	for _, t := range list {
+		accountIDs = appendNew(accountIDs, t.AccountID)
+	}
+	rows, err := q.Query(ctx, `SELECT id, category_keys FROM collab_accounts WHERE id = ANY($1) AND cardinality(category_keys) > 0`, accountIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[uuid.UUID][]string{}
+	for rows.Next() {
+		var id uuid.UUID
+		var keys []string
+		if err := rows.Scan(&id, &keys); err != nil {
+			return nil, err
+		}
+		out[id] = keys
+	}
+	return out, rows.Err()
 }
 
 // accountAliases is the addresses besides their own of the conversations' accounts.
@@ -364,6 +396,9 @@ func (s *service) messageOut(a *accountRow, m *messageRow, sentBy *domain.UserRe
 	// Bcc is only ever shown on mail the account sent.
 	if out.Outgoing {
 		out.Bcc = m.Bcc
+	}
+	if m.Draft && m.AIClient != nil {
+		out.DraftedByAI = m.AIClient
 	}
 	for _, at := range m.Attachments {
 		out.Attachments = append(out.Attachments, MailAttachment{ID: strconv.Itoa(at.Index), Filename: at.Filename, ContentType: at.ContentType,

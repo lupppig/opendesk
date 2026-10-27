@@ -69,6 +69,21 @@ func (w *world) chatReply(ticketID uuid.UUID, body string, ai bool) uuid.UUID {
 	return id
 }
 
+func (w *world) chatAPIReply(ticketID uuid.UUID, body string, ai bool) uuid.UUID {
+	w.t.Helper()
+	var id uuid.UUID
+	err := w.d.DB.Tx(w.ctx, func(tx pgx.Tx) error {
+		m, err := domain.AddMessage(w.ctx, tx, w.d.Jobs, domain.NewMessage{WorkspaceID: w.wid, TicketID: ticketID, Kind: "reply",
+			Direction: "outbound", AuthorType: "api", AI: ai, BodyHTML: "<p>" + body + "</p>", BodyText: body})
+		id = m.ID
+		return err
+	})
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	return id
+}
+
 func (w *world) followUps(mid uuid.UUID) []jobs.ChatFollowUpArgs {
 	w.t.Helper()
 	rows, err := w.d.DB.Pool.Query(w.ctx, `SELECT args FROM river_job WHERE kind = $1 AND args->>'message_id' = $2`,
@@ -195,6 +210,9 @@ func TestChatFollowUpSkips(t *testing.T) {
 	if n := len(w.followUps(w.chatReply(away, "Hi", true))); n != 0 {
 		t.Fatalf("AI reply queued %d", n)
 	}
+	if n := len(w.followUps(w.chatAPIReply(away, "AI answer", true))); n != 0 {
+		t.Fatalf("API AI reply queued %d", n)
+	}
 	mustExec(t, w.d, `UPDATE widgets SET settings = settings || '{"email_follow_up": false}' WHERE id = $1`, widget)
 	if n := len(w.followUps(w.chatReply(away, "Hi", false))); n != 0 {
 		t.Fatalf("setting off queued %d", n)
@@ -209,5 +227,24 @@ func TestChatFollowUpSkips(t *testing.T) {
 	}
 	if got := w2.message(mid).Delivery; got != "none" {
 		t.Fatalf("no address: %q", got)
+	}
+}
+
+func TestChatFollowUpFromAPIKey(t *testing.T) {
+	w := newWorld(t)
+	w.mailbox(InboundForwarding, OutboundSystem, nil)
+	tid, _ := w.chat(customer(), "10 minutes")
+	mid := w.chatAPIReply(tid, "Your order is on its way", false)
+	if n := len(w.followUps(mid)); n != 1 {
+		t.Fatalf("API reply follow-ups %d", n)
+	}
+	if err := w.s.chatFollowUp(w.ctx, w.followUps(mid)[0]); err != nil {
+		t.Fatal(err)
+	}
+	if got := w.message(mid).Delivery; got != "pending" {
+		t.Fatalf("API reply delivery %q", got)
+	}
+	if n := w.jobCount(jobs.SendMessageArgs{}.Kind(), "message_id", mid.String()); n != 1 {
+		t.Fatalf("send jobs %d", n)
 	}
 }

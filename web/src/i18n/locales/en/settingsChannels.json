@@ -699,6 +699,17 @@
         "description": "Mirror email tickets into Telegram forum topics and work them by talking to Ollie.",
         "setup": "Create a bot with BotFather, turn off its privacy mode (/setprivacy) and paste its token. opendesk sets up the webhook. Then make the bot an admin of a forum group.",
         "noChannels": "No forum groups yet. Make the bot an admin of a group with topics turned on, or send a message in a group it's already in, then refresh."
+      },
+      "google_chat": {
+        "description": "Mirror email tickets into Google Chat spaces and work them by talking to Ollie.",
+        "setup": "Enable the Google Chat API and create a service account key with the chat.bot scope. Configure a standard Chat app, not a Google Workspace add-on, for the same project and add it to the spaces you want to use.",
+        "steps": [
+          "In Google Cloud Console, enable the Google Chat API and configure a standard Chat app, not a Google Workspace add-on, for the project used by this service account.",
+          "Set the connection URL and authentication audience to the webhook address above. Choose HTTP endpoint URL as the authentication audience.",
+          "Add an /opendesk slash command and subscribe the app to message, message update, message delete, card click, app added and app removed events.",
+          "Add the Chat app to each space you want to route tickets to, then refresh the space list."
+        ],
+        "noChannels": "No spaces are available. Add the Chat app to a named space, then refresh."
       }
     },
     "field": {
@@ -706,7 +717,8 @@
       "signing_secret": "Signing secret",
       "public_key": "Interactions public key",
       "guild_id": "Server",
-      "webhook_secret": "Webhook secret"
+      "webhook_secret": "Webhook secret",
+      "service_account_json": "Service account JSON"
     },
     "connect": {
       "title": "Connect {{name}}",

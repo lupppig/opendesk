@@ -26,6 +26,8 @@ type View = {
     assignee?: "me" | "none" | string;
     team_id?: string;
     mailbox_id?: string;
+    contact_not?: string; // comma-separated contact ids: leaves out their tickets
+    company_not?: string; // comma-separated company ids: leaves out their contacts' tickets
     tag?: string;
     channel?: Channel;
     q?: string;

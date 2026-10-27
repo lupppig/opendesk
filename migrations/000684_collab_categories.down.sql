@@ -1,0 +1,10 @@
+ALTER TABLE collab_accounts DROP COLUMN IF EXISTS category_sig;
+ALTER TABLE collab_accounts DROP COLUMN IF EXISTS category_keys;
+ALTER TABLE collab_messages DROP COLUMN IF EXISTS signals;
+DROP INDEX IF EXISTS collab_threads_category_idx;
+DROP INDEX IF EXISTS collab_threads_category_pending_idx;
+ALTER TABLE collab_threads DROP COLUMN IF EXISTS category_pending;
+ALTER TABLE collab_threads DROP COLUMN IF EXISTS category_source;
+ALTER TABLE collab_threads DROP COLUMN IF EXISTS category;
+DROP TABLE IF EXISTS collab_category_rules;
+DROP TABLE IF EXISTS collab_category_sets;

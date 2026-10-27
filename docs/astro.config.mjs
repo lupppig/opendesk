@@ -103,6 +103,7 @@ export default defineConfig({
           label: 'Guides',
           items: [
             { label: 'Inbox and tickets', slug: 'guides/inbox-and-tickets' },
+            { label: 'Inbox categories', slug: 'guides/inbox-categories' },
             { label: 'Import your history', slug: 'guides/importing' },
             { label: 'Several workspaces', slug: 'guides/workspaces' },
             {
@@ -134,6 +135,7 @@ export default defineConfig({
             { label: 'Routing', slug: 'guides/routing' },
             { label: 'Knowledge base and help center', slug: 'guides/knowledge-base' },
             { label: 'Changelog', slug: 'guides/changelog' },
+            { label: 'Wiki', slug: 'guides/wiki' },
             { label: 'Help center addresses', slug: 'guides/help-center-addresses' },
             { label: 'Labels and custom fields', slug: 'guides/labels-and-custom-fields' },
             { label: 'Automations', slug: 'guides/automations' },
@@ -175,6 +177,7 @@ export default defineConfig({
                 { label: 'Automations and SLA', slug: 'api/resources/automations-sla' },
                 { label: 'Knowledge base', slug: 'api/resources/knowledge-base' },
                 { label: 'Changelog', slug: 'api/resources/changelog' },
+                { label: 'Wiki', slug: 'api/resources/wiki' },
                 { label: 'Mailboxes', slug: 'api/resources/mailboxes' },
                 { label: 'Templates and email design', slug: 'api/resources/templates' },
                 { label: 'Widget', slug: 'api/resources/widget' },

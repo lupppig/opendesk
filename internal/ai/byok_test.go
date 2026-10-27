@@ -24,15 +24,20 @@ type ownFake struct {
 	paths     []string
 	keyStatus int      // GET .../key answers this status when set
 	models    []string // GET .../models; nil answers 404
+	// decisions answers OpenRouter's Decisions API (Jev on the key) when set.
+	decisions *fakeTypeSafe
 }
 
 func newOwnFake(t *testing.T, models ...string) *ownFake {
 	o := &ownFake{fakeLLM: newFake(t), models: models}
 	o.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		o.mu.Lock()
-		keyStatus, list := o.keyStatus, o.models
+		keyStatus, list, decisions := o.keyStatus, o.models, o.decisions
 		o.mu.Unlock()
 		switch {
+		case strings.HasSuffix(r.URL.Path, "/alpha/decisions") && decisions != nil:
+			decisions.serve(w, r)
+			return
 		case strings.HasSuffix(r.URL.Path, "/key"):
 			if keyStatus != 0 {
 				w.WriteHeader(keyStatus)

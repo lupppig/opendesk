@@ -43,6 +43,8 @@
     "unassigned": "Zeig nicht zugewiesene Tickets, die älter als einen Tag sind, und schlag zuständige Personen vor",
     "report": "Wie läuft es diese Woche? Volumen, Antwortzeiten, SLA und CSAT.",
     "kb": "Entwirf aus kürzlich gelösten Tickets einen Hilfeartikel zur häufigsten Frage",
+    "wiki": "Fass diese Wiki-Seite in ein paar Stichpunkten zusammen",
+    "wikiProcess": "Wie läuft bei uns eine Eskalation ab? Schau im Wiki nach.",
     "label": "Versieh alle Abrechnungstickets dieser Woche mit einem Label",
     "breach": "Welche Tickets überschreiten in der nächsten Stunde die SLA?",
     "mine": "Welche meiner Tickets warten auf mich?"
@@ -107,6 +109,8 @@
     "unassigned": "Zuständige für alte Tickets vorschlagen",
     "report": "Wie läuft diese Woche?",
     "kb": "Hilfeartikel entwerfen",
+    "wiki": "Diese Seite zusammenfassen",
+    "wikiProcess": "Wie läuft eine Eskalation ab?",
     "label": "Abrechnungstickets der Woche labeln",
     "breach": "Was überschreitet bald die SLA?",
     "mine": "Was wartet auf mich?"

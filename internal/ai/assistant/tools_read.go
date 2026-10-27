@@ -3,6 +3,7 @@ package assistant
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"slices"
@@ -11,8 +12,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/useopendesk/opendesk/internal/auth"
 	"github.com/useopendesk/opendesk/internal/domain"
+	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
 )
 
 func readTools() []*tool {
@@ -45,6 +49,21 @@ func readTools() []*tool {
 			Schema:      obj(map[string]any{"query": str("What to search for."), "status": enum("Only drafts or only published.", "draft", "published")}, "query"),
 			MinRole:     auth.RoleViewer, Active: "Searching the knowledge base", Done: "Searched the knowledge base",
 			Read: searchKB,
+		},
+		{
+			Name: "search_wiki",
+			Description: "Search the team's internal wiki (runbooks, policies, escalation steps, how-tos) by text. " +
+				"Returns matching pages with where they sit and a passage; read the best one with get_wiki_page before answering from it.",
+			Schema:  obj(map[string]any{"query": str("What to search for.")}, "query"),
+			MinRole: auth.RoleViewer, Active: "Searching the wiki", Done: "Searched the wiki",
+			Read: searchWiki,
+		},
+		{
+			Name:        "get_wiki_page",
+			Description: "Read one wiki page: its text, where it sits and its subpages.",
+			Schema:      obj(map[string]any{"page": str("The page id from search_wiki.")}, "page"),
+			MinRole:     auth.RoleViewer, Active: "Reading the wiki", Done: "Read a wiki page",
+			Read: getWikiPage,
 		},
 		{
 			Name:        "list_views",
@@ -263,6 +282,115 @@ func searchKB(ctx context.Context, rc *runCtx, in json.RawMessage) (output, erro
 		b.WriteString("No articles matched.")
 	}
 	out.Content = block("search_kb", b.String())
+	return out, nil
+}
+
+type wikiRef struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+}
+
+func wikiTitle(s string) string {
+	if strings.TrimSpace(s) == "" {
+		return "Untitled"
+	}
+	return s
+}
+
+func wikiPath(refs []wikiRef) string {
+	parts := make([]string, len(refs))
+	for i, r := range refs {
+		parts[i] = wikiTitle(r.Title)
+	}
+	return strings.Join(parts, " / ")
+}
+
+func searchWiki(ctx context.Context, rc *runCtx, in json.RawMessage) (output, error) {
+	a, err := decode[struct {
+		Query string `json:"query"`
+	}](in)
+	if err != nil {
+		return output{}, err
+	}
+	var pg page[struct {
+		ID      string    `json:"id"`
+		Title   string    `json:"title"`
+		Snippet string    `json:"snippet"`
+		Path    []wikiRef `json:"path"`
+	}]
+	if err := rc.read.get(ctx, "/v1/wiki/search", url.Values{"q": {clip(a.Query, 200)}, "limit": {"8"}}, &pg); err != nil {
+		return output{}, err
+	}
+	var b strings.Builder
+	out := output{Summary: "Found " + plural(len(pg.Data), "page", "pages")}
+	for _, h := range pg.Data {
+		title := wikiTitle(h.Title)
+		where := ""
+		if len(h.Path) > 0 {
+			where = " in " + wikiPath(h.Path)
+		}
+		fmt.Fprintf(&b, "%q%s: %s; id %s\n", title, where, clip(h.Snippet, 300), h.ID)
+		out.Refs = append(out.Refs, Ref{Kind: "wiki_page", ID: h.ID, Label: title})
+	}
+	if len(pg.Data) == 0 {
+		b.WriteString("No wiki pages matched.")
+	}
+	out.Content = block("search_wiki", b.String())
+	return out, nil
+}
+
+// wikiPageChars is the most of a page's text Ollie reads.
+const wikiPageChars = 12000
+
+func getWikiPage(ctx context.Context, rc *runCtx, in json.RawMessage) (output, error) {
+	a, err := decode[struct {
+		Page string `json:"page"`
+	}](in)
+	if err != nil {
+		return output{}, err
+	}
+	id, err := uuid.Parse(strings.TrimSpace(a.Page))
+	if err != nil {
+		return output{}, errors.New("page must be a page id from search_wiki")
+	}
+	var p struct {
+		ID          string    `json:"id"`
+		Title       string    `json:"title"`
+		BodyHTML    string    `json:"body_html"`
+		UpdatedAt   time.Time `json:"updated_at"`
+		Breadcrumbs []wikiRef `json:"breadcrumbs"`
+		Children    []wikiRef `json:"children"`
+		UpdatedBy   *struct {
+			Name string `json:"name"`
+		} `json:"updated_by"`
+	}
+	if err := rc.read.get(ctx, "/v1/wiki/pages/"+id.String(), nil, &p); err != nil {
+		return output{}, err
+	}
+	title := wikiTitle(p.Title)
+	var b strings.Builder
+	fmt.Fprintf(&b, "Wiki page %q; id %s\n", title, p.ID)
+	if len(p.Breadcrumbs) > 0 {
+		fmt.Fprintf(&b, "In: %s\n", wikiPath(p.Breadcrumbs))
+	}
+	fmt.Fprintf(&b, "Last edited %s", p.UpdatedAt.UTC().Format("2006-01-02"))
+	if p.UpdatedBy != nil {
+		fmt.Fprintf(&b, " by %s", p.UpdatedBy.Name)
+	}
+	b.WriteString("\n\n")
+	if text := clip(hd.HTMLToText(p.BodyHTML), wikiPageChars); text != "" {
+		b.WriteString(text)
+	} else {
+		b.WriteString("(The page has no text.)")
+	}
+	out := output{Summary: "Read " + title, Refs: []Ref{{Kind: "wiki_page", ID: p.ID, Label: title}}}
+	if len(p.Children) > 0 {
+		b.WriteString("\n\nSubpages:\n")
+		for _, c := range p.Children {
+			fmt.Fprintf(&b, "- %q; id %s\n", wikiTitle(c.Title), c.ID)
+		}
+	}
+	out.Content = block("get_wiki_page", b.String())
 	return out, nil
 }
 

@@ -112,7 +112,7 @@ export type WorkspaceData = {
   role: Role;
   /** Whether it has Collab; undefined while unknown. */
   collab: boolean | undefined;
-  /** The member's SidebarPrefs there (defaults without Collab). */
+  /** The member's SidebarPrefs there (every member has them, with or without Collab). */
   prefs: SidebarPrefs;
   counts: TicketCounts | undefined;
   teams: Team[] | undefined;
@@ -157,7 +157,7 @@ export function useWorkspacesData(wids: string[], opts: { folders?: (wid: string
   const views = useQueries({ queries: each(() => ({ ...q.views(), enabled: on })) });
   const accounts = useQueries({ queries: wids.map((w, i) => inWorkspace(w, () => ({ ...q.mailAccounts(), enabled: on && collabOf(i) === true }))) });
   const mailCounts = useQueries({ queries: wids.map((w, i) => inWorkspace(w, () => ({ ...q.mailCounts(), enabled: on && w === focus && collabOf(i) === true }))) });
-  const sidebar = useQueries({ queries: wids.map((w, i) => inWorkspace(w, () => ({ ...q.mailSidebar(), enabled: on && collabOf(i) === true }))) });
+  const sidebar = useQueries({ queries: wids.map((w) => inWorkspace(w, () => ({ ...q.mailSidebar(), enabled: on }))) });
   const pairs = wids.flatMap((w, i) => (collabOf(i) && opts.folders?.(w) ? (accounts[i]?.data ?? []).map((a) => [w, a.id] as const) : []));
   const folders = useQueries({ queries: pairs.map(([w, a]) => inWorkspace(w, () => ({ ...q.mailFolders(a), enabled: on }))) });
   const out = new Map<string, WorkspaceData>();
@@ -179,7 +179,7 @@ export function useWorkspacesData(wids: string[], opts: { folders?: (wid: string
       open,
       role: m.role,
       collab,
-      prefs: collab ? normalizePrefs(sidebar[i]?.data) : normalizePrefs(null),
+      prefs: normalizePrefs(sidebar[i]?.data),
       counts: (open ? counts[i]?.data : undefined) ?? o?.ticket_counts ?? undefined,
       teams: tm,
       myTeams: new Set(teamsOf(tm ?? [], uid)),

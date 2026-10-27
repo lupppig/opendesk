@@ -569,17 +569,17 @@
   },
   "supportChannels": {
     "title": "Support-Kanäle",
-    "description": "Spiegle E-Mail-Tickets nach Slack, Discord und Telegram. Teammitglieder können im Thread des Tickets antworten, Notizen hinzufügen und Tickets bearbeiten.",
+    "description": "Spiegle E-Mail-Tickets nach Slack, Discord, Telegram und Google Chat. Teammitglieder können im Thread des Tickets antworten, Notizen hinzufügen und Tickets bearbeiten.",
     "linkAccount": "Mein Konto verknüpfen",
     "linkError": "Der Verknüpfungscode konnte nicht erstellt werden.",
     "link": {
       "title": "Chat-Konto verknüpfen",
-      "description": "Sende diesen Code von deinem Chat-Konto an den Bot: /opendesk link {{code}} in Slack oder /link {{code}} in Discord und Telegram. Er funktioniert einmal und läuft nach 10 Minuten ab.",
+      "description": "Sende diesen Code von deinem Chat-Konto an den Bot: /opendesk link {{code}} in Slack oder Google Chat oder /link {{code}} in Discord und Telegram. Er funktioniert einmal und läuft nach 10 Minuten ab.",
       "done": "Fertig"
     },
     "connections": {
       "title": "Verbindungen",
-      "description": "Bot-Zugangsdaten werden verschlüsselt gespeichert. opendesk richtet Discord und Telegram für dich ein; Slack braucht ein paar Schritte in den Slack-Einstellungen.",
+      "description": "Bot-Zugangsdaten werden verschlüsselt gespeichert. opendesk richtet Discord und Telegram für dich ein; Slack und Google Chat brauchen noch ein paar Einstellungen.",
       "webhook": "Ereignis-Adresse"
     },
     "operations": {
@@ -674,6 +674,17 @@
         "description": "Spiegle E-Mail-Tickets in Telegram-Forenthemen und bearbeite sie im Gespräch mit Ollie.",
         "setup": "Erstelle einen Bot mit BotFather, schalte seinen Privacy Mode aus (/setprivacy) und füge sein Token ein. opendesk richtet den Webhook ein. Mach den Bot dann zum Admin einer Forengruppe.",
         "noChannels": "Noch keine Forengruppen. Mach den Bot zum Admin einer Gruppe mit aktivierten Themen oder sende eine Nachricht in einer Gruppe, in der er schon ist, und aktualisiere dann."
+      },
+      "google_chat": {
+        "description": "Spiegle E-Mail-Tickets in Google Chat-Bereichen und bearbeite sie im Gespräch mit Ollie.",
+        "setup": "Aktiviere die Google Chat API und erstelle einen Dienstkontoschlüssel mit dem chat.bot-Bereich. Richte eine standardmäßige Chat-App, kein Google Workspace-Add-on, im selben Projekt ein und füge sie den gewünschten Bereichen hinzu.",
+        "steps": [
+          "Aktiviere in der Google Cloud Console die Google Chat API und richte eine standardmäßige Chat-App, kein Google Workspace-Add-on, für das Projekt dieses Dienstkontos ein.",
+          "Setze Verbindungs-URL und Authentifizierungsaudience auf die Webhook-Adresse oben. Wähle HTTP-Endpunkt-URL als Audience.",
+          "Füge den Befehl /opendesk hinzu und abonniere Nachrichten-, Bearbeitungs-, Lösch-, Kartenklick-, App-Hinzufügen- und App-Entfernen-Ereignisse.",
+          "Füge die Chat-App zu jedem gewünschten Bereich hinzu und aktualisiere dann die Bereichsliste."
+        ],
+        "noChannels": "Keine geeigneten Bereiche mit Threads verfügbar. Füge die Chat-App zu einem benannten Bereich hinzu und aktualisiere dann."
       }
     },
     "field": {
@@ -681,7 +692,8 @@
       "signing_secret": "Signing Secret",
       "public_key": "Public Key für Interactions",
       "guild_id": "Server",
-      "webhook_secret": "Webhook-Secret"
+      "webhook_secret": "Webhook-Secret",
+      "service_account_json": "Dienstkonto-JSON"
     },
     "connect": {
       "title": "{{name}} verbinden",

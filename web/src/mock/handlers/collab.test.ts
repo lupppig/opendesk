@@ -66,6 +66,47 @@ describe("mock Collab", () => {
     expect(kept.mail_tabs).toEqual(["inbox", "spam"]);
   });
 
+  it("keeps the sidebar prefs without Collab too", async () => {
+    const ws = db.workspaces[0]!;
+    const before = ws.collabOff;
+    ws.collabOff = "disabled";
+    try {
+      expect((await call("GET", "/v1/collab/accounts")).status).toBe(402);
+      const saved = await call("PUT", "/v1/collab/sidebar", { order: ["views", "inbox"], hidden: ["section:teams"], pinned: [{ kind: "view", id: "v1" }], expanded_accounts: [], mark_read_on_open: true, unified_inbox: true, auto_pins: [] });
+      expect(saved.status).toBe(200);
+      const read = (await call("GET", "/v1/collab/sidebar")).body;
+      expect(read.order).toEqual(["views", "inbox"]);
+      // Mail is Collab's: All inboxes is neither pinned nor recorded, so it still can be once Collab is on.
+      expect(read.pinned).toEqual([{ kind: "view", id: "v1" }]);
+      expect(read.auto_pins).toEqual([]);
+    } finally {
+      ws.collabOff = before;
+    }
+  });
+
+  it("pins All inboxes once someone sees two accounts, and leaves it unpinned after", async () => {
+    const base = { order: ["mail"], hidden: [], pinned: [], expanded_accounts: [], mark_read_on_open: true, unified_inbox: true };
+    await call("PUT", "/v1/collab/sidebar", { ...base, auto_pins: [] });
+    const first = (await call("GET", "/v1/collab/sidebar")).body;
+    expect(first.pinned).toEqual([{ kind: "box", id: "inbox" }]);
+    expect(first.auto_pins).toEqual(["box:inbox"]);
+    // Unpinned by a client that leaves auto_pins out: it stays unpinned.
+    await call("PUT", "/v1/collab/sidebar", base);
+    expect((await call("GET", "/v1/collab/sidebar")).body.pinned).toEqual([]);
+  });
+
+  it("starts the import of older mail chosen while connecting", async () => {
+    const body = { imap_host: "imap.example.com", imap_port: 993, imap_tls: "tls", password: "pw", smtp_host: "smtp.example.com", smtp_port: 465, smtp_tls: "tls", visibility: "private" };
+    const since = new Date(Date.now() - 365 * 24 * 3600 * 1000).toISOString();
+    const at = (local: string) => `${local}@` + "connect.example";
+    const a = (await call("POST", "/v1/collab/accounts/imap", { ...body, email: at("range"), history: { since } })).body;
+    expect(a.history?.status).toBe("running");
+    expect(a.history?.since).toBe(since);
+    expect((await call("POST", "/v1/collab/accounts/imap", { ...body, email: at("none") })).body.history).toBeNull();
+    const future = new Date(Date.now() + 3600 * 1000).toISOString();
+    expect((await call("POST", "/v1/collab/accounts/imap", { ...body, email: at("future"), history: { since: future } })).status).toBe(422);
+  });
+
   it("lists a Gmail account's send-as addresses and sends from the one a message was written to", async () => {
     const accounts = (await call("GET", "/v1/collab/accounts")).body as { id: string; provider: string; email: string; identities: { id: string | null; email: string; can_send: boolean; primary: boolean }[] }[];
     const gmail = accounts.find((a) => a.provider === "google")!;

@@ -2,6 +2,7 @@ package collab
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -9,7 +10,9 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/useopendesk/opendesk/internal/audit"
 	"github.com/useopendesk/opendesk/internal/auth"
 	"github.com/useopendesk/opendesk/internal/email"
 	"github.com/useopendesk/opendesk/internal/httpx"
@@ -24,6 +27,14 @@ import (
 const draftsPerMinute = 120
 
 var errDraftsUnsupported = httpx.E(422, "drafts_unsupported", "This account cannot keep drafts.")
+
+// What an AI credential may not do with drafts ("AI drafts").
+var (
+	errAIDraftMode   = httpx.E(403, "ai_draft_reply_only", "An AI credential drafts replies to a conversation only (mode reply or reply_all).")
+	errAIDraftFiles  = httpx.E(403, "ai_draft_no_files", "An AI credential cannot attach files to a draft.")
+	errAIDraftNotOwn = httpx.E(403, "ai_draft_not_own",
+		"This draft was not written by this API key, or a person has saved it since. Save a new draft instead.")
+)
 
 // draftContent is what a save of an existing draft carries.
 type draftContent struct {
@@ -67,7 +78,7 @@ func (s *service) registerDraftRoutes(api huma.API) {
 	collabOp(api, huma.Operation{OperationID: "create-collab-draft", Method: http.MethodPost, Path: "/v1/collab/drafts",
 		Summary: "Save a new draft"},
 		func(ctx context.Context, in *draftCreateInput) (*messageBody, error) {
-			p, err := s.require(ctx, auth.RoleAgent)
+			p, err := s.requireDrafter(ctx, auth.RoleAgent)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
@@ -75,6 +86,15 @@ func (s *service) registerDraftRoutes(api huma.API) {
 				return nil, httpx.RateLimited()
 			}
 			b := in.Body
+			if viaAIClient(p) {
+				// An AI client answers a conversation, with words only ("AI drafts").
+				if b.Mode != ModeReply && b.Mode != ModeReplyAll {
+					return nil, errAIDraftMode
+				}
+				if len(b.AttachmentIDs) > 0 || b.ForwardAttachments {
+					return nil, errAIDraftFiles
+				}
+			}
 			t, err := s.composeTarget(ctx, p, b.AccountID, b.Mode, b.MessageID)
 			if err != nil {
 				return nil, err
@@ -102,16 +122,27 @@ func (s *service) registerDraftRoutes(api huma.API) {
 			ID   string `path:"id"`
 			Body draftContent
 		}) (*messageBody, error) {
-			p, err := s.require(ctx, auth.RoleAgent)
+			p, err := s.requireDrafter(ctx, auth.RoleAgent)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
 			if !s.d.Limiter.Allow("collab-draft:"+p.UserID.String(), draftsPerMinute, time.Minute) {
 				return nil, httpx.RateLimited()
 			}
-			m, a, t, err := s.loadDraft(ctx, p, in.ID)
+			m, a, t, unlock, err := s.lockDraft(ctx, p, in.ID)
 			if err != nil {
 				return nil, err
+			}
+			defer unlock()
+			if viaAIClient(p) {
+				// A key saves again only a draft it wrote and nobody has saved since: checked
+				// under the draft's lock, so a person's save cannot land in between.
+				if m.AIAPIKeyID == nil || *m.AIAPIKeyID != p.APIKeyID {
+					return nil, errAIDraftNotOwn
+				}
+				if len(in.Body.AttachmentIDs) > 0 {
+					return nil, errAIDraftFiles
+				}
 			}
 			id, _, err := s.saveDraft(ctx, p, target{a: a}, m, t.RemoteID, &t.ID, draftCompose(m, &in.Body, false))
 			if err != nil {
@@ -131,10 +162,11 @@ func (s *service) registerDraftRoutes(api huma.API) {
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			m, a, t, err := s.loadDraft(ctx, p, in.ID)
+			m, a, t, unlock, err := s.lockDraft(ctx, p, in.ID)
 			if err != nil {
 				return nil, err
 			}
+			defer unlock()
 			prov, dp, err := s.drafter(ctx, a)
 			if err != nil {
 				return nil, err
@@ -168,10 +200,11 @@ func (s *service) registerDraftRoutes(api huma.API) {
 			if !s.d.Limiter.Allow("collab-send:"+p.UserID.String(), sendPerMinute, time.Minute) {
 				return nil, httpx.RateLimited()
 			}
-			m, a, t, err := s.loadDraft(ctx, p, in.ID)
+			m, a, t, unlock, err := s.lockDraft(ctx, p, in.ID)
 			if err != nil {
 				return nil, err
 			}
+			defer unlock()
 			var raw []byte
 			var recipients []string
 			from := a.Email
@@ -303,6 +336,53 @@ func (s *service) loadDraft(ctx context.Context, p *auth.Principal, rawID string
 	return m, a, t, nil
 }
 
+// draftLockWait leaves time to return a busy response within the HTTP request deadline.
+const draftLockWait = 20 * time.Second
+
+var errDraftBusy = httpx.E(409, "draft_busy", "This draft is being changed by someone else. Try again in a moment.")
+
+// lockDraft is loadDraft for a change: saves, sends and discards of one draft run one at
+// a time, on every server, from the check of who owns it to its stored result. The draft
+// is loaded under the lock, so a request checks the version it changes at the provider:
+// an AI client whose draft a person saved meanwhile is refused before the provider is
+// called ("AI drafts"). Call unlock when done, whatever happened.
+func (s *service) lockDraft(ctx context.Context, p *auth.Principal, rawID string) (*messageRow, *accountRow, *threadRow, func(), error) {
+	id, err := parseID(rawID, "Draft")
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	lockCtx, cancel := context.WithTimeout(ctx, draftLockWait)
+	defer cancel()
+	tx, err := s.d.DB.Locks.Begin(lockCtx)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+			return nil, nil, nil, nil, errDraftBusy
+		}
+		return nil, nil, nil, nil, httpx.Wrap(err)
+	}
+	// The lock is the transaction's: rolling back (or a lost connection) releases it.
+	unlock := func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }
+	if _, err := tx.Exec(lockCtx, `SELECT set_config('lock_timeout', $1, true)`,
+		strconv.FormatInt(draftLockWait.Milliseconds(), 10)+"ms"); err != nil {
+		unlock()
+		return nil, nil, nil, nil, httpx.Wrap(err)
+	}
+	if _, err := tx.Exec(lockCtx, `SELECT pg_advisory_xact_lock(hashtextextended('collab_draft:' || $1::text, 0))`, id); err != nil {
+		unlock()
+		var pg *pgconn.PgError
+		if (errors.As(err, &pg) && pg.Code == "55P03") || (errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil) {
+			return nil, nil, nil, nil, errDraftBusy
+		}
+		return nil, nil, nil, nil, httpx.Wrap(err)
+	}
+	m, a, t, err := s.loadDraft(ctx, p, rawID)
+	if err != nil {
+		unlock()
+		return nil, nil, nil, nil, err
+	}
+	return m, a, t, unlock, nil
+}
+
 // drafter opens the account's provider as one that keeps drafts. Close the Provider.
 func (s *service) drafter(ctx context.Context, a *accountRow) (Provider, draftProvider, error) {
 	prov, err := s.provider(ctx, a)
@@ -339,12 +419,16 @@ func (s *service) saveDraft(ctx context.Context, p *auth.Principal, t target, dr
 	}
 	pctx, cancel := context.WithTimeout(ctx, providerTimeout)
 	defer cancel()
+	ai, err := s.aiDrafterOf(ctx, p)
+	if err != nil {
+		return uuid.Nil, nil, httpx.Wrap(err)
+	}
 	ref, err := dp.SaveDraft(pctx, d)
 	if err != nil {
 		s.log.Info("collab draft not saved", "account_id", t.a.ID, "reason", safeError(err))
 		return uuid.Nil, nil, errProvider(err)
 	}
-	id, err := s.storeDraft(ctx, t.a, out.Raw, ref, p.UserID, threadID, draft)
+	id, err := s.storeDraft(ctx, t.a, out.Raw, ref, p.UserID, threadID, draft, ai)
 	if err != nil {
 		return uuid.Nil, nil, httpx.Wrap(err)
 	}
@@ -357,12 +441,27 @@ func storedOf(m *messageRow) *storedMsg {
 		Draft: m.Draft, RawKey: m.RawKey, Location: m.Location, FolderIDs: m.FolderIDs}
 }
 
+// aiDrafterOf is the AI credential a draft the caller saves is attributed to: their API
+// key, by its name now; nil for a person.
+func (s *service) aiDrafterOf(ctx context.Context, p *auth.Principal) (*aiDrafter, error) {
+	if !viaAIClient(p) {
+		return nil, nil
+	}
+	ai := &aiDrafter{APIKeyID: p.APIKeyID, P: p}
+	if err := s.d.DB.Pool.QueryRow(ctx, `SELECT name FROM api_keys WHERE id = $1 AND workspace_id = $2`,
+		p.APIKeyID, p.WorkspaceID).Scan(&ai.Client); err != nil {
+		return nil, err
+	}
+	return ai, nil
+}
+
 // storeDraft stores a draft the provider saved: in Drafts, written by the caller, in its
 // conversation (threadID; for a draft saved again, the one it was in). A draft saved
 // again replaces its previous version under the same id, in one transaction with the
-// collab.changed it publishes.
+// collab.changed it publishes. ai is the AI client that saved it (audit-logged), nil
+// for a person, whose save takes the draft over.
 func (s *service) storeDraft(ctx context.Context, a *accountRow, raw []byte, ref draftRef, by uuid.UUID, threadID *uuid.UUID,
-	replace *messageRow) (uuid.UUID, error) {
+	replace *messageRow, ai *aiDrafter) (uuid.UUID, error) {
 	p, err := s.newPass(ctx, s.d.DB.Pool, a)
 	if err != nil {
 		return uuid.Nil, err
@@ -374,7 +473,7 @@ func (s *service) storeDraft(ctx context.Context, a *accountRow, raw []byte, ref
 		}
 	}
 	in := &newMessage{RemoteID: ref.RemoteID, ThreadRemoteID: ref.ThreadRemoteID, Raw: raw, Date: time.Now(),
-		State: state{Draft: true, FolderIDs: folders, Location: ref.Location}, SentBy: &by, ThreadID: threadID}
+		State: state{Draft: true, FolderIDs: folders, Location: ref.Location}, SentBy: &by, ThreadID: threadID, AI: ai}
 	if replace != nil {
 		id := replace.ID
 		in.ID = &id
@@ -402,8 +501,20 @@ func (s *service) storeDraft(ctx context.Context, a *accountRow, raw []byte, ref
 			}
 		}
 		var err error
-		if id, err = p.insert(ctx, tx, in); err != nil || replace == nil || replace.RawKey == "" {
+		if id, err = p.insert(ctx, tx, in); err != nil {
 			return err
+		}
+		if ai != nil && id != uuid.Nil {
+			// The content is the client's; the entry names the conversation, never the words.
+			// The actor is ai, through the key, on behalf of the member who created it.
+			if err := audit.Log(ctx, tx, ai.P, a.WorkspaceID, "collab.ai_draft_saved", "collab_message", &id,
+				map[string]any{"actor": "ai", "client": ai.Client, "api_key_id": ai.APIKeyID, "account_id": a.ID,
+					"again": replace != nil}); err != nil {
+				return err
+			}
+		}
+		if replace == nil || replace.RawKey == "" {
+			return nil
 		}
 		// The new version's raw source has the same key (it is named by the id) and was
 		// just written over the old one: it stays.

@@ -427,7 +427,10 @@
     "connectButton": "Konto verbinden",
     "connecting": "Anmeldung bei beiden Servern",
     "failed": "Anmeldung fehlgeschlagen",
-    "nothingDeleted": "opendesk löscht nie E-Mails bei deinem Anbieter."
+    "nothingDeleted": "opendesk löscht nie E-Mails bei deinem Anbieter.",
+    "history": "Ältere E-Mails",
+    "historyHint": "Die letzten 30 Tage kommen zuerst. Ältere E-Mails folgen im Hintergrund, und du kannst das in den Kontoeinstellungen ändern.",
+    "historyNone": "Nur die letzten 30 Tage"
   },
   "detail": {
     "back": "E-Mail-Konten",
@@ -576,6 +579,7 @@
     "unpin": "Von Favoriten lösen",
     "hide": "In der Seitenleiste ausblenden",
     "customize": "Seitenleiste anpassen",
+    "accountSettings": "Kontoeinstellungen",
     "more": "Optionen für {{name}}"
   },
   "address": {
@@ -794,6 +798,24 @@
       "runningPercent": "Verlauf wird importiert {{percent}}",
       "paused": "Verlauf pausiert",
       "limited": "Verlauf wartet auf Speicherplatz"
+    },
+    "changeHint": "Eine Änderung startet den Import mit dem neuen Zeitraum neu. Bereits importierte E-Mails bleiben.",
+    "changed": "Importzeitraum geändert"
+  },
+  "categories": {
+    "group": "Kategorien",
+    "tabs": "Posteingangskategorien",
+    "settings": "Einstellungen der Kategorien",
+    "moved_one": "Unterhaltung nach {{name}} verschoben",
+    "moved_other": "{{count}} Unterhaltungen nach {{name}} verschoben",
+    "always": "Immer",
+    "alwaysHint": "Künftige E-Mails von {{sender}} auch hierher",
+    "ruleSaved": "E-Mails von {{sender}} landen jetzt in {{name}}",
+    "offer": {
+      "title": "Teile deinen Posteingang in Tabs auf.",
+      "body": "E-Mails von Menschen bleiben in Allgemein, während Newsletter, Updates und Werbung eigene Tabs bekommen. Ollie kann Kategorien aus deinen E-Mails vorschlagen.",
+      "action": "Kategorien einrichten",
+      "dismiss": "Nicht jetzt"
     }
   }
 }

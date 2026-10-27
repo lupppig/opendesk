@@ -80,7 +80,11 @@ export function ticketMatches(query: TicketListQuery, t: Ticket, me: string, vie
   if (f.widget_id && t.widget_id !== f.widget_id) return false;
   if (f.channel && t.channel !== f.channel) return false;
   if (f.channel_not?.includes(t.channel)) return false;
-  return labelsMatch(f, t.tags);
+  if (f.contact_not && t.contact && f.contact_not.split(",").includes(t.contact.id)) return false;
+  if (!labelsMatch(f, t.tags)) return false;
+  // A ticket carries its contact, not the contact's company: the server decides.
+  if (f.company_not && t.contact) return null;
+  return true;
 }
 
 function dueOf(t: Ticket): number {

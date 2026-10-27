@@ -89,7 +89,7 @@ interface AutoRecharge {
 - AI usage is charged in US dollars on each call's real cost: the provider's cost at the model's list price, times 1.5 on opendesk Cloud, kept to $0.000001. The charge depends on the model the workspace chose (see [Models](/api/resources/ai/#models)) and on the size of the request.
 - A call starts only when the balance covers its estimate: the prompt tokens at the model's input price plus the call's maximum output tokens (counted up to 4,000) at its output price, times the markup, and at least $0.01. Otherwise the route returns `402 ai_balance_empty` and the model is not called. If a call ends up costing more than what is left, the balance goes to $0.
 - The allowance is spent first, then AI usage added with top-ups, which never expires. A failed call costs nothing. Search indexing is free.
-- Calls on the workspace's own provider key cost $0 and are never refused for the balance; only Jev decisions are still charged.
+- Calls on the workspace's own provider key cost $0 and are never refused for the balance. Jev decisions are charged unless they run on the workspace's own OpenRouter or TypeSafe key ([AI](/api/resources/ai/)).
 
 ## AI top-ups
 

@@ -101,9 +101,10 @@ func loadTriage(ctx context.Context, d *deps.Deps, q db.Querier, wid uuid.UUID) 
 		return TriageSettings{}, err
 	}
 	tc := st.Triage()
+	engine := hd.WorkspaceEngine(ctx, d.Cfg, wid)
 	return TriageSettings{AutoTriage: tc.AutoTriage, Fields: tc.Fields, AssignAfterTriage: tc.AssignAfterTriage,
-		Threshold: tc.Threshold, Engine: hd.Engine(d.Cfg),
-		Available: (d.Cfg.AIEnabled() || hd.Engine(d.Cfg).Provider == "typesafe") && st.AI().Enabled}, nil
+		Threshold: tc.Threshold, Engine: engine,
+		Available: (d.Cfg.AIEnabled() || engine.Provider == "typesafe") && st.AI().Enabled}, nil
 }
 
 func loadHours(ctx context.Context, q db.Querier, wid uuid.UUID) (BusinessHoursBody, error) {

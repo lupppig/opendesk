@@ -64,7 +64,8 @@
     "priority": "Priorität {{priority}}",
     "awaiting": "Wartet auf Antwort",
     "severity": "{{severity}}",
-    "receivedAt": "Gesendet an {{address}}"
+    "receivedAt": "Gesendet an {{address}}",
+    "assignedTo": "Zugewiesen an {{name}}"
   },
   "waiting": {
     "label": "Wartet seit {{time}}",
@@ -97,7 +98,11 @@
   },
   "presence": {
     "viewing": "{{name}} sieht es sich an",
-    "replying": "{{name}} antwortet"
+    "replying": "{{name}} antwortet",
+    "oneViewing": "{{name}} liest",
+    "oneReplying": "{{name}} antwortet…",
+    "manyViewing": "{{n}} lesen",
+    "manyReplying": "{{name}} antwortet… +{{others}}"
   },
   "empty": {
     "unassigned": {
@@ -230,6 +235,8 @@
     "label": "Übersicht",
     "total_one": "{{count}} Ticket",
     "total_other": "{{count}} Tickets",
+    "firstShown": "Die ersten {{count}} angezeigt",
+    "firstShownHint": "Diese Zahlen zählen nur die bisher geladenen Tickets. Scroll nach unten, um mehr zu laden.",
     "awaiting": "warten auf Antwort",
     "urgent": "dringend",
     "overdue": "überfällig",
@@ -634,6 +641,12 @@
     "discardTitle": "Dieses Ticket verwerfen?",
     "discardBody": "Dein Entwurf geht verloren.",
     "discard": "Verwerfen",
+    "keepWriting": "Weiterschreiben",
+    "openPage": "Als ganze Seite öffnen",
+    "moreOnPage_one": "{{count}} weiteres von der ganzen Seite",
+    "moreOnPage_other": "{{count}} weitere von der ganzen Seite",
+    "newContact": "Neuer Kontakt, wird mit dem Ticket angelegt",
+    "recipientHint": "Wähle, an wen es geht: Kontaktdaten und frühere Tickets erscheinen dann hier.",
     "needTo": "Füge einen Empfänger hinzu.",
     "needSubject": "Füge einen Betreff hinzu.",
     "needBody": "Schreib eine Nachricht.",

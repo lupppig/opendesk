@@ -18,6 +18,7 @@ import { Sparkline, VolumeChart, VolumeLegend, VolumeTable } from "@/components/
 import { ChannelBars } from "@/components/reports/ChannelBars";
 import { SeverityBars } from "@/components/reports/SeverityBars";
 import { AgentTable } from "@/components/reports/AgentTable";
+import { AgentWorkTable } from "@/components/reports/AgentWork";
 import { AnimatedNumber } from "@/components/motion";
 import { Bar, BreakdownBars, ShareBar, type BarRow } from "@/components/reports/Bars";
 import { BrandFilter, GroupTable, NO_TEAM, TeamFilter, brandRows, teamRows, useReportScope, type GroupRow } from "@/components/reports/TeamBrand";
@@ -135,6 +136,7 @@ export default function ReportsPage() {
               </Card>
               <ResponseCard d={d} />
             </div>
+            <AgentWorkCard filter={range} />
           </div>
         )}
       </div>
@@ -467,6 +469,51 @@ function OpenWorkCards({ filter }: { filter: ReportsQuery }) {
         )}
       </Card>
     </>
+  );
+}
+
+/** Each member's work in the period, from its own report: a member who is not an admin gets their own row. */
+function AgentWorkCard({ filter }: { filter: ReportsQuery }) {
+  const { t } = useTranslation("reports");
+  const report = useQuery({ ...q.reportAgents(filter), placeholderData: keepPreviousData });
+  const d = report.data;
+  const self = d?.online_time === "self";
+  const note = d?.online_time === "all" ? t("work.onlineNote") : self ? t("work.onlineSelf") : null;
+  return (
+    <Card title={t("work.title")} subtitle={self ? t("work.subtitleSelf") : t("work.subtitle")} flush className={cn("transition-opacity duration-150", report.isFetching && report.isPlaceholderData && "opacity-60")}>
+      {report.isLoading ? (
+        <TableSkeleton />
+      ) : report.error ? (
+        <EmptyState
+          compact
+          lit={3}
+          title={t("work.errorTitle")}
+          description={t("error.description")}
+          action={<Button onClick={() => void report.refetch()}>{t("error.retry")}</Button>}
+        />
+      ) : !d?.data.length ? (
+        <EmptyState compact lit={0} title={t("work.emptyTitle")} description={self ? t("work.emptySelf") : t("work.emptyDescription")} />
+      ) : (
+        <>
+          <AgentWorkTable report={d} />
+          {note && <p className="border-t border-line-soft px-4 py-2.5 text-[11.5px] text-fg-4">{note}</p>}
+        </>
+      )}
+    </Card>
+  );
+}
+
+function TableSkeleton() {
+  return (
+    <div className="flex flex-col gap-3 px-4 pb-4 pt-2" aria-hidden>
+      {[60, 48, 54, 40].map((w) => (
+        <div key={w} className="flex items-center gap-3">
+          <Skeleton className="size-6 rounded-full" />
+          <Skeleton className="h-2.5" style={{ width: `${w / 3}%` }} />
+          <Skeleton className="ml-auto h-2.5" style={{ width: `${w}%` }} />
+        </div>
+      ))}
+    </div>
   );
 }
 

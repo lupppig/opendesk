@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/useopendesk/opendesk/internal/email"
+	"github.com/useopendesk/opendesk/internal/httpx"
 )
 
 // Addresses (identities.go): Gmail's send-as list synced two-way, hand-added aliases,
@@ -461,5 +462,63 @@ func TestCountsByAddress(t *testing.T) {
 	// An account with only its own address has no numbers by address.
 	if _, ok := counts.Addresses[plain.ID]; ok || counts.Accounts[plain.ID] != 1 {
 		t.Fatalf("account without aliases: %+v", counts)
+	}
+}
+
+// An address added in Gmail after the account was connected: the mail already written to it
+// is found by it as soon as opendesk knows it, which "Check Gmail" and "Sync now" make at once.
+func TestGmailAddressAddedLater(t *testing.T) {
+	sales, support := "sales@acme.test", "support@acme.test"
+	w := newWorld(t)
+	g := newFakeGmail(t)
+	w.useGmail(g)
+	a := w.setScopes(w.account(w.agent, ProviderGoogle, VisibilityPrivate, Audience{}), googleModifyScope, googleSettingsScope)
+	g.settings.aliases = []gmailSendAs{}
+	g.add("m1", "t1", []string{"INBOX", "UNREAD"}, testMail{from: "Frank <frank" + "@customer.test>", to: sales, subject: "To the alias",
+		msgID: "m1@customer.test", body: "Hello sales"})
+	a = w.sync(a)
+	srv := w.api(w.agent)
+	if m := w.apiAccount(srv, a); len(m.Identities) != 1 {
+		t.Fatalf("before Gmail has it: %+v", m.Identities)
+	}
+
+	g.mu.Lock()
+	g.settings.aliases = []gmailSendAs{{SendAsEmail: sales, DisplayName: "Sales", VerificationStatus: "accepted"}}
+	g.mu.Unlock()
+	// The next scheduled sync, inside the settings interval, does not read it yet.
+	a = w.sync(a)
+	if m := w.apiAccount(srv, a); len(m.Identities) != 1 {
+		t.Fatalf("read before it was due: %+v", m.Identities)
+	}
+
+	// "Check Gmail" reads it now, and the mail written to it is found by it.
+	var out MailAccount
+	if st := doJSON(t, "POST", srv.URL+"/v1/collab/accounts/"+a.ID.String()+"/identities/refresh", nil, &out); st != 200 {
+		t.Fatalf("refresh: %d", st)
+	}
+	if x := identityOf(t, out, sales); !x.CanSend || x.Source != SourceProvider {
+		t.Fatalf("new address: %+v", x)
+	}
+	var page httpx.Page[MailThread]
+	if st := doJSON(t, "GET", srv.URL+"/v1/collab/threads?account_id="+a.ID.String()+"&to="+sales, nil, &page); st != 200 ||
+		len(page.Data) != 1 || page.Data[0].ToAddress == nil || *page.Data[0].ToAddress != sales {
+		t.Fatalf("its mail: %d %+v", st, page.Data)
+	}
+
+	// "Sync now" reads the addresses at that sync, whenever they were last read.
+	g.mu.Lock()
+	g.settings.aliases = append(g.settings.aliases, gmailSendAs{SendAsEmail: support, VerificationStatus: "accepted"})
+	g.mu.Unlock()
+	if st := doJSON(t, "POST", srv.URL+"/v1/collab/accounts/"+a.ID.String()+"/sync", nil, nil); st != 202 {
+		t.Fatalf("sync now: %d", st)
+	}
+	a = w.sync(a)
+	identityOf(t, w.apiAccount(srv, a), support)
+
+	// Hand-added addresses have nothing to read.
+	var e apiError
+	imap := w.account(w.agent, ProviderIMAP, VisibilityPrivate, Audience{})
+	if st := doJSON(t, "POST", srv.URL+"/v1/collab/accounts/"+imap.ID.String()+"/identities/refresh", nil, &e); st != 422 || e.Code != "identities_by_hand" {
+		t.Fatalf("refresh IMAP: %d %+v", st, e)
 	}
 }

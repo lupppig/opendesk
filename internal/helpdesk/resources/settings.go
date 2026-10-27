@@ -164,6 +164,9 @@ func (b *automationWriteBody) apply(ctx context.Context, q db.Querier, wid uuid.
 	if a.Actions, err = hd.ValidateActions(ctx, q, wid, a.Actions); err != nil {
 		return err
 	}
+	if err := hd.ValidateActionTrigger(a.Trigger, a.Actions); err != nil {
+		return err
+	}
 	if a.Conditions == nil {
 		a.Conditions = []hd.Condition{}
 	}

@@ -65,7 +65,8 @@ function RemoteSection({ d, id, first, rail, mark, ctx }: { d: WorkspaceData; id
   let list: (RowModel | null)[] = [];
   switch (id) {
     case "favorites":
-      list = d.collab ? livePins(p, (pin) => row(pin.kind, pin.id, ["favorites"])).map((x) => x.target) : [];
+      // Without Collab its mail favorites build no row (buildRow), the ticket ones do.
+      list = livePins(p, (pin) => row(pin.kind, pin.id, ["favorites"])).map((x) => x.target);
       break;
     case "inbox":
       list = ticketFolders.filter((f) => !hidden.has(hid.ticketFolder(f.id))).map((f) => row("ticket_folder", f.id));

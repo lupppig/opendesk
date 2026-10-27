@@ -336,16 +336,37 @@ func (p *page) Published(a kb.KbArticle) time.Time {
 // ISO is a time for a datetime attribute; the page's script shows it in the reader's language.
 func (p *page) ISO(t time.Time) string { return t.UTC().Format(time.RFC3339) }
 
+// monthNames are the long and short month names of languages whose dates browsers may
+// not know ("22 oktyabr 2026", "22 okt"). The page's script keeps the date as the page
+// wrote it when the browser has no data for the page's language.
+var monthNames = map[string][2][12]string{
+	"az": {
+		{"yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avqust", "sentyabr", "oktyabr", "noyabr", "dekabr"},
+		{"yan", "fev", "mar", "apr", "may", "iyn", "iyl", "avq", "sen", "okt", "noy", "dek"},
+	},
+}
+
 // LongDate and ShortDate are what a page shows before its script runs: English words in
-// English, the ISO date otherwise.
+// English, day month year in a language of monthNames, the ISO date otherwise.
 func (p *page) LongDate(t time.Time) string {
+	t = t.UTC()
 	if p.Lang == "en" {
-		return t.UTC().Format("January 2, 2006")
+		return t.Format("January 2, 2006")
 	}
-	return t.UTC().Format("2006-01-02")
+	if names, ok := monthNames[p.Lang]; ok {
+		return fmt.Sprintf("%d %s %d", t.Day(), names[0][t.Month()-1], t.Year())
+	}
+	return t.Format("2006-01-02")
 }
 
 func (p *page) ShortDate(t time.Time) string {
+	if names, ok := monthNames[p.Lang]; ok {
+		t = t.UTC()
+		if t.Year() == time.Now().UTC().Year() {
+			return fmt.Sprintf("%d %s", t.Day(), names[1][t.Month()-1])
+		}
+		return fmt.Sprintf("%d %s %d", t.Day(), names[1][t.Month()-1], t.Year())
+	}
 	if p.Lang != "en" {
 		return t.UTC().Format("2006-01-02")
 	}

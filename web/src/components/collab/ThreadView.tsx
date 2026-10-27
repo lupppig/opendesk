@@ -44,6 +44,7 @@ import type { MailFolder, MailMessage, MailThreadAction, MailThreadDetail } from
 import { isApiError } from "@/lib/api/client";
 import { patchThreads } from "@/lib/collab/cache";
 import { compose } from "@/lib/collab/compose";
+import { accountCategories, PRIMARY } from "@/lib/collab/categories";
 import { useMailAccounts } from "@/lib/collab/hooks";
 import { hasReplyAll, replyTarget, type ComposeMode } from "@/lib/collab/recipients";
 import { identitySignature, ownEmails, replyIdentity } from "@/lib/collab/identities";
@@ -76,7 +77,7 @@ export type ThreadViewProps = {
   onNext?: () => void;
   position?: { index: number; total: number };
   /** Applies an action from the page, so its toast and Undo know the list. */
-  onAction: (action: MailThreadAction, opts?: { folderId?: string; label?: string; silent?: boolean }) => void;
+  onAction: (action: MailThreadAction, opts?: { folderId?: string; category?: string; label?: string; silent?: boolean }) => void;
   markReadOnOpen: boolean;
   /** Open the composer in this mode once loaded. */
   intent?: ComposeMode | null;
@@ -122,7 +123,9 @@ function DraftRow({ m, onOpen }: { m: MailMessage; onOpen: () => void }) {
       onClick={onOpen}
       className="group flex w-full items-center gap-3 rounded-lg border border-dashed border-line-strong bg-surface px-3.5 py-2.5 text-left outline-none transition-colors hover:bg-sunken focus-visible:shadow-[0_0_0_2px_var(--focus)]"
     >
-      <span className="inline-flex h-[18px] shrink-0 items-center rounded-sm bg-tone-red-soft px-1.5 text-[10.5px] font-medium text-tone-red">{t("composer.draft")}</span>
+      <span className="inline-flex h-[18px] shrink-0 items-center rounded-sm bg-tone-red-soft px-1.5 text-[10.5px] font-medium text-tone-red">
+        {m.drafted_by_ai ? t("thread.aiDraftBy", { name: m.drafted_by_ai }) : t("composer.draft")}
+      </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[12.5px] text-fg-2" data-ph-mask>
           {to ? t("thread.draftTo", { who: to }) : t("thread.draftNoRecipients")}
@@ -404,7 +407,7 @@ export const ThreadView = forwardRef<ThreadViewHandle, ThreadViewProps>(function
     },
   });
 
-  const move = (m: MoveTarget) => onAction(m.action, { folderId: m.folderId, label: m.label });
+  const move = (m: MoveTarget) => onAction(m.action, { folderId: m.folderId, category: m.category, label: m.label });
 
 
   if (isPending) return <ThreadSkeleton />;
@@ -490,6 +493,8 @@ export const ThreadView = forwardRef<ThreadViewHandle, ThreadViewProps>(function
             <MovePicker
               accountId={detail.account.id}
               folders={moveFolders}
+              categories={accountCategories(account)}
+              current={th.category ?? PRIMARY}
               open={moveOpen}
               onOpenChange={setMoveOpen}
               onMove={move}

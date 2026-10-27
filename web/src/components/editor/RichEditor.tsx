@@ -16,7 +16,8 @@ export type RichEditorHandle = {
   focus: () => void;
   clear: () => void;
   insertHtml: (html: string) => void;
-  setHtml: (html: string) => void;
+  /** Replaces the content; onChange hears it unless silent (loading what is stored is not an edit). */
+  setHtml: (html: string, opts?: { silent?: boolean }) => void;
   isEmpty: () => boolean;
 };
 
@@ -106,8 +107,9 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
     if (value !== cur && !editor.isFocused) editor.commands.setContent(value || "", { emitUpdate: false });
   }, [value, editor]);
 
+  // Locking or unlocking the editor is not an edit: onChange stays quiet.
   useEffect(() => {
-    editor?.setEditable(editable);
+    editor?.setEditable(editable, false);
   }, [editable, editor]);
 
   // A new placeholder shows at once on an empty editor.
@@ -122,7 +124,7 @@ export const RichEditor = forwardRef<RichEditorHandle, RichEditorProps>(function
       focus: () => editor?.commands.focus("end"),
       clear: () => editor?.commands.clearContent(true),
       insertHtml: (html) => editor?.chain().focus().insertContent(html).run(),
-      setHtml: (html) => editor?.commands.setContent(html, { emitUpdate: true }),
+      setHtml: (html, opts) => editor?.commands.setContent(html, { emitUpdate: !opts?.silent }),
       isEmpty: () => editor?.isEmpty ?? true,
     }),
     [editor],

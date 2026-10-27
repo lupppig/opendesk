@@ -9,8 +9,10 @@ import type { MailCounts, MailFolder, MailThread, MailThreadAction } from "../ap
 export const UNDOABLE: ReadonlySet<MailThreadAction> = new Set<MailThreadAction>(["archive", "trash", "spam", "move"]);
 
 /** The conversation as it reads once the action applied. */
-export function applyAction(t: MailThread, action: MailThreadAction, folderId?: string): MailThread {
+export function applyAction(t: MailThread, action: MailThreadAction, folderId?: string, category?: string): MailThread {
   switch (action) {
+    case "categorize":
+      return category ? { ...t, category } : t;
     case "read":
       return { ...t, unread: false };
     case "unread":
@@ -34,20 +36,22 @@ export function applyAction(t: MailThread, action: MailThreadAction, folderId?: 
 }
 
 /** Where a list is: a box, or a folder with the role it has (null for a user folder). */
-export type ListPlace = { box: string | null; folderId: string | null; folderRole: MailFolder["role"] };
+export type ListPlace = { box: string | null; folderId: string | null; folderRole: MailFolder["role"]; category?: string };
 
 export function listPlace(q: CollabThreadQuery, folders: MailFolder[]): ListPlace {
   if (q.folder_id) return { box: null, folderId: q.folder_id, folderRole: folders.find((f) => f.id === q.folder_id)?.role ?? null };
-  return { box: q.box ?? "inbox", folderId: null, folderRole: null };
+  return { box: q.box ?? "inbox", folderId: null, folderRole: null, category: q.category };
 }
 
 /**
  * Whether a conversation leaves a list right away when the action applies. Read,
  * star and label changes leave rows where they are (the next refetch tidies up).
  */
-export function leavesList(action: MailThreadAction, place: ListPlace, targetFolder?: string): boolean {
+export function leavesList(action: MailThreadAction, place: ListPlace, targetFolder?: string, category?: string): boolean {
   const where = place.box ?? place.folderRole ?? "folder";
   switch (action) {
+    case "categorize":
+      return !!place.category && place.category !== category;
     case "archive":
       return where === "inbox" || where === "unread";
     case "trash":
@@ -132,10 +136,12 @@ export function countsAfter(
   folders: MailFolder[],
   folderId?: string,
   addresses: Record<string, string[]> = {},
+  category?: string,
 ): MailCounts {
   const roles = new Map(folders.map((f) => [f.id, f.role]));
   const out: MailCounts = { assigned: { ...counts.assigned }, boxes: { ...counts.boxes }, accounts: { ...counts.accounts }, folders: { ...counts.folders } };
   if (counts.addresses) out.addresses = Object.fromEntries(Object.entries(counts.addresses).map(([id, m]) => [id, { ...m }]));
+  if (counts.categories) out.categories = Object.fromEntries(Object.entries(counts.categories).map(([id, m]) => [id, { ...m }]));
   // A zero is kept: an account missing from the counts falls back to its own (older) number.
   const bump = (rec: Record<string, number>, key: string, d: number) => {
     rec[key] = Math.max(0, (rec[key] ?? 0) + d);
@@ -154,6 +160,8 @@ export function countsAfter(
           const byAddress = (out.addresses[t.account_id] ??= {});
           for (const e of own) if (on.has(e)) bump(byAddress, e, sign);
         }
+        // Its inbox tab, when its account's inbox is split.
+        if (t.category && out.categories?.[t.account_id]) bump(out.categories[t.account_id], t.category, sign);
       }
       if (!has("trash") && !has("spam")) out.boxes.unread = Math.max(0, out.boxes.unread + sign);
       for (const id of t.folder_ids) bump(out.folders, id, sign);
@@ -162,7 +170,7 @@ export function countsAfter(
     if (t.needs_action && inInbox) out.boxes.needs_action = Math.max(0, out.boxes.needs_action + sign);
   };
   for (const t of threads) {
-    const next = { ...applyAction(t, action, folderId), folder_ids: foldersAfter(t, action, folders, folderId) };
+    const next = { ...applyAction(t, action, folderId, category), folder_ids: foldersAfter(t, action, folders, folderId) };
     count(t, -1);
     count(next, 1);
   }

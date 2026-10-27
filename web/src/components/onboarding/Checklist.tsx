@@ -37,6 +37,15 @@ export function progressOf(data: Pick<Onboarding, "steps">) {
   return { done, total, pct: total ? done / total : 0, all: total > 0 && done === total };
 }
 
+/**
+ * The steps still open that this viewer can do: an admin step is left out for a member,
+ * and so is one waiting on AI when only an admin can turn AI on. None left, the checklist
+ * has nothing to offer them and leaves the sidebar.
+ */
+export function stepsLeft(data: Pick<Onboarding, "steps">, viewer: { isAdmin: boolean; unavailable?: Partial<Record<OnboardingStepId, string>> }): number {
+  return data.steps.filter((s) => !s.done && (viewer.isAdmin || (s.requires !== "admin" && !viewer.unavailable?.[s.id]))).length;
+}
+
 type Props = {
   data: Onboarding;
   onDismiss: () => void | Promise<void>;

@@ -25,7 +25,7 @@ var SeverityFilterValues = append(append([]string{}, domain.Severities...), "non
 // TicketFilters is a saved view's filter set (contracts/api.md TicketFilters).
 // Assignee is "me", "none" or a user id; TeamID "mine" (the caller's teams), "none" or a
 // team id. Label names never contain a comma, so Tag and TagNot are comma-separated lists
-// like TeamID. Each *Not field leaves out the tickets its positive twin would match.
+// like TeamID. Each *Not field leaves out the tickets its values would match.
 type TicketFilters struct {
 	Status    []string `json:"status,omitempty" enum:"open,pending,on_hold,solved,closed"`
 	Priority  []string `json:"priority,omitempty" enum:"low,normal,high,urgent"`
@@ -36,6 +36,10 @@ type TicketFilters struct {
 	MailboxID string   `json:"mailbox_id,omitempty"`
 	// MailboxNot leaves out tickets whose reply address is one of these mailboxes.
 	MailboxNot string `json:"mailbox_not,omitempty" doc:"Comma-separated mailbox ids: tickets whose reply address is none of them"`
+	// ContactNot and CompanyNot leave out tickets from these customers: the ticket's contact,
+	// or the company that contact belongs to.
+	ContactNot string `json:"contact_not,omitempty" doc:"Comma-separated contact ids: tickets whose contact is none of them"`
+	CompanyNot string `json:"company_not,omitempty" doc:"Comma-separated company ids: tickets whose contact belongs to none of them"`
 	// ReceivedAt is the address a ticket was first written to: a mailbox's address or an alias.
 	ReceivedAt string   `json:"received_at,omitempty" maxLength:"254" doc:"Tickets first written to this address (a mailbox's address or one of its aliases)"`
 	BrandID    string   `json:"brand_id,omitempty"`
@@ -87,8 +91,13 @@ func (f *TicketFilters) Normalize(ctx context.Context, q db.Querier, wid uuid.UU
 	if f.TeamNot, err = normTeams(ctx, q, wid, f.TeamNot, "team_not"); err != nil {
 		return err
 	}
-	if f.MailboxNot, err = normRefs(ctx, q, wid, f.MailboxNot, "mailbox", "mailbox_not"); err != nil {
-		return err
+	for _, ref := range []struct {
+		v           *string
+		kind, field string
+	}{{&f.MailboxNot, "mailbox", "mailbox_not"}, {&f.ContactNot, "contact", "contact_not"}, {&f.CompanyNot, "company", "company_not"}} {
+		if *ref.v, err = normRefs(ctx, q, wid, *ref.v, ref.kind, ref.field); err != nil {
+			return err
+		}
 	}
 	for _, ref := range []struct {
 		v    *string

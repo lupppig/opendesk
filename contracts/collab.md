@@ -7,7 +7,7 @@ mail from the address, with each change made at the provider too. An account is 
 (only the person who connected it sees it) or **shared** (with the whole workspace, or with teams
 and people). Any single conversation can be shared on its own, assigned and discussed in
 comments, so a teammate can help with one email without seeing the rest of the account. Each
-member arranges their own sidebar.
+member arranges their own sidebar, with or without Collab (`SidebarPrefs`).
 
 Collab is the `collab` plan's (contracts/billing.md "Collab"). It is not a ticket feature: a
 mail account is not a helpdesk mailbox (contracts/api.md "Mailboxes"), its mail never becomes
@@ -25,8 +25,8 @@ reading the inbox directly with its OAuth clients, or generic IMAP ("Providers a
 | billing off (self-hosted) | on for every workspace while the instance has `COLLAB` on (default on) |
 | billing on (opendesk Cloud) | on while the workspace is on the `collab` plan (a paid subscription), or has complimentary Collab access from an instance admin that has not ended (contracts/admin.md "Collab access") |
 
-Without it every `/v1/collab/*` route except `GET /v1/collab` answers `402 collab_required`
-("Collab is not on this workspace's plan."). Accounts connected while it was on are kept as they
+Without it every `/v1/collab/*` route except `GET /v1/collab` and the sidebar
+(`/v1/collab/sidebar`) answers `402 collab_required` ("Collab is not on this workspace's plan."). Accounts connected while it was on are kept as they
 are and stop syncing; nothing is deleted. Turning it back on resumes them.
 
 ## Providers and scopes
@@ -104,9 +104,14 @@ after a connect, a reconnect, `POST .../sync` or an action. One runs per account
   - IMAP: new UIDs, the oldest first; the stored UID goes on from the last one imported.
 - Changes made at the provider (read elsewhere, moved on the phone, deleted) arrive with the next
   sync. A message gone from every folder is removed from opendesk.
+- A provider that is busy (a rate limit, or a 5xx to a read) is asked again within the call after
+  1 and 4 seconds, or after its `Retry-After` when that is at most 15 seconds. A request that
+  changes something is asked again only after a rate limit, which refused it before it ran.
 - Failures are stored on the account (`status: "error"`, a safe `last_error`), retried with
-  backoff (1 minute doubling to 1 hour). A refused grant (`invalid_grant`, an IMAP login refused)
-  needs a reconnect: `status: "error"`, `reconnect: true`.
+  backoff (1 minute doubling to 1 hour). A passing failure (a busy or unreachable provider) waits
+  with the backoff without changing the status for the first two in a row, so a short outage never
+  shows; the third shows. A refused grant (`invalid_grant`, an IMAP login refused) needs a reconnect
+  at once: `status: "error"`, `reconnect: true`.
 - Each message is parsed with the email area's parser. Its HTML is sanitized with bluemonday before
   storage (the same policy as inbound email), and it renders in the sandboxed frame without scripts
   with remote images on request (`web/src/lib/sanitize.ts`). A message with attachments or inline
@@ -116,8 +121,10 @@ after a connect, a reconnect, `POST .../sync` or an action. One runs per account
 ## History
 
 The first sync is quick and recent. A **history import** brings the rest: as far back as the person
-chooses, all mail included, without holding up the live sync. Whoever manages the account starts it
-from the account's settings (`PUT /v1/collab/accounts/{id}/history`); `MailAccount.history` follows it.
+chooses, all mail included, without holding up the live sync. Whoever connects the account chooses
+how far back while connecting (`history` on the connect routes; the app offers the last year first,
+and "only the last 30 days" for none), and whoever manages it starts or changes it from the account's
+settings (`PUT /v1/collab/accounts/{id}/history`, also while one runs); `MailAccount.history` follows it.
 
 - **Scope**: `since`, mail received from then on (`null`: all of it), in every folder the sync reads;
   spam and trash only with `include_spam_trash`. It reads the mail that was there when it started
@@ -210,6 +217,7 @@ brings back the provider's state.
 | `move` (`folder_id`) | add the label, remove `INBOX` when the target is a label | move | move |
 | `label` / `unlabel` (`folder_id`, a label) | add / remove the label | add / remove the category (the message's `categories` PATCHed) | `422 labels_unsupported` |
 | `done` / `needs_action` | local handling state | local handling state | local handling state |
+| `categorize` (`category`, a key of the account's) | opendesk only ("Categories") | opendesk only | opendesk only |
 
 A `move` to an Outlook category is `422 validation_error` (a category is a label: add it with
 `label`). Moving a Microsoft or IMAP conversation keeps its categories.
@@ -276,6 +284,113 @@ a reply in its conversation, a new message or a forward in a conversation of its
 | violet | `#a479e2` / `#ffffff` | `preset8` (`#8764b8`) |
 | pink | `#f691b3` / `#ffffff` | `preset9` (`#c30052`) |
 
+## Categories
+
+An inbox can be split into tabs, like Gmail's: **Primary** for mail from people, and categories such
+as Updates, Newsletters and Promotions for the rest. New mail is sorted as it arrives. Categories are
+opendesk's own (never written to the provider), are on every provider, and change only where mail
+shows in opendesk: a conversation in Updates is still in the inbox, unread and counted as before.
+
+**Who decides.** A workspace's admins set the default for everyone, so nobody has to set up each
+person's inbox, and may give a team its own; a member may choose their own for an account they
+manage. An account follows the first of these that applies to it:
+
+1. its own choice (`custom` or `off`), unless the workspace locks categories (`locked`) and the
+   choice was not made by an admin;
+2. the categories of its owner's teams, the first in the workspace's team order (`position`) that has
+   any (`on` or `off`);
+3. the workspace's (`on` or `off`);
+4. none: the inbox is not split. The mail page offers a guided set-up to whoever manages the account,
+   with presets and Ollie's suggestions from that account's own mail.
+
+It is worked out again whenever any of these changes, when someone joins or leaves a team, and on
+every sync, so a new member's accounts sort the way the workspace's do from their first sync. A shared
+account without an owner follows the workspace.
+
+```ts
+interface MailCategory {
+  key: string                  // 1..40 of [a-z0-9_-], made from the name when left out; "primary" is the first, always
+  name: string                 // 1..40, a name people choose ("Primary" may be renamed, e.g. "Important")
+  description: string          // 0..300: what belongs in it, for Ollie; shown under the name
+  color: string                // a tone key; default gray
+}
+
+interface MailCategorySet {
+  enabled: boolean             // false: "off", the inbox is not split (it wins over the levels below it)
+  categories: MailCategory[]   // 2..8 when enabled, "primary" first; [] when off
+  updated_at: string
+  updated_by: UserRef | null
+}
+
+interface MailCategorySettings {   // GET /v1/collab/categories
+  workspace: (MailCategorySet & { locked: boolean }) | null   // null: no default
+  teams: (MailCategorySet & { team_id: string; team_name: string; position: number })[]   // admins: every team with a set; others: their own teams'
+  presets: MailCategory[]      // the built-in categories: primary, updates, newsletters, promotions, social
+  sorting: "ai" | "rules"      // ai: Ollie sorts (a decision engine or AI provider is on); rules: sender rules and mail headers only
+  suggest: boolean             // POST …/categories/suggest is available (an AI provider is on)
+}
+
+interface MailAccountCategories {  // MailAccount.categories
+  enabled: boolean
+  categories: MailCategory[]   // what its inbox shows; [] when not enabled
+  source: "account" | "team" | "workspace" | "none"
+  team: { id: string; name: string } | null   // source "team"
+  mode: "follow" | "custom" | "off"           // the account's own choice
+  own: MailCategory[]          // its custom categories, kept while it follows ([] when never set)
+  ai: boolean                  // Ollie may sort its new mail (default true); false: sender rules and headers only
+  locked: boolean              // the caller cannot change mode or categories (the workspace locks them)
+}
+```
+
+**How mail is sorted.** When the sync stores a new message in an account's inbox that the account did not
+send, and its conversation has no category yet, the conversation is sorted by the job
+`collab.categorize` (`jobs.CollabCategorizeArgs`, a few seconds later, so a burst is one job), in this
+order:
+
+1. **Sender rules**: the account's (`POST …/category-rules`): an address, or `@domain` for a whole domain.
+2. **People you write to stay in Primary**: a sender the account has sent mail to before.
+3. **Gmail's own tab** (Gmail accounts): the sync keeps the tab Gmail filed a message under (its
+   `CATEGORY_*` label) as a signal (`gmail_primary`, `gmail_social`, `gmail_promotions`,
+   `gmail_updates`, `gmail_forums`). Social, Promotions and Updates go to the built-in key of that
+   name and Forums to `social`, when the account has it; Gmail's Primary goes to Primary while every
+   category is a built-in one (one of the account's own is Ollie's to fill). List mail Gmail filed
+   under Updates or Promotions goes on to the next steps while there is `newsletters`, which Gmail lacks.
+4. **Ollie**: with `sorting: "ai"`, the account's `ai` on and AI on for the workspace (`settings.ai.enabled`),
+   one decision call (contracts/ai.md "Decisions", feature `mail_categorize`) asks for up to 10
+   conversations at once, one Choice question each over the categories, with each category's
+   description as its rubric. The state is data, never instructions: the sender's name and address,
+   the subject, the first 1,200 characters of the text and the mail's signals (`list`: List-Id or
+   List-Unsubscribe, `bulk`: Precedence bulk or list, `campaign`: a mailing tool's campaign header,
+   `auto`: Auto-Submitted, `noreply`: a no-reply sender, `direct`: the account's address in To, and
+   Gmail's tab). On a calibrated engine (Jev) a category other than
+   Primary needs a probability of at least 0.5, so mail Ollie is unsure of stays in Primary.
+5. **Headers** (without Ollie, or when its call fails or the AI balance is too low): for the built-in
+   keys only, list mail goes to `promotions` when its subject reads like an offer and `promotions` is
+   there, else to `newsletters`, else `promotions`; mail from a social network to `social`; automatic
+   mail (`auto`, `noreply`, and list mail when neither of the others is there) to `updates`.
+   Everything else is Primary.
+
+A conversation keeps its category as more messages arrive; one the account answers moves to Primary.
+Moving a conversation (`categorize`, "Actions") is the person's choice, which nothing changes after.
+History imports are not sorted; when categories are turned on or changed for an account, its inbox
+conversations of the last 30 days (at most 300) are sorted again, except those a person moved.
+Conversations in a category that is removed go back to Primary. Mail is never archived, read or
+moved by sorting.
+
+**Seeing them.** `MailThread.category` is the conversation's category key for its account (`null` when
+the account's inbox is not split); one whose key the account no longer has reads `primary`.
+`GET /v1/collab/threads?box=inbox&category=<key>` lists one tab (`primary` also lists conversations
+not sorted yet and those of accounts not split); `GET /v1/collab/counts` gives each tab's unread
+conversations. The mail page shows the tabs above the inbox while one account in scope is split,
+the union of their categories in All inboxes (the first account's name and colour for a key),
+each with its unread count. Moving a conversation offers "Always for this sender" to whoever manages
+the account, which adds the sender rule and moves that sender's other inbox conversations too.
+
+**Privacy.** A category and a sender rule are seen by whoever sees the account, no one else: an
+admin sets categories for private accounts without ever seeing their mail or how it was sorted. What
+Ollie reads is listed above; nothing is logged or kept apart from the category. A member may turn
+Ollie off for an account they manage (`ai: false`) whatever the workspace locks.
+
 ## Who sees what
 
 - A **private** account and its conversations are visible to the member who connected it, and
@@ -291,9 +406,9 @@ a reply in its conversation, a new message or a forward in a conversation of its
 - A member removed from the workspace, or a deleted user, loses their accounts: private accounts
   are deleted with their mail (the job `collab.cleanup`), shared ones are kept with `owner: null`
   for admins to manage or disconnect.
-- API keys and AI clients over MCP have no access to Collab: every route needs a user session.
-  Ollie has none either: every request it makes for a user carries `ViaAssistant` (reads
-  included), and Collab refuses it.
+- API keys have no access to Collab but "AI drafts" below, and OAuth clients over MCP none: every
+  other route needs a user session. Ollie has none either: every request it makes for a user
+  carries `ViaAssistant` (reads included), and Collab refuses it.
 - The one exception is the owner's own consent: a member may let teammates' Ollie ask theirs
   about their **own** accounts (contracts/ai.md "Asking a teammate"). It is off until the
   workspace allows it and the member opts in, account by account (verbatim, summaries only or
@@ -301,6 +416,34 @@ a reply in its conversation, a new message or a forward in a conversation of its
   owner's Ollie under the owner's rules, never mail, ids, addresses, links or attachments. Mail
   the owner sees only through someone else's share is never used. Admins cannot read or change
   anyone's choices.
+
+### AI drafts
+
+Any AI client, whatever model runs it (local or hosted), may draft replies for a person to send
+(GH#176). opendesk enforces the boundary; it never runs or meters the client's model.
+
+- **Credential**: an API key with `collab:draft` (no preset includes it; it is chosen by hand). The
+  key acts as the member who created it (`api_keys.created_by`), with their role and suspension
+  checked on every request: it sees exactly the conversations that member sees ("Who sees what"),
+  reads but cannot draft while they are a viewer, and stops working (`403`) the moment they leave
+  the workspace or are suspended. Revoking the key ends it at once. OAuth clients cannot hold
+  `collab:draft` yet; they may later, on the same rules.
+- **Routes it may call**: `GET /v1/collab/threads`, `GET /v1/collab/threads/{id}` (messages and the
+  team's internal comments), `POST /v1/collab/drafts` (mode `reply` or `reply_all`, no
+  `attachment_ids` or `forward_attachments`) and `PUT /v1/collab/drafts/{id}` for a draft it saved
+  that nobody has saved since (`403 ai_draft_not_own` otherwise; no `attachment_ids`). Every other
+  Collab route refuses it (`403`): it never sends, discards, marks read or unread, moves, labels,
+  assigns, shares or comments. Reading changes no state, so a conversation the key read stays
+  unread for the team.
+- **Attribution**: a draft it saves is the member's (`sent_by`) with `drafted_by_ai`, the key's name
+  as it was then (shown "AI draft by <name>"). A person who saves the draft takes it over:
+  `drafted_by_ai` goes and the key can no longer save it, even when the two save at the same
+  moment: changes to a draft take turns, and the key is checked when its turn comes, before the
+  provider is called, so its save never replaces a person's. Sending is a person's, from the composer,
+  as with any draft. Each save by a key is audit-logged (`collab.ai_draft_saved`, actor the member,
+  `actor: "ai"` with the key).
+- **MCP tools** (contracts/agent.md): `list_collab_conversations`, `get_collab_conversation` and
+  `draft_collab_reply`, offered to a key with `collab:draft`.
 
 ## Shapes
 
@@ -340,6 +483,7 @@ interface MailAccount {
   history: MailHistory | null  // the latest history import ("History"); null when none was started
   oldest_message_at: string | null  // the oldest mail stored from it: its mail is here from then on
   folders_left_out: number     // IMAP: folders past the 30 the sync reads; 0 otherwise
+  categories: MailAccountCategories  // how its inbox is split into tabs ("Categories")
 }
 
 interface MailHistory {
@@ -422,6 +566,7 @@ interface MailThread {
   assignees: UserRef[]
   comment_count: number
   to_address: string | null    // the account's address other than its own the conversation was written to or sent from (an alias), newest first
+  category: string | null      // its category key ("Categories"); null when the account's inbox is not split
 }
 
 interface MailMessage {
@@ -446,6 +591,7 @@ interface MailMessage {
   attachments: MailAttachment[]
   sent_by: UserRef | null      // the teammate who sent it from opendesk (for a draft, who saved it)
   draft_id: string | null      // drafts: the id the /v1/collab/drafts routes take (the message's id)
+  drafted_by_ai: string | null // drafts an AI key saved and no person has saved since: the key's name ("AI drafts")
   in_reply_to_id: string | null  // the message of the conversation it answers (its In-Reply-To), when stored
   own_address: string | null   // the account's address (its own or an alias) it was sent from, else the first in its To, Cc, then Delivered-To / X-Original-To
   outgoing: boolean            // mail the account wrote: sent from opendesk (sent_by), a draft, or filed by the provider in Sent or Drafts. Its From alone never makes mail outgoing, since a sender writes their own From. Mail that is not outgoing holds back its remote images until the reader loads them
@@ -504,11 +650,23 @@ interface SidebarPrefs {
   unified_inbox: boolean       // default true: "All inboxes" on top of the Mail section
   badges: Record<string, "unread" | "total" | "count" | "awaiting" | "urgent" | "overdue" | "open" | "none">  // the number beside a row; default {}
   mail_tabs: string[]          // the mail page's folder bar, in order; default ["inbox","starred","sent","drafts","archive"]
+  auto_pins: string[]          // pins the sidebar added once by itself, so one unpinned stays so; default []
 }
 ```
 
 These arrange a workspace's own sidebar. A Space (contracts/spaces.md) picked in the switcher shows
 its own rows instead; a whole section in a Space follows these preferences.
+
+Every member has them, with or without Collab. Without Collab they arrange the ticket side: the
+order of Favorites, Inbox, Teams, Views and Workspace, hidden rows and sections, favorites of inbox
+folders, teams and views, and their numbers. The Mail section, mail rows and favorites, `unified_inbox`,
+`mark_read_on_open`, `mail_tabs` and `auto_pins` are Collab's: kept as saved, used once it is on.
+
+**All inboxes in Favorites.** When a member of a workspace with Collab first sees two accounts,
+`GET /v1/collab/sidebar` pins All inboxes (`{kind: "box", id: "inbox"}`) to the top of Favorites,
+unless `unified_inbox` is off, `box:inbox` is hidden or it is pinned already, and records `"box:inbox"`
+in `auto_pins` either way: unpinned later, it stays unpinned. Without Collab it neither counts
+accounts nor pins or records anything.
 
 `badges` keys are a row (`box:inbox` for All inboxes, `box:shared`, `box:assigned`, `account:<id>`,
 `folder:<id>`, `ticket_folder:<id>`, `view:<id>`, `team:<id>`) or a section's default (`section:mail`,
@@ -593,11 +751,11 @@ account or conversation; "act": sees it and is agent or above; "manage": "Who se
 
 | method | path | who | notes |
 | --- | --- | --- | --- |
-| GET | `/v1/collab` | member | `CollabStatus`; the only route without Collab |
+| GET | `/v1/collab` | member | `CollabStatus`; with or without Collab |
 | GET | `/v1/collab/accounts` | member | `MailAccount[]` the caller sees, theirs first. `?manage=true`: an admin also gets the shared accounts of people who left (`owner: null`), to manage or disconnect |
-| POST | `/v1/collab/accounts/oauth/{provider}/start` | agent+ | `{visibility, shared_with? (at most 40 teams and people: it travels in the signed state; add more afterwards), name?, email? (login hint), account_id? (reconnect, manage)}` → `{url}`; sets the flow cookie (send with credentials). `422 provider_not_configured` |
+| POST | `/v1/collab/accounts/oauth/{provider}/start` | agent+ | `{visibility, shared_with? (at most 40 teams and people: it travels in the signed state; add more afterwards), name?, email? (login hint), account_id? (reconnect, manage), history?: {since: string \| null} (older mail to import once connected, as `PUT …/history`; left out, none; kept when the account already has an import)}` → `{url}`; sets the flow cookie (send with credentials). `422 provider_not_configured` |
 | GET | `/v1/collab/accounts/oauth/{provider}/callback` | provider | redirects to `APP_URL/settings/mail-accounts?connected=<id>` or `?error=<code>`: `oauth_state`, `access_denied`, `provider_error`, `account_conflict` (the address is already connected in this workspace by someone else), `collab_required`, `forbidden`, `internal` |
-| POST | `/v1/collab/accounts/imap` | agent+ | `{email, name?, display_name?, imap_host, imap_port, imap_tls, imap_username?, password, smtp_host, smtp_port, smtp_tls, smtp_username?, smtp_password?, visibility, shared_with?}` → `MailAccount`. Both servers are tried first: `422 connection_failed` with `detail`. `409 account_conflict`. `422 imap_unavailable` with `COLLAB_IMAP` off |
+| POST | `/v1/collab/accounts/imap` | agent+ | `{email, name?, display_name?, imap_host, imap_port, imap_tls, imap_username?, password, smtp_host, smtp_port, smtp_tls, smtp_username?, smtp_password?, visibility, shared_with?, history?}` → `MailAccount` (`history` as on the OAuth start). Both servers are tried first: `422 connection_failed` with `detail`. `409 account_conflict`. `422 imap_unavailable` with `COLLAB_IMAP` off |
 | PATCH | `/v1/collab/accounts/{id}` | manage | `{name?, display_name?, color?, signature_html?, visibility?, handling_enabled?, shared_with?, imap? {…same fields, password?, smtp_password?}, default_from?}` → `MailAccount`; `handling_enabled` is available on shared accounts only and clears when an account becomes private. `default_from` must be one of its addresses that can send (`422 validation_failed`) and is kept in opendesk (Gmail's own change of its default still comes in, "Addresses"); new IMAP settings are tried first. A changed `signature_html` or `display_name` that syncs `two_way` is made at Gmail first (sanitized): a refusal is `502 provider_error` and nothing of the change is saved. `read_only` and `none` save in opendesk only. A changed `display_name` stops a Microsoft account following its profile name. A `display_name` or `signature_html` with variables ("Who sends") is checked (`422 validation_failed`) and saved in opendesk only, never at Gmail |
 | POST | `/v1/collab/accounts/{id}/identities` | manage | Add an address ("Addresses"): `{email, display_name?, signature_html?, reply_to?}` → `MailAccount`. Microsoft and IMAP only (`422 identities_from_provider` for Gmail); `409 identity_conflict` for the account's own or an existing address; at most 50 |
 | PATCH | `/v1/collab/accounts/{id}/identities/{identity_id}` | manage | `{display_name?, signature_html?, reply_to? (hand-added only)}` → `MailAccount`. Saved in opendesk; a Gmail address's From name and signature are replaced by Gmail's when they next change there (`pull`) |
@@ -605,6 +763,7 @@ account or conversation; "act": sees it and is agent or above; "manage": "Who se
 | POST | `/v1/collab/accounts/{id}/identities/{identity_id}/display-name/pull` | manage | → `MailAccount` with the address's From name replaced by Gmail's now (empty uses the account's). `422 display_name_sync_unsupported` for a hand-added address |
 | POST | `/v1/collab/accounts/{id}/identities/{identity_id}/signature/pull` | manage | → `MailAccount` with the address's signature replaced by Gmail's now (`GET sendAs/{email}`). `422 signature_sync_unsupported` for a hand-added address; `502 provider_error` when Gmail refuses |
 | DELETE | `/v1/collab/accounts/{id}/identities/{identity_id}` | manage | → `MailAccount`. Hand-added only (`422 identities_from_provider` for Gmail's); the default for new mail goes back to the account's own address when it was this one |
+| POST | `/v1/collab/accounts/{id}/identities/refresh` | manage | → `MailAccount`: Gmail's send-as list and settings read now ("Addresses"); `422 identities_by_hand` for other providers, `502 provider_error` when Gmail refuses |
 | GET | `/v1/collab/accounts/{id}/identities/suggestions` | manage | `{addresses: string[]}`: Microsoft's `proxyAddresses` aliases not added yet, when Graph answers; empty otherwise (and for other providers) |
 | POST | `/v1/collab/accounts/{id}/signature/pull` | manage | → `MailAccount` with the signature replaced by Gmail's now. `422 signature_sync_unsupported` for Microsoft and IMAP; `502 provider_error` when Gmail refuses |
 | POST | `/v1/collab/accounts/{id}/display-name/pull` | manage | → `MailAccount` with the From name replaced by Gmail's now ("Get from Gmail", in place of one with variables). `422 display_name_sync_unsupported` for Microsoft and IMAP; `422 validation_failed` when Gmail has no name of its own; `502 provider_error` |
@@ -613,16 +772,27 @@ account or conversation; "act": sees it and is agent or above; "manage": "Who se
 | PUT | `/v1/collab/accounts/{id}/history` | manage | `{since: string \| null, include_spam_trash?: boolean}` → `MailAccount`: starts a history import ("History"), or starts it again with this scope. `since` is RFC 3339, in the past (`422 validation_failed`); `null` imports all mail. `422 history_unavailable` for a sample account |
 | PATCH | `/v1/collab/accounts/{id}/history` | manage | `{paused: boolean}` → `MailAccount`. `404` without an import; `422 validation_failed` for one that ended |
 | DELETE | `/v1/collab/accounts/{id}/history` | manage | → `MailAccount`: stops the import (`canceled`); what it imported stays |
-| POST | `/v1/collab/accounts/{id}/sync` | see | → 202, a sync now |
+| POST | `/v1/collab/accounts/{id}/sync` | see | → 202, a sync now, which reads the account's settings and addresses too |
 | GET | `/v1/collab/accounts/{id}/folders` | see | `MailFolder[]`, special ones first, then by path |
 | POST | `/v1/collab/accounts/{id}/folders` | act | `{name: 1..100, parent_id?, kind?: "folder" \| "label", color?: tone}` → `MailFolder`, created at the provider first (`502 provider_error` with detail). Gmail makes labels either way; Microsoft makes a folder, or with `kind: "label"` an Outlook category (no `parent_id`); IMAP only folders (`422 labels_unsupported` for a label). `color` only for labels ("Labels and colours") |
 | PATCH | `/v1/collab/folders/{id}` | act | `{name?, color?: tone}`, at least one → `MailFolder`; at the provider first, then stored. `422` for a special folder; `color` only on a Gmail label or an Outlook category (`422 validation_error` otherwise); an Outlook category cannot be renamed (`422 rename_unsupported`) |
 | DELETE | `/v1/collab/folders/{id}` | act | → 204; its conversations stay in their other folders; `422` for a special folder |
-| GET | `/v1/collab/threads` | member | `?box=&account_id=&folder_id=&q=&to=&with=&limit=(1..100, 50)&cursor=` → `Page<MailThread>`, newest first. `to`: only conversations with that address on a message (From, To, Cc or where it was delivered), case-insensitive: one alias's mail. `box`: `inbox` (default), `unread`, `starred`, `sent`, `drafts`, `archive`, `trash`, `spam`, `all`, `shared`, `assigned`, `needs_action`. Without `account_id` it spans every account the caller sees (for `shared`, `assigned`, and `needs_action`, every conversation they see). `folder_id` replaces `box`. `unread` and `all` leave out trash and spam, `starred` leaves out trash, and `shared`, `assigned`, and `needs_action` count conversations still in an inbox. `archive` is the Archive folder, and for Gmail, which archives by removing `INBOX`, what is in none of inbox, trash, spam and drafts. `q` matches each message's subject, sender and text and the conversation's subject and participants ("Search"). `with`: only conversations with that person on a message, like `to`; without `account_id` it spans every conversation the caller sees, those shared with them on their own included ("People") |
-| GET | `/v1/collab/counts` | member | `{boxes: {inbox, unread, shared, assigned, drafts, needs_action}: number, accounts: Record<id, number>, folders: Record<id, number>, assigned: Record<account id, number>, addresses: Record<id, Record<address, number>>}`: unread conversations; `shared`, `assigned`, and `needs_action` count those still in an inbox, `drafts` every draft conversation; `folders` lists only folders with unread conversations, and `assigned` (`boxes.assigned` by account) only accounts with some (missing = 0); `addresses`, for each account with addresses besides its own, the unread conversations in its inbox with each of its addresses (its own included, lower case) on a message, matched like `to=` (missing = 0) |
+| GET | `/v1/collab/threads` | member | `?box=&account_id=&folder_id=&q=&to=&with=&category=&limit=(1..100, 50)&cursor=` → `Page<MailThread>`, newest first. `category`: one tab of the inbox ("Categories"), with `box=inbox` only (`422` otherwise). `to`: only conversations with that address on a message (From, To, Cc or where it was delivered), case-insensitive: one alias's mail. `box`: `inbox` (default), `unread`, `starred`, `sent`, `drafts`, `archive`, `trash`, `spam`, `all`, `shared`, `assigned`, `needs_action`. Without `account_id` it spans every account the caller sees (for `shared`, `assigned`, and `needs_action`, every conversation they see). `folder_id` replaces `box`. `unread` and `all` leave out trash and spam, `starred` leaves out trash, and `shared`, `assigned`, and `needs_action` count conversations still in an inbox. `archive` is the Archive folder, and for Gmail, which archives by removing `INBOX`, what is in none of inbox, trash, spam and drafts. `q` matches each message's subject, sender and text and the conversation's subject and participants ("Search"). `with`: only conversations with that person on a message, like `to`; without `account_id` it spans every conversation the caller sees, those shared with them on their own included ("People") |
+| GET | `/v1/collab/counts` | member | `{boxes: {inbox, unread, shared, assigned, drafts, needs_action}: number, accounts: Record<id, number>, folders: Record<id, number>, assigned: Record<account id, number>, addresses: Record<id, Record<address, number>>, categories: Record<account id, Record<key, number>>}`: unread conversations; `shared`, `assigned`, and `needs_action` count those still in an inbox, `drafts` every draft conversation; `folders` lists only folders with unread conversations, and `assigned` (`boxes.assigned` by account) only accounts with some (missing = 0); `addresses`, for each account with addresses besides its own, the unread conversations in its inbox with each of its addresses (its own included, lower case) on a message, matched like `to=` (missing = 0); `categories`, for each split account, the unread conversations in its inbox by category key, `primary` included (missing = 0) |
 | GET | `/v1/collab/threads/{id}` | see | `MailThreadDetail` |
 | GET | `/v1/collab/person` | member | `?email=&exclude=&limit=` → `MailPerson` ("People"); `422 validation_failed` for an address that is not one |
-| POST | `/v1/collab/threads/actions` | act | `{thread_ids: string[1..100], action, folder_id?}` → `{threads: MailThread[]}`. `done` and `needs_action` are available only for a shared account with handling enabled and do not create a provider job. Threads the caller cannot act on are `404` (all or nothing) |
+| POST | `/v1/collab/threads/actions` | act | `{thread_ids: string[1..100], action, folder_id?, category?}` → `{threads: MailThread[]}`. `done` and `needs_action` are available only for a shared account with handling enabled and do not create a provider job. Threads the caller cannot act on are `404` (all or nothing). `categorize` needs a `category` every one of their accounts has (`422 validation_failed`) |
+| GET | `/v1/collab/categories` | member | `MailCategorySettings` ("Categories") |
+| PUT | `/v1/collab/categories/workspace` | admin | `{enabled, categories?, locked?}` → `MailCategorySettings`. Categories: 2..8, `primary` first, keys and names once each (`422 validation_failed`); names through `internal/displayname`. Every account is sorted again where its categories changed |
+| DELETE | `/v1/collab/categories/workspace` | admin | → `MailCategorySettings`: no default |
+| PUT | `/v1/collab/categories/teams/{team_id}` | admin | `{enabled, categories?}` → `MailCategorySettings`; a new team set goes last in the order |
+| DELETE | `/v1/collab/categories/teams/{team_id}` | admin | → `MailCategorySettings`: the team follows the workspace |
+| PUT | `/v1/collab/categories/team-order` | admin | `{team_ids: string[]}` (every team with a set, once) → `MailCategorySettings` |
+| POST | `/v1/collab/categories/suggest` | agent+ | `{account_id?, about?: string (0..500)}` → `{categories: MailCategory[]}`, not saved: Ollie's proposal (feature `mail_categories`, contracts/ai.md), from the sender and subject of the account's latest 60 inbox conversations (an account the caller sees) and what `about` says. `404 ai_disabled` without an AI provider; the AI errors of contracts/ai.md |
+| PUT | `/v1/collab/accounts/{id}/categories` | manage | `{mode: "follow" \| "custom" \| "off", categories? (custom: as for the workspace), ai?: boolean}` → `MailAccount`. `422 categories_locked` for a change of mode or categories while the workspace locks them and the caller is not an admin (`ai` always changes) |
+| GET | `/v1/collab/accounts/{id}/category-rules` | manage | `{rules: {id, sender, category, created_at}[]}` |
+| POST | `/v1/collab/accounts/{id}/category-rules` | manage | `{sender: an address or "@domain", category}` → the rule (one per sender: a second replaces the first; at most 500). Moves the sender's inbox conversations to the category now |
+| DELETE | `/v1/collab/accounts/{id}/category-rules/{rule_id}` | manage | → 204 |
 | PUT | `/v1/collab/threads/{id}/shares` | act | `{shares: Audience}` → `MailThreadDetail`. Empty unshares. Audit `collab.thread_shared` (ids only) |
 | PUT | `/v1/collab/threads/{id}/assignees` | act | `{user_ids: string[0..20]}` → `MailThreadDetail`; each must be a member (agent+); assigning lets them see it. Each new assignee gets a `collab_assigned` notification |
 | POST | `/v1/collab/threads/{id}/comments` | act | `{body_html: 1..20000, mentions?: string[]}` → `MailComment`; each mentioned member who can see it gets a `collab_mention` notification; a mention of someone who cannot see it shares the conversation with them |
@@ -630,19 +800,19 @@ account or conversation; "act": sees it and is agent or above; "manage": "Who se
 | DELETE | `/v1/collab/comments/{id}` | its author, or an admin | → 204 |
 | POST | `/v1/collab/messages` | act on the account | Send: `{account_id, mode: "new" \| "reply" \| "reply_all" \| "forward", message_id? (the `MailMessage.id` replied to or forwarded; required unless new), to: string[], cc?: string[], bcc?: string[], subject, body_html, attachment_ids?: string[] (POST /v1/attachments uploads of the caller), forward_attachments?: boolean, from_email?}` → `MailMessage`. `from_email` is the address it goes out from and must be one of the account's addresses that can send (`422 validation_failed`); left out, a reply or forward goes from the address the original was written to, new mail from the default ("Addresses"). At most 100 recipients, 25 MB of files. Sent through the provider within the request (`502 send_failed` with the provider's reason, nothing stored); then stored in the conversation (a reply stays in its conversation) and in Sent. The server sends `body_html` as written: the composer adds the signature and, for a forward, the original. Someone who sees only one conversation (shared or assigned) may reply to it or forward it; new mail needs sight of the account. At most 60 a minute per person (`429 rate_limited`) |
 | POST | `/v1/collab/drafts` | act on the account | Save a new draft ("Drafts"): the body of `POST /v1/collab/messages`, recipients optional → `MailMessage` (`draft: true`, `draft_id`). Saved at the provider first (`502 provider_error` with detail, nothing stored). At most 120 saves a minute per person (`429 rate_limited`) |
-| PUT | `/v1/collab/drafts/{id}` | act on its conversation | Save again: `{to, cc?, bcc?, subject, body_html, attachment_ids?, keep_attachments?: string[], from_email?}` (left out keeps the draft's From when it can still send) → `MailMessage`, the same id. `keep_attachments`: the draft's own files to keep (`MailAttachment.id`s); left out keeps every file that is not an inline image, and inline images stay while `body_html` shows them. `404` for a message that is not a draft. Counts toward the 120 a minute |
+| PUT | `/v1/collab/drafts/{id}` | act on its conversation | Save again: `{to, cc?, bcc?, subject, body_html, attachment_ids?, keep_attachments?: string[], from_email?}` (left out keeps the draft's From when it can still send) → `MailMessage`, the same id. `keep_attachments`: the draft's own files to keep (`MailAttachment.id`s); left out keeps every file that is not an inline image, and inline images stay while `body_html` shows them. `404` for a message that is not a draft. Counts toward the 120 a minute. Saves, sends and discards of one draft run one at a time (on every server), each checking the draft as it is once its turn comes; one that waits too long for its turn is `409 draft_busy` |
 | DELETE | `/v1/collab/drafts/{id}` | act on its conversation | Discard → 204: deleted at the provider, then here (a new-mail draft's conversation with it) |
 | POST | `/v1/collab/drafts/{id}/send` | act on its conversation | Send it; the body (as for `PUT`) is optional: when given the draft is saved with it first, else it goes as saved (composed again from what was saved when its From name names the sender, so it goes out with the sender's name). Needs a recipient. → `MailMessage`, the sent message, stored like `POST /v1/collab/messages` does (in the draft's conversation and in Sent) with the draft removed. `502 send_failed`; counts toward the 60 sends a minute |
 | GET | `/v1/collab/messages/{id}/details` | see | `MessageDetails` ("Message details"), read from the message's source (stored, else the provider: `502 provider_error`) |
 | GET | `/v1/collab/attachments/{message_id}/{index}` | signed (`exp`, `sig`) | the file, `Content-Disposition: attachment` unless an image; `?inline=1` for images. `404` when the signature is wrong or expired |
-| GET | `/v1/collab/sidebar` | member | `SidebarPrefs` (defaults when never saved) |
-| PUT | `/v1/collab/sidebar` | member | `SidebarPrefs` → `SidebarPrefs`; at most 16 KB; unknown ids are kept (an id of something gone is ignored by the app). `badges`: at most 300, keys of at most 100 characters with the prefixes above, values `unread`, `total`, `count`, `awaiting`, `urgent`, `overdue`, `open` or `none`; `mail_tabs`: at most 30, each a box above or `folder:<uuid>`, once. Leaving out `badges` or `mail_tabs` keeps the saved value; `422` otherwise |
+| GET | `/v1/collab/sidebar` | member | `SidebarPrefs` (defaults when never saved); with or without Collab; with Collab, pins All inboxes once at a second account ("All inboxes in Favorites") |
+| PUT | `/v1/collab/sidebar` | member | `SidebarPrefs` → `SidebarPrefs`; with or without Collab; at most 16 KB; unknown ids are kept (an id of something gone is ignored by the app). `badges`: at most 300, keys of at most 100 characters with the prefixes above, values `unread`, `total`, `count`, `awaiting`, `urgent`, `overdue`, `open` or `none`; `mail_tabs`: at most 30, each a box above or `folder:<uuid>`, once. Leaving out `badges`, `mail_tabs` or `auto_pins` keeps the saved value; `422` otherwise |
 
 Errors: `402 collab_required`, `404 not_found`, `422 labels_unsupported`, `422 connection_failed`,
 `409 account_conflict`, `502 provider_error`, `502 send_failed`, `422 provider_not_configured`,
 `422 imap_unavailable`, `422 rename_unsupported`, `422 drafts_unsupported`, `422 signature_sync_unsupported`,
 `422 out_of_office_read_only`, `422 out_of_office_unsupported`, `422 identities_from_provider`, `409 identity_conflict`,
-`422 display_name_sync_unsupported`, `422 history_unavailable`.
+`422 display_name_sync_unsupported`, `422 history_unavailable`, `422 categories_locked`.
 
 ## Account settings
 
@@ -664,7 +834,7 @@ entry of the list, else the primary one).
 
 **The provider wins.** The account sync reads the settings on its first pass and then at most every
 15 minutes (one sendAs list and one vacation read for Gmail; the profile and the automatic replies for
-Microsoft), after the mail. Each value is compared with a hash of the value last seen at the provider:
+Microsoft), after the mail, and on the pass a person asks for (`POST …/sync`). Each value is compared with a hash of the value last seen at the provider:
 a different hash replaces opendesk's copy (the signature and the automatic reply's message sanitized
 with the signature allowlist, the name through `displayname.Clean`), stores the hash and publishes
 `collab.accounts`; the same hash changes nothing. A write from opendesk stores the hash of the
@@ -710,8 +880,11 @@ Its own address (`primary`) is the account's: its From name and signature are `d
 `signature_html`. The others are stored per account (`collab_identities`):
 
 - **Gmail**: every send-as address Gmail lists for the account, read with its settings ("Account
-  settings", the same send-as list call, at most every 15 minutes). An address Gmail no longer lists
-  goes; a new one appears. Each one's From name and signature are `pull` (`signature_sync`,
+  settings", the same send-as list call, at most every 15 minutes, and at the sync a person asks for
+  with `POST …/sync`). An address Gmail no longer lists goes; a new one appears. `POST
+  …/identities/refresh` reads them now ("Check Gmail", for one just added there). Mail already
+  written to a new address is found by it at once: `to_address` and `?to=` read the addresses as
+  they are now. Each one's From name and signature are `pull` (`signature_sync`,
   `display_name_sync`): read from Gmail when they change there (the hashes of Gmail's values as last
   seen decide, so Gmail's change wins over an edit made here), and a change made in opendesk is kept
   in opendesk and used by its composer. Gmail lets addresses other than the primary one be changed
@@ -856,9 +1029,12 @@ webhooks.
 names; `signature_html` with `from_provider` for a pull, `out_of_office` for the automatic reply,
 `default_from` for the default address; an address added, changed or removed is `fields: ["identities"]`
 with its `identity_id` and `added`, `removed` or the changed `identity_fields`),
-`collab.account_disconnected`, `collab.history_import` (`{action: "started" | "paused" | "resumed" | "canceled",
+`collab.account_disconnected`, `collab.categories_updated` (`{scope: "workspace" | "team", team_id?, enabled, keys}`; an
+account's own choice is `collab.account_updated` with `fields: ["categories"]`), `collab.category_rule`
+(`{account_id, action: "added" | "removed", category}`, never the sender), `collab.history_import` (`{action: "started" | "paused" | "resumed" | "canceled",
 since, include_spam_trash}`), `collab.thread_shared` (`{thread_id, everyone, team_ids,
-user_ids}`), `collab.thread_assigned` (`{thread_id, user_ids}`). Never an address book entry,
+user_ids}`), `collab.thread_assigned` (`{thread_id, user_ids}`), `collab.ai_draft_saved` (the
+draft; `{actor: "ai", client, api_key_id, account_id, again}`, "AI drafts"). Never an address book entry,
 subject, body or credential.
 
 ## Notifications
@@ -877,6 +1053,10 @@ in-app and push like other notifications, emailed by the member's notification p
 - `collab_history` (one row per account: the latest history import, its scope, place and counts;
   `migrations/000662_collab_history.up.sql`, with `collab_messages.size`, the generated
   `collab_messages.search`, `collab_accounts.stored_bytes` and `subscriptions.collab_storage_override`).
+- `collab_category_sets` (the workspace's, each team's and each account's categories; one row per scope),
+  `collab_category_rules` (an account's sender rules), `collab_threads.category`, `category_source` and
+  `category_pending`, `collab_messages.signals`, and `collab_accounts.category_keys` and `category_sig` (what
+  the account was last sorted with) (`migrations/000684_collab_categories.up.sql`).
 - `collab_accounts.config` (not secret) holds the granted `scopes` and, under `settings`, the settings
   sync state: the hashes last seen at the provider, when they were read, whether a person chose the
   From name, the automatic reply, the default address for new mail (and the hash of Gmail's) and the

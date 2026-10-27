@@ -14,6 +14,9 @@ export const useShell = create<ShellState>(() => ({
   sidebarOpen: false,
 }));
 
+/** The new ticket page: New ticket there opens nothing more, the dialog would be the same draft. */
+export const NEW_TICKET_PATH = "/tickets/new";
+
 export const shell = {
   palette: (open = true) => useShell.setState({ paletteOpen: open }),
   shortcuts: (open = true) => useShell.setState({ shortcutsOpen: open }),

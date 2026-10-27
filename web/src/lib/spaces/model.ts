@@ -4,7 +4,7 @@
 // something gone (a deleted team, a workspace left) are kept and skipped where shown.
 
 import type { SidebarBadge, SidebarPrefs, SidebarSectionId, Space, SpaceColor, SpaceItem, SpaceItemKind, SpaceSection } from "../api/types";
-import { SECTION_IDS, visibleSections } from "../collab/sidebarPrefs";
+import { SECTION_IDS, sectionsOffered, visibleSections } from "../collab/sidebarPrefs";
 
 /** The icons a Space can take (lucide names; components/spaces/icons.tsx maps them). */
 export const SPACE_ICONS = [
@@ -41,7 +41,7 @@ export const NEW_COLORS: readonly SpaceColor[] = ["blue", "violet", "teal", "gre
 
 export const SPACE_KINDS: readonly SpaceItemKind[] = ["section", "ticket_folder", "team", "view", "box", "account", "folder", "page", "everywhere"];
 /** The pages a Space row can open. */
-export const SPACE_PAGES = ["contacts", "knowledge", "reports"] as const;
+export const SPACE_PAGES = ["contacts", "knowledge", "wiki", "reports"] as const;
 export type SpacePage = (typeof SPACE_PAGES)[number];
 /** The Everywhere lists a Space row can open: tickets assigned to me, and all mail, across workspaces. */
 export const EVERYWHERE_LISTS = ["mine", "mail"] as const;
@@ -165,8 +165,7 @@ export function normalizeSpaces(v: unknown): Space[] {
  * the sections hidden there; without saved prefs the default order. Mail only with Collab.
  */
 export function defaultSections(prefs: SidebarPrefs | null | undefined, collab: boolean): SidebarSectionId[] {
-  const ids = prefs ? visibleSections(prefs) : [...SECTION_IDS];
-  return ids.filter((id) => collab || (id !== "mail" && id !== "favorites"));
+  return prefs ? visibleSections(prefs, collab) : [...sectionsOffered(collab)];
 }
 
 /** A colour no Space uses yet, else the next in turn. */

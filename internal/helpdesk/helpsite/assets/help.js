@@ -21,9 +21,14 @@
       label();
     });
 
-  // Dates.
+  // Dates. A browser without month names for the page's language writes them as numbers
+  // ("2026 M10 22"), even when it says it supports it; the page's own date stays then.
   var now = new Date();
-  document.querySelectorAll("time[data-format]").forEach(function (el) {
+  var known = false;
+  try {
+    known = !/^M?\d+$/.test(new Intl.DateTimeFormat(lang, { month: "long" }).format(new Date(2000, 9, 15)));
+  } catch (e) {}
+  if (known) document.querySelectorAll("time[data-format]").forEach(function (el) {
     var at = new Date(el.getAttribute("datetime"));
     if (isNaN(at)) return;
     var opts =

@@ -162,19 +162,29 @@ func applyFilters(b *sqlBuilder, wid uuid.UUID, me *uuid.UUID, f listQuery) erro
 		}
 		b.add(ref.col + " = " + b.arg(id))
 	}
-	if strings.TrimSpace(f.MailboxNot) != "" {
-		var boxes []uuid.UUID
-		for _, raw := range hd.SplitCSV(f.MailboxNot) {
-			id, err := hd.ParseRef(raw, "mailbox_not")
-			if err != nil {
-				return err
-			}
-			boxes = append(boxes, id)
-		}
-		if len(boxes) > 50 {
-			return httpx.Validation("mailbox_not takes at most 50 values")
-		}
+	boxes, err := refList(f.MailboxNot, "mailbox_not")
+	if err != nil {
+		return err
+	}
+	if len(boxes) > 0 {
 		b.add("(t.mailbox_id IS NULL OR NOT t.mailbox_id = ANY(" + b.arg(boxes) + "::uuid[]))")
+	}
+	contacts, err := refList(f.ContactNot, "contact_not")
+	if err != nil {
+		return err
+	}
+	if len(contacts) > 0 {
+		// A ticket without a contact is from none of them.
+		b.add("(t.contact_id IS NULL OR NOT t.contact_id = ANY(" + b.arg(contacts) + "::uuid[]))")
+	}
+	companies, err := refList(f.CompanyNot, "company_not")
+	if err != nil {
+		return err
+	}
+	if len(companies) > 0 {
+		// A ticket without a contact, or whose contact has no company, is from none of them.
+		b.add(`NOT EXISTS (SELECT 1 FROM contacts fc WHERE fc.workspace_id = t.workspace_id AND fc.id = t.contact_id
+			AND fc.company_id = ANY(` + b.arg(companies) + `::uuid[]))`)
 	}
 	if a := strings.ToLower(strings.TrimSpace(f.ReceivedAt)); a != "" {
 		b.add("t.received_at = " + b.arg(a))
@@ -216,15 +226,35 @@ func applyFilters(b *sqlBuilder, wid uuid.UUID, me *uuid.UUID, f listQuery) erro
 			parts = append(parts, "t.number = "+b.arg(n))
 		}
 		tsq := "websearch_to_tsquery('simple', " + b.arg(q) + ")"
+		// The customer's name, email and phone (contacts.search) match too.
+		contact := `EXISTS (SELECT 1 FROM contacts fc WHERE fc.workspace_id = t.workspace_id AND fc.id = t.contact_id AND (fc.search @@ ` + tsq
 		parts = append(parts, "t.search @@ "+tsq, "t.fields_search @@ "+tsq,
 			`EXISTS (SELECT 1 FROM messages fm WHERE fm.workspace_id = t.workspace_id AND fm.ticket_id = t.id AND fm.deleted_at IS NULL AND fm.search @@ `+tsq+`)`)
 		if pq := prefixQuery(q); pq != "" {
 			ptsq := "to_tsquery('simple', " + b.arg(pq) + ")"
 			parts = append(parts, "t.search @@ "+ptsq, "t.fields_search @@ "+ptsq)
+			contact += " OR fc.search @@ " + ptsq
 		}
+		parts = append(parts, contact+"))")
 		b.add("(" + strings.Join(parts, " OR ") + ")")
 	}
 	return nil
+}
+
+// refList parses a comma-separated list of ids, at most 50.
+func refList(raw, field string) ([]uuid.UUID, error) {
+	var out []uuid.UUID
+	for _, v := range hd.SplitCSV(raw) {
+		id, err := hd.ParseRef(v, field)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	if len(out) > 50 {
+		return nil, httpx.Validation(field + " takes at most 50 values")
+	}
+	return out, nil
 }
 
 // teamClause is the predicate for tickets of any of a comma-separated list of team ids,
@@ -516,7 +546,8 @@ func mergeFilters(view, req hd.TicketFilters) hd.TicketFilters {
 		out.ChannelNot = req.ChannelNot
 	}
 	for _, f := range []struct{ dst, src *string }{{&out.Assignee, &req.Assignee}, {&out.TeamID, &req.TeamID}, {&out.TeamNot, &req.TeamNot},
-		{&out.MailboxID, &req.MailboxID}, {&out.MailboxNot, &req.MailboxNot}, {&out.Tag, &req.Tag}, {&out.TagNot, &req.TagNot},
+		{&out.MailboxID, &req.MailboxID}, {&out.MailboxNot, &req.MailboxNot}, {&out.ContactNot, &req.ContactNot}, {&out.CompanyNot, &req.CompanyNot},
+		{&out.Tag, &req.Tag}, {&out.TagNot, &req.TagNot},
 		{&out.Channel, &req.Channel}, {&out.Q, &req.Q}, {&out.BrandID, &req.BrandID}, {&out.WidgetID, &req.WidgetID},
 		{&out.ReceivedAt, &req.ReceivedAt}} {
 		if *f.src != "" {
@@ -755,4 +786,60 @@ func ticketCounts(ctx context.Context, q db.Querier, p *auth.Principal) (TicketC
 		c.Stats["view:"+v.id.String()] = st
 	}
 	return c, nil
+}
+
+// summaryCap is the most tickets GET /v1/tickets/summary counts: past it the list is a
+// workspace's history (Solved, a view of every status) and counting it would read it all.
+var summaryCap = 10000
+
+// TicketListSummary describes a whole ticket list, every page of it (GET /v1/tickets/summary).
+type TicketListSummary struct {
+	Complete bool `json:"complete" doc:"false when the list was not counted: more tickets match than the summary counts, or it is a full-text search (q). The counts are then 0"`
+	Total    int  `json:"total" doc:"Tickets in the list"`
+	Awaiting int  `json:"awaiting" doc:"Open or pending, and the customer wrote last"`
+	Urgent   int  `json:"urgent" doc:"Urgent priority"`
+	Overdue  int  `json:"overdue" doc:"Not solved or closed, past its due time or with an SLA breach recorded"`
+	DueSoon  int  `json:"due_soon" doc:"Not solved, closed or overdue, and its due time is within the hour"`
+}
+
+// summaryCols are the columns statCols and summaryDueSoon read.
+const summaryCols = `t.status, t.priority, t.last_message_at, t.last_customer_message_at, t.first_responded_at,
+	t.first_response_due_at, t.resolution_due_at, t.sla_first_response_breached_at, t.sla_resolution_breached_at`
+
+// summaryDueSoon is the due time that applies (as in statCols) falling within the next hour,
+// with no breach recorded: never an overdue ticket.
+const summaryDueSoon = `t.status NOT IN ('solved','closed')
+	AND t.sla_first_response_breached_at IS NULL AND t.sla_resolution_breached_at IS NULL
+	AND CASE WHEN t.first_responded_at IS NULL THEN t.first_response_due_at ELSE t.resolution_due_at END >= now()
+	AND CASE WHEN t.first_responded_at IS NULL THEN t.first_response_due_at ELSE t.resolution_due_at END < now() + interval '1 hour'`
+
+// ticketListSummary counts the tickets listTickets pages through for f, with the same filters
+// and visibility. The tickets are read through the list's own WHERE, without its ORDER BY, and
+// at most summaryCap+1 of them: one more means the list is too long to count, and the summary
+// is left incomplete. A full-text search is never counted: its matches are read message by message.
+func ticketListSummary(ctx context.Context, q db.Querier, wid uuid.UUID, me *uuid.UUID, f listQuery) (TicketListSummary, error) {
+	var s TicketListSummary
+	var err error
+	if f, err = prepareListQuery(ctx, q, wid, f, ""); err != nil {
+		return s, err
+	}
+	b := &sqlBuilder{}
+	if err := applyFilters(b, wid, me, f); err != nil {
+		return s, err
+	}
+	if strings.TrimSpace(f.Q) != "" {
+		return s, nil
+	}
+	var st TicketStats
+	dest := append(append([]any{&s.Total}, st.dest()...), &s.DueSoon)
+	err = q.QueryRow(ctx, `SELECT count(*), `+statCols("t.", "true")+`, count(*) FILTER (WHERE `+summaryDueSoon+`)
+		FROM (SELECT `+summaryCols+` FROM tickets t`+b.sql()+` LIMIT `+strconv.Itoa(summaryCap+1)+`) t`, b.args...).Scan(dest...)
+	if err != nil {
+		return s, err
+	}
+	if s.Total > summaryCap {
+		return TicketListSummary{}, nil
+	}
+	s.Complete, s.Awaiting, s.Urgent, s.Overdue = true, st.Awaiting, st.Urgent, st.Overdue
+	return s, nil
 }

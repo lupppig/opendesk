@@ -42,6 +42,9 @@ export function useBreadcrumbs(): Crumb[] {
     crumbs.push({ label: t("titles.teams") });
     const name = params.teamId === "mine" ? t("titles.myTeams") : (teams?.find((x) => x.id === params.teamId)?.name ?? t("titles.team"));
     crumbs.push({ label: name, to: "/teams/$teamId/{-$ticketId}", params: { teamId: params.teamId, ticketId: undefined } });
+  } else if (path === "/tickets/new") {
+    crumbs.push({ label: t("titles.inbox"), to: "/inbox/$folder/{-$ticketId}", params: { folder: "unassigned", ticketId: undefined } });
+    crumbs.push({ label: t("titles.newTicket") });
   } else if (path.startsWith("/mail/")) {
     crumbs.push({ label: t("titles.mail"), to: "/mail/$box/{-$threadId}", params: { box: "inbox", threadId: undefined } });
   } else if (path.startsWith("/contacts")) {
@@ -55,6 +58,9 @@ export function useBreadcrumbs(): Crumb[] {
       crumbs.push({ label: t("titles.changelog"), to: "/kb/changelog" });
       if (params.entryId) crumbs.push({ label: params.entryId === "new" ? t("titles.newUpdate") : t("titles.changelogEntry") });
     }
+  } else if (path.startsWith("/wiki")) {
+    crumbs.push({ label: t("titles.wiki"), to: "/wiki" });
+    if (params.pageId) crumbs.push({ label: t("titles.wikiPage") });
   } else if (path.startsWith("/reports")) {
     crumbs.push({ label: t("titles.reports"), to: "/reports" });
   } else if (path.startsWith("/settings")) {

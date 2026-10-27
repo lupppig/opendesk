@@ -3,6 +3,7 @@
 // build-time MOCK flag, so production bundles never include it.
 
 import { setTransport } from "@/lib/api/client";
+import { setConversationLayout } from "@/lib/conversationLayout";
 import { setSocketFactory } from "@/lib/realtime/transport";
 import { db } from "./db";
 import { paused, publish, socketFactory, sockets } from "./gateway";
@@ -34,6 +35,7 @@ import { registerResources } from "./handlers/resources";
 import { registerSpaces } from "./handlers/spaces";
 import { registerTickets } from "./handlers/tickets";
 import { registerWorkspace } from "./handlers/workspace";
+import { registerWiki } from "./handlers/wiki";
 import { pauseLive, resumeLive, startLive } from "./live";
 import { chatTicket, ollieReply } from "./ollie";
 import { dispatch } from "./router";
@@ -77,6 +79,9 @@ export function installMock(): void {
   // ?mock_locale=az: every workspace shows its customer pages in that language for everyone.
   const fixed = params.get("mock_locale");
   if (fixed) for (const w of db.workspaces) w.workspace.settings = { ...w.workspace.settings, locale: fixed, locale_fixed: true };
+  // ?mock_layout=conversation (or =full): the timeline's layout preference, as Settings → Profile sets it.
+  const layout = params.get("mock_layout");
+  if (layout === "conversation" || layout === "full") setConversationLayout(layout === "conversation");
   registerAuth();
   registerWorkspace();
   registerTickets();
@@ -104,6 +109,7 @@ export function installMock(): void {
   registerCollab();
   registerWorkspaces();
   registerSpaces();
+  registerWiki();
 
   setTransport((input, init) => dispatch(input, init));
   setSocketFactory(socketFactory);

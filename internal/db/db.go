@@ -33,6 +33,8 @@ type DB struct {
 	Pool *pgxpool.Pool
 	// Direct is unpooled, for River, LISTEN/NOTIFY and the event relay.
 	Direct *pgxpool.Pool
+	// Locks holds transaction-scoped advisory locks while handlers use Pool for their work.
+	Locks *pgxpool.Pool
 }
 
 func Open(ctx context.Context, pooledURL, directURL string) (*DB, error) {
@@ -64,10 +66,23 @@ func Open(ctx context.Context, pooledURL, directURL string) (*DB, error) {
 	if err := pool.Ping(ctx); err != nil {
 		return nil, fmt.Errorf("connect database: %w", err)
 	}
-	return &DB{Pool: pool, Direct: direct}, nil
+	lockCfg := pooledCfg.Copy()
+	lockCfg.MaxConns = 4
+	lockCfg.MinConns = 0
+	lockCfg.MinIdleConns = 0
+	locks, err := pgxpool.NewWithConfig(ctx, lockCfg)
+	if err != nil {
+		if direct != pool {
+			direct.Close()
+		}
+		pool.Close()
+		return nil, fmt.Errorf("open advisory lock pool: %w", err)
+	}
+	return &DB{Pool: pool, Direct: direct, Locks: locks}, nil
 }
 
 func (d *DB) Close() {
+	d.Locks.Close()
 	if d.Direct != d.Pool {
 		d.Direct.Close()
 	}

@@ -358,8 +358,6 @@
     "rotate": "Secret erneuern",
     "rotateTitle": "Widget-Secret erneuern?",
     "rotateBody": "Identifizierte Sitzungen werden nicht mehr verifiziert, bis du das neue Secret einsetzt. Bestehende Chats funktionieren weiter.",
-    "rotateMfa": "Zum Erneuern des Secrets brauchst du die Zwei-Faktor-Authentifizierung. Schalte 2FA unter Sicherheit ein und melde dich dann erneut an.",
-    "rotateReauth": "Melde dich zur Sicherheit ab und wieder an und versuch es dann noch einmal. Dafür ist eine Anmeldung aus den letzten 12 Stunden nötig.",
     "secretLater": "Ein Inhaber kann das Secret anzeigen, nachdem er seine Anmeldung bestätigt hat.",
     "secretLaterHint": "Beim Erneuern wird ein neues Secret angezeigt. Bis dahin funktioniert das Widget, kann aber angemeldete Nutzer nicht verifizieren.",
     "revealSecret": "Secret anzeigen",

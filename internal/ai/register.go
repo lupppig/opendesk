@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/riverqueue/river"
 
+	"github.com/useopendesk/opendesk/internal/collab"
 	"github.com/useopendesk/opendesk/internal/deps"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
 )
@@ -32,6 +33,7 @@ func For(d *deps.Deps) *Service {
 	s := New(context.Background(), d)
 	services[d] = s
 	s.installHooks()
+	collab.SetMailAI(d, s)
 	return s
 }
 
@@ -44,8 +46,13 @@ func (s *Service) installHooks() {
 	if s.canTriage() {
 		h.AutoTriage, h.Triage = s.autoTriage, s.triageAction
 	}
-	if s.decider != nil {
+	// A workspace may bring its own decision engine (decisions_key.go), so conditions
+	// are asked whenever the instance has AI.
+	if s.decider != nil || s.Enabled() {
 		h.Decide = s.decideConditions
+	}
+	if s.Enabled() {
+		h.Engine = s.workspaceEngine
 	}
 	hd.SetAIHooks(h)
 }

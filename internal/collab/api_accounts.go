@@ -334,8 +334,14 @@ func (s *service) registerAccountRoutes(api huma.API) {
 			if err != nil {
 				return nil, err
 			}
-			if _, err := visibleAccount(ctx, s.d.DB.Pool, p, id); err != nil {
+			a, err := visibleAccount(ctx, s.d.DB.Pool, p, id)
+			if err != nil {
 				return nil, notFound(err, "Account")
+			}
+			// Asked for by hand, the sync reads the settings and addresses too, so one just
+			// added at the provider comes in now.
+			if err := settingsNow(ctx, s.d.DB.Pool, a); err != nil {
+				return nil, httpx.Wrap(err)
 			}
 			if err := s.queueSync(ctx, s.d.DB.Pool, id); err != nil {
 				return nil, httpx.Wrap(err)

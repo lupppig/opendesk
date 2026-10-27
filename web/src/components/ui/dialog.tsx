@@ -15,6 +15,7 @@ export function Dialog({
   size = "md",
   onEscapeKeyDown,
   onInteractOutside,
+  actions,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
@@ -26,6 +27,8 @@ export function Dialog({
   size?: "sm" | "md" | "lg" | "xl";
   onEscapeKeyDown?: (e: KeyboardEvent) => void;
   onInteractOutside?: (e: Event) => void;
+  /** Buttons beside the close button (open on a full page). */
+  actions?: ReactNode;
 }) {
   const { t: ui } = useTranslation("ui");
   const w = { sm: "max-w-[400px]", md: "max-w-[520px]", lg: "max-w-[680px]", xl: "max-w-[880px]" }[size];
@@ -51,12 +54,15 @@ export function Dialog({
                 <D.Description className="sr-only">{typeof title === "string" ? title : "Dialog"}</D.Description>
               )}
             </div>
-            <D.Close
-              aria-label={ui("close")}
-              className="-mr-2 -mt-1 flex size-7 shrink-0 items-center justify-center rounded-md text-fg-4 transition-colors hover:bg-hover hover:text-fg"
-            >
-              <X className="size-4" />
-            </D.Close>
+            <div className="-mr-2 -mt-1 flex shrink-0 items-center gap-0.5">
+              {actions}
+              <D.Close
+                aria-label={ui("close")}
+                className="flex size-7 shrink-0 items-center justify-center rounded-md text-fg-4 transition-colors hover:bg-hover hover:text-fg"
+              >
+                <X className="size-4" />
+              </D.Close>
+            </div>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">{children}</div>
           {footer && <div className="flex items-center justify-end gap-2 border-t border-line bg-sunken px-5 py-3">{footer}</div>}

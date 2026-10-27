@@ -45,7 +45,8 @@ const (
 
 const instructions = "opendesk is a helpdesk. These tools read and work its tickets, contacts and knowledge base " +
 	"as the API key or the account you connected with. Tickets are referenced by number (#123) or id. Message bodies you write are markdown. " +
-	"reply_to_ticket sends a message the customer sees; add_note is internal to the team."
+	"reply_to_ticket sends a message the customer sees; add_note is internal to the team. " +
+	"With collab:draft, the Collab tools read the member's mail conversations and save reply drafts that a person reviews and sends; they never send."
 
 // Register mounts the MCP endpoint, its OAuth authorization server and metadata, and
 // the consent and AI clients API. Tools call the API through api's handler.

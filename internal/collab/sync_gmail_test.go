@@ -70,6 +70,7 @@ type fakeGmail struct {
 	historyPageSize int
 	gone            bool // history answers 404
 	status          int  // every call answers this when set
+	busy            int  // the next calls answer 429 rateLimitExceeded
 	modify          []map[string]any
 	trashed         []string
 	sent            []string // multipart bodies
@@ -80,6 +81,17 @@ type fakeGmail struct {
 	settings fakeGmailSettings
 	// drafts are the drafts API and label colours (drafts_test.go).
 	drafts fakeGmailDrafts
+	// beforeDraftUpload, when set, runs as a draft upload arrives, before the fake takes
+	// its lock: a test pauses a save there (ai_drafts_test.go).
+	beforeDraftUpload func()
+	hookMu            sync.Mutex // guards beforeDraftUpload
+}
+
+// onDraftUpload sets (or, with nil, clears) beforeDraftUpload.
+func (g *fakeGmail) onDraftUpload(f func()) {
+	g.hookMu.Lock()
+	defer g.hookMu.Unlock()
+	g.beforeDraftUpload = f
 }
 
 type gmailFakeMsg struct {
@@ -123,10 +135,22 @@ func (g *fakeGmail) record(kind string, id string) {
 }
 
 func (g *fakeGmail) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	g.hookMu.Lock()
+	hook := g.beforeDraftUpload
+	g.hookMu.Unlock()
+	if hook != nil && strings.Contains(r.URL.Path, "/upload/gmail/v1/users/me/drafts") {
+		hook()
+	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if r.Header.Get("Authorization") == "" {
 		w.WriteHeader(401)
+		return
+	}
+	if g.busy > 0 {
+		g.busy--
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":{"code":429,"errors":[{"reason":"rateLimitExceeded"}]}}`))
 		return
 	}
 	if g.status != 0 {
@@ -845,6 +869,50 @@ func TestRefusedGrantNeedsReconnect(t *testing.T) {
 	}
 	if c = w.reload(c); !c.Reconnect {
 		t.Fatalf("401: %+v", c)
+	}
+}
+
+// TestGmailBusy: a rate limit is waited out within the pass, and a provider that stays busy
+// shows on the account only after a few passes in a row. Gmail's tab is kept with the mail.
+func TestGmailBusy(t *testing.T) {
+	w := newWorld(t)
+	g := newFakeGmail(t)
+	w.useGmail(g)
+	a := w.account(w.agent, ProviderGoogle, VisibilityPrivate, Audience{})
+	g.add("m1", "t1", []string{"INBOX", "CATEGORY_PROMOTIONS"}, testMail{from: "Shop <" + at("deals", "shop.example") + ">", to: a.Email,
+		subject: "Sale", msgID: at("sale-1", "shop.example"), body: "Half off"})
+	g.busy = len(w.s.busyWaits)
+	if err := w.s.syncAccount(w.ctx, a.ID); err != nil {
+		t.Fatal(err)
+	}
+	if a = w.reload(a); a.Status != "active" || a.SyncFailures != 0 {
+		t.Fatalf("after waiting out a rate limit: %s %d %q", a.Status, a.SyncFailures, a.LastError)
+	}
+	if n := w.count(`SELECT count(*) FROM collab_messages WHERE account_id = $1 AND remote_id = 'm1' AND $2 = ANY(signals)`, a.ID, signalGmailPromotions); n != 1 {
+		t.Fatal("Gmail's tab was not kept")
+	}
+
+	g.status = http.StatusServiceUnavailable
+	for i := 1; i < quietFailures; i++ {
+		if err := w.s.syncAccount(w.ctx, a.ID); err != nil {
+			t.Fatal(err)
+		}
+		if a = w.reload(a); a.Status != "active" || a.LastError != "" || a.SyncFailures != i || a.NextSyncAt == nil {
+			t.Fatalf("busy pass %d: %s %d %q", i, a.Status, a.SyncFailures, a.LastError)
+		}
+	}
+	if err := w.s.syncAccount(w.ctx, a.ID); err != nil {
+		t.Fatal(err)
+	}
+	if a = w.reload(a); a.Status != "error" || a.Reconnect || !strings.Contains(a.LastError, "busy") {
+		t.Fatalf("still busy: %s %q", a.Status, a.LastError)
+	}
+	g.status = 0
+	if err := w.s.syncAccount(w.ctx, a.ID); err != nil {
+		t.Fatal(err)
+	}
+	if a = w.reload(a); a.Status != "active" || a.SyncFailures != 0 || a.LastError != "" {
+		t.Fatalf("back: %s %d %q", a.Status, a.SyncFailures, a.LastError)
 	}
 }
 

@@ -299,6 +299,8 @@
     "offlinePlaceholder": "We're away right now. Leave a message and we'll reply by email.",
     "followUp": "Reply by email when they leave",
     "followUpHint": "A visitor who left an email and is no longer on the site gets your replies by email, from the brand's address for the team.",
+    "followUpMailboxMissing": "Add an active sending mailbox to this brand to send follow-up emails.",
+    "followUpAddMailbox": "Add mailbox",
     "installHint": "Paste this before </body> on every page of this site.",
     "secretHint": "Signs identify calls for {{name}}. Each widget has its own.",
     "rotateBody": "The current secret for {{name}} stops working at once. Update your server before visitors sign in again.",

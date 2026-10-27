@@ -12,6 +12,7 @@ import type {
   TagRef,
   Ticket,
   TicketCounts,
+  TicketListSummary,
   TicketStats,
   TicketFilters,
   TicketPatch,
@@ -162,6 +163,11 @@ export function matches(ws: WsData, t: Ticket, raw: ListFilters, meId: string): 
   if (f.channel && t.channel !== f.channel) return false;
   if (f.channel_not?.includes(t.channel)) return false;
   if (f.contact_id && t.contact?.id !== f.contact_id) return false;
+  if (f.contact_not && t.contact && f.contact_not.split(",").includes(t.contact.id)) return false;
+  if (f.company_not && t.contact) {
+    const company = ws.contacts.find((c) => c.id === t.contact?.id)?.company?.id;
+    if (company && f.company_not.split(",").includes(company)) return false;
+  }
   if (!labelsMatch(f, t.tags)) return false;
   if (!matchFields(ws, "ticket", t.fields, [...(f.fields ?? []), ...(f.fieldFilters ?? [])])) return false;
   if (f.q) {
@@ -186,6 +192,19 @@ export function ticketStats(list: Ticket[], now = Date.now()): TicketStats {
     }
   }
   return { awaiting, urgent, overdue };
+}
+
+/** A whole list (GET /v1/tickets/summary): its stats, and due soon (not overdue, due within the hour). Searches are not counted. */
+export function ticketSummary(list: Ticket[], f: ListFilters, now = Date.now()): TicketListSummary {
+  if (f.q?.trim()) return { complete: false, total: 0, awaiting: 0, urgent: 0, overdue: 0, due_soon: 0 };
+  let dueSoon = 0;
+  for (const t of list) {
+    if (t.status === "solved" || t.status === "closed" || !t.sla || t.sla.breached) continue;
+    const due = t.first_responded_at ? t.sla.resolution_due_at : t.sla.first_response_due_at;
+    const left = due ? Date.parse(due) - now : -1;
+    if (left >= 0 && left < 3_600_000) dueSoon++;
+  }
+  return { complete: true, total: list.length, ...ticketStats(list, now), due_soon: dueSoon };
 }
 
 export function counts(ws: WsData, meId: string): TicketCounts {

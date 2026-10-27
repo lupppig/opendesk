@@ -48,7 +48,7 @@ func (s *service) chatFollowUp(ctx context.Context, a jobs.ChatFollowUpArgs) err
 		if err != nil {
 			return err
 		}
-		if kind != "reply" || direction != "outbound" || authorType != "user" || ai || status != "none" || deleted {
+		if kind != "reply" || direction != "outbound" || (authorType != "user" && authorType != "api") || ai || status != "none" || deleted {
 			return nil
 		}
 		due, err := domain.ChatFollowUpDue(ctx, tx, a.WorkspaceID, a.TicketID, created)

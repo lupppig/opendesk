@@ -17,14 +17,19 @@ regexes = [
   '''sk-or-v1-0123456789abcdefWXYZ''',
   '''sk-or-bad-12345678''',
   '''sk-test-(abcd1234|12345678)''',
+  '''ts-(bad-key|nofunds)-1234''',
   # A wrong mailbox password in the connection check tests (internal/email/connect_test.go).
   '''Wrong-Passw0rd''',
   # The Web Push content encoding named in a comment (internal/push/webpush_test.go).
   '''aes128gcm-encrypted''',
+  # The numeric report column id, shared by its definition and sorting tests.
+  '''^handle_p50_minutes$''',
   # The iPhone app's demo mode (ios/Opendesk/Core/Demo): the demo account's fixed TOTP setup
   # secret, and the placeholder key in a demo help article's curl example.
   '''JBSWY3DPEHPK3PXPMZXW6YTB''',
   '''mgn_live_\.\.\.''',
+  # A column of the agent work report sorted by its field name (web/src/components/reports/AgentWork.tsx).
+  '''handle_p50_minutes''',
 ]
 paths = [
   '''internal/auth/passwords/breached\.txt''',

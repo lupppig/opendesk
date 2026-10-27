@@ -10,6 +10,7 @@ import {
   hid,
   livePins,
   moveSection,
+  sectionsOffered,
   movePin,
   moveTab,
   normalizePrefs,
@@ -74,6 +75,17 @@ describe("sidebar prefs", () => {
     const moved = moveSection(p, "inbox", -1);
     expect(moved.order).toEqual(["favorites", "inbox", "mail", "teams", "views", "workspace", "future"]);
     expect(moveSection(p, "favorites", -1)).toBe(p);
+  });
+
+  it("offers every section but Mail without Collab, and moves past it", () => {
+    expect(sectionsOffered(true)).toEqual(["favorites", "inbox", "mail", "teams", "views", "workspace"]);
+    expect(sectionsOffered(false)).toEqual(["favorites", "inbox", "teams", "views", "workspace"]);
+    const p = { ...defaultSidebarPrefs(), order: ["favorites", "inbox", "mail", "teams", "views", "workspace"] };
+    expect(visibleSections(p, false)).toEqual(["favorites", "inbox", "teams", "views", "workspace"]);
+    // Teams goes above Inbox in one move; Mail, which the member does not see, keeps its place.
+    expect(moveSection(p, "teams", -1, false).order).toEqual(["favorites", "teams", "mail", "inbox", "views", "workspace"]);
+    expect(moveSection(p, "inbox", 1, false).order).toEqual(["favorites", "teams", "mail", "inbox", "views", "workspace"]);
+    expect(moveSection(p, "workspace", 1, false)).toBe(p);
   });
 
   it("pins, reorders and skips favorites that are gone", () => {

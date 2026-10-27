@@ -16,7 +16,7 @@ import { RootLayout } from "./app/RootLayout";
 import { AppLayout } from "./app/AppLayout";
 import { AuthLayout } from "./app/AuthLayout";
 import { NotFound, RouteError, RoutePending } from "./app/RouteStates";
-import { bootSession, openLinkedWorkspace } from "./lib/session";
+import { atLeast, bootSession, currentMembership, openLinkedWorkspace } from "./lib/session";
 import { stripWorkspaceParam, workspaceParam } from "./lib/workspaceParam";
 import { queryClient } from "./lib/queryClient";
 import { q } from "./lib/queries";
@@ -360,6 +360,26 @@ function prefetchTicket(qc: QueryClient, id: string) {
   void qc.prefetchQuery(q.slaPolicies());
 }
 
+// A new ticket on a full page (the dialog's "Open full page"), with the ticket page's details column.
+const newTicketRoute = createRoute({
+  getParentRoute: () => appLayout,
+  path: "/tickets/new",
+  // Viewers read only: there is nothing to write here.
+  beforeLoad: () => {
+    if (!atLeast(currentMembership()?.role ?? "viewer", "agent"))
+      throw redirect({ to: "/inbox/$folder/{-$ticketId}", params: { folder: "unassigned", ticketId: undefined }, replace: true });
+  },
+  loader: ({ context }) => {
+    const qc = context.queryClient;
+    prefetchInboxShared(qc);
+    void qc.prefetchQuery(q.savedReplies());
+    void qc.prefetchQuery(q.customFields());
+    void qc.prefetchQuery(q.templateVariables());
+  },
+  component: page(() => import("./pages/inbox/NewTicketPage")),
+  staticData: { title: "newTicket" },
+});
+
 const contactsRoute = createRoute({
   getParentRoute: () => appLayout,
   path: "/contacts/{-$contactId}",
@@ -464,6 +484,30 @@ const changelogEntryRoute = createRoute({
   staticData: { title: "changelogEntry" },
 });
 
+// The wiki (contracts/wiki.md): the page tree beside every page, prefetched with them.
+const wikiLayout = createRoute({
+  getParentRoute: () => appLayout,
+  path: "/wiki",
+  loader: ({ context }) => context.queryClient.ensureQueryData(q.wikiTree()),
+  component: page(() => import("./pages/wiki/WikiLayout")),
+  staticData: { title: "wiki" },
+});
+
+const wikiIndexRoute = createRoute({
+  getParentRoute: () => wikiLayout,
+  path: "/",
+  component: page(() => import("./pages/wiki/WikiHome")),
+  staticData: { title: "wiki" },
+});
+
+const wikiPageRoute = createRoute({
+  getParentRoute: () => wikiLayout,
+  path: "$pageId",
+  loader: ({ context, params }) => context.queryClient.ensureQueryData(q.wikiPage(params.pageId)).catch(() => undefined),
+  component: page(() => import("./pages/wiki/WikiPageView")),
+  staticData: { title: "wikiPage" },
+});
+
 export function defaultRange() {
   const to = new Date();
   const from = new Date(to.getTime() - 29 * 86400_000);
@@ -499,6 +543,7 @@ const reportsRoute = createRoute({
     // The filters' names: teams and brands.
     void context.queryClient.prefetchQuery(q.teams());
     void context.queryClient.prefetchQuery({ ...q.brands(), retry: false });
+    void context.queryClient.prefetchQuery(q.reportAgents(reportsQuery(deps)));
     return context.queryClient.ensureQueryData(q.reports(reportsQuery(deps)));
   },
   component: page(() => import("./pages/reports/ReportsPage")),
@@ -691,10 +736,25 @@ const sMailAccountDetail = createRoute({
     await requireCollab(qc);
     void qc.prefetchQuery(q.teams());
     void qc.prefetchQuery(q.members());
+    void qc.prefetchQuery(q.mailCategories());
     return qc.ensureQueryData(q.mailAccounts());
   },
   component: page(() => import("./pages/settings/MailAccountDetail")),
   staticData: { title: "mailAccount" },
+});
+// Inbox categories (contracts/collab.md "Categories"): the workspace's and teams' defaults, listed while Collab is on.
+const sMailCategories = createRoute({
+  getParentRoute: () => settingsLayout,
+  path: "/mail-categories",
+  loader: async ({ context }) => {
+    const qc = context.queryClient;
+    await requireCollab(qc);
+    void qc.prefetchQuery(q.teams());
+    void qc.prefetchQuery(q.mailAccounts());
+    return qc.ensureQueryData(q.mailCategories());
+  },
+  component: page(() => import("./pages/settings/MailCategories")),
+  staticData: { title: "mailCategories" },
 });
 const sTags = settingsPage("/tags", "labels", () => import("./pages/settings/Tags"), (qc) => qc.ensureQueryData(q.tags()));
 const sCustomFields = settingsPage("/custom-fields", "customFields", () => import("./pages/settings/CustomFields"));
@@ -884,6 +944,7 @@ const routeTree = rootRoute.addChildren([
     everywhereRoute,
     viewRoute,
     teamRoute,
+    newTicketRoute,
     mailIndexRoute,
     mailRoute,
     contactsRoute,
@@ -892,6 +953,7 @@ const routeTree = rootRoute.addChildren([
     kbArticleRoute,
     changelogRoute,
     changelogEntryRoute,
+    wikiLayout.addChildren([wikiIndexRoute, wikiPageRoute]),
     reportsRoute,
     settingsLayout.addChildren([
       settingsIndex,
@@ -916,6 +978,7 @@ const routeTree = rootRoute.addChildren([
       sMailboxDetail,
       sMailAccounts,
       sMailAccountDetail,
+      sMailCategories,
       sTags,
       sCustomFields,
       sAssignment,

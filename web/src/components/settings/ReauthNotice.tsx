@@ -1,10 +1,15 @@
+import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { errorMessage, isApiError } from "@/lib/api/client";
 import { signOut, useSession } from "@/lib/session";
 
-/** Owner-level operations need a session that passed 2FA and is less than 12 hours old. */
+/**
+ * Owner-level operations need a recent sign-in (12 hours) that passed the second factor when
+ * the account has one: `403 mfa_required` (2FA on, this session did not pass it) or
+ * `403 reauth_required` (the session is older). Signing in again answers both.
+ */
 export function isReauthError(e: unknown) {
   return isApiError(e, "mfa_required") || isApiError(e, "reauth_required");
 }
@@ -12,14 +17,20 @@ export function isReauthError(e: unknown) {
 export function ReauthNotice({ error }: { error: unknown }) {
   const { t: ui } = useTranslation("ui");
   const navigate = useNavigate();
+  const box = useRef<HTMLDivElement>(null);
+  const reauth = isReauthError(error);
+  // Shown after a click at the foot of a long form or dialog: bring it into view.
+  useEffect(() => {
+    if (!reauth) return;
+    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    box.current?.scrollIntoView?.({ block: "nearest", behavior: reduce ? "auto" : "smooth" });
+  }, [reauth, error]);
   if (!error) return null;
-  if (!isReauthError(error)) return <p className="text-xs text-danger-fg">{errorMessage(error)}</p>;
+  if (!reauth) return <p className="text-xs text-danger-fg">{errorMessage(error)}</p>;
   const mfa = isApiError(error, "mfa_required");
   return (
-    <div className="flex items-center justify-between gap-3 rounded-md border border-line bg-sunken px-3 py-2.5">
-      <p className="text-[12.5px] text-fg-2">
-        {mfa ? "Turn on two-factor and sign in again to do this." : "Sign in again to confirm it's you."}
-      </p>
+    <div ref={box} role="alert" className="flex items-center justify-between gap-3 rounded-md border border-line bg-sunken px-3 py-2.5">
+      <p className="text-[12.5px] text-fg-2">{mfa ? ui("reauthMfa") : ui("reauthRecent")}</p>
       <Button
         size="xs"
         variant="secondary"

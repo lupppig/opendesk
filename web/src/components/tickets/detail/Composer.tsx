@@ -1,6 +1,5 @@
-import { i18n } from "@/i18n";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRightLeft, Check, ChevronDown, Eye, Loader2, Lock, MessageSquareText, MessagesSquare, Paperclip, TriangleAlert, X } from "lucide-react";
+import { ArrowRightLeft, Check, ChevronDown, Eye, Loader2, Lock, MessagesSquare, Paperclip, TriangleAlert, X } from "lucide-react";
 import { Morph } from "@/components/motion";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
@@ -13,7 +12,6 @@ import { api, type SendMessageBody } from "@/lib/api/endpoints";
 import { q, qk, upsertInList } from "@/lib/queries";
 import { useSession } from "@/lib/session";
 import { realtime } from "@/lib/realtime/manager";
-import { bytes } from "@/lib/format";
 import { SideIncludeItems, SideIncludedChips, useIncludeSummary, useSideInclude, type SideInclude } from "./SideIncludes";
 import { cn } from "@/lib/cn";
 import { keyName } from "@/lib/hotkeys";
@@ -39,6 +37,7 @@ import { ComposerAiMenu, ComposerAiStatus, ComposerSources, useComposerAi } from
 import { SuggestedReplyCard } from "./SuggestedReply";
 import { SharedDraftBar } from "./SharedDraft";
 import { backToNote, deliver, hold, undoSeconds as undoSecondsFor, useUnsent, type Upload } from "./outbox";
+import { EmailChips, SavedReplyButton, UploadChip, uploadFiles } from "./composerParts";
 import { addressLabel, fromLine, replyAddresses, TeamDot, useTeamsCtx, type TeamsCtx } from "../teams";
 import { AccountDot } from "@/components/collab/bits";
 import { identitySignature } from "@/lib/collab/identities";
@@ -95,51 +94,6 @@ export type ComposerHandle = {
   /** Puts a note in the reply box, to go to the customer instead. */
   fromNote: (m: Message) => void;
 };
-
-const emailRe = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
-
-function EmailChips({ label, values, onChange, wide }: { label: string; values: string[]; onChange: (v: string[]) => void; wide?: boolean }) {
-  const { t } = useTranslation("indicators");
-  const [text, setText] = useState("");
-  const commit = () => {
-    const parts = text.split(/[\s,;]+/).filter(Boolean);
-    const ok = parts.filter((p) => emailRe.test(p) && !values.includes(p));
-    if (ok.length) onChange([...values, ...ok]);
-    setText(parts.filter((p) => !emailRe.test(p)).join(" "));
-  };
-  return (
-    <div className="flex min-h-8 items-center gap-2 border-b border-line-soft px-3">
-      <span className={cn("shrink-0 text-xs text-fg-3", wide ? "w-12" : "w-7")}>{label}</span>
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1 py-1">
-        {values.map((v) => (
-          <span key={v} className="mono inline-flex h-5 items-center gap-1 rounded-sm bg-hover pl-1.5 pr-0.5 text-[11.5px] animate-pop-in motion-reduce:animate-none" data-ph-mask>
-            {v}
-            <button type="button" aria-label={t("tickets.remove", { name: v })} onClick={() => onChange(values.filter((x) => x !== v))} className="flex size-4 items-center justify-center rounded-xs text-fg-4 hover:text-fg">
-              <X className="size-3" />
-            </button>
-          </span>
-        ))}
-        <input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onBlur={commit}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === "," || e.key === " " || e.key === "Tab") {
-              if (text.trim()) {
-                e.preventDefault();
-                commit();
-              }
-            }
-            if (e.key === "Backspace" && !text && values.length) onChange(values.slice(0, -1));
-          }}
-          aria-label={label}
-          placeholder={values.length ? "" : "name@example.com"}
-          className="h-6 min-w-[120px] flex-1 bg-transparent text-[12.5px] outline-none placeholder:text-fg-4"
-        />
-      </div>
-    </div>
-  );
-}
 
 /** The optimistic copy of a reply or note this agent writes, shown until the server's arrives. */
 function useTempMessage(ticket: Ticket, ctx: TeamsCtx, personal?: PersonalSender) {
@@ -415,24 +369,7 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
     realtime()?.setPresenceState(hasDraft && mode === "reply" ? "replying" : "viewing");
   }, [hasDraft, mode]);
 
-  const upload = (files: FileList | File[]) => {
-    for (const file of Array.from(files)) {
-      if (file.size > 25 * 1024 * 1024) {
-        toast.error(t("composer.tooLarge", { name: file.name }));
-        continue;
-      }
-      const key = `${file.name}-${file.size}-${Math.random().toString(36).slice(2)}`;
-      const preview = file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined;
-      setUploads((u) => [...u, { key, file, status: "uploading", preview }]);
-      api.attachments
-        .upload(file)
-        .then((attachment) => setUploads((u) => u.map((x) => (x.key === key ? { ...x, status: "done", attachment } : x))))
-        .catch((e) => {
-          setUploads((u) => u.map((x) => (x.key === key ? { ...x, status: "error" } : x)));
-          toast.error(e, t("composer.uploadFailed", { name: file.name }));
-        });
-    }
-  };
+  const upload = (files: FileList | File[]) => uploadFiles(files, setUploads);
 
   const busyUploads = uploads.some((u) => u.status === "uploading");
   // A reply from an address that has no way to send is refused (mailbox_cannot_send): say so up front.
@@ -844,26 +781,7 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
                       <Paperclip className="size-[15px]" />
                     </button>
                   </Tooltip>
-                  <Picker
-                    side="top"
-                    align="end"
-                    width={300}
-                    placeholder={t("composer.searchReplies")}
-                    emptyText={t("composer.noReplies")}
-                    value={null}
-                    items={replies.map((r) => ({ value: r.id, label: r.title, hint: r.shortcut ? `/${r.shortcut.replace(/^\//, "")}` : undefined }))}
-                    onSelect={(id) => {
-                      const r = replies.find((x) => x.id === id);
-                      if (r) insertSavedReply(r.body_html);
-                    }}
-                    trigger={
-                      <Tooltip content={t("composer.savedReplies")}>
-                        <button type="button" aria-label={t("composer.savedReplies")} aria-busy={filling > 0} className="flex size-7 items-center justify-center rounded-md text-fg-3 transition-colors hover:bg-hover hover:text-fg active:scale-95">
-                          {filling > 0 ? <Loader2 className="size-[15px] animate-spin motion-reduce:animate-none" /> : <MessageSquareText className="size-[15px]" />}
-                        </button>
-                      </Tooltip>
-                    }
-                  />
+                  <SavedReplyButton replies={replies} filling={filling > 0} onPick={(r) => insertSavedReply(r.body_html)} />
                   {emailReply && (
                     <Tooltip content={draft.html ? t("composer.previewEmail") : t("composer.previewEmpty")}>
                       <button
@@ -898,20 +816,7 @@ export const Composer = forwardRef<ComposerHandle, { ticket: Ticket; disabled?: 
             <div className="flex flex-wrap gap-1.5 px-3 pb-2.5">
               {starting && <SideIncludedChips inc={include} />}
               {uploads.map((u) => (
-                <span key={u.key} className={cn("flex h-8 max-w-[220px] items-center gap-2 rounded-md border bg-surface pl-1 pr-1 animate-pop-in motion-reduce:animate-none", u.status === "error" ? tone.red.line : "border-line")}>
-                  {u.preview ? <img src={u.preview} alt="" className="size-6 rounded-sm object-cover" /> : <span className="flex size-6 items-center justify-center rounded-sm bg-hover"><Paperclip className="size-3 text-fg-3" /></span>}
-                  <span className="min-w-0">
-                    <span className="block truncate text-[11.5px]">{u.file.name}</span>
-                    <span className="mono block text-[10px] text-fg-4">{u.status === "uploading" ? t("composer.uploading") : u.status === "error" ? t("composer.failed") : bytes(u.file.size)}</span>
-                  </span>
-                  {u.status === "uploading" ? (
-                    <Loader2 className="size-3.5 shrink-0 animate-spin text-fg-4" />
-                  ) : (
-                    <button type="button" aria-label={i18n.t("indicators:tickets.remove", { name: u.file.name })} onClick={() => setUploads((x) => x.filter((y) => y.key !== u.key))} className="flex size-5 shrink-0 items-center justify-center rounded-sm text-fg-4 hover:bg-hover hover:text-fg">
-                      <X className="size-3" />
-                    </button>
-                  )}
-                </span>
+                <UploadChip key={u.key} u={u} onRemove={() => setUploads((x) => x.filter((y) => y.key !== u.key))} />
               ))}
             </div>
           )}

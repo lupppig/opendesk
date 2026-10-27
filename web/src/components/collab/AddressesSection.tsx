@@ -5,7 +5,7 @@
 // the default for new mail, and (hand-added ones) removed.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AtSign, MoreHorizontal, Plus } from "lucide-react";
+import { AtSign, MoreHorizontal, Plus, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Section } from "@/components/layout";
@@ -49,6 +49,16 @@ export function AddressesSection({ account, manage }: { account: MailAccount; ma
     },
     onError: (e) => toast.error(errorMessage(e)),
   });
+  // Gmail's addresses now, for one just added there.
+  const refresh = useMutation({
+    mutationFn: () => api.collab.accounts.refreshIdentities(account.id),
+    onSuccess: (a) => {
+      storeAccount(qc, a);
+      const added = identitiesOf(a).filter((i) => !list.some((x) => x.email === i.email)).length;
+      toast.success(added ? t("addresses.checked", { count: added }) : t("addresses.checkedNone"));
+    },
+    onError: (e) => toast.error(errorMessage(e)),
+  });
   const remove = (i: MailIdentity) =>
     confirm.show(
       t("addresses.removeText"),
@@ -65,11 +75,15 @@ export function AddressesSection({ account, manage }: { account: MailAccount; ma
       title={t("addresses.title")}
       description={t(`addresses.hint_${account.provider}`)}
       actions={
-        manage && byHand ? (
+        !manage ? undefined : byHand ? (
           <Button size="sm" icon={<Plus />} onClick={() => setEditing({ mode: "add" })}>
             {t("addresses.add")}
           </Button>
-        ) : undefined
+        ) : (
+          <Button size="sm" icon={<RefreshCw />} loading={refresh.isPending} onClick={() => refresh.mutate()}>
+            {t("addresses.check")}
+          </Button>
+        )
       }
       flush
     >

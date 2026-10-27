@@ -2,13 +2,13 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowUpRight, ChevronDown, Clock, CornerDownRight, Hash, Import as ImportIcon, Inbox, Lock, Mail, Route, Star, Users } from "lucide-react";
 import { forwardRef, useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import type { Priority, Severity, Ticket, TicketStatus } from "@/lib/api/types";
+import type { Priority, Severity, Team, Ticket, TicketStatus } from "@/lib/api/types";
 import { q, qk } from "@/lib/queries";
 import { fullDate, minutes, relLong, shortDate } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { tone } from "@/lib/tones";
 import { useRole, atLeast } from "@/lib/session";
-import { Picker } from "@/components/ui/picker";
+import { Picker, type PickerItem } from "@/components/ui/picker";
 import { Avatar } from "@/components/ui/avatar";
 import { TagChip } from "@/components/ui/badge";
 import { CopyButton } from "@/components/ui/copy-button";
@@ -28,7 +28,7 @@ import { useDisplay, type FieldPatch, type TicketWithFields } from "../fields";
 import { useUpdateTicket } from "../useTicketActions";
 import { addressLabel, BrandChip, replyAddresses, sendingAddress, TeamDot, TeamMove, useRoutedText, useTeamsCtx } from "../teams";
 
-const PropButton = forwardRef<HTMLButtonElement, { children: ReactNode; disabled?: boolean; placeholder?: boolean } & React.ButtonHTMLAttributes<HTMLButtonElement>>(
+export const PropButton = forwardRef<HTMLButtonElement, { children: ReactNode; disabled?: boolean; placeholder?: boolean } & React.ButtonHTMLAttributes<HTMLButtonElement>>(
   function PropButton({ children, disabled, placeholder, className, ...rest }, ref) {
     return (
       <button
@@ -49,7 +49,7 @@ const PropButton = forwardRef<HTMLButtonElement, { children: ReactNode; disabled
   },
 );
 
-function Prop({ label, children, shortcut }: { label: string; children: ReactNode; shortcut?: string }) {
+export function Prop({ label, children, shortcut }: { label: string; children: ReactNode; shortcut?: string }) {
   return (
     <div className="flex min-h-8 items-center gap-1">
       <span className="flex w-[76px] shrink-0 items-center text-[12px] text-fg-3" title={shortcut ? `${label} (${shortcut.toUpperCase()})` : undefined}>
@@ -134,7 +134,81 @@ function pageLabel(url: string) {
 
 export type PropPicker = "status" | "priority" | "severity" | "assignee" | "team" | "contact" | null;
 
-const unassignedIcon = <span className="size-4 rounded-xs border border-dashed border-line-strong" />;
+export const unassignedIcon = <span className="size-4 rounded-xs border border-dashed border-line-strong" />;
+
+/** Who a ticket of this team can go to: its members first, and a private team's to its members only. */
+export function useAssigneeItems(team: Team | undefined): PickerItem[] {
+  const { t: tr } = useTranslation("inbox");
+  const { data: members } = useQuery(q.members());
+  const teamMembers = new Set(team ? (team.members?.length ? team.members.map((m) => m.user_id) : team.member_ids) : []);
+  const agents = (members ?? []).filter((m) => m.role !== "viewer");
+  return [
+    { value: "__none", label: tr("props.unassigned"), icon: unassignedIcon },
+    ...agents
+      .filter((m) => !team || teamMembers.has(m.user.id) || !team.private)
+      .sort((a, b) => Number(teamMembers.has(b.user.id)) - Number(teamMembers.has(a.user.id)))
+      .map((m) => ({
+        value: m.user.id,
+        label: m.user.name,
+        keywords: [m.user.email],
+        group: team ? (teamMembers.has(m.user.id) ? tr("teams.membersOf", { team: team.name }) : tr("teams.others")) : undefined,
+        icon: <Avatar name={m.user.name} src={m.user.avatar_url} size="xs" presence={m.presence} />,
+      })),
+  ];
+}
+
+export function useSeverityItems(): PickerItem[] {
+  const { t: tr } = useTranslation("inbox");
+  return [
+    ...severityOrder.map((s) => ({ value: s, label: severityLabel(s), hint: severityHint(s), icon: <SeverityChip severity={s} /> })),
+    { value: "__none", label: tr("props.noSeverity"), icon: <span className="h-[16px] w-[22px] rounded-[4px] border border-dashed border-line-strong" /> },
+  ];
+}
+
+/** The labels row: chips that come off with a click, and the picker to add more. */
+export function TagsProp({
+  tags,
+  canEdit,
+  onChange,
+  badge,
+}: {
+  tags: { id?: string; name: string; color?: string | null }[];
+  canEdit: boolean;
+  onChange: (names: string[]) => void;
+  /** Drawn on a chip's corner (set by Ollie). */
+  badge?: (name: string) => ReactNode;
+}) {
+  const { t: tr } = useTranslation("inbox");
+  const names = tags.map((x) => x.name);
+  return (
+    <div className="flex items-start gap-1 py-1">
+      <span className="w-[76px] shrink-0 pt-1.5 text-[12px] text-fg-3">{tr("props.tags")}</span>
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1 px-1 py-1">
+        {tags.map((tag) => (
+          <span key={tag.id ?? tag.name} className="relative animate-pop-in motion-reduce:animate-none">
+            <TagChip name={tag.name} color={tag.color} onRemove={canEdit ? () => onChange(names.filter((n) => n !== tag.name)) : undefined} />
+            {badge?.(tag.name)}
+          </span>
+        ))}
+        {canEdit && (
+          <LabelPicker
+            values={names}
+            onChange={onChange}
+            trigger={
+              <button
+                type="button"
+                aria-label={tr("props.addTag")}
+                className="inline-flex h-[18px] items-center rounded-sm border border-dashed border-line-strong px-1.5 text-[11px] text-fg-3 outline-none transition-colors hover:border-fg-4 hover:text-fg focus-visible:shadow-[0_0_0_2px_var(--focus)]"
+              >
+                {tags.length ? tr("props.addTagShort") : tr("props.addTag")}
+              </button>
+            }
+          />
+        )}
+      </div>
+    </div>
+  );
+}
 
 export function TicketProperties({
   t,
@@ -165,7 +239,7 @@ export function TicketProperties({
     keywords: c.email ? [c.email] : undefined,
     icon: <Avatar name={c.name || c.email || "?"} src={c.avatar_url} size="xs" />,
   }));
-  const { data: members } = useQuery(q.members());
+  const severityItems = useSeverityItems();
   const ctx = useTeamsCtx();
   const display = useDisplay();
   const aiSet = useAISet(t.id);
@@ -181,22 +255,7 @@ export function TicketProperties({
   const receivedAt = t.received_at || origin?.email || "";
   const addresses = replyAddresses(ctx, t);
   // The ticket's team first; a private team's tickets go to its members only.
-  const teamMembers = new Set(team ? (team.members?.length ? team.members.map((m) => m.user_id) : team.member_ids) : []);
-  const agents = (members ?? []).filter((m) => m.role !== "viewer");
-  const assigneeItems = [
-    { value: "__none", label: tr("props.unassigned"), icon: unassignedIcon },
-    ...agents
-      .filter((m) => !team || teamMembers.has(m.user.id) || !team.private)
-      .sort((a, b) => Number(teamMembers.has(b.user.id)) - Number(teamMembers.has(a.user.id)))
-      .map((m) => ({
-        value: m.user.id,
-        label: m.user.name,
-        keywords: [m.user.email],
-        group: team ? (teamMembers.has(m.user.id) ? tr("teams.membersOf", { team: team.name }) : tr("teams.others")) : undefined,
-        icon: <Avatar name={m.user.name} src={m.user.avatar_url} size="xs" presence={m.presence} />,
-      })),
-  ];
-  const tagNames = t.tags.map((x) => x.name);
+  const assigneeItems = useAssigneeItems(team);
   const imported = importedFrom(t.custom);
   const openFor = (k: Exclude<PropPicker, null>) => ({ open: picker === k, onOpenChange: (o: boolean) => onPicker(o ? k : null) });
 
@@ -240,10 +299,7 @@ export function TicketProperties({
             {...openFor("severity")}
             value={t.severity ?? "__none"}
             placeholder={tr("props.setSeverity")}
-            items={[
-              ...severityOrder.map((s) => ({ value: s, label: severityLabel(s), hint: severityHint(s), icon: <SeverityChip severity={s} /> })),
-              { value: "__none", label: tr("props.noSeverity"), icon: <span className="h-[16px] w-[22px] rounded-[4px] border border-dashed border-line-strong" /> },
-            ]}
+            items={severityItems}
             onSelect={(v) => patch({ severity: v === "__none" ? null : (v as Severity) })}
             trigger={
               <PropButton disabled={!canEdit} placeholder={!t.severity}>
@@ -328,32 +384,16 @@ export function TicketProperties({
             />
           </Prop>
         )}
-        <div className="flex items-start gap-1 py-1">
-          <span className="w-[76px] shrink-0 pt-1.5 text-[12px] text-fg-3">{tr("props.tags")}</span>
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1 px-1 py-1">
-            {t.tags.map((tag) => (
-              <span key={tag.id} className="relative animate-pop-in motion-reduce:animate-none">
-                <TagChip name={tag.name} color={tag.color} onRemove={canEdit ? () => patch({ tags: tagNames.filter((n) => n !== tag.name) }) : undefined} />
-                {aiSet.tags.has(tag.name) && <SetByOllie note={note(t, decided?.type_label?.value === tag.id ? "type_label" : "label")} size={10} className="absolute -right-1 -top-1 ring-1 ring-surface" />}
-              </span>
-            ))}
-            {canEdit && (
-              <LabelPicker
-                values={tagNames}
-                onChange={(v) => patch({ tags: v })}
-                trigger={
-                  <button
-                    type="button"
-                    aria-label={tr("props.addTag")}
-                    className="inline-flex h-[18px] items-center rounded-sm border border-dashed border-line-strong px-1.5 text-[11px] text-fg-3 outline-none transition-colors hover:border-fg-4 hover:text-fg focus-visible:shadow-[0_0_0_2px_var(--focus)]"
-                  >
-                    {t.tags.length ? tr("props.addTagShort") : tr("props.addTag")}
-                  </button>
-                }
-              />
-            )}
-          </div>
-        </div>
+        <TagsProp
+          tags={t.tags}
+          canEdit={canEdit}
+          onChange={(v) => patch({ tags: v })}
+          badge={(name) =>
+            aiSet.tags.has(name) && (
+              <SetByOllie note={note(t, decided?.type_label?.value === t.tags.find((x) => x.name === name)?.id ? "type_label" : "label")} size={10} className="absolute -right-1 -top-1 ring-1 ring-surface" />
+            )
+          }
+        />
       </section>
 
       <FieldsSection

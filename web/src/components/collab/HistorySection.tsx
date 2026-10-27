@@ -1,5 +1,5 @@
 // An account's mail history (contracts/collab.md "History"): how far back its mail is in
-// opendesk, the import of older mail (scope, progress, pause, resume, stop) and what the
+// opendesk, the import of older mail (scope, changed while it runs, progress, pause, resume, stop) and what the
 // workspace's Collab storage allowance means for it ("Storage"). Progress arrives with
 // collab.accounts, which refreshes the account; nothing here polls.
 
@@ -26,7 +26,7 @@ import { atLeast, useRole } from "@/lib/session";
 import { cn } from "@/lib/cn";
 
 export type HistoryScope = "1y" | "2y" | "5y" | "all";
-const SCOPES: HistoryScope[] = ["1y", "2y", "5y", "all"];
+export const HISTORY_SCOPES: HistoryScope[] = ["1y", "2y", "5y", "all"];
 
 /** The RFC 3339 start of a scope, null for all mail. */
 export function sinceOf(scope: HistoryScope, now = new Date()): string | null {
@@ -34,6 +34,14 @@ export function sinceOf(scope: HistoryScope, now = new Date()): string | null {
   const d = new Date(now);
   d.setUTCFullYear(d.getUTCFullYear() - Number(scope.slice(0, -1)));
   return d.toISOString();
+}
+
+/** The scope an import was started with, null for a date none of them gives. */
+export function scopeOf(h: MailHistory): HistoryScope | null {
+  if (h.since === null) return "all";
+  const since = new Date(h.since).getTime();
+  const day = 24 * 60 * 60 * 1000;
+  return HISTORY_SCOPES.find((s) => s !== "all" && Math.abs(new Date(sinceOf(s, new Date(h.started_at))!).getTime() - since) < 2 * day) ?? null;
 }
 
 /** An import that no longer runs: a new one can start. */
@@ -117,7 +125,7 @@ export function HistorySection({ account, storage }: { account: MailAccount; sto
   const confirm = useConfirm();
   const admin = atLeast(useRole(), "admin");
   const counts = useCounts();
-  const [scope, setScope] = useState<HistoryScope>("all");
+  const [scope, setScope] = useState<HistoryScope>("1y");
   const [spamTrash, setSpamTrash] = useState(false);
   const h = account.history;
   const manage = account.can_manage;
@@ -126,10 +134,11 @@ export function HistorySection({ account, storage }: { account: MailAccount; sto
 
   const done = (a: MailAccount) => storeAccount(qc, a);
   const start = useMutation({
-    mutationFn: (b: { since: string | null; include_spam_trash: boolean }) => api.collab.accounts.startHistory(account.id, b),
-    onSuccess: (a) => {
+    mutationFn: (b: { since: string | null; include_spam_trash: boolean; change?: boolean }) =>
+      api.collab.accounts.startHistory(account.id, { since: b.since, include_spam_trash: b.include_spam_trash }),
+    onSuccess: (a, b) => {
       done(a);
-      toast.success(t("history.started", { name }));
+      toast.success(b.change ? t("history.changed") : t("history.started", { name }));
     },
     onError: (e) => toast.error(errorMessage(e)),
   });
@@ -160,6 +169,8 @@ export function HistorySection({ account, storage }: { account: MailAccount; sto
   const live = h && !historyEnded(h);
   const progress = h ? historyProgress(h) : null;
   const scopeLabel = h ? (h.since ? t("history.scopeOf.since", { date: longDate(h.since) }) : t("history.scopeOf.all")) : "";
+  const scopeOptions = HISTORY_SCOPES.map((s) => ({ value: s, label: t(`history.scopes.${s}`) }));
+  const liveScope = h ? scopeOf(h) : null;
 
   return (
     <Section title={t("history.title")} description={t("history.description")}>
@@ -230,6 +241,22 @@ export function HistorySection({ account, storage }: { account: MailAccount; sto
         </Row>
       )}
 
+      {/* A running import's scope can change: it starts again with it, and what it imported stays. */}
+      {h && live && manage && (
+        <Row label={t("history.scope")} description={t("history.changeHint")} htmlFor="history-scope-live">
+          <Select<HistoryScope>
+            id="history-scope-live"
+            className="w-[160px]"
+            size="sm"
+            value={liveScope ?? undefined}
+            placeholder={scopeLabel}
+            disabled={start.isPending}
+            onChange={(s) => s !== liveScope && start.mutate({ since: sinceOf(s), include_spam_trash: h.include_spam_trash, change: true })}
+            options={scopeOptions}
+          />
+        </Row>
+      )}
+
       {h && h.status === "error" && h.last_error && (
         <Row label={t("detail.lastError")} stack>
           <span className="mono break-words text-[11.5px] text-fg-2">{h.last_error}</span>
@@ -259,7 +286,7 @@ export function HistorySection({ account, storage }: { account: MailAccount; sto
               size="sm"
               value={scope}
               onChange={setScope}
-              options={SCOPES.map((s) => ({ value: s, label: t(`history.scopes.${s}`) }))}
+              options={scopeOptions}
             />
             <Button size="sm" variant="primary" icon={<History />} loading={start.isPending} onClick={() => start.mutate({ since: sinceOf(scope), include_spam_trash: spamTrash })}>
               {t("history.start")}

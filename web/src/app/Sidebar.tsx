@@ -4,39 +4,12 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import {
-  BarChart3,
-  BookOpen,
-  Check,
-  ChevronRight,
-  ChevronsUpDown,
-  CircleCheck,
-  CircleDashed,
-  Clock,
-  Inbox,
-  Keyboard,
-  EyeOff,
-  Layers,
-  Lock,
-  LogOut,
-  Monitor,
-  Moon,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Plus,
-  Server,
-  Settings,
-  ShieldAlert,
-  SlidersHorizontal,
-  Sun,
-  User,
-  UserPlus,
-  Users,
-} from "lucide-react";
+import { BarChart3, BookOpen, Check, ChevronRight, ChevronsUpDown, CircleCheck, CircleDashed, Clock, EyeOff, Inbox, Keyboard, Layers, Lock, LogOut, Monitor, Moon, NotebookText, PanelLeftClose, PanelLeftOpen, Plus, Server, Settings, ShieldAlert, SlidersHorizontal, Sun, User, UserPlus, Users } from "lucide-react";
 import { DropdownMenu as M } from "radix-ui";
-import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { ChecklistMini } from "@/components/onboarding/Checklist";
+import { ChecklistMini, ProgressRing, stepsLeft } from "@/components/onboarding/Checklist";
 import { useUrgentChats, useWaitingFor } from "@/components/tickets/useUrgentChats";
 import { useNow } from "@/lib/useNow";
 import { formatWait, urgentWash } from "@/components/tickets/waiting";
@@ -48,6 +21,7 @@ import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuSub, MenuTri
 import { Picker } from "@/components/ui/picker";
 import { sortTeams, TeamDot, useTeamsCtx } from "@/components/tickets/teams";
 import { useHotkeys } from "@/lib/hotkeys";
+import { dur, ease } from "@/lib/motion";
 import type { Team, TicketCounts } from "@/lib/api/types";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
@@ -136,8 +110,8 @@ function WaitingChats({ rail }: { rail: boolean }) {
 
 const OTHER_TEAMS_KEY = "od-nav-other-teams";
 
-/** With Collab, a row's own menu and its number by the member's choice; without it, the classic row. */
-type RowPrefs = { collab: boolean; prefs: SidebarPrefs };
+/** The member's sidebar prefs, for a row's own menu and its number by their choice (with or without Collab). */
+type RowPrefs = { prefs: SidebarPrefs };
 
 /** One team inbox row: its colour dot, a lock when private, and what waits unassigned. */
 function TeamRow({
@@ -172,7 +146,7 @@ function TeamRow({
   return (
     <NavTip rail={rail} label={label}>
       <RowMenu
-        enabled={rp.collab}
+        enabled
         prefs={rp.prefs}
         badge={{ key, kind: "team", sections: ["teams"], numbers: nums }}
         pin={own ? { kind: "team", id: teamId } : undefined}
@@ -323,8 +297,6 @@ function TeamsSection({ rail, drawer, first, counts, hidden = NONE, rp }: { rail
 }
 
 const NONE: ReadonlySet<string> = new Set();
-/** The ticket sections, top to bottom, as they read without Collab. */
-const CLASSIC: SidebarSectionId[] = ["inbox", "teams", "views", "workspace"];
 
 /** One built-in section of the open workspace: the sidebar's own rows, live counts and menus. */
 function BuiltinSection({ id, first, rail, drawer }: { id: SidebarSectionId; first: boolean; rail: boolean; drawer?: boolean }) {
@@ -333,12 +305,12 @@ function BuiltinSection({ id, first, rail, drawer }: { id: SidebarSectionId; fir
   const { data: views } = useQuery(q.views());
   const role = useRole();
   const { t } = useTranslation("shell");
-  // With Collab the member's hidden rows, numbers and menus apply; without it the rows are the classic ones.
+  // The member's hidden rows, numbers, favorites and menus apply with or without Collab;
+  // Collab adds the Mail section (contracts/collab.md SidebarPrefs).
   const collab = useCollab();
-  const prefs = useSidebarPrefs(collab.enabled);
-  const hidden: ReadonlySet<string> = collab.enabled ? new Set(prefs.hidden) : NONE;
-  const rp: RowPrefs = { collab: collab.enabled, prefs };
-  // Without Collab the prefs are the defaults, so every row shows its usual number.
+  const prefs = useSidebarPrefs();
+  const hidden: ReadonlySet<string> = new Set(prefs.hidden);
+  const rp: RowPrefs = { prefs };
   const shown = (key: string, section: SidebarSectionId, nums: BadgeNumbers) => pickCount(badgeFor(prefs, key, section, "ticket"), nums);
   const waitingFor = useWaitingFor();
   switch (id) {
@@ -354,7 +326,7 @@ function BuiltinSection({ id, first, rail, drawer }: { id: SidebarSectionId; fir
             return (
             <NavTip key={f.id} rail={rail} label={tNav(f.labelKey)}>
               <RowMenu
-                enabled={collab.enabled}
+                enabled
                 prefs={prefs}
                 badge={counted ? { key, kind: "ticket", sections: ["inbox"], numbers: nums } : undefined}
                 pin={{ kind: "ticket_folder", id: f.id }}
@@ -415,7 +387,7 @@ function BuiltinSection({ id, first, rail, drawer }: { id: SidebarSectionId; fir
                 return (
                 <NavTip key={v.id} rail={rail} label={v.name}>
                   <RowMenu
-                    enabled={collab.enabled}
+                    enabled
                     prefs={prefs}
                     badge={{ key: hid.view(v.id), kind: "ticket", sections: ["views"], numbers: nums }}
                     pin={{ kind: "view", id: v.id }}
@@ -470,6 +442,12 @@ function BuiltinSection({ id, first, rail, drawer }: { id: SidebarSectionId; fir
               <Label rail={rail}>{t("nav.kb")}</Label>
             </>)}</Link>
           </NavTip>
+          <NavTip rail={rail} label={t("nav.wiki")}>
+            <Link to="/wiki" className={cn(rowBase, rowShape(rail), rowIdle)} activeProps={{ className: rowActive }} aria-label={rail ? t("nav.wiki") : undefined}>{withPill(<>
+              <NotebookText />
+              <Label rail={rail}>{t("nav.wiki")}</Label>
+            </>)}</Link>
+          </NavTip>
           <NavTip rail={rail} label={t("nav.reports")}>
             <Link to="/reports" className={cn(rowBase, rowShape(rail), rowIdle)} activeProps={{ className: rowActive }} aria-label={rail ? t("nav.reports") : undefined}>{withPill(<>
               <BarChart3 />
@@ -479,11 +457,12 @@ function BuiltinSection({ id, first, rail, drawer }: { id: SidebarSectionId; fir
         </Section>
       );
     case "favorites":
-      return collab.enabled ? (
+      // Without Collab, favorites are the ticket rows: inbox folders, teams and views.
+      return (
         <Suspense fallback={null}>
           <LazyFavorites prefs={prefs} rail={rail} first={first} />
         </Suspense>
-      ) : null;
+      );
     case "mail":
       return collab.enabled ? (
         <Suspense fallback={null}>
@@ -497,12 +476,13 @@ export function Sidebar({ drawer }: { drawer?: boolean }) {
   const collapsed = useNav((s) => s.collapsed);
   const rail = collapsed && !drawer;
   const { t } = useTranslation("shell");
-  // With Collab the member's own order and hidden sections apply; without it the classic order.
+  // The member's own order and hidden sections, with or without Collab; Mail only with it.
   const collab = useCollab();
-  const prefs = useSidebarPrefs(collab.enabled);
-  const order = collab.enabled ? visibleSections(prefs) : CLASSIC;
+  const prefs = useSidebarPrefs();
+  const order = visibleSections(prefs, collab.enabled);
   // Spaces (contracts/spaces.md): a picked Space is the sidebar; otherwise the workspace's own.
   const uid = useSession((s) => s.user?.id ?? "");
+  const wid = useSession((s) => s.workspaceId);
   const { spaces, fresh, isError } = useSpaces();
   const pickedId = usePickedSpaceId();
   const space = pickedSpace(spaces, pickedId);
@@ -525,7 +505,8 @@ export function Sidebar({ drawer }: { drawer?: boolean }) {
         )}
       </div>
       <div className="flex shrink-0 flex-col gap-px py-1.5">
-        <SetupChecklist rail={rail} />
+        {/* Per workspace: one finished elsewhere never celebrates on switching to it. */}
+        <SetupChecklist key={wid} rail={rail} />
         <NavTip rail={rail} label={t("nav.settings")}>
           <Link to="/settings" className={cn(rowBase, rowShape(rail), rowIdle)} activeProps={{ className: rowActive }} aria-label={rail ? t("nav.settings") : undefined}>{withPill(<>
             <Settings />
@@ -718,25 +699,68 @@ export function ThemeSwitch() {
   );
 }
 
-/** The onboarding checklist, above Settings until it is dismissed. */
+/** How long "You're all set" stays after the last step before the entry folds away. */
+const ALL_SET_MS = 3500;
+
+/**
+ * The onboarding checklist, above Settings while something is left that the viewer can do
+ * and until it is dismissed. Finishing the last step shows "You're all set" for a moment,
+ * then the entry folds away; once done, it is not shown again.
+ */
 function SetupChecklist({ rail }: { rail: boolean }) {
   const { t } = useTranslation("setup");
   const { data } = useQuery(q.onboarding());
   const dismiss = useDismissOnboarding();
   const ai = useAI();
-  const role = useRole();
-  if (!data || data.dismissed || !data.steps.length) return null;
+  const isAdmin = atLeast(useRole(), "admin");
+  const reduce = useReducedMotion();
+  const unavailable = ai.enabled ? undefined : { try_ollie: t("checklist.needs_ai"), setup_ai_agent: t("checklist.needs_ai") };
+  const left = data && !data.dismissed && data.steps.length ? stepsLeft(data, { isAdmin, unavailable }) : 0;
+  // Seen open in this session: finishing it now earns the moment; a checklist done before is simply gone.
+  const seenOpen = useRef(false);
+  const [allSet, setAllSet] = useState(false);
+  useEffect(() => {
+    if (left > 0) {
+      seenOpen.current = true;
+      return;
+    }
+    if (!seenOpen.current || !data || data.dismissed) return;
+    seenOpen.current = false;
+    setAllSet(true);
+    const id = window.setTimeout(() => setAllSet(false), ALL_SET_MS);
+    return () => window.clearTimeout(id);
+  }, [left, data]);
+
+  const show = !!data && (left > 0 || allSet);
   return (
-    <div className={rail ? "mx-3" : "mx-2.5"}>
-      <ChecklistMini
-        collapsed={rail}
-        data={data}
-        isAdmin={atLeast(role, "admin")}
-        unavailable={ai.enabled ? undefined : { try_ollie: t("checklist.needs_ai"), setup_ai_agent: t("checklist.needs_ai") }}
-        onDismiss={() => dismiss.mutateAsync()}
-        triggerClassName={cn("h-7 hover:bg-chrome-hover data-[state=open]:bg-chrome-hover", rail && "h-8")}
-      />
-    </div>
+    <AnimatePresence initial={false}>
+      {show && (
+        <motion.div
+          key="setup"
+          initial={{ opacity: 0, height: 0 }}
+          animate={{ opacity: 1, height: "auto" }}
+          exit={{ opacity: 0, height: 0 }}
+          transition={reduce ? { duration: 0 } : { duration: dur.slow, ease: ease.out }}
+          className={cn("overflow-hidden", rail ? "mx-3" : "mx-2.5")}
+        >
+          {left > 0 ? (
+            <ChecklistMini
+              collapsed={rail}
+              data={data}
+              isAdmin={isAdmin}
+              unavailable={unavailable}
+              onDismiss={() => dismiss.mutateAsync()}
+              triggerClassName={cn("h-7 hover:bg-chrome-hover data-[state=open]:bg-chrome-hover", rail && "h-8")}
+            />
+          ) : (
+            <div role="status" aria-label={t("checklist.done_title")} className={cn("flex items-center gap-2 text-[12.5px] font-medium text-fg-2", rail ? "h-8 w-8 justify-center" : "h-7 px-2")}>
+              <ProgressRing value={1} />
+              {!rail && <span className="truncate">{t("checklist.done_title")}</span>}
+            </div>
+          )}
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -748,7 +772,6 @@ function UserMenu({ rail }: { rail: boolean }) {
   const { t } = useTranslation("shell");
   const { data: members } = useQuery(q.members());
   const setAvailability = useSetAvailability();
-  const collab = useCollab();
   const { t: tc } = useTranslation("collab");
   if (!user) return null;
   const name = user.name || user.email;
@@ -801,11 +824,9 @@ function UserMenu({ rail }: { rail: boolean }) {
         <MenuItem icon={<Settings />} onSelect={() => void navigate({ to: "/settings" })}>
           {t("nav.settings")}
         </MenuItem>
-        {collab.enabled && (
-          <MenuItem icon={<SlidersHorizontal />} onSelect={() => collabUi.customize(true)}>
-            {tc("nav.customize")}
-          </MenuItem>
-        )}
+        <MenuItem icon={<SlidersHorizontal />} onSelect={() => collabUi.customize(true)}>
+          {tc("nav.customize")}
+        </MenuItem>
         <MenuItem icon={<Keyboard />} onSelect={() => shell.shortcuts()}>
           <span className="flex items-center justify-between">
             {t("account.shortcuts")} <Kbd>?</Kbd>

@@ -4,7 +4,7 @@
 // state can be tried: "bad" is rejected, "nofunds" is out of funds, and "revoked"
 // passes the test but is rejected on the first AI call.
 
-import type { AIKeyKind, AIModel, AIProviderKey, NotificationType } from "@/lib/api/types";
+import type { AIDecisionsKey, AIKeyKind, AIModel, AIProviderKey, NotificationType } from "@/lib/api/types";
 import { db, type WsData } from "./db";
 import { publish } from "./gateway";
 import { HttpError } from "./router";
@@ -21,6 +21,23 @@ export function aiKeyOf(ws: WsData): MockAIKey | null {
 export function setAIKey(ws: WsData, k: MockAIKey | null) {
   if (k) keys.set(ws, k);
   else keys.delete(ws);
+}
+
+/** The workspace's own TypeSafe key for decisions; behaves by its text like a provider key. */
+const decisionKeys = new WeakMap<WsData, AIDecisionsKey>();
+
+export function decisionKeyOf(ws: WsData): AIDecisionsKey | null {
+  return decisionKeys.get(ws) ?? null;
+}
+
+export function setDecisionKey(ws: WsData, k: AIDecisionsKey | null) {
+  if (k) decisionKeys.set(ws, k);
+  else decisionKeys.delete(ws);
+}
+
+/** Decisions run on the workspace's own credentials: its TypeSafe key, or Jev on its OpenRouter key. */
+export function decisionsOnOwnKey(ws: WsData): boolean {
+  return !!decisionKeyOf(ws) || aiKeyOf(ws)?.kind === "openrouter";
 }
 
 const m = (id: string, name: string, vendor: string, context_length: number | null = null): AIModel => ({ id, name, vendor, context_length, usd_per_mtok: null, typical_reply_usd: null });

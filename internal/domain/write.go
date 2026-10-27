@@ -441,7 +441,7 @@ func AddMessage(ctx context.Context, tx pgx.Tx, jc Jobs, nm NewMessage) (Message
 			return Message{}, fmt.Errorf("queue send: %w", err)
 		}
 	}
-	if nm.Kind == "reply" && nm.Direction == "outbound" && channel == ChannelChat && nm.AuthorType == "user" && !nm.AI && contactID != nil {
+	if nm.Kind == "reply" && nm.Direction == "outbound" && channel == ChannelChat && (nm.AuthorType == "user" || nm.AuthorType == "api") && !nm.AI && contactID != nil {
 		if err := queueChatFollowUp(ctx, tx, jc, nm.WorkspaceID, nm.TicketID, id, time.Now()); err != nil {
 			return Message{}, fmt.Errorf("queue chat follow-up: %w", err)
 		}

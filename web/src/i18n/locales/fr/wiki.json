@@ -1,0 +1,155 @@
+{
+  "title": "Wiki",
+  "untitled": "Sans titre",
+  "tree": {
+    "label": "Pages",
+    "open": "Afficher les pages",
+    "search": "Rechercher une page",
+    "newPage": "Nouvelle page",
+    "empty": "Aucune page pour l’instant.",
+    "searching": "Recherche",
+    "searchFailed": "La recherche n’a pas abouti. Réessayez.",
+    "noMatches": "Aucune page ne correspond à « {{term}} ».",
+    "results": "Résultats de recherche",
+    "expand": "Afficher les sous-pages",
+    "collapse": "Masquer les sous-pages",
+    "actions": "Actions pour {{title}}",
+    "addSubpage": "Ajouter une sous-page",
+    "addSubpageTo": "Ajouter une sous-page à {{title}}",
+    "moveTo": "Déplacer vers…"
+  },
+  "icon": {
+    "label": "Emoji",
+    "add": "Ajouter une icône",
+    "change": "Changer l’icône",
+    "search": "Rechercher un emoji",
+    "remove": "Retirer",
+    "none": "Aucun emoji ne correspond.",
+    "groups": {
+      "work": "Travail",
+      "symbols": "Symboles",
+      "people": "Personnes",
+      "objects": "Objets",
+      "nature": "Nature",
+      "travel": "Lieux"
+    }
+  },
+  "page": {
+    "breadcrumbs": "Emplacement de la page",
+    "more": "Plus d’actions",
+    "copyLink": "Copier le lien",
+    "delete": "Supprimer la page",
+    "body": "Texte de la page",
+    "bodyPlaceholder": "Écrivez ou collez votre texte. La barre d’outils ajoute titres, listes, liens et images.",
+    "bodyEmpty": "Cette page n’a pas encore de texte.",
+    "subpages": "Sous-pages",
+    "addSubpage": "Ajouter une sous-page",
+    "editedBy": "Modifiée par {{name}}, {{when}}",
+    "edited": "Modifiée {{when}}",
+    "uploading": "Envoi en cours",
+    "uploadFailed": "Impossible d’envoyer l’image.",
+    "notFound": "Cette page n’existe plus",
+    "notFoundHint": "Elle a été supprimée, ou le lien appartient à un autre espace de travail.",
+    "loadFailed": "Impossible d’ouvrir cette page",
+    "backHome": "Retour au wiki"
+  },
+  "save": {
+    "saving": "Enregistrement",
+    "saved": "Enregistré",
+    "retrying": "Échec de l’enregistrement, nouvel essai",
+    "notSaved": "Non enregistré"
+  },
+  "conflict": {
+    "title": "Quelqu’un d’autre a modifié cette page.",
+    "titleBy": "{{name}} a modifié cette page.",
+    "body": "Ce que vous avez écrit est toujours là. Chargez sa version, ou gardez la vôtre pour l’enregistrer par-dessus.",
+    "loadTheirs": "Charger sa version",
+    "keepMine": "Garder la mienne"
+  },
+  "unsent": {
+    "forbidden": "Vous ne pouvez pas modifier cette page.",
+    "deleted": "Cette page a été supprimée.",
+    "body": "Ce que vous avez saisi n'a pas été enregistré. Copiez-le pour le garder.",
+    "copy": "Copier mon texte",
+    "copied": "Votre texte est copié",
+    "discard": "Ignorer"
+  },
+  "move": {
+    "title": "Déplacer « {{title}} »",
+    "description": "Elle passe en dernier sous la page choisie, avec ses sous-pages.",
+    "search": "Rechercher des pages",
+    "top": "Premier niveau",
+    "none": "Aucune page ne correspond.",
+    "here": "Ici actuellement"
+  },
+  "history": {
+    "open": "Historique",
+    "title": "Historique de la page",
+    "list": "Versions",
+    "current": "Actuelle",
+    "api": "Une clé d’API",
+    "by": "{{name}}, {{when}}",
+    "empty": "Pas encore d’historique",
+    "emptyHint": "Les versions apparaissent ici au fil des modifications.",
+    "blank": "Cette version n’avait pas de texte.",
+    "restore": "Restaurer cette version",
+    "restoreTitle": "Restaurer cette version ?",
+    "restoreBody": "La page revient à cette version. Son contenu actuel reste dans l’historique, vous pourrez y revenir.",
+    "restored": "Version restaurée"
+  },
+  "delete": {
+    "title": "Supprimer « {{title}} » ?",
+    "body": "La page et son historique sont supprimés définitivement.",
+    "withSubpages_one": "Sa sous-page part avec elle. Les deux pages et leur historique sont supprimés définitivement.",
+    "withSubpages_many": "Ses {{count}} sous-pages partent avec elle. Toutes, avec leur historique, sont supprimées définitivement.",
+    "withSubpages_other": "Ses {{count}} sous-pages partent avec elle. Toutes, avec leur historique, sont supprimées définitivement.",
+    "confirm": "Supprimer la page",
+    "confirmAll_one": "Supprimer {{count}} page",
+    "confirmAll_many": "Supprimer {{count}} pages",
+    "confirmAll_other": "Supprimer {{count}} pages",
+    "adminOnlyPage": "Quelqu'un d'autre a créé cette page, seul un admin peut donc la supprimer.",
+    "adminOnlySubpages": "Quelqu'un d'autre a créé des pages en dessous, seul un admin peut donc la supprimer."
+  },
+  "toast": {
+    "createFailed": "Impossible de créer la page.",
+    "moveFailed": "Impossible de déplacer la page.",
+    "deleted": "« {{title}} » supprimée",
+    "linkCopied": "Lien copié"
+  },
+  "empty": {
+    "title": "Écrivez comment votre équipe travaille",
+    "body": "Le wiki rassemble les procédures, règles et guides de votre équipe. Seuls les membres le voient : ni les clients, ni le centre d’aide, ni le widget de chat.",
+    "viewer": "Votre équipe n’a pas encore écrit de page. Les agents et les admins peuvent ajouter la première.",
+    "create": "Créer la première page",
+    "tipNest": "Les pages s’imbriquent les unes dans les autres",
+    "tipOllie": "Ollie lit le wiki pour répondre à vos questions"
+  },
+  "home": {
+    "intro": "Les procédures, règles et guides de votre équipe. Seuls les membres voient le wiki, jamais les clients.",
+    "recent": "Modifiées récemment",
+    "all": "Toutes les pages",
+    "subpages_one": "{{count}} sous-page",
+    "subpages_many": "{{count}} sous-pages",
+    "subpages_other": "{{count}} sous-pages",
+    "noSubpages": "Aucune sous-page",
+    "paletteHint": "Trouvez n’importe quelle page depuis le menu de commandes :"
+  },
+  "templates": {
+    "heading": "Partir d’un modèle",
+    "escalation": {
+      "title": "Procédure d’escalade",
+      "hint": "Quand et comment passer un ticket plus haut.",
+      "body": "<p>Escaladez quand un client est bloqué, quand de l’argent est en jeu, ou après deux essais sans progrès.</p><h2>Avant d’escalader</h2><ul><li><p>Lisez l’historique du ticket et cherchez dans le wiki.</p></li><li><p>Notez ce que vous avez essayé.</p></li></ul><h2>Étapes</h2><ol><li><p>Passez le ticket en urgent.</p></li><li><p>Laissez une note interne avec ce dont le client a besoin.</p></li><li><p>Assignez-le au responsable de garde.</p></li><li><p>Dites au client qui s’en occupe et quand il aura des nouvelles.</p></li></ol><h2>Qui est de garde</h2><p>Ajoutez ici votre planning de garde, ou un lien vers lui.</p>"
+    },
+    "refunds": {
+      "title": "Politique de remboursement",
+      "hint": "Qui peut rembourser quoi, et quand.",
+      "body": "<p>Qui peut rembourser quoi, et quand.</p><h2>La règle</h2><p>Remboursez tout paiement de moins de 30 jours, sans poser de questions.</p><h2>Exceptions</h2><ul><li><p>Paiements en double : remboursez tout de suite et excusez-vous.</p></li><li><p>Plus de 100 euros : un responsable valide d’abord.</p></li><li><p>Rétrofacturations : ne remboursez pas deux fois. Confiez le ticket à la facturation.</p></li></ul><h2>Comment rembourser</h2><ol><li><p>Trouvez le paiement dans l’outil de facturation.</p></li><li><p>Remboursez-le et notez le montant sur le ticket.</p></li></ol>"
+    },
+    "onboarding": {
+      "title": "Liste d’intégration",
+      "hint": "Les deux premières semaines d’un nouveau membre.",
+      "body": "<p>Ce que fait un nouveau membre de l’équipe pendant ses deux premières semaines.</p><h2>Première semaine</h2><ul><li><p>Obtenir l’accès au helpdesk, au chat et à l’outil de facturation.</p></li><li><p>Lire la procédure d’escalade et la politique de remboursement.</p></li><li><p>Suivre un collègue pendant deux permanences.</p></li></ul><h2>Deuxième semaine</h2><ul><li><p>Répondre aux tickets avec un binôme qui relit les brouillons.</p></li><li><p>Prendre sa propre file pendant une demi-journée.</p></li></ul>"
+    }
+  }
+}

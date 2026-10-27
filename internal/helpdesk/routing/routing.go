@@ -224,6 +224,7 @@ type facts struct {
 	contactLoaded bool
 	contactFields map[string]any
 	defs          domain.FieldDefs
+	textLower     map[string]string
 }
 
 func (f *facts) rule(ctx context.Context, q db.Querier, r RoutingRule) (outcome, error) {
@@ -273,7 +274,21 @@ func (f *facts) condition(ctx context.Context, q db.Querier, c RoutingCondition)
 	if !ok {
 		return no, nil
 	}
-	return boolOutcome(compare(c.Op, have, c.Value)), nil
+	return boolOutcome(f.compareText(c.Field, c.Op, have, c.Value)), nil
+}
+
+// compareText normalizes each ticket field once. Inbound email bodies can be large, and
+// routing may compare the same body against thousands of conditions.
+func (f *facts) compareText(field, op, have, want string) bool {
+	lower, ok := f.textLower[field]
+	if !ok {
+		lower = strings.ToLower(strings.TrimSpace(have))
+		if f.textLower == nil {
+			f.textLower = make(map[string]string)
+		}
+		f.textLower[field] = lower
+	}
+	return compareLower(op, lower, strings.ToLower(strings.TrimSpace(want)))
 }
 
 func (f *facts) loadContact(ctx context.Context, q db.Querier) error {
@@ -334,9 +349,8 @@ func (f *facts) text(field string) (string, bool) {
 	return "", false
 }
 
-// compare is a case-insensitive text comparison.
-func compare(op, have, want string) bool {
-	h, w := strings.ToLower(strings.TrimSpace(have)), strings.ToLower(strings.TrimSpace(want))
+// compareLower compares values that have already been trimmed and lowercased.
+func compareLower(op, h, w string) bool {
 	switch op {
 	case "equals":
 		return h == w

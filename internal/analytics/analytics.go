@@ -126,7 +126,7 @@ var eventSchemas = map[string]map[string]propertyValidator{
 	},
 	"ai_feature_used": {
 		"feature": enumProperty("answer", "answer_check", "answer_email", "assistant", "copilot", "decide",
-			"draft_reply", "kb_draft", "playground", "rewrite", "summarize", "translate", "triage"),
+			"draft_reply", "kb_draft", "mail_categories", "mail_categorize", "playground", "rewrite", "summarize", "translate", "triage"),
 		"own_key": boolProperty,
 	},
 	"ai_top_up_purchased": {

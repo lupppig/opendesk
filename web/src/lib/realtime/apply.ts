@@ -29,6 +29,7 @@ import { updateWorkspace, useSession } from "../session";
 import { cachedTicket, forgetTicket, patchTicketEverywhere, removeTicketEverywhere, teamsOf } from "../ticketCache";
 import { markHidden, unmarkHidden } from "./store";
 import { applyCollabEvent } from "../collab/cache";
+import { applyWikiEvent } from "../wiki/events";
 
 // Events that can tick off a setup checklist step (contracts/api.md "Onboarding").
 const onboardingResources = new Set(["mailbox", "member", "tag", "kb_article", "workspace"]);
@@ -426,6 +427,11 @@ function applyInScope(qc: QueryClient, env: Envelope, ctx: ApplyContext): void {
         }
       }
     }
+    return;
+  }
+
+  if (resource === "wiki_page") {
+    applyWikiEvent(qc, verb, d);
     return;
   }
 

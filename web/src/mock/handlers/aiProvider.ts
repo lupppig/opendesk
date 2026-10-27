@@ -1,20 +1,45 @@
 // Mock routes for the workspace's AI provider (contracts/ai.md "Provider per
-// workspace"): read, test, save and remove an own key. The key is never kept,
-// only its last 4 characters.
+// workspace"): read, test, save and remove an own key, and the TypeSafe key for
+// decisions. Keys are never kept, only their last 4 characters.
 
-import type { AIKeyKind, AIProvider, AIProviderKeyInput, AIProviderTest } from "@/lib/api/types";
-import { aiKeyOf, KEY_LABEL, OWN_DEFAULTS, OWN_MODELS, setAIKey, type MockAIKey } from "../aiKey";
+import type { AIDecisionsRoute, AIKeyKind, AIProvider, AIProviderKeyInput, AIProviderTest } from "@/lib/api/types";
+import { aiKeyOf, decisionKeyOf, KEY_LABEL, OWN_DEFAULTS, OWN_MODELS, setAIKey, setDecisionKey, type MockAIKey } from "../aiKey";
 import { db, userRef, type WsData } from "../db";
 import { HttpError, del, get, invalid, post, put, respond, type Ctx } from "../router";
 import { isRecord, nowIso, uuid } from "../util";
-import { assertAiInstance, requireAiAdmin } from "./ai";
+import { assertAiInstance, decisionEngine, requireAiAdmin } from "./ai";
 
 const KINDS: AIKeyKind[] = ["openrouter", "openai", "anthropic"];
 
 function view(ws: WsData): AIProvider {
   const k = aiKeyOf(ws);
   const key = k ? (({ failOnUse: _f, notified_at: _n, ...rest }) => rest)(k) : null;
-  return { mode: k ? "own_key" : "instance", instance_provider: "openrouter", billing: ws.billing.billing_enabled, key };
+  return { mode: k ? "own_key" : "instance", instance_provider: "openrouter", billing: ws.billing.billing_enabled, key, decisions: decisions(ws) };
+}
+
+/** Where decisions run: the TypeSafe key, else Jev on an OpenRouter key, else the instance's engine. */
+function decisions(ws: WsData): AIDecisionsRoute {
+  const key = decisionKeyOf(ws);
+  if (key) return { runs_on: "typesafe_key", engine: "jev", key };
+  if (aiKeyOf(ws)?.kind === "openrouter") return { runs_on: "provider_key", engine: "jev", key: null };
+  const e = decisionEngine();
+  if (e.provider === "none") return { runs_on: "none", engine: "none", key: null };
+  return { runs_on: aiKeyOf(ws) && e.provider === "llm" ? "provider_key" : "instance", engine: e.provider === "llm" ? "llm" : "jev", key: null };
+}
+
+/** A TypeSafe key from the body; "bad" is rejected and "nofunds" is out of credits, like provider keys. */
+function parseDecisionsKey(ctx: Ctx): string {
+  const b = ctx.body;
+  const secret = isRecord(b) && typeof b.api_key === "string" ? b.api_key.trim() : "";
+  if (secret.length < 8 || secret.length > 500 || /[^\x21-\x7e]/.test(secret)) throw invalid("Enter the API key exactly as TypeSafe shows it.");
+  return secret;
+}
+
+function testDecisionsKey(secret: string): AIProviderTest {
+  const s = secret.toLowerCase();
+  if (s.includes("bad")) return fail("invalid_key", "TypeSafe rejected this key. Check that it's correct and still active.");
+  if (s.includes("nofunds")) return fail("no_funds", "The TypeSafe account behind this key is out of credits.");
+  return { ok: true, models: [] };
 }
 
 /** Hosts a user-chosen endpoint may not point to (the server resolves and checks every address). */
@@ -136,6 +161,37 @@ export function registerAiProvider() {
     setAIKey(ctx.ws, k);
     audit(ctx.ws, replaced ? "ai.provider_key_replaced" : "ai.provider_key_set", { kind: b.kind, ...(k.base_url_host ? { base_url_host: k.base_url_host } : {}) });
     return view(ctx.ws);
+  });
+
+  post("/v1/ai/provider/decisions/test", async (ctx) => {
+    assertAiInstance();
+    requireAiAdmin(ctx.ws);
+    const secret = parseDecisionsKey(ctx);
+    await wait(400);
+    return testDecisionsKey(secret);
+  });
+
+  put("/v1/ai/provider/decisions", async (ctx) => {
+    assertAiInstance();
+    requireAiAdmin(ctx.ws);
+    const secret = parseDecisionsKey(ctx);
+    await wait(400);
+    const r = testDecisionsKey(secret);
+    if (!r.ok) throw new HttpError(422, "provider_test_failed", r.message ?? "The key didn't work.");
+    const replaced = !!decisionKeyOf(ctx.ws);
+    const now = nowIso();
+    setDecisionKey(ctx.ws, { last4: secret.slice(-4), status: "ok", status_at: null, created_by: userRef(db.meId), created_at: now, updated_at: now });
+    audit(ctx.ws, replaced ? "ai.decisions_key_replaced" : "ai.decisions_key_set", { kind: "typesafe" });
+    return view(ctx.ws);
+  });
+
+  del("/v1/ai/provider/decisions", (ctx) => {
+    requireAiAdmin(ctx.ws);
+    if (decisionKeyOf(ctx.ws)) {
+      setDecisionKey(ctx.ws, null);
+      audit(ctx.ws, "ai.decisions_key_removed", { kind: "typesafe" });
+    }
+    return respond(204);
   });
 
   del("/v1/ai/provider", (ctx) => {

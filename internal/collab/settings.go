@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/displayname"
 	"github.com/useopendesk/opendesk/internal/email"
 )
@@ -151,7 +152,8 @@ type remoteSettings struct {
 }
 
 // syncSettings reads the account's settings when due, as part of its sync: on the first
-// one, then at most every settingsInterval. Failures are logged and never fail the sync.
+// one, then at most every settingsInterval, and on the sync after someone asked for one
+// (settingsNow). Failures are logged and never fail the sync.
 func (s *service) syncSettings(ctx context.Context, prov Provider) {
 	var a *accountRow
 	var read func(context.Context) (remoteSettings, error)
@@ -166,10 +168,27 @@ func (s *service) syncSettings(ctx context.Context, prov Provider) {
 	if st := a.settings(); st.CheckedAt != nil && time.Since(*st.CheckedAt) < settingsInterval {
 		return
 	}
-	remote, err := read(ctx)
-	if err != nil {
+	if _, _, err := s.refreshSettings(ctx, a, read); err != nil && ctx.Err() == nil {
+		s.log.Warn("collab settings save failed", "account_id", a.ID, "err", err)
+	}
+}
+
+// settingsNow makes the account's next sync read its settings (Gmail's addresses among
+// them) whenever they were last read.
+func settingsNow(ctx context.Context, q db.Querier, a *accountRow) error {
+	_, err := q.Exec(ctx, `UPDATE collab_accounts SET config = config #- '{settings,checked_at}' WHERE id = $1 AND workspace_id = $2`,
+		a.ID, a.WorkspaceID)
+	return err
+}
+
+// refreshSettings reads the account's settings from the provider now and stores what was
+// read. readErr is the read's failure, logged here (what was read is still stored); err is
+// the save's.
+func (s *service) refreshSettings(ctx context.Context, a *accountRow, read func(context.Context) (remoteSettings, error)) (remote remoteSettings, readErr, err error) {
+	remote, readErr = read(ctx)
+	if readErr != nil {
 		// The reason only: never a value read or sent.
-		s.log.Info("collab settings sync failed", "account_id", a.ID, "workspace_id", a.WorkspaceID, "reason", safeError(err))
+		s.log.Info("collab settings sync failed", "account_id", a.ID, "workspace_id", a.WorkspaceID, "reason", safeError(readErr))
 	}
 	err = s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
 		now := time.Now().UTC()
@@ -192,9 +211,7 @@ func (s *service) syncSettings(ctx context.Context, prov Provider) {
 		}
 		return s.publishAccounts(ctx, tx, a.WorkspaceID, a.ID, nil)
 	})
-	if err != nil && ctx.Err() == nil {
-		s.log.Warn("collab settings save failed", "account_id", a.ID, "err", err)
-	}
+	return remote, readErr, err
 }
 
 // applyRemote takes what the provider has where it changed since last seen there, and

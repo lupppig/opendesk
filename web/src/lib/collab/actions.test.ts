@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MailCounts, MailFolder, MailThread } from "../api/types";
-import { countsAfter } from "./actions";
+import { countsAfter, leavesList } from "./actions";
 
 const folder = (id: string, role: MailFolder["role"], account = "a1") => ({ id, account_id: account, role }) as MailFolder;
 const folders = [folder("in1", "inbox"), folder("tr1", "trash"), folder("sp1", "spam"), folder("ar1", "archive"), folder("lb1", null), folder("in2", "inbox", "a2")];
@@ -70,5 +70,21 @@ describe("countsAfter by address", () => {
 
   it("leaves addresses alone without the counts by address", () => {
     expect(countsAfter(counts(), [withPeople({})], "read", folders, undefined, own).addresses).toBeUndefined();
+  });
+});
+
+describe("categorize", () => {
+  it("moves an unread conversation's number from its tab to the new one", () => {
+    const c = { ...counts(), categories: { a1: { primary: 2, newsletters: 0 } } };
+    const out = countsAfter(c, [thread({ category: "primary" })], "categorize", folders, undefined, {}, "newsletters");
+    expect(out.categories).toEqual({ a1: { primary: 1, newsletters: 1 } });
+    expect(out.accounts.a1).toBe(2);
+    expect(c.categories.a1.primary).toBe(2);
+  });
+  it("leaves a tab only for another category", () => {
+    const tab = { box: "inbox", folderId: null, folderRole: null, category: "primary" };
+    expect(leavesList("categorize", tab, undefined, "updates")).toBe(true);
+    expect(leavesList("categorize", tab, undefined, "primary")).toBe(false);
+    expect(leavesList("categorize", { ...tab, category: undefined }, undefined, "updates")).toBe(false);
   });
 });

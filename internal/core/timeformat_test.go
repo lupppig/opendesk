@@ -18,6 +18,7 @@ func TestTimeFormat(t *testing.T) {
 	f.notify(hd.NotifyAssigned, &t1, nil)
 	f.notify(hd.NotifyAssigned, &t2, nil)
 	// Sent at times of their own, away from other tests' emails under the instance send rate.
+	// An email sent on a later day than its notifications names their weekday ("Since Mon 7:46 PM").
 	first := time.Now().Add(97 * time.Minute)
 	t.Cleanup(func() { f.exec(`DELETE FROM notification_email_log WHERE user_id = $1`, f.uid) })
 	f.send(first)
@@ -25,7 +26,7 @@ func TestTimeFormat(t *testing.T) {
 	if len(m) != 1 {
 		t.Fatalf("mails: %d", len(m))
 	}
-	if !regexp.MustCompile(`Since \d{2}:\d{2}: `).MatchString(m[0].Text) || regexp.MustCompile(`\d (AM|PM)\b`).MatchString(m[0].Text) {
+	if !regexp.MustCompile(`Since (?:[A-Z][a-z]{2} )?\d{2}:\d{2}: `).MatchString(m[0].Text) || regexp.MustCompile(`\d (AM|PM)\b`).MatchString(m[0].Text) {
 		t.Fatalf("default clock is 24-hour:\n%s", m[0].Text)
 	}
 
@@ -52,7 +53,7 @@ func TestTimeFormat(t *testing.T) {
 	f.notify(hd.NotifyAssigned, &t4, nil)
 	f.send(first.Add(3 * time.Hour)) // past the first email's cooldown
 	m = f.mails()
-	if len(m) != 2 || !regexp.MustCompile(`Since \d{1,2}:\d{2} (AM|PM): `).MatchString(m[1].Text) {
+	if len(m) != 2 || !regexp.MustCompile(`Since (?:[A-Z][a-z]{2} )?\d{1,2}:\d{2} (AM|PM): `).MatchString(m[1].Text) {
 		t.Fatalf("12-hour clock:\n%s", m[len(m)-1].Text)
 	}
 }

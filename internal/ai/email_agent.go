@@ -274,7 +274,7 @@ func (s *Service) EmailAnswer(ctx context.Context, a jobs.AIEmailAnswerArgs) err
 		}
 		return err
 	}
-	if s.jev() {
+	if s.jevFor(ctx, a.WorkspaceID) {
 		human, err := s.needsHuman(ctx, a.WorkspaceID, a.TicketID, msgs)
 		if err != nil && !skippable(err) {
 			return err

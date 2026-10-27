@@ -68,7 +68,7 @@ With a saved payment method, **Pay** charges it after one confirmation, and the 
 - **Charged on real cost.** Each AI call is charged what it cost the provider, at the model's list price, times 1.5. A pricier model, a longer thread or a longer answer costs more. **Settings, AI** shows what typical calls cost on your models; see [AI usage on Cloud](/guides/ai/#ai-usage-on-cloud).
 - **Starting a call.** A call starts only when the balance covers its estimate: the prompt at the model's input price plus the longest answer it may write (counted up to 4,000 tokens) at the output price, times 1.5, and at least $0.01. Otherwise the feature asks you to add AI usage, and the call is not made.
 - **A failed AI request costs nothing.** Search indexing is free.
-- **Your own key costs $0.** A workspace that runs its AI on its [own provider key](/guides/ai/#your-own-provider-key) pays its provider directly. Only the decision model's triage and automation decisions still use a little of the AI balance.
+- **Your own key costs $0.** A workspace that runs its AI on its [own provider key](/guides/ai/#your-own-provider-key) pays its provider directly. Decisions run on that key too with OpenRouter, or on the workspace's own TypeSafe key; otherwise they still use a little of the AI balance.
 
 When the balance runs out, AI features ask you to add AI usage, and the AI agent goes quiet and leaves conversations to your team until there is balance again.
 

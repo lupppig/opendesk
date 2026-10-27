@@ -146,7 +146,7 @@ func requireRecentLogin(ctx context.Context, q db.Querier, p *auth.Principal) er
 		return err
 	}
 	if time.Since(created) > RecentLoginWindow {
-		return httpx.E(403, "reauth_required", "Sign in again to continue.")
+		return httpx.E(403, "reauth_required", "For your security, sign in again to do this. Your last sign-in is more than 12 hours old.")
 	}
 	return nil
 }

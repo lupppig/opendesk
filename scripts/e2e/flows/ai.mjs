@@ -98,7 +98,7 @@ export async function run(t) {
     await owner.goto(cfg.app + "/inbox/unassigned");
     await owner.getByRole("navigation", { name: "Main" }).waitFor();
     await owner.keyboard.press("ControlOrMeta+k");
-    const input = owner.getByPlaceholder("Search tickets, contacts, articles, or type a command");
+    const input = owner.getByPlaceholder("Search tickets, contacts, articles, the wiki, or type a command");
     await input.fill("customer cannot sign in after password reset");
     await input.press("Tab");
     await owner.getByPlaceholder("Ask anything, like customers who were charged twice").waitFor();

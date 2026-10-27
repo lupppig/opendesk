@@ -4,7 +4,7 @@
 
 import { infiniteQueryOptions, queryOptions, type QueryClient } from "@tanstack/react-query";
 import { scopeWorkspace } from "./api/client";
-import { api, rows, type ChangelogListQuery, type CollabThreadQuery, type TicketListQuery } from "./api/endpoints";
+import { api, rows, type ChangelogListQuery, type CollabThreadQuery, type TicketListQuery, type TicketSummaryQuery } from "./api/endpoints";
 import type { Page, ReportsQuery, ReportsRange, SpacesResponse } from "./api/types";
 import { normalizeSpace, normalizeSpaces } from "./spaces/model";
 
@@ -68,6 +68,8 @@ export const qk = {
     return w(["tickets", "list"] as const);
   },
   tickets: (q: TicketListQuery) => w(["tickets", "list", q] as const),
+  /** Under counts: whatever refreshes the sidebar's numbers refreshes a list's summary too. */
+  ticketSummary: (q: TicketSummaryQuery) => w(["tickets", "counts", "summary", q] as const),
   ticket: (id: string) => w(["tickets", "detail", id] as const),
   messages: (id: string) => w(["tickets", "messages", id] as const),
   activities: (id: string) => w(["tickets", "activities", id] as const),
@@ -207,7 +209,16 @@ export const qk = {
     return w(["changelog", "categories"] as const);
   },
   search: (q: string) => w(["search", q] as const),
+  /** The wiki's tree: every page without its body (contracts/wiki.md). */
+  get wikiTree() {
+    return w(["wiki", "tree"] as const);
+  },
+  wikiPage: (id: string) => w(["wiki", "page", id] as const),
+  wikiRevisions: (id: string) => w(["wiki", "revisions", id] as const),
+  wikiRevision: (id: string, rid: string) => w(["wiki", "revision", id, rid] as const),
+  wikiSearch: (q: string) => w(["wiki", "search", q] as const),
   reports: (r: ReportsQuery) => w(["reports", r] as const),
+  reportAgents: (r: ReportsQuery) => w(["reports", "agents", r] as const),
   get widgetSettings() {
     return w(["widget-settings"] as const);
   },
@@ -291,6 +302,11 @@ export const qk = {
   get mailSidebar() {
     return w(["collab", "sidebar"] as const);
   },
+  /** Inbox categories: the workspace's and teams' (contracts/collab.md "Categories"). */
+  get mailCategories() {
+    return w(["collab", "categories"] as const);
+  },
+  mailCategoryRules: (accountId: string) => w(["collab", "categoryRules", accountId] as const),
   get mailThreadLists() {
     return w(["collab", "threads"] as const);
   },
@@ -338,6 +354,7 @@ export const q = {
   workspace: () => queryOptions({ queryKey: qk.workspace, queryFn: api.workspaces.current }),
   sessions: () => list(qk.sessions, api.me.sessions),
   counts: () => queryOptions({ queryKey: qk.counts, queryFn: api.tickets.counts, staleTime: 30_000 }),
+  ticketSummary: (query: TicketSummaryQuery) => queryOptions({ queryKey: qk.ticketSummary(query), queryFn: () => api.tickets.summary(query), staleTime: 15_000 }),
   tickets: (query: TicketListQuery) =>
     infiniteQueryOptions({
       queryKey: qk.tickets(query),
@@ -439,9 +456,16 @@ export const q = {
     }),
   changelogEntry: (id: string) => queryOptions({ queryKey: qk.changelogEntry(id), queryFn: () => api.changelog.entries.get(id) }),
   changelogCategories: () => list(qk.changelogCategories, () => api.changelog.categories()),
+  wikiTree: () => list(qk.wikiTree, () => api.wiki.tree()),
+  wikiPage: (id: string) => queryOptions({ queryKey: qk.wikiPage(id), queryFn: () => api.wiki.get(id) }),
+  wikiRevisions: (id: string) => list(qk.wikiRevisions(id), () => api.wiki.revisions(id)),
+  wikiRevision: (id: string, rid: string) => queryOptions({ queryKey: qk.wikiRevision(id, rid), queryFn: () => api.wiki.revision(id, rid), staleTime: Infinity }),
+  wikiSearch: (term: string) =>
+    queryOptions({ queryKey: qk.wikiSearch(term), queryFn: async () => (await api.wiki.search(term)).data, enabled: term.trim().length > 0, staleTime: 5_000 }),
   search: (term: string) =>
     queryOptions({ queryKey: qk.search(term), queryFn: () => api.search(term), enabled: term.trim().length > 1, staleTime: 10_000 }),
   reports: (r: ReportsQuery) => queryOptions({ queryKey: qk.reports(r), queryFn: () => api.reports.overview(r) }),
+  reportAgents: (r: ReportsQuery) => queryOptions({ queryKey: qk.reportAgents(r), queryFn: () => api.reports.agents(r) }),
   billing: () => queryOptions({ queryKey: qk.billing, queryFn: api.billing.get, staleTime: 60_000 }),
   billingUsage: (r: { from: string; to: string }) => queryOptions({ queryKey: qk.billingUsage(r), queryFn: () => api.billing.usage(r) }),
   billingInvoices: () => queryOptions({ queryKey: qk.billingInvoices, queryFn: async () => (await api.billing.invoices()).data, staleTime: 30_000 }),
@@ -490,6 +514,9 @@ export const q = {
   mailFolders: (accountId: string) => list(qk.mailFolders(accountId), () => api.collab.accounts.folders(accountId), { staleTime: 60_000 }),
   mailCounts: () => queryOptions({ queryKey: qk.mailCounts, queryFn: api.collab.counts, staleTime: 30_000 }),
   mailSidebar: () => queryOptions({ queryKey: qk.mailSidebar, queryFn: api.collab.sidebar.get, staleTime: 5 * 60_000 }),
+  mailCategories: () => queryOptions({ queryKey: qk.mailCategories, queryFn: api.collab.categories.get, staleTime: 60_000 }),
+  mailCategoryRules: (accountId: string) =>
+    queryOptions({ queryKey: qk.mailCategoryRules(accountId), queryFn: () => api.collab.categories.rules(accountId).then((r) => r.rules), staleTime: 60_000 }),
   mailThreads: (query: CollabThreadQuery) =>
     infiniteQueryOptions({
       queryKey: qk.mailThreads(query),

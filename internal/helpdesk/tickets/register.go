@@ -24,6 +24,7 @@ func Register(d *deps.Deps, api huma.API, r chi.Router) {
 	registerTemplates(d, api)
 	registerCSAT(d, api)
 	registerInsights(d, api)
+	registerAgentsReport(d, api)
 	// The overview's ticket counts are the counts route's own answer for that workspace.
 	d.Overview.TicketCounts = func(ctx context.Context, p *auth.Principal) (any, error) {
 		return ticketCounts(ctx, d.DB.Pool, p)

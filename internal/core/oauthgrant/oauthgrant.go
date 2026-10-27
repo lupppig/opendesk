@@ -17,16 +17,16 @@ import (
 // Scopes an AI client may ask for: the API key scopes the MCP tools use. Settings
 // writes and realtime are never granted over OAuth.
 var Scopes = []string{auth.ScopeTicketsRead, auth.ScopeTicketsWrite, auth.ScopeContactsRead, auth.ScopeContactsWrite,
-	auth.ScopeKBRead, auth.ScopeKBWrite, auth.ScopeSettingsRead}
+	auth.ScopeKBRead, auth.ScopeKBWrite, auth.ScopeWikiRead, auth.ScopeWikiWrite, auth.ScopeSettingsRead}
 
 // ForRole is the part of Scopes a member with role can use: viewers read, agents and
-// up also write tickets, contacts and articles.
+// up also write tickets, contacts, articles and wiki pages.
 func ForRole(r auth.Role) []string {
 	switch {
 	case r.AtLeast(auth.RoleAgent):
 		return slices.Clone(Scopes)
 	case r.AtLeast(auth.RoleViewer):
-		return []string{auth.ScopeTicketsRead, auth.ScopeContactsRead, auth.ScopeKBRead, auth.ScopeSettingsRead}
+		return []string{auth.ScopeTicketsRead, auth.ScopeContactsRead, auth.ScopeKBRead, auth.ScopeWikiRead, auth.ScopeSettingsRead}
 	}
 	return nil
 }

@@ -150,6 +150,10 @@ A tool is offered only when the key, or the OAuth connection together with your 
 | `get_contact` | `contacts:read` | Reads a contact by id or email, with their latest tickets when the key also has `tickets:read`. | No |
 | `search_knowledge` | `kb:read` | Searches knowledge base articles and knowledge sources; the top matches come with their full text. | No |
 | `create_kb_draft` | `kb:write` | Creates an unpublished draft article for the team to review. | Yes |
+| `search_wiki` | `wiki:read` | Searches the team's internal wiki; each match comes with where it sits and a passage. | No |
+| `get_wiki_page` | `wiki:read` | Reads a wiki page as plain text, with its subpages and its version. | No |
+| `create_wiki_page` | `wiki:write` | Adds a wiki page (markdown), at the top level or under another page. | Yes |
+| `update_wiki_page` | `wiki:write` | Renames a wiki page or replaces its text (markdown). With the version it read, a teammate's newer edit is never overwritten. | Yes |
 | `get_report` | `settings:read` and `tickets:read` | Reads the overview report for a date range. | No |
 
 Tickets are referenced by number (`#123`) or id. Assigning by email or moving to a team by name looks the teammate or team up, which needs `settings:read`; with user and team ids it does not.

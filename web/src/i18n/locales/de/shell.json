@@ -6,6 +6,7 @@
     "workspace": "Workspace",
     "contacts": "Kontakte",
     "kb": "Wissensdatenbank",
+    "wiki": "Wiki",
     "reports": "Berichte",
     "settings": "Einstellungen",
     "manageViews": "Ansichten verwalten",
@@ -133,6 +134,7 @@
     "toggleSidebar": "Seitenleiste ein-/ausblenden",
     "goMine": "Zu meinen Tickets",
     "goReports": "Zu den Berichten",
+    "goWiki": "Zum Wiki",
     "switchWorkspace": "Workspace 1 bis 9 öffnen"
   },
   "route": {
@@ -156,8 +158,7 @@
     "openApi": "Über die API öffnen"
   },
   "connection": {
-    "lost": "Verbindung unterbrochen. Neue Verbindung wird aufgebaut, Änderungen werden danach synchronisiert.",
-    "back": "Wieder online"
+    "lost": "Verbindung unterbrochen. Neue Verbindung wird aufgebaut, Änderungen werden danach synchronisiert."
   },
   "desktop": {
     "switchServer": "Server wechseln",

@@ -119,11 +119,14 @@ func (s *Service) triageAction(ctx context.Context, tx pgx.Tx, wid, tid uuid.UUI
 // every question in one decision call about the ticket, inside the trigger's
 // transaction. A skipped call answers nothing, so those conditions do not hold.
 func (s *Service) decideConditions(ctx context.Context, tx pgx.Tx, wid, tid uuid.UUID, questions []string) (map[string]float64, error) {
-	if s.decider == nil || len(questions) == 0 {
+	if len(questions) == 0 {
 		return nil, nil
 	}
 	if _, err := s.workspaceOn(ctx, wid); err != nil {
 		return nil, nil
+	}
+	if dr, err := s.decisionsFor(ctx, wid, nil); err != nil || dr.dc == nil {
+		return nil, err
 	}
 	tc, err := s.loadTicketCtx(ctx, tx, wid, tid, true)
 	if err != nil {
@@ -137,7 +140,7 @@ func (s *Service) decideConditions(ctx context.Context, tx pgx.Tx, wid, tid uuid
 		qs["q"+strconv.Itoa(i)] = decide.Noul(map[string]string{"question": q, "about": "the ticket in `ticket`", "rule": dataRule}, "", "")
 	}
 	c := s.newCall(wid, nil, &tid, "decide")
-	res, err := c.decide(ctx, s.decider, decide.Request{State: decisionState(tc), Questions: qs})
+	res, err := c.decide(ctx, decide.Request{State: decisionState(tc), Questions: qs})
 	if err != nil {
 		if skippable(err) {
 			s.d.Log.Info("ai_decide skipped", "ticket_id", tid, "reason", errReason(err))

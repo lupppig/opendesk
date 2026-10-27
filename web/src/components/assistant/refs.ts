@@ -1,5 +1,5 @@
 // Clickable references in Ollie's answers: tickets (#123), contacts, articles,
-// views and automations, opened in the app.
+// wiki pages, views and automations, opened in the app.
 
 import { router } from "@/router";
 import { api } from "@/lib/api/endpoints";
@@ -33,6 +33,8 @@ export function openRef(r: AssistantRef) {
       return router.navigate({ to: "/contacts/{-$contactId}", params: { contactId: r.id } });
     case "article":
       return router.navigate({ to: "/kb/articles/$articleId", params: { articleId: r.id } });
+    case "wiki_page":
+      return router.navigate({ to: "/wiki/$pageId", params: { pageId: r.id } });
     case "view":
       return router.navigate({ to: "/views/$viewId/{-$ticketId}", params: { viewId: r.id, ticketId: undefined } });
     case "automation":

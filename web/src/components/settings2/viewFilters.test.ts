@@ -52,6 +52,11 @@ describe("lists", () => {
     expect(joinList([])).toBeUndefined();
   });
 
+  it("keeps the contacts and companies a view leaves out", () => {
+    expect(cleanFilters({ contact_not: "c1,c2", company_not: "co1" })).toEqual({ contact_not: "c1,c2", company_not: "co1" });
+    expect(cleanFilters({ contact_not: joinList([]), company_not: "" })).toEqual({});
+  });
+
   it("saves a single label exactly as before", () => {
     expect(cleanFilters({ tag: "vip", tag_not: "", untagged: false, channel_not: [] })).toEqual({ tag: "vip" });
   });

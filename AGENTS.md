@@ -1,7 +1,7 @@
 # opendesk agent notes
 
 opendesk is an open-source helpdesk: shared email inboxes, live chat, a knowledge base,
-and a public API, with everything updating live across the team. It ships as a hosted
+an internal wiki and a public API, with everything updating live across the team. It ships as a hosted
 service (opendesk.sh) and as a self-host, and **the two are the same code**.
 
 ## System shape
@@ -42,8 +42,8 @@ Self-hosted = `opendesk` + `realtime` + `postgres` behind Caddy on one domain: `
 
 - Areas own packages: `internal/core` (auth, accounts, workspaces, members, API keys,
   webhooks, audit, notifications, events API, realtime tokens), `internal/email`
-  (mailboxes, inbound, outbound), `internal/helpdesk` (tickets, contacts, KB, widget,
-  SLA, automations, reports), `internal/billing` (Stripe, plans; Cloud only),
+  (mailboxes, inbound, outbound), `internal/helpdesk` (tickets, contacts, KB, the
+  team's internal wiki (`contracts/wiki.md`), widget, SLA, automations, reports), `internal/billing` (Stripe, plans; Cloud only),
   `internal/ai` (AI features, providers, embeddings) and `internal/integrations`
   (connected products over MCP, ticket links; `contracts/integrations.md`), `internal/supportchannels`
   (Slack, Discord and Telegram threads where agents work tickets; `contracts/support-channels.md`), `internal/admin`

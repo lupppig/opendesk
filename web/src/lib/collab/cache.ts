@@ -64,12 +64,12 @@ export function mapThreads(qc: QueryClient, ids: Set<string>, fn: (t: MailThread
 }
 
 /** Takes conversations out of the lists they leave when the action applies. */
-export function dropFromLists(qc: QueryClient, ids: Set<string>, action: MailThreadAction, folderId?: string) {
+export function dropFromLists(qc: QueryClient, ids: Set<string>, action: MailThreadAction, folderId?: string, category?: string) {
   const folders = cachedFolders(qc);
   for (const [key, data] of qc.getQueriesData<ThreadPages>({ queryKey: qk.mailThreadLists })) {
     if (!data) continue;
     const query = (keyBody(key)[2] ?? {}) as CollabThreadQuery;
-    if (!leavesList(action, listPlace(query, folders), folderId)) continue;
+    if (!leavesList(action, listPlace(query, folders), folderId, category)) continue;
     if (!data.pages.some((p) => p.data.some((t) => ids.has(t.id)))) continue;
     qc.setQueryData<ThreadPages>(key, { ...data, pages: data.pages.map((p) => ({ ...p, data: p.data.filter((t) => !ids.has(t.id)) })) });
   }
@@ -139,6 +139,8 @@ export function applyCollabEvent(qc: QueryClient, type: string, data: Record<str
     void qc.invalidateQueries({ queryKey: qk.collabStatus });
     // An open conversation carries its account's addresses and signatures (the reply's From): they follow.
     void qc.invalidateQueries({ queryKey: qk.of("collab", "thread"), predicate: (query) => !id || (query.state.data as MailThreadDetail | undefined)?.account.id === id });
+    // Its categories may have changed with the workspace's or a team's.
+    void qc.invalidateQueries({ queryKey: qk.mailCategories });
     const p = pendingFor(wid);
     p.folders.add(id);
     schedule(qc, wid, p);

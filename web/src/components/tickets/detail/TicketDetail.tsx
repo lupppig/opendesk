@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronUp, CircleCheck, CircleDot, Signal, Copy, GitMerge, MoreHorizontal, PanelRight, RotateCcw, ShieldAlert, ShieldCheck, Trash2, UserRound, Users, X, MessageSquare, MessagesSquare, StickyNote } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { tone } from "@/lib/tones";
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +18,8 @@ import { cn } from "@/lib/cn";
 import { useDocumentTitle } from "@/app/RootLayout";
 import { usePageCommands } from "@/app/shellStore";
 import { Button } from "@/components/ui/button";
+import { ResizeHandle } from "@/components/ui/resize-handle";
+import { clampWidth, setLiveWidth, usePaneWidth } from "@/lib/panes";
 import { Tooltip } from "@/components/ui/tooltip";
 import { AvatarStack } from "@/components/ui/avatar";
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
@@ -44,17 +46,9 @@ import { TicketProperties, type PropPicker } from "./TicketProperties";
 import { MergeDialog } from "./MergeDialog";
 import { TicketTeamChips, useTeamsCtx } from "../teams";
 import { SnoozeMenu } from "./SnoozeMenu";
+import { readPanel, savePanel } from "./panel";
 
-const PANEL_KEY = "od-ticket-panel";
 const isUuid = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
-
-function readPanel() {
-  try {
-    return localStorage.getItem(PANEL_KEY) !== "0";
-  } catch {
-    return true;
-  }
-}
 
 function SubjectEditor({ value, onSave, disabled }: { value: string; onSave: (v: string) => void; disabled?: boolean }) {
   const { t } = useTranslation("inbox");
@@ -164,6 +158,9 @@ export default function TicketDetail({
   const [burst, setBurst] = useState(0);
   const [mergeOpen, setMergeOpen] = useState(false);
   const [panel, setPanel] = useState(readPanel);
+  const [panelWidth, setPanelWidth] = usePaneWidth("details");
+  const rowRef = useRef<HTMLDivElement>(null);
+  const panelBodyRef = useRef<HTMLDivElement>(null);
   const display = useDisplay();
   const { data: ticketFields } = useTicketFields();
   const reduced = useReducedMotion();
@@ -196,11 +193,7 @@ export default function TicketDetail({
 
   const togglePanel = () => {
     setPanel((p) => {
-      try {
-        localStorage.setItem(PANEL_KEY, p ? "0" : "1");
-      } catch {
-        /* storage unavailable */
-      }
+      savePanel(!p);
       return !p;
     });
   };
@@ -444,7 +437,7 @@ export default function TicketDetail({
         </Tooltip>
       </header>
 
-      <div className="flex min-h-0 flex-1">
+      <div ref={rowRef} className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
           <Timeline
             ticketId={realId}
@@ -461,18 +454,30 @@ export default function TicketDetail({
           />
           {t && canEdit && <Composer ref={composer} ticket={t} />}
         </div>
+        {panel && (
+          <ResizeHandle
+            pane="details"
+            side="after"
+            target={panelBodyRef}
+            room={() => rowRef.current?.clientWidth}
+            width={panelWidth}
+            onLive={(px) => setLiveWidth(panelBodyRef.current, "details", px === null ? null : `${px}px`)}
+            onWidth={setPanelWidth}
+            className="hidden lg:block"
+          />
+        )}
         <AnimatePresence initial={false}>
           {panel && (
             <motion.aside
               key="panel"
               aria-label={indicatorText("tickets.ticketDetails")}
               initial={reduced ? { opacity: 0 } : { width: 0, opacity: 0 }}
-              animate={reduced ? { opacity: 1 } : { width: 300, opacity: 1 }}
+              animate={reduced ? { opacity: 1 } : { width: "auto", opacity: 1 }}
               exit={reduced ? { opacity: 0 } : { width: 0, opacity: 0 }}
               transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-              className="hidden shrink-0 overflow-hidden border-l border-line lg:block"
+              className="hidden shrink-0 overflow-hidden lg:block"
             >
-              <div className="h-full w-[300px] overflow-y-auto">
+              <PanelBody ref={panelBodyRef} row={rowRef} width={panelWidth}>
                 {t ? (
                   <TicketProperties t={t} picker={picker} onPicker={setPicker} onSideConversation={() => composer.current?.focus("thread")} />
                 ) : (
@@ -485,12 +490,44 @@ export default function TicketDetail({
                     ))}
                   </div>
                 )}
-              </div>
+              </PanelBody>
             </motion.aside>
           )}
         </AnimatePresence>
       </div>
       {t && <MergeDialog ticket={t} open={mergeOpen} onOpenChange={setMergeOpen} />}
+    </div>
+  );
+}
+
+/**
+ * The details column's content, border included, at the width its edge was dragged to, at most
+ * half the open ticket so the conversation keeps the rest; the column itself sizes to it. Only
+ * this follows the window, so a resize never redraws the ticket.
+ */
+function PanelBody({ ref, row, width, children }: { ref: RefObject<HTMLDivElement | null>; row: RefObject<HTMLDivElement | null>; width: number | null; children: ReactNode }) {
+  const [room, setRoom] = useState<number>();
+  useEffect(() => {
+    const el = row.current;
+    if (width === null || !el) return;
+    let raf = 0;
+    const ro = new ResizeObserver(() => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => setRoom(el.clientWidth));
+    });
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      cancelAnimationFrame(raf);
+    };
+  }, [row, width]);
+  return (
+    <div
+      ref={ref}
+      className="h-full w-[var(--pane-details-live,var(--pane-details,300px))] overflow-y-auto border-l border-line"
+      style={width === null ? undefined : ({ "--pane-details": `${clampWidth("details", width, room)}px` } as CSSProperties)}
+    >
+      {children}
     </div>
   );
 }

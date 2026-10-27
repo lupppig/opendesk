@@ -38,7 +38,8 @@ export function Toaster() {
   );
 }
 
-type Opts = { description?: string; action?: { label: string; onClick: () => void } };
+/** cancel: a second, quieter button beside the action (Undo next to Always). */
+type Opts = { description?: string; action?: { label: string; onClick: () => void }; cancel?: { label: string; onClick: () => void } };
 
 // A toast that offers an action (Undo, Open) stays a little longer and shows
 // how long is left; the bar pauses while the stack is hovered, as the timer does.

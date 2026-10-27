@@ -299,6 +299,8 @@
     "offlinePlaceholder": "Wir sind gerade nicht da. Hinterlass eine Nachricht, wir antworten per E-Mail.",
     "followUp": "Per E-Mail antworten, wenn sie gehen",
     "followUpHint": "Besucher, die eine E-Mail-Adresse hinterlassen haben und nicht mehr auf der Website sind, bekommen deine Antworten per E-Mail, von der Adresse der Marke für das Team.",
+    "followUpMailboxMissing": "Füge dieser Marke ein aktives Postfach zum Senden von E-Mails hinzu.",
+    "followUpAddMailbox": "Postfach hinzufügen",
     "installHint": "Füge das auf jeder Seite dieser Website vor </body> ein.",
     "secretHint": "Signiert Identifizierungsaufrufe für {{name}}. Jedes Widget hat sein eigenes.",
     "rotateBody": "Das aktuelle Secret für {{name}} funktioniert sofort nicht mehr. Aktualisiere deinen Server, bevor sich Besucher wieder anmelden.",

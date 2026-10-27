@@ -35,13 +35,20 @@ const (
 	ScopeKBWrite        = "kb:write"
 	ScopeChangelogRead  = "changelog:read"
 	ScopeChangelogWrite = "changelog:write"
+	ScopeWikiRead       = "wiki:read"
+	ScopeWikiWrite      = "wiki:write"
 	ScopeSettingsRead   = "settings:read"
 	ScopeSettingsWrite  = "settings:write"
 	ScopeRealtime       = "realtime"
+	// ScopeCollabDraft lets an API key read the Collab conversations of the member who
+	// created it and save reply drafts there, never send them or change any mail's state
+	// (contracts/collab.md "AI drafts"). The key acts as that member while they are an
+	// agent or above in the workspace, and sees exactly what they see.
+	ScopeCollabDraft = "collab:draft"
 )
 
 var AllScopes = []string{ScopeTicketsRead, ScopeTicketsWrite, ScopeContactsRead, ScopeContactsWrite,
-	ScopeKBRead, ScopeKBWrite, ScopeChangelogRead, ScopeChangelogWrite, ScopeSettingsRead, ScopeSettingsWrite, ScopeRealtime}
+	ScopeKBRead, ScopeKBWrite, ScopeChangelogRead, ScopeChangelogWrite, ScopeWikiRead, ScopeWikiWrite, ScopeSettingsRead, ScopeSettingsWrite, ScopeRealtime, ScopeCollabDraft}
 
 type Kind string
 

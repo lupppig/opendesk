@@ -9,13 +9,15 @@ export type PageContext = {
   path?: string;
   page?: string;
   ticket_id?: string;
+  /** The open wiki page. */
+  wiki_page_id?: string;
   view_id?: string;
   folder?: string;
   filters?: Record<string, string>;
 };
 
 /** `external`: something in a connected product; `id` is its https link. */
-export type RefKind = "ticket" | "contact" | "article" | "view" | "automation" | "member" | "external";
+export type RefKind = "ticket" | "contact" | "article" | "wiki_page" | "view" | "automation" | "member" | "external";
 export type AssistantRef = { kind: RefKind; id: string; label: string; number?: number };
 
 export type StepStatus = "running" | "done" | "error" | "awaiting_approval" | "approved" | "denied" | "expired";

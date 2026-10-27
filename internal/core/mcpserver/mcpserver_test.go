@@ -247,6 +247,14 @@ func TestToolsFollowScopes(t *testing.T) {
 	if !slices.Equal(got, []string{"get_contact", "search_contacts", "search_knowledge"}) {
 		t.Fatalf("kb and contacts tools: %v", got)
 	}
+	got = toolNames(t, e.session(e.APIKey(e.WS, auth.ScopeWikiRead)))
+	if !slices.Equal(got, []string{"get_wiki_page", "search_wiki"}) {
+		t.Fatalf("wiki:read tools: %v", got)
+	}
+	// Knowledge base scopes don't reach the wiki.
+	if got = toolNames(t, e.session(e.APIKey(e.WS, auth.ScopeKBRead, auth.ScopeKBWrite))); slices.Contains(got, "search_wiki") {
+		t.Fatalf("kb tools: %v", got)
+	}
 	// get_report reads tickets through the overview route: settings:read alone is not enough.
 	if got = toolNames(t, e.session(e.APIKey(e.WS, auth.ScopeSettingsRead))); len(got) != 0 {
 		t.Fatalf("settings:read tools: %v", got)
@@ -258,19 +266,24 @@ func TestToolsFollowScopes(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{"search_tickets", "get_ticket", "reply_to_ticket", "draft_reply", "add_note", "update_ticket", "create_ticket",
-		"search_contacts", "get_contact", "search_knowledge", "create_kb_draft", "get_report"}
+		"search_contacts", "get_contact", "search_knowledge", "create_kb_draft",
+		"search_wiki", "get_wiki_page", "create_wiki_page", "update_wiki_page", "get_report",
+		"list_collab_conversations", "get_collab_conversation", "draft_collab_reply"}
 	var names []string
 	for _, tl := range res.Tools {
 		names = append(names, tl.Name)
 		if tl.Description == "" || tl.InputSchema == nil || tl.Annotations == nil {
 			t.Fatalf("%s lacks a description, schema or annotations", tl.Name)
 		}
-		read := strings.HasPrefix(tl.Name, "search_") || strings.HasPrefix(tl.Name, "get_")
+		read := strings.HasPrefix(tl.Name, "search_") || strings.HasPrefix(tl.Name, "get_") || strings.HasPrefix(tl.Name, "list_")
 		if tl.Annotations.ReadOnlyHint != read {
 			t.Fatalf("%s readOnlyHint = %v", tl.Name, tl.Annotations.ReadOnlyHint)
 		}
 		if tl.Name == "update_ticket" && (tl.Annotations.DestructiveHint == nil || !*tl.Annotations.DestructiveHint) {
 			t.Fatal("update_ticket should be marked destructive")
+		}
+		if tl.Name == "update_wiki_page" && (tl.Annotations.DestructiveHint == nil || !*tl.Annotations.DestructiveHint) {
+			t.Fatal("update_wiki_page should be marked destructive")
 		}
 		if tl.Name == "add_note" && (tl.Annotations.DestructiveHint == nil || *tl.Annotations.DestructiveHint) {
 			t.Fatal("add_note should not be marked destructive")
@@ -511,5 +524,75 @@ func TestKnowledgeAndContacts(t *testing.T) {
 	call(t, s, "get_contact", map[string]any{"contact": cs.Contacts[0].Email}, &one)
 	if one.Contact.ID != cs.Contacts[0].ID || one.Tickets != nil {
 		t.Fatalf("get_contact without tickets:read: %+v", one)
+	}
+}
+
+func TestWikiTools(t *testing.T) {
+	e := newEnv(t)
+	s := e.session(e.APIKey(e.WS, auth.ScopeWikiRead, auth.ScopeWikiWrite))
+
+	type out struct {
+		ID       string `json:"id"`
+		Title    string `json:"title"`
+		Path     string `json:"path"`
+		Text     string `json:"text"`
+		Version  int    `json:"version"`
+		Subpages []struct {
+			ID string `json:"id"`
+		} `json:"subpages"`
+	}
+	var parent, child out
+	call(t, s, "create_wiki_page", map[string]any{"title": "Policies"}, &parent)
+	call(t, s, "create_wiki_page", map[string]any{"title": "Refund escalation", "parent": parent.ID,
+		"body": "Refunds over **100 euros** go to the team lead."}, &child)
+	if child.Path != "Policies" || child.Version != 1 {
+		t.Fatalf("create_wiki_page: %+v", child)
+	}
+	var found struct {
+		Pages []struct {
+			ID      string `json:"id"`
+			Path    string `json:"path"`
+			Snippet string `json:"snippet"`
+		} `json:"pages"`
+	}
+	call(t, s, "search_wiki", map[string]any{"query": "refund lead"}, &found)
+	if len(found.Pages) != 1 || found.Pages[0].ID != child.ID || !strings.Contains(found.Pages[0].Snippet, "100 euros") {
+		t.Fatalf("search_wiki: %+v", found)
+	}
+	var got out
+	call(t, s, "get_wiki_page", map[string]any{"page": parent.ID}, &got)
+	if len(got.Subpages) != 1 || got.Subpages[0].ID != child.ID {
+		t.Fatalf("get_wiki_page: %+v", got)
+	}
+	call(t, s, "update_wiki_page", map[string]any{"page": child.ID, "body": "Refunds over 50 euros go to the lead.", "version": 1}, &got)
+	if got.Version != 2 {
+		t.Fatalf("update_wiki_page: %+v", got)
+	}
+	// A stale version is refused with the API's own answer.
+	res := call(t, s, "update_wiki_page", map[string]any{"page": child.ID, "body": "Old", "version": 1}, nil)
+	if !res.IsError || !strings.Contains(text(res), "page_changed") {
+		t.Fatalf("stale update: %s", text(res))
+	}
+	call(t, s, "get_wiki_page", map[string]any{"page": child.ID}, &got)
+	if !strings.Contains(got.Text, "50 euros") {
+		t.Fatalf("after update: %+v", got)
+	}
+
+	// Read only: the write tools are not offered and do not run.
+	ro := e.session(e.APIKey(e.WS, auth.ScopeWikiRead))
+	res, err := ro.CallTool(e.Ctx, &mcp.CallToolParams{Name: "create_wiki_page", Arguments: map[string]any{"title": "Nope"}})
+	if err == nil && !res.IsError {
+		t.Fatal("create_wiki_page ran without wiki:write")
+	}
+	var n int
+	e.Scalar(`SELECT count(*) FROM wiki_pages WHERE workspace_id = $1`, &n, e.WS.ID)
+	if n != 2 {
+		t.Fatalf("pages %d", n)
+	}
+	// Another workspace's key reads nothing of it.
+	other := e.NewWorkspace()
+	os := e.session(e.APIKey(other, auth.ScopeWikiRead))
+	if res := call(t, os, "get_wiki_page", map[string]any{"page": child.ID}, nil); !res.IsError {
+		t.Fatalf("other workspace read the page: %s", text(res))
 	}
 }

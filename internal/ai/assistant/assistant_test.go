@@ -584,3 +584,39 @@ func TestListTeamWorkloadLeavesOutPrivateTeams(t *testing.T) {
 		t.Fatalf("a member's view: %s", line)
 	}
 }
+
+// TestWikiReadTools checks Ollie finds and reads the team's wiki pages and links them.
+func TestWikiReadTools(t *testing.T) {
+	e := newEnv(t, false)
+	var parent, page struct {
+		ID string `json:"id"`
+	}
+	agent := e.WS.Agent.As(e.WS)
+	e.Do("POST", "/v1/wiki/pages", agent, map[string]any{"title": "Policies"}).Want(t, 201).JSON(t, &parent)
+	e.Do("POST", "/v1/wiki/pages", agent, map[string]any{"title": "Refund escalation", "parent_id": parent.ID,
+		"body_html": "<p>Refunds over 100 euros go to the team lead in #billing.</p>"}).Want(t, 201).JSON(t, &page)
+
+	sid := e.session(e.WS.Viewer.As(e.WS))
+	e.M.queue(step{tool: "search_wiki", args: map[string]any{"query": "refund escalation"}},
+		step{tool: "get_wiki_page", args: map[string]any{"page": page.ID}},
+		step{text: "Refunds over 100 euros go to the team lead (Refund escalation)."})
+	st, evs, body := e.stream("/v1/assistant/sessions/"+sid+"/messages", e.WS.Viewer.As(e.WS),
+		map[string]any{"text": "What's our refund escalation process?", "context": map[string]any{"page": "wiki", "wiki_page_id": page.ID}})
+	if st != 200 {
+		t.Fatalf("status %d: %s", st, body)
+	}
+	raw, _ := json.Marshal(e.M.last()["messages"])
+	s := string(raw)
+	if !strings.Contains(s, "in Policies") || !strings.Contains(s, "Refunds over 100 euros go to the team lead") || !strings.Contains(s, "open wiki page id: "+page.ID) {
+		t.Fatalf("wiki not read: %s", s)
+	}
+	refs := 0
+	for _, ev := range find(evs, "tool") {
+		if strings.Contains(string(ev.Data), `"kind":"wiki_page"`) && strings.Contains(string(ev.Data), page.ID) {
+			refs++
+		}
+	}
+	if refs == 0 {
+		t.Fatalf("no wiki refs in %v", find(evs, "tool"))
+	}
+}

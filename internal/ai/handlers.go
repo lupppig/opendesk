@@ -42,6 +42,9 @@ type AIConfig struct {
 	// OwnKey reports that the workspace's LLM calls run on its own provider key and
 	// charge nothing to the AI balance (GET /v1/ai/provider).
 	OwnKey bool `json:"own_key"`
+	// DecisionsOwnKey reports that its decisions run on its own TypeSafe or provider key
+	// and charge nothing to the AI balance (GET /v1/ai/provider "decisions").
+	DecisionsOwnKey bool `json:"decisions_own_key"`
 }
 
 // ModelList is GET /v1/ai/models.
@@ -83,6 +86,17 @@ func (s *Service) register(api huma.API) {
 				out.Models.Default, out.Models.Fast = s.tierModelOn(ctx, rt, out.Features, tierDefault), s.tierModelOn(ctx, rt, out.Features, tierFast)
 				out.Embeddings = s.semantic()
 				s.featureCosts(ctx, out.Features, out.Costs, rt.own)
+				dr, err := s.decisionsFor(ctx, p.WorkspaceID, rt)
+				if err != nil {
+					return nil, httpx.Wrap(err)
+				}
+				if dr.own {
+					out.DecisionsOwnKey = true
+					ownDecisionCosts(out.Costs)
+					if dr.dc.Calibrated() {
+						out.Decisions = hd.DecisionEngine{Provider: "typesafe", Model: dr.dc.Model(), Connected: true}
+					}
+				}
 			}
 			return &struct{ Body AIConfig }{out}, nil
 		})

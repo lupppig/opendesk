@@ -98,7 +98,7 @@ function everywhereOffers(labels: RowLabels): Offer[] {
 function offersOf(d: WorkspaceData, labels: RowLabels, wholeHint: string): { id: "sections" | "inbox" | "teams" | "views" | "mail" | "pages"; offers: Offer[] }[] {
   const it = (kind: SpaceItem["kind"], id: string): SpaceItem => ({ workspace_id: d.id, kind, id });
   const sections = (["favorites", "inbox", "mail", "teams", "views", "workspace"] as SidebarSectionId[])
-    .filter((id) => d.collab || (id !== "mail" && id !== "favorites"))
+    .filter((id) => d.collab || id !== "mail")
     .map((id) => ({ item: it("section", id), label: labels.section(id), icon: sectionIcons[id], hint: wholeHint }));
   const inbox = ticketFolders.map((f) => ({ item: it("ticket_folder", f.id), label: labels.folder(f.id), icon: buildRow(it("ticket_folder", f.id), d, { labels })?.icon }));
   const visible = (d.teams ?? []).filter((x) => canSeeTeam(d, x)).sort((a, b) => Number(d.myTeams.has(b.id)) - Number(d.myTeams.has(a.id)) || a.name.localeCompare(b.name));
@@ -691,7 +691,7 @@ export default function SpaceEditorRoot() {
   const wid = useSession((s) => s.workspaceId);
   const role = useRole();
   const collab = useCollab();
-  const prefs = useSidebarPrefs(collab.enabled);
+  const prefs = useSidebarPrefs();
   const starter = useStarterSpace(target?.kind === "starter" ? wid : null);
   if (!target || !spaces) return null;
   let make: (() => Space) | null = null;
@@ -704,7 +704,7 @@ export default function SpaceEditorRoot() {
   } else if (wid && atLeast(role, "admin") && !starter.isLoading && collab.isFetched) {
     // A first starter holds the workspace's own sections, ready to rearrange.
     const name = useSession.getState().memberships.find((m) => m.workspace.id === wid)?.workspace.name ?? "";
-    const own = defaultSections(collab.enabled ? prefs : null, collab.enabled);
+    const own = defaultSections(prefs, collab.enabled);
     const published = starter.data;
     make = () =>
       published

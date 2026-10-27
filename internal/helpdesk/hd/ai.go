@@ -284,6 +284,21 @@ type AIHooks struct {
 	// (no decision engine, AI off, no AI balance, provider failure) is absent from the map;
 	// an error means tx failed.
 	Decide func(ctx context.Context, tx pgx.Tx, wid, tid uuid.UUID, questions []string) (map[string]float64, error)
+	// Engine is the decision engine of one workspace: Engine(cfg), or Jev on the
+	// workspace's own TypeSafe or OpenRouter key (contracts/ai.md "Provider per
+	// workspace"). ok is false when it cannot tell.
+	Engine func(ctx context.Context, wid uuid.UUID) (e DecisionEngine, ok bool)
+}
+
+// WorkspaceEngine is the decision engine of the workspace: its own key's, else the
+// instance's.
+func WorkspaceEngine(ctx context.Context, cfg *config.Config, wid uuid.UUID) DecisionEngine {
+	if h := GetAIHooks(); h != nil && h.Engine != nil {
+		if e, ok := h.Engine(ctx, wid); ok {
+			return e
+		}
+	}
+	return Engine(cfg)
 }
 
 var aiHooks atomic.Pointer[AIHooks]

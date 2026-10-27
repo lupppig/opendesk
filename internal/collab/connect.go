@@ -44,12 +44,18 @@ const (
 type oauthStartInput struct {
 	Provider string `path:"provider" enum:"google,microsoft"`
 	Body     struct {
-		Visibility string    `json:"visibility,omitempty" enum:"private,shared" doc:"Private (default) or shared"`
-		SharedWith *Audience `json:"shared_with,omitempty"`
-		Name       string    `json:"name,omitempty" maxLength:"64" doc:"How the sidebar names the account; the address by default"`
-		Email      string    `json:"email,omitempty" maxLength:"254" doc:"Login hint for the provider"`
-		AccountID  string    `json:"account_id,omitempty" doc:"Reconnect this account instead of adding one"`
+		Visibility string          `json:"visibility,omitempty" enum:"private,shared" doc:"Private (default) or shared"`
+		SharedWith *Audience       `json:"shared_with,omitempty"`
+		Name       string          `json:"name,omitempty" maxLength:"64" doc:"How the sidebar names the account; the address by default"`
+		Email      string          `json:"email,omitempty" maxLength:"254" doc:"Login hint for the provider"`
+		AccountID  string          `json:"account_id,omitempty" doc:"Reconnect this account instead of adding one"`
+		History    *ConnectHistory `json:"history,omitempty" doc:"Older mail to import once connected; left out, none"`
 	}
+}
+
+// ConnectHistory is the older mail a new account imports once connected ("History").
+type ConnectHistory struct {
+	Since *time.Time `json:"since,omitempty" doc:"Mail received from then on; null or left out imports all mail"`
 }
 
 type oauthStartOutput struct {
@@ -61,21 +67,22 @@ type oauthStartOutput struct {
 
 type imapConnectInput struct {
 	Body struct {
-		Email        string    `json:"email" maxLength:"254"`
-		Name         string    `json:"name,omitempty" maxLength:"64"`
-		DisplayName  string    `json:"display_name,omitempty" maxLength:"64"`
-		IMAPHost     string    `json:"imap_host" maxLength:"253"`
-		IMAPPort     int       `json:"imap_port" minimum:"1" maximum:"65535"`
-		IMAPTLS      string    `json:"imap_tls" enum:"tls,starttls"`
-		IMAPUsername string    `json:"imap_username,omitempty" maxLength:"254"`
-		Password     string    `json:"password" minLength:"1" maxLength:"1024"`
-		SMTPHost     string    `json:"smtp_host" maxLength:"253"`
-		SMTPPort     int       `json:"smtp_port" minimum:"1" maximum:"65535"`
-		SMTPTLS      string    `json:"smtp_tls" enum:"tls,starttls"`
-		SMTPUsername string    `json:"smtp_username,omitempty" maxLength:"254"`
-		SMTPPassword string    `json:"smtp_password,omitempty" maxLength:"1024"`
-		Visibility   string    `json:"visibility,omitempty" enum:"private,shared"`
-		SharedWith   *Audience `json:"shared_with,omitempty"`
+		Email        string          `json:"email" maxLength:"254"`
+		Name         string          `json:"name,omitempty" maxLength:"64"`
+		DisplayName  string          `json:"display_name,omitempty" maxLength:"64"`
+		IMAPHost     string          `json:"imap_host" maxLength:"253"`
+		IMAPPort     int             `json:"imap_port" minimum:"1" maximum:"65535"`
+		IMAPTLS      string          `json:"imap_tls" enum:"tls,starttls"`
+		IMAPUsername string          `json:"imap_username,omitempty" maxLength:"254"`
+		Password     string          `json:"password" minLength:"1" maxLength:"1024"`
+		SMTPHost     string          `json:"smtp_host" maxLength:"253"`
+		SMTPPort     int             `json:"smtp_port" minimum:"1" maximum:"65535"`
+		SMTPTLS      string          `json:"smtp_tls" enum:"tls,starttls"`
+		SMTPUsername string          `json:"smtp_username,omitempty" maxLength:"254"`
+		SMTPPassword string          `json:"smtp_password,omitempty" maxLength:"1024"`
+		Visibility   string          `json:"visibility,omitempty" enum:"private,shared"`
+		SharedWith   *Audience       `json:"shared_with,omitempty"`
+		History      *ConnectHistory `json:"history,omitempty" doc:"Older mail to import once connected; left out, none"`
 	}
 }
 
@@ -161,6 +168,16 @@ func (s *service) startOAuth(ctx context.Context, in *oauthStartInput) (*oauthSt
 			return nil, err
 		}
 		data["visibility"], data["shared"], data["name"] = visibility, encodeAudience(audience), name
+		if b.History != nil {
+			since, err := historySince(b.History.Since)
+			if err != nil {
+				return nil, err
+			}
+			data["history"] = historyAll
+			if since != nil {
+				data["history"] = since.Format(time.RFC3339)
+			}
+		}
 	}
 	verifier := oauth2.GenerateVerifier()
 	if data["verifier"], err = s.sealVerifier(verifier); err != nil {
@@ -179,6 +196,21 @@ func (s *service) startOAuth(ctx context.Context, in *oauthStartInput) (*oauthSt
 	out := &oauthStartOutput{SetCookie: s.stateCookie(nonce, int(auth.OAuthStateTTL.Seconds()))}
 	out.Body.URL = s.authCodeURL(c, state, verifier, hint)
 	return out, nil
+}
+
+// historyAll is the state's history value for all mail; a date is RFC 3339.
+const historyAll = "all"
+
+// decodeHistory reads the state's history value: nil when none was chosen.
+func decodeHistory(v string) *ConnectHistory {
+	if v == historyAll {
+		return &ConnectHistory{}
+	}
+	t, err := time.Parse(time.RFC3339, v)
+	if err != nil {
+		return nil
+	}
+	return &ConnectHistory{Since: &t}
 }
 
 func parseConnectID(s string) (uuid.UUID, error) {
@@ -317,7 +349,7 @@ func (s *service) oauthCallback(w http.ResponseWriter, r *http.Request) {
 		IP: httpx.ClientIP(s.d.Cfg.TrustProxy, s.d.Cfg.ProxyHops)(r)}
 	req := connection{provider: provider, email: ident.Email, name: claims.Data["name"], displayName: ident.Name,
 		visibility: claims.Data["visibility"], audience: decodeAudience(claims.Data["shared"]), creds: creds,
-		config: accountConfig{Scopes: ident.Scopes}}
+		config: accountConfig{Scopes: ident.Scopes}, history: decodeHistory(claims.Data["history"])}
 	if v := claims.Data["account_id"]; v != "" {
 		id, err := uuid.Parse(v)
 		if err != nil {
@@ -353,12 +385,14 @@ type connection struct {
 	audience    Audience
 	config      accountConfig
 	creds       credentials
-	accountID   *uuid.UUID // reconnect this account
+	accountID   *uuid.UUID      // reconnect this account
+	history     *ConnectHistory // older mail to import; nil = none (an import already there is kept)
 }
 
 // saveConnection creates the account, or updates the one reconnected (an address the
-// caller already connected counts as a reconnect), audits, publishes and queues the
-// first sync. An address someone else connected in the workspace is errConflict.
+// caller already connected counts as a reconnect), starts the history import chosen when
+// the account has none, audits, publishes and queues the first sync. An address someone
+// else connected in the workspace is errConflict.
 func (s *service) saveConnection(ctx context.Context, p *auth.Principal, req connection) (uuid.UUID, error) {
 	sealed, err := s.sealCreds(req.creds)
 	if err != nil {
@@ -456,6 +490,11 @@ func (s *service) saveConnection(ctx context.Context, p *auth.Principal, req con
 			"provider": req.provider, "visibility": visibility, "reconnect": existing != nil}); err != nil {
 			return err
 		}
+		if req.history != nil {
+			if _, err := startHistory(ctx, tx, p, id, req.history.Since, false, false); err != nil {
+				return err
+			}
+		}
 		if err := s.publishAccounts(ctx, tx, wid, id, nil); err != nil {
 			return err
 		}
@@ -493,6 +532,14 @@ func (s *service) connectIMAP(ctx context.Context, in *imapConnectInput) (*accou
 	if err != nil {
 		return nil, err
 	}
+	var history *ConnectHistory
+	if b.History != nil {
+		since, err := historySince(b.History.Since)
+		if err != nil {
+			return nil, err
+		}
+		history = &ConnectHistory{Since: since}
+	}
 	display := ""
 	if strings.TrimSpace(b.DisplayName) != "" {
 		if display, err = displayname.Validate("Display name", b.DisplayName, displayname.Workspace, true); err != nil {
@@ -513,7 +560,7 @@ func (s *service) connectIMAP(ctx context.Context, in *imapConnectInput) (*accou
 		return nil, httpx.E(422, "connection_failed", safeError(err))
 	}
 	id, err := s.saveConnection(ctx, p, connection{provider: ProviderIMAP, email: address, name: name, displayName: display,
-		visibility: visibility, audience: audience, config: cfg, creds: creds})
+		visibility: visibility, audience: audience, config: cfg, creds: creds, history: history})
 	if err != nil {
 		return nil, err
 	}

@@ -8,11 +8,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // Provider HTTPS calls (Gmail and Microsoft Graph): the account's access token, one
-// refresh on 401, and provider errors reduced to safe, classified messages.
+// refresh on 401, a short wait and another try while the provider is busy, and provider
+// errors reduced to safe, classified messages.
 
 // restRequest is one provider call.
 type restRequest struct {
@@ -28,13 +31,16 @@ type restRequest struct {
 // errTooLarge is a response over the request's limit (a message over maxRawBytes).
 var errTooLarge = errors.New("the message is too large to import")
 
-// call runs a provider request and returns the response body of a 2xx answer.
+// call runs a provider request and returns the response body of a 2xx answer. A busy
+// provider (a rate limit, or a 5xx to a read) is asked again after each of s.busyWaits, or
+// after its Retry-After when that is no longer than maxBusyWait.
 func (s *service) call(ctx context.Context, a *accountRow, label string, r restRequest) ([]byte, error) {
 	limit := r.limit
 	if limit == 0 {
 		limit = 1 << 20
 	}
-	for attempt := 0; attempt < 2; attempt++ {
+	refreshed, waited := false, 0
+	for {
 		token, err := s.accessToken(ctx, a)
 		if err != nil {
 			return nil, err
@@ -67,24 +73,59 @@ func (s *service) call(ctx context.Context, a *accountRow, label string, r restR
 		if err != nil {
 			return nil, errProviderUnavailable
 		}
-		if resp.StatusCode == http.StatusUnauthorized && attempt == 0 {
+		if resp.StatusCode == http.StatusUnauthorized {
+			if refreshed {
+				return nil, errReconnect
+			}
 			if err := s.expireToken(ctx, a); err != nil {
 				return nil, err
 			}
+			refreshed = true
 			continue
 		}
-		if resp.StatusCode == http.StatusUnauthorized {
-			return nil, errReconnect
-		}
 		if resp.StatusCode/100 != 2 {
-			return nil, httpFailure(label, resp.StatusCode, body)
+			err := httpFailure(label, resp.StatusCode, body)
+			var pe *providerError
+			if waited < len(s.busyWaits) && errors.As(err, &pe) && pe.busy && (pe.limited || r.method == http.MethodGet) {
+				wait, ok := retryAfter(resp.Header, s.busyWaits[waited])
+				if ok {
+					waited++
+					t := time.NewTimer(wait)
+					select {
+					case <-ctx.Done():
+						t.Stop()
+						return nil, ctx.Err()
+					case <-t.C:
+					}
+					continue
+				}
+			}
+			return nil, err
 		}
 		if int64(len(body)) > limit {
 			return nil, errTooLarge
 		}
 		return body, nil
 	}
-	return nil, errReconnect
+}
+
+// maxBusyWait is the longest Retry-After a call waits out; a longer one is left to the
+// next sync pass.
+const maxBusyWait = 15 * time.Second
+
+// retryAfter is the wait before asking again: the provider's Retry-After in seconds when
+// it gives one (false past maxBusyWait), else def.
+func retryAfter(h http.Header, def time.Duration) (time.Duration, bool) {
+	v := strings.TrimSpace(h.Get("Retry-After"))
+	if v == "" {
+		return def, true
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		return def, true
+	}
+	d := time.Duration(n) * time.Second
+	return d, d <= maxBusyWait
 }
 
 // callJSON sends in as JSON (when not nil) and decodes the answer into out (when not nil).
@@ -162,8 +203,10 @@ func httpFailure(label string, status int, body []byte) error {
 	}
 	msg += ")."
 	switch {
-	case status == http.StatusTooManyRequests || status >= 500 || has("rateLimitExceeded", "userRateLimitExceeded", "ApplicationThrottled"):
-		return &providerError{msg: label + " is busy. We will try again.", status: status}
+	case status == http.StatusTooManyRequests || has("rateLimitExceeded", "userRateLimitExceeded", "ApplicationThrottled"):
+		return &providerError{msg: label + " is busy. We will try again.", status: status, busy: true, limited: true}
+	case status >= 500:
+		return &providerError{msg: label + " is busy. We will try again.", status: status, busy: true}
 	case status == http.StatusNotFound || has("ErrorItemNotFound"):
 		return &providerError{msg: msg, status: status, permanent: true, notFound: true}
 	case status == http.StatusForbidden && has("insufficientPermissions", "ACCESS_TOKEN_SCOPE_INSUFFICIENT", "ErrorAccessDenied", "authError"):

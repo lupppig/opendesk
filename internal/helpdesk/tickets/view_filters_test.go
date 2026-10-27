@@ -3,6 +3,7 @@ package tickets_test
 import (
 	"encoding/json"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -195,5 +196,118 @@ func TestLabelRenameRewritesViewLists(t *testing.T) {
 	}
 	if f := filters(untouched); f["tag"] != "Other" || f["tag_not"] != "Refunded" {
 		t.Fatalf("untouched %v", f)
+	}
+}
+
+// Leaving out contacts and companies, in the list, in saved views, their counts and bulk
+// queries. A saved view names only the workspace's own contacts and companies.
+func TestListLeavesOutContactsAndCompanies(t *testing.T) {
+	e, ws := newFullEnv(t)
+	agent := ws.Agent.As(ws)
+	company := func(wid uuid.UUID, name string) uuid.UUID {
+		id := ids.New()
+		e.Exec(`INSERT INTO companies (id, workspace_id, name) VALUES ($1, $2, $3)`, id, wid, name)
+		return id
+	}
+	contact := func(wid uuid.UUID, name string, companyID *uuid.UUID) uuid.UUID {
+		id := ids.New()
+		e.Exec(`INSERT INTO contacts (id, workspace_id, name, email, company_id) VALUES ($1, $2, $3, $4, $5)`,
+			id, wid, name, strings.ToLower(name)+"-"+id.String()[24:]+"@customer.test", companyID)
+		return id
+	}
+	acme, globex := company(ws.ID, "Acme"), company(ws.ID, "Globex")
+	ann, bob, cat, dan := contact(ws.ID, "Ann", &acme), contact(ws.ID, "Bob", &acme), contact(ws.ID, "Cat", &globex), contact(ws.ID, "Dan", nil)
+	from := func(c uuid.UUID) uuid.UUID {
+		return createTicket(t, e, ws, map[string]any{"subject": "Hello", "kind": "note", "contact_id": c.String()}).ID
+	}
+	ta, tb, tc, td := from(ann), from(bob), from(cat), from(dan)
+	tn := createTicket(t, e, ws, map[string]any{"subject": "No contact", "kind": "note"}).ID
+	if getTicket(t, e, ws, tn).Contact != nil {
+		t.Fatal("ticket has a contact")
+	}
+
+	cases := []struct {
+		q    string
+		want []uuid.UUID
+	}{
+		{"contact_not=" + ann.String(), []uuid.UUID{tb, tc, td, tn}},
+		{"contact_not=" + url.QueryEscape(" "+ann.String()+" , ,"+cat.String()), []uuid.UUID{tb, td, tn}},
+		{"company_not=" + acme.String(), []uuid.UUID{tc, td, tn}},
+		{"company_not=" + acme.String() + "," + globex.String(), []uuid.UUID{td, tn}},
+		{"company_not=" + acme.String() + "&contact_not=" + dan.String(), []uuid.UUID{tc, tn}},
+		{"contact_id=" + ann.String() + "&company_not=" + acme.String(), []uuid.UUID{}},
+		{"contact_not=" + ids.New().String(), []uuid.UUID{ta, tb, tc, td, tn}},
+	}
+	for _, cs := range cases {
+		if got := idsOf(list(t, e, agent, cs.q)); !sameSet(got, cs.want) {
+			t.Errorf("%q: got %v want %v", cs.q, got, cs.want)
+		}
+	}
+	tooMany := make([]string, 51)
+	for i := range tooMany {
+		tooMany[i] = ids.New().String()
+	}
+	for _, bad := range []string{"contact_not=nope", "company_not=" + acme.String() + ",nope", "contact_not=" + strings.Join(tooMany, ",")} {
+		if res := e.Do("GET", "/v1/tickets?"+bad, agent, nil); res.Status != 422 {
+			t.Errorf("%.40s: %d %s", bad, res.Status, res.Body)
+		}
+	}
+
+	type view struct {
+		ID      uuid.UUID        `json:"id"`
+		Filters hd.TicketFilters `json:"filters"`
+	}
+	newView := func(name string, filters map[string]any) view {
+		t.Helper()
+		var v view
+		e.Do("POST", "/v1/views", ws.Admin.As(ws), map[string]any{"name": name, "shared": true, "filters": filters}).Want(t, 201).JSON(t, &v)
+		return v
+	}
+	notThem := newView("Not Ann or Cat", map[string]any{"contact_not": " " + ann.String() + ", " + cat.String() + "," + ann.String()})
+	if notThem.Filters.ContactNot != ann.String()+","+cat.String() {
+		t.Fatalf("stored contact_not %q", notThem.Filters.ContactNot)
+	}
+	notAcme := newView("Not Acme", map[string]any{"company_not": acme.String(), "status": []string{"open"}})
+	if notAcme.Filters.CompanyNot != acme.String() {
+		t.Fatalf("stored company_not %q", notAcme.Filters.CompanyNot)
+	}
+	// The ids a view names are the workspace's own contacts and companies.
+	other := e.NewWorkspace()
+	otherCompany := company(other.ID, "Initech")
+	otherContact := contact(other.ID, "Eve", &otherCompany)
+	for _, bad := range []map[string]any{{"contact_not": otherContact.String()}, {"company_not": otherCompany.String()},
+		{"contact_not": acme.String()}, {"company_not": ann.String()}, {"contact_not": "nope"}, {"company_not": strings.Join(tooMany, ",")}} {
+		e.Do("POST", "/v1/views", ws.Admin.As(ws), map[string]any{"name": "Bad", "shared": true, "filters": bad}).Want(t, 422)
+	}
+	e.Do("PATCH", "/v1/views/"+notAcme.ID.String(), ws.Admin.As(ws), map[string]any{"filters": map[string]any{"company_not": otherCompany.String()}}).Want(t, 422)
+
+	want := map[uuid.UUID][]uuid.UUID{
+		notThem.ID: {tb, td, tn},
+		notAcme.ID: {tc, td, tn},
+	}
+	var counts struct {
+		Views map[string]int `json:"views"`
+	}
+	e.Do("GET", "/v1/tickets/counts", agent, nil).Want(t, 200).JSON(t, &counts)
+	for id, w := range want {
+		got := idsOf(list(t, e, agent, "view_id="+id.String()))
+		if !sameSet(got, w) {
+			t.Errorf("view %s: got %v want %v", id, got, w)
+		}
+		if counts.Views[id.String()] != len(got) {
+			t.Errorf("view %s counts %d, lists %d", id, counts.Views[id.String()], len(got))
+		}
+	}
+	// Explicit filters replace the view's own for the same key.
+	if got := idsOf(list(t, e, agent, "view_id="+notThem.ID.String()+"&contact_not="+bob.String())); !sameSet(got, []uuid.UUID{ta, tc, td, tn}) {
+		t.Fatalf("override %v", got)
+	}
+
+	// A bulk query leaves out the same tickets.
+	var out struct{ Updated int }
+	e.Do("POST", "/v1/tickets/bulk", agent, map[string]any{"query": map[string]any{"company_not": acme.String(), "contact_not": dan.String()},
+		"patch": map[string]any{"priority": "high"}}).Want(t, 200).JSON(t, &out)
+	if out.Updated != 2 || getTicket(t, e, ws, tc).Priority != "high" || getTicket(t, e, ws, ta).Priority != "normal" || getTicket(t, e, ws, td).Priority != "normal" {
+		t.Fatalf("bulk updated %d", out.Updated)
 	}
 }

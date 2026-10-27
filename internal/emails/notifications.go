@@ -792,6 +792,8 @@ func providerName(p string) string {
 		return "Anthropic"
 	case "openrouter":
 		return "OpenRouter"
+	case "typesafe":
+		return "TypeSafe"
 	}
 	return "AI provider"
 }

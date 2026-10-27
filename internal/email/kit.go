@@ -99,6 +99,9 @@ func CleanFilename(name, contentType string) string { return cleanFilename(name,
 // BaseSubject drops reply prefixes ("Re:", "Fwd:") and ticket tags.
 func BaseSubject(s string) string { return baseSubject(s) }
 
+// NoSubject is the subject of a ticket opened by an email without one.
+const NoSubject = "(no subject)"
+
 // NormalizeMsgID returns "<id>" from a header value, or "".
 func NormalizeMsgID(v string) string { return normalizeMsgID(v) }
 

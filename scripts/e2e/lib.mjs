@@ -80,7 +80,9 @@ export async function mailLink(path, to, timeoutMs = 10_000) {
       : fs.readFileSync(cfg.apiLog, "utf8").split("\n").filter((l) => l.includes("mail (log driver)")).map((l) => ({ to: l, body: l }));
     for (const m of mails.reverse()) {
       if (to && !m.to.includes(to)) continue;
-      const found = [...qpDecode(m.body).matchAll(re)];
+      // The SMTP sink already decodes each MIME part before writing it.
+      const body = cfg.mailSink ? m.body : qpDecode(m.body);
+      const found = [...body.matchAll(re)];
       if (found.length) return found[found.length - 1][0].replace(/&amp;/g, "&");
     }
     if (Date.now() > deadline) throw new Error(`no ${path} mail for ${to ?? "anyone"}`);

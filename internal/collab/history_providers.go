@@ -153,7 +153,7 @@ func (s *service) gmailHistory(ctx context.Context, r *historyRun, g *gmailProvi
 			case err == nil:
 				m := res[i].m
 				fetched = append(fetched, &newMessage{RemoteID: todo[i], ThreadRemoteID: m.ThreadID, Raw: res[i].raw, Date: m.date(),
-					State: r.p.gmailState(m.LabelIDs)})
+					State: r.p.gmailState(m.LabelIDs), Signals: gmailSignals(m.LabelIDs)})
 			case isNotFound(err):
 				// Deleted since it was listed.
 			case err == errTooLarge:

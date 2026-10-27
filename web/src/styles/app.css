@@ -60,6 +60,10 @@
   --reply-line: color-mix(in oklab, var(--tone-blue-solid) 30%, var(--surface));
   --note: color-mix(in oklab, var(--tone-amber-solid) 10%, var(--surface));
   --note-line: color-mix(in oklab, var(--tone-amber-solid) 60%, var(--surface));
+  /* The conversation layout's message width (Settings → Profile → Appearance): the
+     customer's cards at the start, the team's at the end, each this share of the timeline,
+     and never under 26rem, so a header keeps its name in a narrow pane (the offset shrinks). */
+  --conversation-card: max(80%, 26rem);
   --focus: rgb(10 10 10 / 0.14);
   --focus-line: #a3a3a3;
   --ok: #16a34a;
@@ -329,6 +333,8 @@
   --animate-slide-in-right: slide-in-right 220ms var(--ease-out-soft);
   --animate-shimmer: shimmer 1.6s ease-in-out infinite;
   --animate-pulse-soft: pulse-soft 2s ease-in-out infinite;
+  /* A teammate on a ticket right now: their avatar's green ring breathes, slowly. */
+  --animate-live-ring: live-ring 2.4s ease-in-out infinite;
   /* A customer waiting in live chat with nobody on it: a slow red wash (under one cycle a
      second, far from flashing), a glowing edge and a ping on the timer dot. */
   --animate-urgent-wash: urgent-wash 2.8s ease-in-out infinite;
@@ -532,6 +538,10 @@
   0%, 100% { opacity: 1; }
   50% { opacity: 0.45; }
 }
+@keyframes live-ring {
+  0%, 100% { box-shadow: 0 0 0 1.5px var(--tone-green-solid), 0 0 0 1.5px transparent; }
+  50% { box-shadow: 0 0 0 1.5px var(--tone-green-solid), 0 0 0 3.5px var(--tone-green-line); }
+}
 
 @layer base {
   html {
@@ -585,6 +595,13 @@
   button:not(:disabled),
   [role="button"]:not([aria-disabled="true"]) {
     cursor: pointer;
+  }
+  /* While a pane edge is dragged (components/ui/resize-handle.tsx): one cursor, no selection, nothing easing behind it. */
+  [data-pane-resizing],
+  [data-pane-resizing] * {
+    cursor: col-resize !important;
+    user-select: none !important;
+    transition: none !important;
   }
   /* Thin, quiet scrollbars. */
   * {
@@ -699,5 +716,19 @@
     height: 0;
     pointer-events: none;
     color: var(--fg-4);
+  }
+}
+
+/*
+ * On touch screens every field people type in is at least 16px, the size below which
+ * iOS Safari zooms the page in on focus. Unlayered, so it outranks the utilities that
+ * set the denser desktop sizes; pointers that aren't coarse keep those sizes.
+ */
+@media (pointer: coarse) {
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]),
+  textarea,
+  select,
+  [contenteditable]:not([contenteditable="false"]) {
+    font-size: max(16px, 1em);
   }
 }

@@ -73,6 +73,9 @@ func RunTrigger(ctx context.Context, d *deps.Deps, a jobs.TicketTriggerArgs) err
 			if err := run.automations(ctx, a.Trigger, a.MessageID, 0); err != nil {
 				return err
 			}
+			if run.gone {
+				return nil // deleted or merged into an earlier ticket: nothing else runs on it
+			}
 		}
 		// A ticket that moved to another team unassigned is assigned in the new team's pool.
 		if a.Trigger == jobs.TriggerTicketCreated || a.Trigger == jobs.TriggerCustomerReplied || updated("team_id") || run.teamMoved {
@@ -169,6 +172,9 @@ type triggerRun struct {
 	teamMoved bool
 	// messageID is the message the run is about, if any.
 	messageID *uuid.UUID
+	// gone is set when an automation deleted the ticket or merged it into another: nothing
+	// else runs on it.
+	gone bool
 }
 
 // automations evaluates the enabled automations for trigger in position order.
@@ -218,6 +224,9 @@ func (r *triggerRun) automations(ctx context.Context, trigger string, messageID 
 		changed = append(changed, c...)
 		if _, err := r.tx.Exec(ctx, `UPDATE automations SET run_count = run_count + 1 WHERE workspace_id = $1 AND id = $2`, r.wid, a.ID); err != nil {
 			return err
+		}
+		if r.gone {
+			return nil
 		}
 	}
 	if len(changed) == 0 {
@@ -401,6 +410,24 @@ func compare(op, have, want string) bool {
 // ticket fields it changed.
 func (r *triggerRun) apply(ctx context.Context, a automation, f facts) ([]string, error) {
 	actor := Actor{Type: "automation", Meta: map[string]any{"automation_id": a.ID.String(), "automation_name": a.Name}}
+	// Deleting wins over the rest: no other step of the automation runs (no reply goes out
+	// for a ticket about to vanish), and nothing else runs on the ticket after it.
+	if slices.ContainsFunc(a.Actions, func(act hd.Action) bool { return act.Type == "delete_ticket" }) {
+		r.gone = true
+		return nil, deleteTicket(ctx, r.tx, r.wid, r.tid)
+	}
+	// Merging wins over the rest: when the ticket joins an earlier one, no other step of
+	// the automation runs on it. With nothing to merge into, the other steps run as usual.
+	if i := slices.IndexFunc(a.Actions, func(act hd.Action) bool { return act.Type == "merge_into_open_ticket" }); i >= 0 {
+		merged, err := r.mergeIntoOpenTicket(ctx, actor, a.Actions[i])
+		if err != nil {
+			return nil, fmt.Errorf("automation %s: merge_into_open_ticket: %w", a.ID, err)
+		}
+		if merged {
+			r.gone = true
+			return nil, nil
+		}
+	}
 	var patch Patch
 	var changed []string
 	for _, act := range a.Actions {

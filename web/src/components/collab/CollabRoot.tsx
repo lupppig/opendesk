@@ -1,5 +1,5 @@
-// What Collab adds to the shell when it is on: the customize sidebar dialog and the
-// floating composer for new mail. Loaded only for workspaces with Collab.
+// What Collab adds to the shell when it is on: the floating composer for new mail. Loaded
+// only for workspaces with Collab. Customize sidebar is every member's (app/AppLayout.tsx).
 
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { ChevronUp, Minus, X } from "lucide-react";
@@ -10,7 +10,6 @@ import { compose, useCompose } from "@/lib/collab/compose";
 import { defaultIdentity, identitySignature } from "@/lib/collab/identities";
 import { springs } from "@/lib/motion";
 import { Tooltip } from "@/components/ui/tooltip";
-import { CustomizeSidebar } from "./CustomizeSidebar";
 import { draftFromMessage, MailComposer, startDraft } from "./MailComposer";
 
 function ComposeDock() {
@@ -82,10 +81,5 @@ function ComposeDock() {
 }
 
 export default function CollabRoot() {
-  return (
-    <>
-      <CustomizeSidebar />
-      <ComposeDock />
-    </>
-  );
+  return <ComposeDock />;
 }

@@ -32,6 +32,10 @@ export type TicketListQuery = ListQuery & {
   channel?: T.Channel;
   channel_not?: T.Channel[];
   contact_id?: string;
+  /** Contact ids, comma separated: tickets whose contact is none of them. */
+  contact_not?: string;
+  /** Company ids, comma separated: tickets whose contact belongs to none of them. */
+  company_not?: string;
   view_id?: string;
   q?: string;
   spam?: boolean | "any";
@@ -67,6 +71,8 @@ export type ChangelogEntryBody = {
 };
 
 export type TicketBulkQuery = Omit<TicketListQuery, "limit" | "cursor" | "sort" | "order">;
+/** A list's filters, as GET /v1/tickets/summary counts them. */
+export type TicketSummaryQuery = TicketBulkQuery;
 
 /** Flattens custom field filters into `field.<key>[<op>]` query parameters. */
 export function fieldQuery(fields?: T.FieldFilter[]): Record<string, string> {
@@ -108,6 +114,11 @@ export type CreateTicketBody = {
   tags?: string[];
   fields?: T.FieldValues;
   status?: T.TicketStatus;
+  /** An email reply's copies. */
+  cc?: string[];
+  bcc?: string[];
+  /** Files on the first message (POST /v1/attachments). */
+  attachment_ids?: string[];
 };
 
 export type SendMessageBody = {
@@ -483,6 +494,8 @@ export const api = {
   tickets: {
     list: (q: TicketListQuery) => http.get<T.Page<T.Ticket>>("/v1/tickets", { query: listQuery(q) }),
     counts: () => http.get<T.TicketCounts>("/v1/tickets/counts"),
+    /** Counts the whole list for these filters, all pages together. */
+    summary: (q: TicketSummaryQuery) => http.get<T.TicketListSummary>("/v1/tickets/summary", { query: listQuery(q) }),
     create: (b: CreateTicketBody) => creatingTicket(http.create<T.Ticket>("/v1/tickets", b)),
     get: (id: string) => http.get<T.Ticket>(`/v1/tickets/${encodeURIComponent(id)}`),
     update: (id: string, patch: T.TicketPatch) => http.patch<T.Ticket>(`/v1/tickets/${id}`, patch),
@@ -579,9 +592,23 @@ export const api = {
     },
     categories: () => http.get<T.ChangelogCategory[]>("/v1/changelog/categories"),
   },
+  wiki: {
+    tree: () => http.get<T.Page<T.WikiNode>>("/v1/wiki/pages"),
+    get: (id: string) => http.get<T.WikiPage>(`/v1/wiki/pages/${id}`),
+    create: (b: { parent_id?: string | null; title?: string; icon?: string; body_html?: string; position?: number }) => http.create<T.WikiPage>("/v1/wiki/pages", b),
+    /** `keepalive` lets a save started as the page closes finish (contracts/wiki.md "Editing together"). */
+    update: (id: string, b: T.WikiPagePatch, opts?: { keepalive?: boolean }) => http.patch<T.WikiPage>(`/v1/wiki/pages/${id}`, b, opts),
+    move: (id: string, b: { parent_id: string | null; position: number }) => http.post<T.WikiPage>(`/v1/wiki/pages/${id}/move`, b),
+    remove: (id: string) => http.del(`/v1/wiki/pages/${id}`),
+    revisions: (id: string) => http.get<T.Page<T.WikiRevision>>(`/v1/wiki/pages/${id}/revisions`),
+    revision: (id: string, rid: string) => http.get<T.WikiRevision>(`/v1/wiki/pages/${id}/revisions/${rid}`),
+    restore: (id: string, rid: string) => http.post<T.WikiPage>(`/v1/wiki/pages/${id}/revisions/${rid}/restore`, {}),
+    search: (q: string, limit = 20) => http.get<T.Page<T.WikiSearchHit>>("/v1/wiki/search", { query: { q, limit } }),
+  },
   search: (q: string) => http.get<T.SearchResults>("/v1/search", { query: { q } }),
   reports: {
     overview: (r: T.ReportsQuery) => http.get<T.ReportsOverview>("/v1/reports/overview", { query: r }),
+    agents: (r: T.ReportsQuery) => http.get<T.ReportsAgents>("/v1/reports/agents", { query: r }),
   },
   attachments: {
     upload: (file: File) => {
@@ -654,6 +681,12 @@ export const api = {
       test: (b: T.AIProviderKeyInput) => http.post<T.AIProviderTest>("/v1/ai/provider/test", b),
       set: (b: T.AIProviderKeyInput) => http.put<T.AIProvider>("/v1/ai/provider", b),
       remove: () => http.del("/v1/ai/provider"),
+      /** The workspace's own TypeSafe key, for decisions only. */
+      decisions: {
+        test: (b: { api_key: string }) => http.post<T.AIProviderTest>("/v1/ai/provider/decisions/test", b),
+        set: (b: { api_key: string }) => http.put<T.AIProvider>("/v1/ai/provider/decisions", b),
+        remove: () => http.del("/v1/ai/provider/decisions"),
+      },
     },
     agent: {
       report: (r: T.ReportsRange) => http.get<T.AgentReport>("/v1/ai/agent/report", { query: r }),
@@ -743,6 +776,7 @@ export const api = {
       previewIdentity: (id: string, b: T.MailIdentityPreviewBody) => http.post<T.MailIdentityPreview>(`/v1/collab/accounts/${id}/identities/preview`, b),
       removeIdentity: (id: string, identityId: string) => http.del<T.MailAccount>(`/v1/collab/accounts/${id}/identities/${identityId}`),
       /** Microsoft: the account's other addresses, when Microsoft shares them. */
+      refreshIdentities: (id: string) => http.post<T.MailAccount>(`/v1/collab/accounts/${id}/identities/refresh`),
       identitySuggestions: (id: string) => http.get<{ addresses: string[] }>(`/v1/collab/accounts/${id}/identities/suggestions`),
       folders: (id: string) => http.get<T.MailFolder[] | T.Page<T.MailFolder>>(`/v1/collab/accounts/${id}/folders`),
       /** kind label on Microsoft makes an Outlook category; color is a tone, labels only. */
@@ -758,7 +792,7 @@ export const api = {
       list: (q: CollabThreadQuery) => http.get<T.Page<T.MailThread>>("/v1/collab/threads", { query: q }),
       get: (id: string) => http.get<T.MailThreadDetail>(`/v1/collab/threads/${id}`),
       /** All or nothing: a thread the caller cannot act on is 404. */
-      action: (b: { thread_ids: string[]; action: T.MailThreadAction; folder_id?: string }) =>
+      action: (b: { thread_ids: string[]; action: T.MailThreadAction; folder_id?: string; category?: string }) =>
         http.post<{ threads: T.MailThread[] }>("/v1/collab/threads/actions", b),
       share: (id: string, shares: T.MailAudience) => http.put<T.MailThreadDetail>(`/v1/collab/threads/${id}/shares`, { shares }),
       assign: (id: string, user_ids: string[]) => http.put<T.MailThreadDetail>(`/v1/collab/threads/${id}/assignees`, { user_ids }),
@@ -771,6 +805,22 @@ export const api = {
     /** One address across the conversations you see; exclude: the open one, left out of threads. */
     person: (q: { email: string; exclude?: string; limit?: number }) => http.get<T.MailPerson>("/v1/collab/person", { query: q }),
     counts: () => http.get<T.MailCounts>("/v1/collab/counts"),
+    /** Inbox categories (contracts/collab.md "Categories"). */
+    categories: {
+      get: () => http.get<T.MailCategorySettings>("/v1/collab/categories"),
+      setWorkspace: (b: { enabled: boolean; categories?: T.MailCategory[]; locked?: boolean }) => http.put<T.MailCategorySettings>("/v1/collab/categories/workspace", b),
+      removeWorkspace: () => http.del<T.MailCategorySettings>("/v1/collab/categories/workspace"),
+      setTeam: (teamId: string, b: { enabled: boolean; categories?: T.MailCategory[] }) => http.put<T.MailCategorySettings>(`/v1/collab/categories/teams/${teamId}`, b),
+      removeTeam: (teamId: string) => http.del<T.MailCategorySettings>(`/v1/collab/categories/teams/${teamId}`),
+      orderTeams: (team_ids: string[]) => http.put<T.MailCategorySettings>("/v1/collab/categories/team-order", { team_ids }),
+      /** Ollie's proposal, not saved: from an account's inbox and what about says. */
+      suggest: (b: { account_id?: string; about?: string }) => http.post<{ categories: T.MailCategory[] }>("/v1/collab/categories/suggest", b),
+      setAccount: (id: string, b: { mode: T.MailAccountCategories["mode"]; categories?: T.MailCategory[]; ai?: boolean }) =>
+        http.put<T.MailAccount>(`/v1/collab/accounts/${id}/categories`, b),
+      rules: (id: string) => http.get<{ rules: T.MailCategoryRule[] }>(`/v1/collab/accounts/${id}/category-rules`),
+      addRule: (id: string, b: { sender: string; category: string }) => http.post<T.MailCategoryRule>(`/v1/collab/accounts/${id}/category-rules`, b),
+      removeRule: (id: string, ruleId: string) => http.del(`/v1/collab/accounts/${id}/category-rules/${ruleId}`),
+    },
     /** Sent through the provider within the request (502 send_failed, nothing stored). */
     send: (b: CollabSendBody) => http.create<T.MailMessage>("/v1/collab/messages", b),
     /** Read from the message's source at the provider (502 provider_error). */
@@ -825,6 +875,8 @@ export type CollabThreadQuery = {
   to?: string;
   /** Only conversations with this person on them; without account_id, every conversation you see. */
   with?: string;
+  /** One tab of the inbox (box inbox): a category key. */
+  category?: string;
   limit?: number;
   cursor?: string | null;
 };
@@ -837,6 +889,8 @@ export type CollabOAuthStartBody = {
   email?: string;
   /** Reconnect this account (manage). */
   account_id?: string;
+  /** Older mail to import once connected (since null: all of it); left out, none. */
+  history?: T.ConnectHistory;
 };
 
 export type CollabImapBody = {
@@ -855,6 +909,8 @@ export type CollabImapBody = {
   smtp_password?: string;
   visibility: "private" | "shared";
   shared_with?: T.MailAudience;
+  /** Older mail to import once connected (since null: all of it); left out, none. */
+  history?: T.ConnectHistory;
 };
 
 export type CollabAccountPatch = {

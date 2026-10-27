@@ -40,7 +40,7 @@ Each call is charged on its real cost on the workspace's chosen model: the provi
 
 `costs` is what a typical call of each feature costs on the workspace's chosen models, in US dollars (numbers with up to 6 decimals). Features decided by Jev (`triage`, `decide`, `answer_check`) keep a fixed typical cost. `metered` is true: each call is charged on its real cost.
 
-`decisions` is the decision engine: `typesafe` (Jev by TypeSafe), `llm` (the configured AI model) or `none`.
+`decisions` is the workspace's decision engine: `typesafe` (Jev by TypeSafe), `llm` (the configured AI model) or `none`. `decisions_own_key` is true when decisions run on the workspace's own OpenRouter or TypeSafe key (or the AI model on its own key); their `costs` are then 0.
 
 `PATCH /v1/ai/settings` accepts any subset of `features`. `tone` is `friendly`, `professional`, `concise` or free text up to 200 characters; `instructions` up to 2,000 characters. `model`, `fast_model` and `widget_model` are `""` (the instance default) or an `id` from `GET /v1/ai/models`. `widget_monthly_cap_usd` is what the AI agent may spend a calendar month (UTC), in US dollars: 0 to 10,000, rounded to cents, 0 for no cap.
 

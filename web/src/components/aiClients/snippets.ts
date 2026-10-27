@@ -76,5 +76,5 @@ export function clientSetups(url: string, key?: string | null): ClientSetup[] {
 }
 
 /** Read scopes for an assistant that only reads; write adds what replying and drafting need. */
-export const READ_SCOPES = ["tickets:read", "contacts:read", "kb:read"];
-export const WRITE_SCOPES = [...READ_SCOPES, "tickets:write", "contacts:write", "kb:write"];
+export const READ_SCOPES = ["tickets:read", "contacts:read", "kb:read", "wiki:read"];
+export const WRITE_SCOPES = [...READ_SCOPES, "tickets:write", "contacts:write", "kb:write", "wiki:write"];

@@ -68,3 +68,42 @@ func TestValidatePhraseConditions(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateMergeAction(t *testing.T) {
+	validate := func(as ...hd.Action) ([]hd.Action, error) {
+		return hd.ValidateActions(context.Background(), nil, uuid.Nil, as)
+	}
+	off := false
+	got, err := validate(
+		hd.Action{Type: "merge_into_open_ticket", Value: ""},
+		hd.Action{Type: "merge_into_open_ticket", Value: " 30 ", SameSubject: &off, Field: "x"},
+		hd.Action{Type: "mark_spam", Value: "", SameSubject: &off},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The window defaults to 7 days and same_subject to true; both are stored.
+	if got[0].Value != "7" || got[0].SameSubject == nil || !*got[0].SameSubject || got[0].MergeWindowDays() != 7 {
+		t.Fatalf("defaults %+v", got[0])
+	}
+	if got[1].Value != "30" || got[1].MergeSameSubject() || got[1].Field != "" || got[2].SameSubject != nil {
+		t.Fatalf("stored %+v, %+v", got[1], got[2])
+	}
+	for _, v := range []string{"0", "31", "-1", "7d", "1.5"} {
+		if _, err := validate(hd.Action{Type: "merge_into_open_ticket", Value: v}); err == nil {
+			t.Errorf("window %q accepted", v)
+		}
+	}
+	merge := []hd.Action{{Type: "add_tag", Value: "dup"}, {Type: "merge_into_open_ticket", Value: "7"}}
+	if err := hd.ValidateActionTrigger("ticket_created", merge); err != nil {
+		t.Fatal(err)
+	}
+	for _, trigger := range []string{"customer_replied", "agent_replied", "ticket_updated"} {
+		if err := hd.ValidateActionTrigger(trigger, merge); err == nil {
+			t.Errorf("merge accepted on %s", trigger)
+		}
+		if err := hd.ValidateActionTrigger(trigger, merge[:1]); err != nil {
+			t.Errorf("%s: %v", trigger, err)
+		}
+	}
+}

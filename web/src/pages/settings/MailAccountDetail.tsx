@@ -1,6 +1,6 @@
 // One mail account: its name, From name and colour, the signature its mail carries, the
 // addresses it sends from (AddressesSection), its automatic reply (each synced with the provider where it can be: AccountSettings), who it
-// is shared with, its server settings (IMAP), its sync and the import of older mail (HistorySection), and disconnecting it.
+// is shared with, its inbox categories (CategoriesSection), its server settings (IMAP), its sync and the import of older mail (HistorySection), and disconnecting it.
 // Only whoever connected it (and workspace admins, for a shared one) can change it.
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -20,6 +20,7 @@ import { SignatureEditor } from "@/components/templates/SignatureEditor";
 import { ACCOUNT_TONES, ProviderMark } from "@/components/collab/bits";
 import { FromNameHint, OutOfOfficeSection, SignatureSync } from "@/components/collab/AccountSettings";
 import { AddressesSection } from "@/components/collab/AddressesSection";
+import { CategoriesSection } from "@/components/collab/CategoriesSection";
 import { HistorySection } from "@/components/collab/HistorySection";
 import { CollabFromNameField, KeptInOpendesk, SenderPreview, useSenderPreview } from "@/components/collab/SenderPreview";
 import { ImapFields, imapValid, type ImapForm } from "@/components/collab/ConnectAccount";
@@ -310,6 +311,8 @@ export default function MailAccountDetail() {
       <AddressesSection account={account} manage={manage} />
 
       <OutOfOfficeSection account={account} manage={manage} onReconnect={() => void reconnect(account)} />
+
+      {manage && <CategoriesSection account={account} />}
 
       <Section title={t("detail.sharing")} description={t("detail.sharingHint")}>
         <div role="radiogroup" aria-label={t("detail.sharing")} className="flex flex-col gap-2 py-3.5">

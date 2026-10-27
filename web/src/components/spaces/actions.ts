@@ -22,7 +22,7 @@ export const spaceKeys = (n: number | string) => `alt ${n}`;
 export async function workspaceSections(qc: QueryClient, wid: string): Promise<SidebarSectionId[]> {
   const status = await qc.fetchQuery(inWorkspace(wid, () => q.collabStatus()));
   const collab = status?.enabled === true;
-  const prefs = collab ? await qc.fetchQuery(inWorkspace(wid, () => q.mailSidebar())).catch(() => null) : null;
+  const prefs = await qc.fetchQuery(inWorkspace(wid, () => q.mailSidebar())).catch(() => null);
   return defaultSections(prefs ? normalizePrefs(prefs) : null, collab);
 }
 

@@ -111,24 +111,30 @@ export function Avatar({
   );
 }
 
+/** The green ring of someone on a ticket right now; it breathes unless motion is reduced. */
+export const liveRing = "shadow-[0_0_0_1.5px_var(--tone-green-solid)] animate-live-ring motion-reduce:animate-none";
+
 export function AvatarStack({
   people,
   size = "sm",
   max = 3,
+  live,
   className,
 }: {
   people: { id: string; name: string; avatar?: string | null; state?: "viewing" | "replying" | "idle" }[];
   size?: "xs" | "sm" | "md";
   max?: number;
+  /** People on it right now: green rings instead of the surface ring. */
+  live?: boolean;
   className?: string;
 }) {
   const shown = people.slice(0, max);
   const extra = people.length - shown.length;
   return (
-    <span className={cn("flex items-center -space-x-1", className)}>
+    <span className={cn("flex items-center", live ? "-space-x-0.5" : "-space-x-1", className)}>
       {shown.map((p) => (
         <span key={p.id} className="relative">
-          <Avatar name={p.name} src={p.avatar} size={size} ring />
+          <Avatar name={p.name} src={p.avatar} size={size} ring={!live} className={live ? liveRing : undefined} />
           {p.state === "replying" && (
             <span className="absolute -bottom-px -right-px size-[7px] rounded-full bg-warn ring-[1.5px] ring-surface" />
           )}

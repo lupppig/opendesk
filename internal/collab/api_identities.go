@@ -27,7 +27,8 @@ import (
 // and removed by hand and live in opendesk only.
 
 var (
-	errIdentitiesFromGmail = httpx.E(422, "identities_from_provider", "Add and remove send-as addresses in Gmail's settings (Accounts, Send mail as). They show here within 15 minutes.")
+	errIdentitiesFromGmail = httpx.E(422, "identities_from_provider", "Add and remove send-as addresses in Gmail's settings (Accounts, Send mail as). They show here within 15 minutes, or at once with Check Gmail.")
+	errIdentitiesByHand    = httpx.E(422, "identities_by_hand", "This account's addresses are added here by hand.")
 	errIdentityConflict    = httpx.E(409, "identity_conflict", "The account already has this address.")
 	errIdentityReplyTo     = httpx.E(422, "validation_failed", "Gmail keeps this address's reply-to. Change it in Gmail's settings.")
 )
@@ -125,6 +126,28 @@ func (s *service) registerIdentityRoutes(api huma.API) {
 			})
 			if err != nil {
 				return nil, httpx.Wrap(err)
+			}
+			return s.accountReply(ctx, p, a.ID)
+		})
+
+	collabOp(api, huma.Operation{OperationID: "refresh-collab-identities", Method: http.MethodPost, Path: "/v1/collab/accounts/{id}/identities/refresh",
+		Summary: "Read a mail account's addresses from Gmail now", Description: "Gmail accounts: its send-as list and settings, read at once instead of at the next settings read."},
+		func(ctx context.Context, in *accountIDInput) (*accountBody, error) {
+			p, a, err := s.manageable(ctx, in.ID)
+			if err != nil {
+				return nil, err
+			}
+			if a.Provider != ProviderGoogle {
+				return nil, errIdentitiesByHand
+			}
+			if !a.Config.Demo {
+				remote, readErr, err := s.refreshSettings(ctx, a, (&gmailProvider{s: s, a: a}).readSettings)
+				if err != nil {
+					return nil, httpx.Wrap(err)
+				}
+				if remote.identities == nil {
+					return nil, errSettingsProvider(readErr)
+				}
 			}
 			return s.accountReply(ctx, p, a.ID)
 		})

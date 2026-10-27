@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"math/rand/v2"
 	"net/http"
@@ -175,8 +176,11 @@ func statusError(status int) error {
 	switch {
 	case status == http.StatusTooManyRequests || status == 529:
 		return ErrBusy
-	case status == http.StatusUnauthorized || status == http.StatusForbidden || status == http.StatusUnprocessableEntity ||
-		status == http.StatusBadRequest || status == http.StatusNotFound:
+	case status == http.StatusUnauthorized || status == http.StatusForbidden:
+		return errors.Join(ErrRejected, ErrAuth)
+	case status == http.StatusPaymentRequired:
+		return errors.Join(ErrUnavailable, ErrNoFunds)
+	case status == http.StatusUnprocessableEntity || status == http.StatusBadRequest || status == http.StatusNotFound:
 		return ErrRejected
 	}
 	return ErrUnavailable

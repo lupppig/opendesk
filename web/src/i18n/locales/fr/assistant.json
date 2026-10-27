@@ -43,6 +43,8 @@
     "unassigned": "Affichez les tickets non attribués datant de plus d’un jour et suggérez des responsables",
     "report": "Quels sont nos résultats cette semaine ? Volume, délais de réponse, SLA et CSAT.",
     "kb": "Rédigez un article d’aide à partir de tickets récemment résolus sur la question la plus fréquente",
+    "wiki": "Résume cette page du wiki en quelques points",
+    "wikiProcess": "Quelle est notre procédure d’escalade ? Regarde le wiki.",
     "label": "Ajoutez une étiquette à tous les tickets de facturation de cette semaine",
     "breach": "Quels tickets dépasseront leur SLA dans l’heure qui vient ?",
     "mine": "Lesquels de mes tickets attendent mon intervention ?"
@@ -99,6 +101,8 @@
     "unassigned": "Suggérer des responsables pour les anciens tickets",
     "report": "Quels sont nos résultats cette semaine ?",
     "kb": "Rédiger un article d’aide",
+    "wiki": "Résumer cette page",
+    "wikiProcess": "Quelle est notre procédure d’escalade ?",
     "label": "Étiqueter les tickets de facturation de cette semaine",
     "breach": "Quels SLA seront bientôt dépassés ?",
     "mine": "Qu’est-ce qui attend mon intervention ?"

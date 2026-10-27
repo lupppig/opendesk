@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { installMock } from "../index";
 import { dispatch } from "../router";
 import { db } from "../db";
-import { setAIKey } from "../aiKey";
+import { setAIKey, setDecisionKey } from "../aiKey";
 
 async function call(method: string, path: string, body?: unknown) {
   const ws = db.workspaces[0]?.workspace.id;
@@ -14,7 +14,10 @@ const OR_KEY = "sk-or-v1-0123456789abcdefWXYZ";
 
 describe("mock AI provider (own key)", () => {
   installMock();
-  afterEach(() => setAIKey(db.workspaces[0], null));
+  afterEach(() => {
+    setAIKey(db.workspaces[0], null);
+    setDecisionKey(db.workspaces[0], null);
+  });
 
   it("starts on the instance provider", async () => {
     const r = await call("GET", "/v1/ai/provider");
@@ -56,8 +59,10 @@ describe("mock AI provider (own key)", () => {
     const models = (await call("GET", "/v1/ai/models")).body;
     expect(models.data.some((m: { id: string }) => m.id === "mistralai/mistral-large-3")).toBe(true);
     expect(models.data.every((m: { usd_per_mtok: unknown; typical_reply_usd: unknown }) => m.usd_per_mtok === null && m.typical_reply_usd === null)).toBe(true);
-    // Only Jev decisions are priced on the key.
-    expect(Object.keys(cfg.costs).sort()).toEqual(["answer_check", "decide", "triage"]);
+    // Jev decisions run on the OpenRouter key too: nothing is priced.
+    expect(Object.keys(cfg.costs)).toEqual([]);
+    expect(cfg.decisions_own_key).toBe(true);
+    expect((await call("GET", "/v1/ai/provider")).body.decisions).toMatchObject({ runs_on: "provider_key", engine: "jev", key: null });
     expect((await call("PATCH", "/v1/ai/settings", { model: "claude-sonnet-5-5" })).status).toBe(422);
     expect((await call("PATCH", "/v1/ai/settings", { model: "mistralai/mistral-large-3" })).status).toBe(200);
 
@@ -102,5 +107,27 @@ describe("mock AI provider (own key)", () => {
     const p = (await call("GET", "/v1/ai/provider")).body;
     expect(p.key.status).toBe("rejected");
     expect(p.key.status_at).toBeTruthy();
+  });
+
+  it("runs decisions on a TypeSafe key, which wins over the provider key", async () => {
+    const ws = db.workspaces[0];
+    expect((await call("GET", "/v1/ai/provider")).body.decisions).toMatchObject({ runs_on: "instance", engine: "jev", key: null });
+    expect((await call("POST", "/v1/ai/provider/decisions/test", { api_key: "ts-bad-key-1234" })).body).toMatchObject({ ok: false, reason: "invalid_key" });
+    expect((await call("PUT", "/v1/ai/provider/decisions", { api_key: "ts-nofunds-1234" })).status).toBe(422);
+
+    await call("PUT", "/v1/ai/provider", { kind: "anthropic", api_key: "sk-ant-0123456789" });
+    expect((await call("GET", "/v1/ai/config")).body.costs.triage).toBeGreaterThan(0);
+    const saved = await call("PUT", "/v1/ai/provider/decisions", { api_key: "ts-own-key-ABCD" });
+    expect(saved.status).toBe(200);
+    expect(JSON.stringify(saved.body)).not.toContain("ts-own-key");
+    expect(saved.body.decisions).toMatchObject({ runs_on: "typesafe_key", engine: "jev", key: { last4: "ABCD", status: "ok" } });
+    expect(ws.audit[0].action).toBe("ai.decisions_key_set");
+    const cfg = (await call("GET", "/v1/ai/config")).body;
+    expect(cfg.decisions_own_key).toBe(true);
+    expect(cfg.costs.triage).toBeUndefined();
+
+    expect((await call("DELETE", "/v1/ai/provider/decisions")).status).toBe(204);
+    expect(ws.audit[0].action).toBe("ai.decisions_key_removed");
+    expect((await call("GET", "/v1/ai/provider")).body.decisions.runs_on).toBe("instance");
   });
 });

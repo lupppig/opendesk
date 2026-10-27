@@ -77,11 +77,11 @@ export function agentSetup(ws: WsData): AgentSetup {
 
 // ─── Scopes and tools ───────────────────────────────────────────────────────
 
-export const OAUTH_SCOPES = ["tickets:read", "tickets:write", "contacts:read", "contacts:write", "kb:read", "kb:write", "settings:read"];
+export const OAUTH_SCOPES = ["tickets:read", "tickets:write", "contacts:read", "contacts:write", "kb:read", "kb:write", "wiki:read", "wiki:write", "settings:read"];
 
 /** oauthgrant.ForRole: viewers read, agents and up also write. */
 export function scopesForRole(role: Role): string[] {
-  return role === "viewer" ? ["tickets:read", "contacts:read", "kb:read", "settings:read"] : [...OAUTH_SCOPES];
+  return role === "viewer" ? ["tickets:read", "contacts:read", "kb:read", "wiki:read", "settings:read"] : [...OAUTH_SCOPES];
 }
 
 const TOOLS: AIClientTool[] = [
@@ -96,6 +96,10 @@ const TOOLS: AIClientTool[] = [
   { name: "get_contact", title: "Get a contact", description: "Read one contact by id or email: details, company, labels, custom fields and notes.", scopes: ["contacts:read"], read_only: true, destructive: false },
   { name: "search_knowledge", title: "Search the knowledge base", description: "Search the help center's knowledge base articles and the workspace's other knowledge sources by text.", scopes: ["kb:read"], read_only: true, destructive: false },
   { name: "create_kb_draft", title: "Create a draft article", description: "Create a knowledge base article as an unpublished draft for the team to review and publish.", scopes: ["kb:write"], read_only: false, destructive: false },
+  { name: "search_wiki", title: "Search the wiki", description: "Search the team's internal wiki (runbooks, policies, escalation steps, how-tos) by text.", scopes: ["wiki:read"], read_only: true, destructive: false },
+  { name: "get_wiki_page", title: "Read a wiki page", description: "Read one page of the team's internal wiki: its text, where it sits, its subpages and its version.", scopes: ["wiki:read"], read_only: true, destructive: false },
+  { name: "create_wiki_page", title: "Create a wiki page", description: "Add a page to the team's internal wiki, at the top level or under another page.", scopes: ["wiki:write"], read_only: false, destructive: false },
+  { name: "update_wiki_page", title: "Update a wiki page", description: "Rename a wiki page or replace its text, without overwriting a teammate's newer edit.", scopes: ["wiki:write"], read_only: false, destructive: true },
   { name: "get_report", title: "Get the overview report", description: "Helpdesk numbers for a date range: tickets created and solved, open now, response and resolution times.", scopes: ["settings:read", "tickets:read"], read_only: true, destructive: false },
 ];
 

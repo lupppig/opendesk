@@ -64,9 +64,23 @@ or on its own key. Owners and admins choose in Settings > AI. Kinds:
   rewrite, translate, KB drafts, LLM triage and the `llm` decision engine, the widget agent and its
   playground, Ollie (the assistant and its connected tools), and the email agent. No call falls back to
   the instance's provider.
-- Stays on the instance: **embeddings** (semantic search, retrieval; not charged, as before) and
-  **Jev decisions** (triage, the widget relevance check, `ai_decide`), which keep their small cost
-  to the AI balance. If Jev cannot run because the AI balance is too low, triage runs on the workspace's key instead.
+- Stays on the instance: **embeddings** (semantic search, retrieval; not charged, as before).
+- **Decisions** (triage, the widget relevance check, `ai_decide`, Collab's `mail_categorize`) run on the
+  workspace's own credentials when it has them, in this order: its own **TypeSafe key** (below), else
+  Jev through OpenRouter's Decisions API on its own **OpenRouter key** (`~typesafe/jev-latest`, or
+  `TYPESAFE_MODEL` when the instance itself reaches Jev through OpenRouter), else the LLM adapter on its
+  own provider key when the instance's engine is `llm`. Such a decision charges $0, is recorded with
+  `source = "own_key"`, and a refused or unfunded key is handled like any call on it (status, the
+  `ai_key_failed` notification, `502 ai_key_rejected` / `ai_key_no_funds`), never falling back to the AI
+  balance. Without any of them, decisions run on the instance's engine and keep their small cost to the
+  AI balance; if Jev cannot run there because the balance is too low, triage runs on the workspace's
+  LLM key instead. Jev on the workspace's credentials works whatever the instance's own engine is.
+- **TypeSafe key** (`ai_decision_keys`, one row per workspace): a TypeSafe API key for Jev decisions
+  alone, independent of the LLM key, sealed with `d.Box` and shown only by its last 4 characters. It is
+  sent to the instance's `TYPESAFE_API_URL` (never a user-chosen URL), with `TYPESAFE_MODEL` when the
+  instance itself uses TypeSafe, else `jev-latest`. It is tested with one tiny decision before it is
+  saved (`401`/`403` `invalid_key`, `402` `no_funds`, `429` `busy`, else `unreachable`); its failures
+  set its own status and notify with `provider: "typesafe"`.
 - Models: `GET /v1/ai/models` lists the provider's models (OpenRouter `GET /v1/models`, the endpoint's
   `GET /models`, Anthropic `GET /v1/models`; cached an hour), with `usd_per_mtok: null` and `typical_reply_usd: null` (the workspace pays its provider). The key's
   `model` and `fast_model` are the defaults (OpenRouter `anthropic/claude-sonnet-5.5` and
@@ -81,7 +95,8 @@ or on its own key. Owners and admins choose in Settings > AI. Kinds:
   and admins get the in-app notification `ai_key_failed` at most once an hour. The next successful call
   sets the state back to `ok`. Replacing the key resets it.
 - Audit: `ai.provider_key_set`, `ai.provider_key_replaced`, `ai.provider_key_removed` with `{kind,
-  base_url_host?}`, never the key. Removing the key returns the workspace to the instance's provider.
+  base_url_host?}`, and `ai.decisions_key_set`, `ai.decisions_key_replaced`, `ai.decisions_key_removed`
+  with `{kind: "typesafe"}`, never the key. Removing the key returns the workspace to the instance's provider.
 
 | method | path | min role | body → response |
 | --- | --- | --- | --- |
@@ -89,12 +104,22 @@ or on its own key. Owners and admins choose in Settings > AI. Kinds:
 | POST | `/v1/ai/provider/test` | admin (`settings:write`) | `AIProviderKeyInput` → `AIProviderTest`; nothing is stored. 20 tests or saves per workspace per minute (`429`) |
 | PUT | `/v1/ai/provider` | admin (`settings:write`) | `AIProviderKeyInput` → `AIProvider`; tests the key first (`422 provider_test_failed` with the test's message), then stores or replaces it |
 | DELETE | `/v1/ai/provider` | admin (`settings:write`) | → 204 |
+| POST | `/v1/ai/provider/decisions/test` | admin (`settings:write`) | `{api_key}` → `AIProviderTest` (`models` empty); nothing is stored. Counts toward the 20 a minute |
+| PUT | `/v1/ai/provider/decisions` | admin (`settings:write`) | `{api_key}` → `AIProvider`; tests the key first (`422 provider_test_failed`), then stores or replaces the TypeSafe key |
+| DELETE | `/v1/ai/provider/decisions` | admin (`settings:write`) | → 204, also when there is none |
 
 ```ts
 type AIKeyKind = "openrouter" | "openai" | "anthropic"
 interface AIProvider { mode: "instance" | "own_key"; instance_provider: string; billing: boolean /* instance calls are charged to the AI balance, in US dollars */;
   key: { kind: AIKeyKind; base_url_host: string; last4: string; model: string; fast_model: string;
-    status: "ok" | "rejected" | "no_funds"; status_at: string | null; created_by: UserRef | null; created_at: string; updated_at: string } | null }
+    status: "ok" | "rejected" | "no_funds"; status_at: string | null; created_by: UserRef | null; created_at: string; updated_at: string } | null;
+  decisions: AIDecisionsRoute }
+interface AIDecisionsRoute {
+  runs_on: "instance" | "provider_key" | "typesafe_key" | "none"  // where decisions run (the order above)
+  engine: "jev" | "llm" | "none"
+  key: { last4: string; status: "ok" | "rejected" | "no_funds"; status_at: string | null; created_by: UserRef | null;
+    created_at: string; updated_at: string } | null  // the TypeSafe key, when saved
+}
 interface AIProviderKeyInput { kind: AIKeyKind; api_key: string /* 8..500 printable ASCII, write only */;
   base_url?: string /* openai only */; model?: string /* required for openai */; fast_model?: string }
 interface AIProviderTest { ok: boolean; reason?: "invalid_key" | "no_funds" | "unreachable" | "busy" | "model_unavailable";
@@ -179,7 +204,7 @@ interface AIModel {
 
 | method | path | min role | typical cost (default models) | body → response |
 | --- | --- | --- | --- | --- |
-| GET | `/v1/ai/config` | viewer | $0 | `{enabled, provider, models: {default, fast} /* the workspace's effective choices */, embeddings: boolean, features: AISettings, costs: Record<string, number> /* what a typical call of each feature costs on the workspace's chosen models, in US dollars (contracts/billing.md "Typical costs"); on its own key, LLM features are 0 (the workspace pays its provider) and Jev features keep their cost */, metered: boolean /* each call is charged on its real cost */, assistant_name: "Ollie", decisions: DecisionEngine /* contracts/api.md */, own_key: boolean /* LLM calls run on the workspace's key ("Provider per workspace") */}`; `provider` and `models` are the workspace's |
+| GET | `/v1/ai/config` | viewer | $0 | `{enabled, provider, models: {default, fast} /* the workspace's effective choices */, embeddings: boolean, features: AISettings, costs: Record<string, number> /* what a typical call of each feature costs on the workspace's chosen models, in US dollars (contracts/billing.md "Typical costs"); on its own key, LLM features are 0 (the workspace pays its provider) and Jev features keep their cost */, metered: boolean /* each call is charged on its real cost */, assistant_name: "Ollie", decisions: DecisionEngine /* contracts/api.md; Jev on the workspace's own key when it has one */, own_key: boolean /* LLM calls run on the workspace's key ("Provider per workspace") */, decisions_own_key: boolean /* decisions run on the workspace's credentials; their costs are 0 */}`; `provider` and `models` are the workspace's |
 | GET | `/v1/ai/models` | viewer | $0 | → `{data: AIModel[], default, fast}` ("Models" above; on the workspace's own key, its provider's models) |
 | PATCH | `/v1/ai/settings` | admin | $0 | `Partial<AISettings>` → `AISettings` |
 | POST | `/v1/tickets/{id}/ai/draft` | agent | $0.03 | `{instructions?: string, tone?: string}` → `{body_html, body_text, sources: KBSource[]}`; uses the thread, contact, saved replies and the top KB matches |

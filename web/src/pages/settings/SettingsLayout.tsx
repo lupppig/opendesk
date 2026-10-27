@@ -29,6 +29,7 @@ import {
   MessageSquareShare,
   MessageSquareText,
   MessagesSquare,
+  PanelsTopLeft,
   Palette,
   Plug,
   Route,
@@ -63,6 +64,7 @@ type NavPath =
   | "/settings/mailboxes"
   | "/settings/support-channels"
   | "/settings/mail-accounts"
+  | "/settings/mail-categories"
   | "/settings/brands"
   | "/settings/email-design"
   | "/settings/routing"
@@ -136,6 +138,7 @@ const groups: { title: keyof typeof navigation.groups; items: { to: NavPath; lab
       { to: "/settings/mailboxes", label: "mailboxes", icon: <Inbox /> },
       { to: "/settings/support-channels", label: "supportChannels", icon: <MessageSquareShare /> },
       { to: "/settings/mail-accounts", label: "mailAccounts", icon: <AtSign /> },
+      { to: "/settings/mail-categories", label: "mailCategories", icon: <PanelsTopLeft /> },
       { to: "/settings/routing", label: "routing", icon: <Route /> },
       { to: "/settings/brands", label: "brandsAndWidgets", icon: <MessageCircle /> },
       { to: "/settings/email-design", label: "emailDesign", icon: <Palette /> },
@@ -181,7 +184,7 @@ function useVisibleGroups() {
   return groups
     .filter((g) => !(hideAgent && g.title === AGENT_GROUP))
     .map((g) => (hideAi ? { ...g, items: g.items.filter((i) => i.to !== "/settings/ai") } : g))
-    .map((g) => (collab.enabled ? g : { ...g, items: g.items.filter((i) => i.to !== "/settings/mail-accounts") }))
+    .map((g) => (collab.enabled ? g : { ...g, items: g.items.filter((i) => i.to !== "/settings/mail-accounts" && i.to !== "/settings/mail-categories") }))
     .map((g) => (peer ? g : { ...g, items: g.items.filter((i) => i.to !== "/settings/agent-to-agent") }))
     // Arranging workspaces needs two of them.
     .map((g) => (workspaceCount > 1 ? g : { ...g, items: g.items.filter((i) => i.to !== "/settings/workspaces") }));

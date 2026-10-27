@@ -5,7 +5,7 @@ import { useRouterState } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { pageContext } from "./context";
 
-type Key = "summarize" | "assign" | "reply" | "note" | "triage" | "unassigned" | "report" | "kb" | "label" | "breach" | "mine";
+type Key = "summarize" | "assign" | "reply" | "note" | "triage" | "unassigned" | "report" | "kb" | "wiki" | "wikiProcess" | "label" | "breach" | "mine";
 
 export function suggestionKeys(page: string | undefined): Key[] {
   switch (page) {
@@ -15,6 +15,8 @@ export function suggestionKeys(page: string | undefined): Key[] {
       return ["report", "breach", "unassigned"];
     case "kb":
       return ["kb", "report"];
+    case "wiki":
+      return ["wiki", "wikiProcess", "triage"];
     case "inbox":
     case "view":
       return ["triage", "unassigned", "label", "mine"];

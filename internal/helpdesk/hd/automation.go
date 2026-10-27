@@ -25,7 +25,7 @@ var (
 	ConditionOps = []string{"contains", "not_contains", "equals", "not_equals", "any", "none"}
 	// PhraseFields take the phrase ops any and none: a list of phrases, one per line.
 	PhraseFields = []string{"subject", "body", "from_email", "received_at", "tag"}
-	ActionTypes  = []string{"set_status", "set_priority", "set_severity", "assign_user", "assign_team", "add_tag", "remove_tag", "send_reply", "add_note", "mark_spam", "ai_triage", "set_field", "set_reply_address"}
+	ActionTypes  = []string{"set_status", "set_priority", "set_severity", "assign_user", "assign_team", "add_tag", "remove_tag", "send_reply", "add_note", "mark_spam", "delete_ticket", "merge_into_open_ticket", "ai_triage", "set_field", "set_reply_address"}
 	// Sentiments are the values triage writes to custom.ai_sentiment (contracts/ai.md).
 	Sentiments = []string{"positive", "neutral", "negative", "frustrated"}
 )
@@ -40,6 +40,10 @@ const (
 	// MaxPhrases and MaxPhraseList bound the phrase list of an any or none condition.
 	MaxPhrases    = 100
 	MaxPhraseList = 5000
+	// DefaultMergeWindowDays and MaxMergeWindowDays bound how recent the ticket a
+	// merge_into_open_ticket action merges into must be (its value, in days).
+	DefaultMergeWindowDays = 7
+	MaxMergeWindowDays     = 30
 )
 
 type Condition struct {
@@ -51,10 +55,27 @@ type Condition struct {
 }
 
 type Action struct {
-	Type  string `json:"type" enum:"set_status,set_priority,set_severity,assign_user,assign_team,add_tag,remove_tag,send_reply,add_note,mark_spam,ai_triage,set_field,set_reply_address"`
+	Type  string `json:"type" enum:"set_status,set_priority,set_severity,assign_user,assign_team,add_tag,remove_tag,send_reply,add_note,mark_spam,delete_ticket,merge_into_open_ticket,ai_triage,set_field,set_reply_address"`
 	Value string `json:"value" maxLength:"20000"`
 	// Field is the ticket custom field key of set_field.
 	Field string `json:"field,omitempty" maxLength:"40"`
+	// SameSubject is merge_into_open_ticket's option: merge only into a ticket with the
+	// same subject, once reply prefixes and ticket tags are dropped. Stored true or false.
+	SameSubject *bool `json:"same_subject,omitempty" doc:"merge_into_open_ticket only: merge only into a ticket with the same subject (reply prefixes and ticket tags dropped, case ignored); default true"`
+}
+
+// MergeWindowDays is a merge_into_open_ticket action's window, in days.
+func (a Action) MergeWindowDays() int {
+	n, err := strconv.Atoi(a.Value)
+	if err != nil || n < 1 || n > MaxMergeWindowDays {
+		return DefaultMergeWindowDays
+	}
+	return n
+}
+
+// MergeSameSubject reports whether a merge_into_open_ticket action needs the same subject.
+func (a Action) MergeSameSubject() bool {
+	return a.SameSubject == nil || *a.SameSubject
 }
 
 // ConditionFieldKey splits "field.<key>" (ticket) and "contact.field.<key>" (contact) conditions.
@@ -293,7 +314,7 @@ func ValidateActions(ctx context.Context, q db.Querier, wid uuid.UUID, as []Acti
 			if HTMLToText(a.Value) == "" {
 				return nil, httpx.Validation(a.Type + " needs a message")
 			}
-		case "ai_triage":
+		case "ai_triage", "delete_ticket":
 			a.Value = ""
 		case "set_reply_address":
 			// An address the ticket replies from; skipped on tickets of another brand.
@@ -328,15 +349,40 @@ func ValidateActions(ctx context.Context, q db.Querier, wid uuid.UUID, as []Acti
 			default:
 				return nil, httpx.Validation(`mark_spam value must be "true" or "false"`)
 			}
+		case "merge_into_open_ticket":
+			// value: the window in days, 1..MaxMergeWindowDays, DefaultMergeWindowDays when empty.
+			v := strings.TrimSpace(a.Value)
+			if v == "" {
+				v = strconv.Itoa(DefaultMergeWindowDays)
+			}
+			n, err := strconv.Atoi(v)
+			if err != nil || n < 1 || n > MaxMergeWindowDays {
+				return nil, httpx.Validation(fmt.Sprintf("merge_into_open_ticket value must be a number of days from 1 to %d", MaxMergeWindowDays))
+			}
+			a.Value = strconv.Itoa(n)
+			same := a.MergeSameSubject()
+			a.SameSubject = &same
 		default:
 			return nil, httpx.Validation("action type must be one of " + strings.Join(ActionTypes, ", "))
 		}
 		if a.Type != "set_field" {
 			a.Field = ""
 		}
+		if a.Type != "merge_into_open_ticket" {
+			a.SameSubject = nil
+		}
 		out = append(out, a)
 	}
 	return out, nil
+}
+
+// ValidateActionTrigger checks that the actions can run on trigger: merge_into_open_ticket
+// joins a new ticket to an earlier one, so it runs only when a ticket is created.
+func ValidateActionTrigger(trigger string, as []Action) error {
+	if trigger != jobs.TriggerTicketCreated && slices.ContainsFunc(as, func(a Action) bool { return a.Type == "merge_into_open_ticket" }) {
+		return httpx.Validation("merge_into_open_ticket runs only on the ticket_created trigger")
+	}
+	return nil
 }
 
 // FieldString is the string form of a stored field value (set_field action values).

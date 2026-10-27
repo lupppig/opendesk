@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { ReactNode } from "react";
 import "@/i18n";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { Checklist, progressOf, type Onboarding, type OnboardingStepId } from "./Checklist";
+import { Checklist, progressOf, stepsLeft, type Onboarding, type OnboardingStepId } from "./Checklist";
 
 const ids: OnboardingStepId[] = ["connect_mailbox", "invite_teammate", "upload_photo", "install_widget", "publish_article", "setup_triage"];
 const data = (doneCount: number, extra: Partial<Onboarding> = {}): Onboarding => ({
@@ -41,5 +41,18 @@ describe("onboarding checklist", () => {
   it("renders the all-set state when everything is done, and nothing when dismissed", () => {
     expect(render(<Checklist data={data(6)} onDismiss={() => {}} />)).toContain("You&#x27;re all set");
     expect(render(<Checklist data={data(2, { dismissed: true })} onDismiss={() => {}} />)).toBe("");
+  });
+});
+
+describe("stepsLeft", () => {
+  it("counts every open step for an admin", () => {
+    expect(stepsLeft(data(4), { isAdmin: true })).toBe(2);
+    expect(stepsLeft(data(6), { isAdmin: true })).toBe(0);
+  });
+  it("leaves out what a member cannot do: admin steps and steps waiting on AI", () => {
+    // Open: publish_article (agent) and setup_triage (admin).
+    expect(stepsLeft(data(4), { isAdmin: false })).toBe(1);
+    expect(stepsLeft(data(4), { isAdmin: false, unavailable: { publish_article: "needs AI" } })).toBe(0);
+    expect(stepsLeft(data(4), { isAdmin: true, unavailable: { publish_article: "needs AI" } })).toBe(2);
   });
 });

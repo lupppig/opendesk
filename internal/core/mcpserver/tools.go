@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -57,7 +58,7 @@ func (t *tool) mcpTool() *mcp.Tool {
 
 // catalog is every tool, in the order clients list them (contracts/agent.md).
 func catalog() []*tool {
-	return append(append(append(ticketTools(), contactTools()...), knowledgeTools()...), reportTools()...)
+	return slices.Concat(ticketTools(), contactTools(), knowledgeTools(), wikiTools(), reportTools(), collabTools())
 }
 
 // --- results -------------------------------------------------------------------------

@@ -158,6 +158,8 @@ func (s *service) runSync(ctx context.Context, a *accountRow) error {
 	}
 	// The account's own settings, when due; they never fail the sync.
 	s.syncSettings(ctx, prov)
+	// Its categories, when they changed or mail waits to be sorted; never fail the sync either.
+	s.checkCategories(ctx, a)
 	if err := p.batch(ctx, func(pgx.Tx) error { return nil }); err != nil { // anything left to publish
 		return err
 	}
@@ -201,12 +203,21 @@ func syncBackoff(failures int) time.Duration {
 	return min(d, time.Hour)
 }
 
+// quietFailures is how many passing failures in a row (a busy or unreachable provider) wait
+// with the backoff before the account shows the error: about seven minutes of them.
+const quietFailures = 3
+
 func (s *service) recordSyncError(ctx context.Context, a *accountRow, cause error) error {
 	msg := safeError(cause)
 	reconnect := isReconnect(cause)
 	s.log.Info("collab sync failed", "account_id", a.ID, "workspace_id", a.WorkspaceID, "reason", msg, "reconnect", reconnect)
 	failures := a.SyncFailures + 1
 	next := time.Now().Add(syncBackoff(failures))
+	if !reconnect && !isPermanent(cause) && failures < quietFailures && a.Status != "error" {
+		_, err := s.d.DB.Pool.Exec(ctx, `UPDATE collab_accounts SET sync_failures = $2, next_sync_at = $3, updated_at = now() WHERE id = $1`,
+			a.ID, failures, next)
+		return err
+	}
 	return s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
 		tag, err := tx.Exec(ctx, `UPDATE collab_accounts SET status = 'error', last_error = $2, reconnect = $3, sync_failures = $4,
 			next_sync_at = $5, updated_at = now() WHERE id = $1`, a.ID, msg, reconnect, failures, next)

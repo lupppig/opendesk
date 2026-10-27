@@ -204,6 +204,12 @@ var (
 	ErrRejected = errors.New("decision engine rejected the request")
 	// ErrBadOutput means an answer was missing or of the wrong type.
 	ErrBadOutput = errors.New("decision engine answer unusable")
+	// ErrAuth means the engine refused the key (401, 403). It comes joined with
+	// ErrRejected.
+	ErrAuth = errors.New("decision engine refused the key")
+	// ErrNoFunds means the account behind the key is out of funds (402). It comes joined
+	// with ErrUnavailable.
+	ErrNoFunds = errors.New("decision engine account out of funds")
 )
 
 // Check verifies that res answers every question with the right type and that Choice

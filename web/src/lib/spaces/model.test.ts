@@ -56,8 +56,10 @@ describe("starting a Space", () => {
     expect(spaceProblems(s, new Set([A]))).toEqual([]);
   });
 
-  it("lists the sections a workspace's sidebar shows: without hidden ones, and without Collab's without Collab", () => {
-    expect(defaultSections(null, false)).toEqual(["inbox", "teams", "views", "workspace"]);
+  it("lists the sections a workspace's sidebar shows: without hidden ones, and without Mail without Collab", () => {
+    expect(defaultSections(null, false)).toEqual(["favorites", "inbox", "teams", "views", "workspace"]);
+    expect(defaultSections({ ...defaultSidebarPrefs(), order: ["views", "inbox"], hidden: ["section:teams"] }, false))
+      .toEqual(["favorites", "views", "workspace", "inbox"]);
     expect(defaultSections(null, true)).toEqual(["favorites", "inbox", "mail", "teams", "views", "workspace"]);
     expect(defaultSections({ ...defaultSidebarPrefs(), hidden: ["section:favorites"] }, true)).toEqual(["inbox", "mail", "teams", "views", "workspace"]);
   });

@@ -6,7 +6,7 @@ import type { AIConfig, AIModels, AISettings, AssistantAutoTool, DecisionEngine,
 import { ASSISTANT_AUTO_TOOLS } from "@/lib/api/types";
 import { db, userRef, type WsData } from "../db";
 import { configCosts, effectiveModels, offeredModels, offersModel, reserve, spend } from "../aiBalance";
-import { aiKeyOf } from "../aiKey";
+import { aiKeyOf, decisionsOnOwnKey } from "../aiKey";
 import { registerAiProvider } from "./aiProvider";
 import { publish } from "../gateway";
 import { HttpError, forbidden, get, invalid, patch, post, strArr, type Ctx } from "../router";
@@ -64,7 +64,8 @@ function config(ws: WsData): AIConfig {
     costs: configCosts(ws),
     metered: true,
     assistant_name: ASSISTANT_NAME,
-    decisions: decisionEngine(),
+    decisions: decisionsOnOwnKey(ws) ? { provider: "typesafe", model: "jev-latest", connected: true } : decisionEngine(),
+    decisions_own_key: decisionsOnOwnKey(ws),
   };
 }
 

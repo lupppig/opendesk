@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MailAccount, MailHistory } from "@/lib/api/types";
-import { historyEnded, historyProgress, sinceOf } from "./HistorySection";
+import { historyEnded, historyProgress, scopeOf, sinceOf } from "./HistorySection";
 import { searchCoveredFrom } from "./MailNotices";
 
 const history = (p: Partial<MailHistory> = {}): MailHistory => ({
@@ -26,6 +26,16 @@ describe("sinceOf", () => {
     expect(sinceOf("1y", now)).toBe("2025-10-23T12:00:00.000Z");
     expect(sinceOf("5y", now)).toBe("2021-10-23T12:00:00.000Z");
     expect(sinceOf("all", now)).toBeNull();
+  });
+});
+
+describe("scopeOf", () => {
+  it("reads the scope an import started with, and none for a date of its own", () => {
+    const started = new Date("2026-10-01T00:00:00Z");
+    expect(scopeOf(history({ since: null }))).toBe("all");
+    expect(scopeOf(history({ since: sinceOf("1y", started) }))).toBe("1y");
+    expect(scopeOf(history({ since: sinceOf("5y", started) }))).toBe("5y");
+    expect(scopeOf(history({ since: "2024-03-14T00:00:00Z" }))).toBeNull();
   });
 });
 

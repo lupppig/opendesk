@@ -228,6 +228,9 @@ export function registerWorkspace() {
   get("/v1/api-keys/:id", (ctx) => ctx.ws.apiKeys.find((k) => k.id === ctx.params.id) ?? (() => { throw notFound("API key"); })());
   post("/v1/api-keys", (ctx) => {
     requireAdmin(ctx.ws);
+    // Like the API: a key needs the second factor (when on) and a sign-in within 12 hours.
+    if (db.stepUp === "mfa_required") throw new HttpError(403, "mfa_required", "this action requires two-factor authentication");
+    if (db.stepUp === "reauth_required") throw new HttpError(403, "reauth_required", "For your security, sign in again to do this. Your last sign-in is more than 12 hours old.");
     const name = required(ctx, "name").slice(0, 60);
     const scopes = strArr(ctx.body.scopes) ?? [];
     if (!scopes.length) throw invalid("Choose at least one scope");

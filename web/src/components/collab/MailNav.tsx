@@ -109,10 +109,12 @@ function AccountAlert({ account }: { account: MailAccount }) {
   const navigate = useNavigate();
   if (!account.reconnect && account.status !== "error") return null;
   const problem = account.reconnect ? t("nav.reconnect") : account.last_error || t("nav.syncError");
+  // The provider's message ends its own sentence ("Gmail is busy. We will try again.").
+  const sentence = /[.!?]$/.test(problem) ? problem : `${problem}.`;
   // Inside the row's link: the click opens the account's settings instead of its inbox. The
   // row's ⋯ menu has the same step for the keyboard.
   return (
-    <Tooltip content={`${problem}. ${t("nav.fixHint")}`}>
+    <Tooltip content={`${sentence} ${t("nav.fixHint")}`}>
       <span
         className="ml-auto flex cursor-pointer rounded-full text-tone-red transition-transform hover:scale-110 motion-reduce:transition-none"
         onClick={(e) => {
@@ -155,7 +157,13 @@ function AccountGroup({
   const name = accountName(account);
   const key = `account:${account.id}`;
   const shown = mailShown(prefs, key, ["mail"], accountNumbers(account, folders, counts));
-  const menu: Menu = { badge: { key, kind: "mail", sections: ["mail"] }, pin: { kind: "account", id: account.id }, hideId: hid.account(account.id) };
+  const openSettings = () => void navigate({ to: "/settings/mail-accounts/$accountId", params: { accountId: account.id } });
+  const menu: Menu = {
+    badge: { key, kind: "mail", sections: ["mail"] },
+    pin: { kind: "account", id: account.id },
+    hideId: hid.account(account.id),
+    settings: { label: t("rowMenu.accountSettings"), onSelect: openSettings },
+  };
   const expanded = !rail && prefs.expanded_accounts.includes(account.id);
   const atInbox = here.box === "inbox" && here.account === account.id && !here.folder;
   const assignedHere = here.box === "assigned" && here.account === account.id;
@@ -164,7 +172,7 @@ function AccountGroup({
     menu.action = {
       label: account.reconnect ? t("nav.fixReconnect") : t("nav.fixSync"),
       icon: <AlertCircle className="!text-tone-red" />,
-      onSelect: () => void navigate({ to: "/settings/mail-accounts/$accountId", params: { accountId: account.id } }),
+      onSelect: openSettings,
     };
   if (rail)
     return (
@@ -403,6 +411,7 @@ export function FavoritesSection({ prefs, rail, first }: { prefs: SidebarPrefs; 
   const here = useMailLocation();
   const labels = useRowLabels();
   const data = useOpenWorkspaceData();
+  const navigate = useNavigate();
   if (!data) return null;
   // A favorite is unpinned rather than hidden, and reads Favorites' number first, then its own section's.
   const pins = livePins(prefs, (pin) => buildRow(pin, data, { labels, via: ["favorites"], here, waiting: waitingFor }));
@@ -423,6 +432,11 @@ export function FavoritesSection({ prefs, rail, first }: { prefs: SidebarPrefs; 
                 label={target.label}
                 badge={target.badge && { key: target.key, kind: target.badge.kind, sections: target.badge.sections, numbers: target.badge.nums }}
                 pin={pin}
+                settings={
+                  pin.kind === "account"
+                    ? { label: t("rowMenu.accountSettings"), onSelect: () => void navigate({ to: "/settings/mail-accounts/$accountId", params: { accountId: pin.id } }) }
+                    : undefined
+                }
               >
                 {row}
               </RowMenu>

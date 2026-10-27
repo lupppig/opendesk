@@ -147,7 +147,7 @@ func (s *svc) registerAvatars(api huma.API) {
 		})
 
 	register(s, api, huma.Operation{OperationID: "heartbeat", Method: http.MethodPost, Path: "/v1/me/heartbeat",
-		Summary: "Mark yourself seen", Description: "Keeps auto-away from marking you away while the app is open, and holds notification emails for the workspace in OD-Workspace.",
+		Summary: "Mark yourself seen", Description: "Keeps auto-away from marking you away while the app is open, holds notification emails for the workspace in OD-Workspace, and counts toward your online time there while your availability is online.",
 		Tags: []string{"Account"}, DefaultStatus: http.StatusNoContent},
 		func(ctx context.Context, _ *struct{}) (*struct{}, error) {
 			p, err := auth.RequireUser(ctx)
@@ -162,6 +162,9 @@ func (s *svc) registerAvatars(api huma.API) {
 			if p.WorkspaceID != uuid.Nil {
 				if _, err := s.d.DB.Pool.Exec(ctx, `UPDATE members SET active_at = now() WHERE workspace_id = $1 AND user_id = $2
 					AND (active_at IS NULL OR active_at < now() - interval '30 seconds')`, p.WorkspaceID, p.UserID); err != nil {
+					return nil, httpx.Wrap(err)
+				}
+				if err := s.tx(ctx, func(tx pgx.Tx) error { return recordPresence(ctx, tx, p.WorkspaceID, p.UserID) }); err != nil {
 					return nil, httpx.Wrap(err)
 				}
 			}
@@ -235,6 +238,18 @@ func (s *svc) registerAvatars(api huma.API) {
 				}
 				if self && in.Body.Availability != nil {
 					if _, err := tx.Exec(ctx, `UPDATE users SET last_seen_at = now() WHERE id = $1`, uid); err != nil {
+						return err
+					}
+				}
+				// Online time: going online yourself starts it now; leaving online ends it.
+				if a := in.Body.Availability; a != nil {
+					var err error
+					if *a != "online" {
+						err = closePresence(ctx, tx, p.WorkspaceID, uid, self)
+					} else if self {
+						err = recordPresence(ctx, tx, p.WorkspaceID, uid)
+					}
+					if err != nil {
 						return err
 					}
 				}
