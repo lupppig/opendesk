@@ -26,6 +26,11 @@ type Destination = { id: string; connection_id: string; team_id: string|null;
 type Delivery = { event_seq: number; event_type: string; ticket_number?: number;
   status: "queued"|"retrying"|"delivered"|"failed"; attempts: number;
   last_error: string; created_at: string; updated_at: string; delivered_at?: string };
+type Operations = { window_started_at: string; generated_at: string;
+  connections: { total: number; healthy: number; unhealthy: number; alerted: number };
+  deliveries: { queued: number; retrying: number; delivered: number; failed: number;
+    average_latency_ms: number; maximum_latency_ms: number; oldest_pending_at?: string };
+  webhooks: { rejected: number; duplicates_suppressed: number } };
 ```
 
 | method | path | role | body → response |
@@ -40,6 +45,7 @@ type Delivery = { event_seq: number; event_type: string; ticket_number?: number;
 | DELETE | `/v1/support-channels/connections/{id}` | admin user | → 204, including its destinations and thread mappings |
 | GET | `/v1/support-channels/destinations` | viewer, `settings:read` | → `{data: Destination[]}` |
 | GET | `/v1/support-channels/deliveries` | admin, `settings:read` | `limit?`, `cursor?` → `Page<Delivery>` |
+| GET | `/v1/support-channels/operations` | admin, `settings:read` | → `Operations`, a rolling 24-hour view |
 | POST | `/v1/support-channels/deliveries/{event_seq}/retry` | admin user | → 202 `{event_seq,status:"queued"}` for a failed event |
 | POST | `/v1/support-channels/destinations` | admin user | `{connection_id,team_id?,external_channel_id,external_channel_name?,include_notes?,message_limit?}` → 201 `Destination` |
 | DELETE | `/v1/support-channels/destinations/{id}` | admin user | → 204, including its thread mappings |
@@ -171,6 +177,20 @@ inspect and retry it. Retrying a failed event enqueues it in the same transactio
 state change and audit entry. Successful destination deliveries remain idempotent when that
 event is replayed. The view shows recent events to administrators; provider responses and
 credentials are not exposed there.
+
+The reliability view summarizes those dispatch states over the last 24 hours, their
+end-to-end latency from relay queueing through provider delivery, the oldest pending
+dispatch, provider connection health, rejected signed-webhook attempts and provider event
+IDs suppressed as duplicates. Metrics are workspace-scoped and available only to admins.
+Webhook counters are hourly buckets tied to the connection, retained for 30 days, and
+disappear with it. Metric recording is best effort and never rejects an otherwise valid
+provider event.
+
+A connection entering `action_required` or `error` records the start of one unhealthy
+episode. If it remains unhealthy for 15 minutes, a five-minute worker sends one
+`support_channel_unhealthy` notification to every owner and admin. It is not repeated for
+that episode. A healthy check or signed webhook clears the episode and alert, so a later
+failure can alert again. The settings page keeps an alerted state visible until recovery.
 
 The root is an editable ticket card showing the ticket number, subject, customer, assignee,
 status, priority and opendesk URL. It offers Assign to me, status and priority controls. A

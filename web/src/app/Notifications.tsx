@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { AtSign, Bell, BellOff, Mail, ChevronRight, CornerDownLeft, CreditCard, Gauge, Hand, Import, Inbox, KeyRound, MailX, MessagesSquare, Moon, Settings2, Sparkles, TimerOff, UserPlus, UsersRound } from "lucide-react";
+import { AtSign, Bell, BellOff, Mail, ChevronRight, CornerDownLeft, CreditCard, Gauge, Hand, Import, Inbox, KeyRound, MailX, MessagesSquare, Moon, Settings2, Sparkles, TimerOff, TriangleAlert, UserPlus, UsersRound } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -37,6 +37,7 @@ const kind: Record<Notification["type"], { icon: React.ReactNode; tone: Tone }> 
   ai_key_failed: { icon: <KeyRound />, tone: "red" },
   team_joined: { icon: <UsersRound />, tone: "cyan" },
   import_finished: { icon: <Import />, tone: "green" },
+  support_channel_unhealthy: { icon: <TriangleAlert />, tone: "red" },
   collab_assigned: { icon: <Mail />, tone: "blue" },
   collab_mention: { icon: <AtSign />, tone: "indigo" },
 };
@@ -71,6 +72,7 @@ export function notificationPath(n: Notification): string | null {
     const id = typeof n.data.import_id === "string" && n.data.import_id ? n.data.import_id : null;
     return id ? `/settings/import?id=${encodeURIComponent(id)}` : "/settings/import";
   }
+  if (n.type === "support_channel_unhealthy") return "/settings/support-channels";
   if (n.ticket) return `/inbox/${ticketFolder(n)}/${encodeURIComponent(n.ticket.id)}`;
   return null;
 }
@@ -146,6 +148,8 @@ export function describe(n: Notification, t: TFunction<"shell">): string {
       const counts = parts.length === 2 ? t("notifications.type.importAnd", { a: parts[0], b: parts[1] }) : parts[0];
       return t("notifications.type.importDoneCounts", { source, counts });
     }
+    case "support_channel_unhealthy":
+      return t("notifications.type.supportChannelUnhealthy", { name: typeof n.data.name === "string" && n.data.name ? n.data.name : t("notifications.type.supportChannel") });
     case "collab_assigned":
     case "collab_mention": {
       const c = i18n.getFixedT(null, "collab");

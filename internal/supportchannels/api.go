@@ -446,6 +446,19 @@ ORDER BY d.created_at DESC,d.event_seq DESC LIMIT $4`, p.WorkspaceID, cur.T, cur
 			})}, nil
 		})
 
+	huma.Register(api, huma.Operation{OperationID: "get-support-channel-operations", Method: http.MethodGet, Path: "/v1/support-channels/operations", Tags: tags, Summary: "Get support channel operational metrics"},
+		func(ctx context.Context, _ *struct{}) (*struct{ Body operations }, error) {
+			p, err := auth.RequireWorkspace(ctx, auth.RoleAdmin, auth.ScopeSettingsRead)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			out, err := s.loadOperations(ctx, p.WorkspaceID)
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			return &struct{ Body operations }{out}, nil
+		})
+
 	huma.Register(api, huma.Operation{OperationID: "retry-support-channel-delivery", Method: http.MethodPost, Path: "/v1/support-channels/deliveries/{event_seq}/retry", Tags: tags, Summary: "Retry a failed support channel delivery", DefaultStatus: http.StatusAccepted},
 		func(ctx context.Context, in *struct {
 			EventSeq int64 `path:"event_seq" minimum:"1"`
@@ -776,6 +789,7 @@ func (s *Service) webhook(w http.ResponseWriter, r *http.Request) {
 	}
 	body, e := io.ReadAll(http.MaxBytesReader(w, r.Body, maxWebhookBody))
 	if e != nil {
+		s.recordWebhookRejection(r.Context(), c.ID)
 		w.WriteHeader(http.StatusRequestEntityTooLarge)
 		return
 	}
@@ -786,11 +800,13 @@ func (s *Service) webhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if e = a.Verify(r.Header, body, cr); e != nil {
+		s.recordWebhookRejection(r.Context(), c.ID)
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
 	result, e := a.Parse(r.Header, body)
 	if e != nil {
+		s.recordWebhookRejection(r.Context(), c.ID)
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -821,7 +837,8 @@ func (s *Service) persistWebhook(ctx context.Context, c connection, result chann
 }
 
 func (s *Service) persistInbound(ctx context.Context, c connection, items []channel.Inbound) error {
-	return s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
+	var duplicates int64
+	err := s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
 		for i := range items {
 			item := &items[i]
 			if item.EventID == "" {
@@ -860,10 +877,16 @@ func (s *Service) persistInbound(ctx context.Context, c connection, items []chan
 				if _, err = s.d.Jobs.InsertTx(ctx, tx, jobs.SupportChannelInboundArgs{ConnectionID: c.ID, ExternalEventID: item.EventID}, &river.InsertOpts{MaxAttempts: 8}); err != nil {
 					return err
 				}
+			} else {
+				duplicates++
 			}
 		}
 		return nil
 	})
+	if err == nil {
+		s.recordDuplicateEvents(ctx, c.ID, duplicates)
+	}
+	return err
 }
 
 // resolveInboundTicket only establishes an ordering lane. The worker still
@@ -905,10 +928,10 @@ func (s *Service) loadConnection(ctx context.Context, id uuid.UUID) (connection,
 	return c, e
 }
 
-const connectionSelect = `SELECT id,workspace_id,provider,name,external_account_id,external_account_name,external_account_handle,credentials_enc,status,last_error,health_status,health_detail,health_checked_at,credentials_updated_at,created_at FROM support_channel_connections`
+const connectionSelect = `SELECT id,workspace_id,provider,name,external_account_id,external_account_name,external_account_handle,credentials_enc,status,last_error,health_status,health_detail,health_checked_at,health_unhealthy_since,health_alerted_at,credentials_updated_at,created_at FROM support_channel_connections`
 
 func connectionScan(c *connection) []any {
-	return []any{&c.ID, &c.WorkspaceID, &c.Provider, &c.Name, &c.ExternalAccountID, &c.ExternalAccountName, &c.ExternalAccountHandle, &c.CredentialsEnc, &c.Status, &c.LastError, &c.HealthStatus, &c.HealthDetail, &c.HealthCheckedAt, &c.CredentialsUpdatedAt, &c.CreatedAt}
+	return []any{&c.ID, &c.WorkspaceID, &c.Provider, &c.Name, &c.ExternalAccountID, &c.ExternalAccountName, &c.ExternalAccountHandle, &c.CredentialsEnc, &c.Status, &c.LastError, &c.HealthStatus, &c.HealthDetail, &c.HealthCheckedAt, &c.HealthUnhealthySince, &c.HealthAlertedAt, &c.CredentialsUpdatedAt, &c.CreatedAt}
 }
 func (s *Service) credentials(c connection) (map[string]string, error) {
 	out := map[string]string{}

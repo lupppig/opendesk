@@ -1,4 +1,4 @@
-import type { SupportChannelConnection, SupportChannelDelivery, SupportChannelDestination, SupportChannelProvider } from "@/lib/api/types";
+import type { SupportChannelConnection, SupportChannelDelivery, SupportChannelDestination, SupportChannelOperations, SupportChannelProvider } from "@/lib/api/types";
 import { del, get, invalid, notFound, paginate, patch, post, respond } from "../router";
 import { nowIso, uuid } from "../util";
 
@@ -69,6 +69,30 @@ export function registerSupportChannels() {
   get("/v1/support-channels/connections", () => ({ data: connections }));
   get("/v1/support-channels/destinations", () => ({ data: destinations }));
   get("/v1/support-channels/deliveries", (ctx) => paginate(ctx, deliveries));
+  get("/v1/support-channels/operations", () => {
+    const delivered = deliveries.filter((row) => row.status === "delivered");
+    const latencies = delivered.map((row) => Math.max(0, Date.parse(row.delivered_at ?? row.updated_at) - Date.parse(row.created_at)));
+    return {
+      window_started_at: new Date(Date.now() - 24 * 60 * 60_000).toISOString(),
+      generated_at: nowIso(),
+      connections: {
+        total: connections.length,
+        healthy: connections.filter((row) => row.health_status === "healthy").length,
+        unhealthy: connections.filter((row) => row.health_status === "action_required" || row.health_status === "error").length,
+        alerted: connections.filter((row) => !!row.health_alerted_at).length,
+      },
+      deliveries: {
+        queued: deliveries.filter((row) => row.status === "queued").length,
+        retrying: deliveries.filter((row) => row.status === "retrying").length,
+        delivered: delivered.length,
+        failed: deliveries.filter((row) => row.status === "failed").length,
+        average_latency_ms: latencies.length ? Math.round(latencies.reduce((sum, value) => sum + value, 0) / latencies.length) : 0,
+        maximum_latency_ms: latencies.length ? Math.max(...latencies) : 0,
+        oldest_pending_at: deliveries.find((row) => row.status === "queued" || row.status === "retrying")?.created_at,
+      },
+      webhooks: { rejected: 2, duplicates_suppressed: 7 },
+    } satisfies SupportChannelOperations;
+  });
   post("/v1/support-channels/deliveries/:event_seq/retry", (ctx) => {
     const row = deliveries.find((delivery) => delivery.event_seq === Number(ctx.params.event_seq));
     if (!row) throw notFound("Support channel delivery");

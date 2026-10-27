@@ -155,7 +155,7 @@ func (s *Service) markWebhookHealthy(ctx context.Context, c connection, control 
 	}
 	err := s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
 		var at time.Time
-		err := tx.QueryRow(ctx, `UPDATE support_channel_connections SET health_status='healthy',health_detail=$3,health_checked_at=now()
+		err := tx.QueryRow(ctx, `UPDATE support_channel_connections SET health_status='healthy',health_detail=$3,health_checked_at=now(),health_unhealthy_since=NULL,health_alerted_at=NULL
 			WHERE workspace_id=$1 AND id=$2 AND health_status<>'healthy' RETURNING health_checked_at`, c.WorkspaceID, c.ID, webhookHealthy).Scan(&at)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
@@ -164,6 +164,7 @@ func (s *Service) markWebhookHealthy(ctx context.Context, c connection, control 
 			return err
 		}
 		c.HealthStatus, c.HealthDetail, c.HealthCheckedAt = "healthy", webhookHealthy, &at
+		c.HealthUnhealthySince, c.HealthAlertedAt = nil, nil
 		return s.publishConnection(ctx, tx, c)
 	})
 	if err != nil {
@@ -182,7 +183,7 @@ const awaitingControls = "Turn on Interactivity & Shortcuts in Slack with the sa
 func (s *Service) publishConnection(ctx context.Context, tx pgx.Tx, c connection) error {
 	c.CredentialsEnc = nil
 	_, err := events.Publish(ctx, tx, events.Event{WorkspaceID: c.WorkspaceID, Type: "support_channel_connection.updated",
-		Data: map[string]any{"support_channel_connection": c}})
+		Admins: true, Data: map[string]any{"support_channel_connection": c}})
 	return err
 }
 
@@ -194,8 +195,11 @@ func (s *Service) storeHealth(ctx context.Context, c connection, health channel.
 	next := c
 	next.HealthStatus, next.HealthDetail, next.HealthCheckedAt = health.Status, health.Detail, &now
 	err := s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `UPDATE support_channel_connections SET health_status=$3,health_detail=$4,health_checked_at=$5 WHERE workspace_id=$1 AND id=$2`,
-			c.WorkspaceID, c.ID, health.Status, health.Detail, now); err != nil {
+		if err := tx.QueryRow(ctx, `UPDATE support_channel_connections SET health_status=$3,health_detail=$4,health_checked_at=$5,
+			health_unhealthy_since=CASE WHEN $3='healthy' THEN NULL ELSE COALESCE(health_unhealthy_since,$5) END,
+			health_alerted_at=CASE WHEN $3='healthy' THEN NULL ELSE health_alerted_at END
+			WHERE workspace_id=$1 AND id=$2 RETURNING health_unhealthy_since,health_alerted_at`,
+			c.WorkspaceID, c.ID, health.Status, health.Detail, now).Scan(&next.HealthUnhealthySince, &next.HealthAlertedAt); err != nil {
 			return err
 		}
 		return s.publishConnection(ctx, tx, next)

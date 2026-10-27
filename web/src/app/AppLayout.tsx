@@ -74,6 +74,7 @@ function notificationText(n: Notification) {
       return n.data.reason === "no_funds" ? "Your AI provider account is out of funds" : "Your AI provider rejected the workspace's key";
     case "team_joined":
     case "import_finished":
+    case "support_channel_unhealthy":
     case "collab_assigned":
     case "collab_mention":
       return describe(n, i18n.getFixedT(null, "shell"));
@@ -162,6 +163,11 @@ function useRealtimeConnection() {
         soundForNotification(n);
         if (n.type === "customer_replied") return;
         if (n.type === "ai_key_failed") inWorkspace(from, () => void qc.invalidateQueries({ queryKey: qk.aiProvider }));
+        if (n.type === "support_channel_unhealthy")
+          inWorkspace(from, () => {
+            void qc.invalidateQueries({ queryKey: qk.supportChannelConnections });
+            void qc.invalidateQueries({ queryKey: qk.supportChannelOperations });
+          });
         const body =
           n.type === "ai_cap_reached"
             ? "Chats go to your team until the cap resets or you raise it."
@@ -184,6 +190,8 @@ function useRealtimeConnection() {
                 }
               : n.type === "import_finished"
                 ? { label: "View import", onClick: go(() => void navigate({ to: "/settings/import" })) }
+              : n.type === "support_channel_unhealthy"
+                ? { label: "View connection", onClick: go(() => void navigate({ to: "/settings/support-channels" })) }
               : collabThread(n)
                 ? {
                     label: "Open",

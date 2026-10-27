@@ -613,6 +613,10 @@
       "import_finished": {
         "label": "Imports",
         "hint": "An import you started is done, stopped or needs new credentials"
+      },
+      "support_channel_unhealthy": {
+        "label": "Support channel problems",
+        "hint": "A provider connection stays unhealthy for at least 15 minutes"
       }
     },
     "gap": {

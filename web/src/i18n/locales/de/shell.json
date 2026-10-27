@@ -118,7 +118,9 @@
       "importArticles_one": "{{count}} Artikel",
       "importArticles_other": "{{count}} Artikel",
       "importAnd": "{{a}} und {{b}}",
-      "importSource": "Verlaufs"
+      "importSource": "Verlaufs",
+      "supportChannel": "Support-Kanal",
+      "supportChannelUnhealthy": "{{name}} erfordert Aufmerksamkeit"
     },
     "hold": {
       "paused": "Pausiert bis {{when}}: nichts erreicht deine E-Mail, dein Telefon oder deinen Desktop",

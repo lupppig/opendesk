@@ -607,6 +607,26 @@
         "failed": "Failed"
       }
     },
+    "operations": {
+      "title": "Reliability",
+      "description": "Connection health, delivery latency and inbound webhook activity for the last 24 hours.",
+      "refresh": "Refresh metrics",
+      "unavailable": "Operational metrics couldn't be loaded.",
+      "alerted_one": "{{count}} connection has remained unhealthy for at least 15 minutes. Administrators have been notified.",
+      "alerted_other": "{{count}} connections have remained unhealthy for at least 15 minutes. Administrators have been notified.",
+      "connectionHealth": "Connection health",
+      "healthyCount": "{{healthy}} of {{total}} healthy",
+      "unhealthy_one": "{{count}} needs attention",
+      "unhealthy_other": "{{count}} need attention",
+      "allHealthy": "No unhealthy connections",
+      "deliveryLatency": "Average delivery latency",
+      "oldestPending": "Oldest pending {{age}}",
+      "maximumLatency": "Maximum {{duration}}",
+      "webhookRejections": "Rejected webhooks",
+      "duplicatesSuppressed": "Duplicates suppressed",
+      "lastHours": "Last 24 hours",
+      "window": "Delivery totals from the last 24 hours"
+    },
     "empty": {
       "title": "No support channels yet",
       "body": "Connect a bot, then choose where each team's email tickets appear.",

@@ -1024,6 +1024,8 @@ export type SupportChannelConnection = {
   health_status: "unknown" | "healthy" | "action_required" | "error";
   health_detail: string;
   health_checked_at?: string;
+  health_unhealthy_since?: string;
+  health_alerted_at?: string;
   webhook_url: string;
   created_at: string;
 };
@@ -1057,6 +1059,21 @@ export type SupportChannelDelivery = {
   updated_at: string;
   delivered_at?: string;
 };
+export type SupportChannelOperations = {
+  window_started_at: string;
+  generated_at: string;
+  connections: { total: number; healthy: number; unhealthy: number; alerted: number };
+  deliveries: {
+    queued: number;
+    retrying: number;
+    delivered: number;
+    failed: number;
+    average_latency_ms: number;
+    maximum_latency_ms: number;
+    oldest_pending_at?: string;
+  };
+  webhooks: { rejected: number; duplicates_suppressed: number };
+};
 export type TicketLink = {
   id: string;
   ticket_id: string;
@@ -1089,12 +1106,13 @@ export type AuditLog = {
   ip: string;
   created_at: string;
 };
-export type NotificationType = "assigned" | "new_ticket" | "mentioned" | "customer_replied" | "thread_replied" | "sla_breached" | "ai_handoff" | "ai_cap_reached" | "ai_balance_low" | "ai_balance_out" | "auto_recharge_failed" | "ai_key_failed" | "team_joined" | "import_finished" | "collab_assigned" | "collab_mention";
+export type NotificationType = "assigned" | "new_ticket" | "mentioned" | "customer_replied" | "thread_replied" | "sla_breached" | "ai_handoff" | "ai_cap_reached" | "ai_balance_low" | "ai_balance_out" | "auto_recharge_failed" | "ai_key_failed" | "team_joined" | "import_finished" | "support_channel_unhealthy" | "collab_assigned" | "collab_mention";
 /** `ai_cap_reached`: data `{cap_usd}`, ticket null; the widget agent reached `widget_monthly_cap_usd` (once a month, owners and admins).
  * `ai_balance_low` / `ai_balance_out`: data `{remaining_usd}` (US dollars); `auto_recharge_failed`: data `{reason: AutoRechargeFailure}` (billing, owners and admins, ticket null).
  * `ai_key_failed`: data `{provider: AIKeyKind, reason: "rejected" | "no_funds"}`; the workspace's own AI key failed (at most hourly, owners and admins, ticket null).
  * `thread_replied`: data `{message_id, thread_id, subject, preview, from: {name, email}}`; someone outside the team answered a third-party thread on a ticket assigned to you.
  * `team_joined`: data `{team_id, team: {id, name, private}, user: {id, name}, by}`; an admin joined a team you lead (ticket null).
+ * `support_channel_unhealthy`: data `{connection_id, name, provider, status, detail}`; a provider connection stayed unhealthy for 15 minutes (owners and admins, ticket null).
  * `import_finished`: data `{import_id, source, source_name, account, status: "completed" | "failed" | "needs_credentials", tickets, updated, articles, failed, error}`;
  * a history import you started ended or paused for new credentials (contracts/imports.md, ticket null). */
 export type Notification = {

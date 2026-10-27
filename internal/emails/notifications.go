@@ -256,18 +256,19 @@ func groupTone(g group, urgent func(string) bool) string {
 
 // summaryLabels name notification counts in the summary line.
 var summaryLabels = map[string][2]string{
-	"assigned":         {"assigned", "assigned"},
-	"new_ticket":       {"new ticket", "new tickets"},
-	"mentioned":        {"mention", "mentions"},
-	"customer_replied": {"reply", "replies"},
-	"thread_replied":   {"side conversation answer", "side conversation answers"},
-	"sla_breached":     {"missed target", "missed targets"},
-	"ai_handoff":       {"handoff", "handoffs"},
-	"team_joined":      {"team change", "team changes"},
-	"collab_assigned":  {"conversation assigned", "conversations assigned"},
-	"collab_mention":   {"comment mention", "comment mentions"},
-	"import_finished":  {"import", "imports"},
-	"ai_billing":       {"AI or billing notice", "AI or billing notices"},
+	"assigned":                  {"assigned", "assigned"},
+	"new_ticket":                {"new ticket", "new tickets"},
+	"mentioned":                 {"mention", "mentions"},
+	"customer_replied":          {"reply", "replies"},
+	"thread_replied":            {"side conversation answer", "side conversation answers"},
+	"sla_breached":              {"missed target", "missed targets"},
+	"ai_handoff":                {"handoff", "handoffs"},
+	"team_joined":               {"team change", "team changes"},
+	"collab_assigned":           {"conversation assigned", "conversations assigned"},
+	"collab_mention":            {"comment mention", "comment mentions"},
+	"import_finished":           {"import", "imports"},
+	"support_channel_unhealthy": {"support channel alert", "support channel alerts"},
+	"ai_billing":                {"AI or billing notice", "AI or billing notices"},
 }
 
 // summary is "Since 14:05: 2 assigned, 1 mention, 3 replies".
@@ -291,7 +292,7 @@ func summary(notes []Note, now time.Time, loc *time.Location, clock string) stri
 		count[k]++
 	}
 	var parts []string
-	for _, k := range []string{"assigned", "new_ticket", "mentioned", "customer_replied", "thread_replied", "sla_breached", "ai_handoff", "collab_assigned", "collab_mention", "team_joined", "import_finished", "ai_billing", "other"} {
+	for _, k := range []string{"assigned", "new_ticket", "mentioned", "customer_replied", "thread_replied", "sla_breached", "ai_handoff", "collab_assigned", "collab_mention", "team_joined", "import_finished", "support_channel_unhealthy", "ai_billing", "other"} {
 		n := count[k]
 		if n == 0 {
 			continue
@@ -557,28 +558,38 @@ func describe(n Note) copyOf {
 		return collabCopy(n, actor)
 	case "import_finished":
 		return importCopy(n.Data)
+	case "support_channel_unhealthy":
+		name := or(str(n.Data, "name"), "A support channel")
+		provider := strings.TrimSpace(str(n.Data, "provider"))
+		if provider != "" {
+			provider = " (" + strings.ToUpper(provider[:1]) + provider[1:] + ")"
+		}
+		return copyOf{title: name + " needs attention", heading: name + " needs attention",
+			intro: []string{"The support channel connection" + provider + " has remained unhealthy for at least 15 minutes. Test the connection and check its provider setup."},
+			cta:   "Open support channels", subjectTail: true}
 	}
 	return copyOf{title: "New notification", heading: "You have a new notification", cta: "Open opendesk", subjectTail: true}
 }
 
 // TypeLabels name the notification types in plain words (also the settings page's labels).
 var TypeLabels = map[string]string{
-	"assigned":             "assignments",
-	"new_ticket":           "new tickets nobody is assigned to",
-	"mentioned":            "mentions",
-	"customer_replied":     "customer replies",
-	"thread_replied":       "answers in your side conversations",
-	"sla_breached":         "SLA breaches",
-	"ai_handoff":           "handoffs to a person",
-	"team_joined":          "team changes",
-	"collab_assigned":      "conversations assigned to you",
-	"collab_mention":       "mentions in conversation comments",
-	"ai_cap_reached":       "the chat agent's monthly cap",
-	"ai_key_failed":        "AI key problems",
-	"ai_balance_low":       "a low AI balance",
-	"ai_balance_out":       "a used-up AI balance",
-	"auto_recharge_failed": "auto-recharge problems",
-	"import_finished":      "finished imports",
+	"assigned":                  "assignments",
+	"new_ticket":                "new tickets nobody is assigned to",
+	"mentioned":                 "mentions",
+	"customer_replied":          "customer replies",
+	"thread_replied":            "answers in your side conversations",
+	"sla_breached":              "SLA breaches",
+	"ai_handoff":                "handoffs to a person",
+	"team_joined":               "team changes",
+	"collab_assigned":           "conversations assigned to you",
+	"collab_mention":            "mentions in conversation comments",
+	"ai_cap_reached":            "the chat agent's monthly cap",
+	"ai_key_failed":             "AI key problems",
+	"ai_balance_low":            "a low AI balance",
+	"ai_balance_out":            "a used-up AI balance",
+	"auto_recharge_failed":      "auto-recharge problems",
+	"import_finished":           "finished imports",
+	"support_channel_unhealthy": "support channel connection problems",
 }
 
 func typeLabel(t string) string {
@@ -632,6 +643,8 @@ func noteURL(s Site, wid uuid.UUID, n Note) string {
 			id = u.String()
 		}
 		return s.App("/settings/import", "ws", ws, "id", id)
+	case "support_channel_unhealthy":
+		return s.App("/settings/support-channels", "ws", ws)
 	}
 	if n.TicketID != nil {
 		folder := "mine"
@@ -653,7 +666,7 @@ func toneOf(n Note) string {
 		return "#14B8A6"
 	case "new_ticket":
 		return "#22C55E"
-	case "sla_breached", "ai_balance_out", "auto_recharge_failed", "ai_key_failed":
+	case "sla_breached", "ai_balance_out", "auto_recharge_failed", "ai_key_failed", "support_channel_unhealthy":
 		return "#EF4444"
 	case "ai_handoff", "ai_cap_reached":
 		return "#8B5CF6"

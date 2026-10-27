@@ -16,6 +16,7 @@ import (
 
 	"github.com/useopendesk/opendesk/internal/ai"
 	"github.com/useopendesk/opendesk/internal/deps"
+	"github.com/useopendesk/opendesk/internal/jobs"
 	"github.com/useopendesk/opendesk/internal/supportchannels/providers/discord"
 	"github.com/useopendesk/opendesk/internal/supportchannels/providers/slack"
 	"github.com/useopendesk/opendesk/internal/supportchannels/providers/telegram"
@@ -53,8 +54,14 @@ func Register(d *deps.Deps, api huma.API, r chi.Router) { For(d).register(api, r
 func RegisterWorkers(d *deps.Deps, w *river.Workers) {
 	river.AddWorker(w, &dispatchWorker{s: For(d)})
 	river.AddWorker(w, &inboundWorker{s: For(d)})
+	river.AddWorker(w, &healthAlertWorker{s: For(d)})
 }
-func Periodic(*deps.Deps) []*river.PeriodicJob { return nil }
+func Periodic(*deps.Deps) []*river.PeriodicJob {
+	return []*river.PeriodicJob{river.NewPeriodicJob(river.PeriodicInterval(5*time.Minute),
+		func() (river.JobArgs, *river.InsertOpts) {
+			return jobs.SupportChannelHealthAlertArgs{}, &river.InsertOpts{MaxAttempts: 3, UniqueOpts: river.UniqueOpts{ByPeriod: 5 * time.Minute}}
+		}, &river.PeriodicJobOpts{RunOnStart: true, ID: jobs.SupportChannelHealthAlertArgs{}.Kind()})}
+}
 func Background(ctx context.Context, d *deps.Deps) {
 	s := For(d)
 	go s.reconfigurePending(ctx)
@@ -75,6 +82,8 @@ type connection struct {
 	HealthStatus          string     `json:"health_status"`
 	HealthDetail          string     `json:"health_detail"`
 	HealthCheckedAt       *time.Time `json:"health_checked_at,omitempty"`
+	HealthUnhealthySince  *time.Time `json:"health_unhealthy_since,omitempty"`
+	HealthAlertedAt       *time.Time `json:"health_alerted_at,omitempty"`
 	CredentialsUpdatedAt  time.Time  `json:"-"`
 	CreatedAt             time.Time  `json:"created_at"`
 	WebhookURL            string     `json:"webhook_url"`
@@ -102,6 +111,36 @@ type delivery struct {
 	CreatedAt    time.Time  `json:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at"`
 	DeliveredAt  *time.Time `json:"delivered_at,omitempty"`
+}
+
+type operations struct {
+	WindowStartedAt time.Time            `json:"window_started_at"`
+	GeneratedAt     time.Time            `json:"generated_at"`
+	Connections     operationConnections `json:"connections"`
+	Deliveries      operationDeliveries  `json:"deliveries"`
+	Webhooks        operationWebhooks    `json:"webhooks"`
+}
+
+type operationConnections struct {
+	Total     int64 `json:"total"`
+	Healthy   int64 `json:"healthy"`
+	Unhealthy int64 `json:"unhealthy"`
+	Alerted   int64 `json:"alerted"`
+}
+
+type operationDeliveries struct {
+	Queued           int64      `json:"queued"`
+	Retrying         int64      `json:"retrying"`
+	Delivered        int64      `json:"delivered"`
+	Failed           int64      `json:"failed"`
+	AverageLatencyMS int64      `json:"average_latency_ms"`
+	MaximumLatencyMS int64      `json:"maximum_latency_ms"`
+	OldestPendingAt  *time.Time `json:"oldest_pending_at,omitempty"`
+}
+
+type operationWebhooks struct {
+	Rejected             int64 `json:"rejected"`
+	DuplicatesSuppressed int64 `json:"duplicates_suppressed"`
 }
 
 // AvailableDestination is a provider location discovered during onboarding.

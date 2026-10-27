@@ -585,6 +585,26 @@
       "description": "Les identifiants du bot sont stockés chiffrés. opendesk configure Discord et Telegram pour vous ; Slack nécessite quelques étapes dans ses propres paramètres.",
       "webhook": "Adresse des événements"
     },
+    "operations": {
+      "title": "Fiabilité",
+      "description": "État des connexions, délai de livraison et activité des webhooks entrants sur les dernières 24 heures.",
+      "refresh": "Actualiser les métriques",
+      "unavailable": "Impossible de charger les métriques opérationnelles.",
+      "alerted_one": "{{count}} connexion est restée défaillante pendant au moins 15 minutes. Les administrateurs ont été avertis.",
+      "alerted_other": "{{count}} connexions sont restées défaillantes pendant au moins 15 minutes. Les administrateurs ont été avertis.",
+      "connectionHealth": "État des connexions",
+      "healthyCount": "{{healthy}} sur {{total}} opérationnelles",
+      "unhealthy_one": "{{count}} nécessite une intervention",
+      "unhealthy_other": "{{count}} nécessitent une intervention",
+      "allHealthy": "Aucune connexion défaillante",
+      "deliveryLatency": "Délai moyen de livraison",
+      "oldestPending": "Plus ancien en attente {{age}}",
+      "maximumLatency": "Maximum {{duration}}",
+      "webhookRejections": "Webhooks rejetés",
+      "duplicatesSuppressed": "Doublons supprimés",
+      "lastHours": "Dernières 24 heures",
+      "window": "Total des livraisons sur les dernières 24 heures"
+    },
     "empty": {
       "title": "Aucun canal de support pour le moment",
       "body": "Connectez un bot, puis choisissez où afficher les tickets par e-mail de chaque équipe.",

@@ -590,6 +590,10 @@
       "import_finished": {
         "label": "Imports",
         "hint": "Un import que vous avez lancé est terminé, arrêté ou nécessite de nouveaux identifiants"
+      },
+      "support_channel_unhealthy": {
+        "label": "Problèmes de canal de support",
+        "hint": "Une connexion fournisseur reste défaillante pendant au moins 15 minutes"
       }
     },
     "gap": {

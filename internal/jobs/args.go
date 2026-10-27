@@ -141,6 +141,12 @@ type SupportChannelInboundArgs struct {
 
 func (SupportChannelInboundArgs) Kind() string { return "support_channels.inbound" }
 
+// SupportChannelHealthAlertArgs finds provider connections that have stayed unhealthy.
+// Owner: supportchannels.
+type SupportChannelHealthAlertArgs struct{}
+
+func (SupportChannelHealthAlertArgs) Kind() string { return "support_channels.health_alert" }
+
 // SystemEmailArgs sends platform email (verification, reset, invites, notifications)
 // through the system mailer. Owner: core.
 type SystemEmailArgs struct {

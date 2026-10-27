@@ -123,7 +123,9 @@
       "importArticles_other": "{{count}} articles",
       "importArticles_many": "{{count}} articles",
       "importAnd": "{{a}} et {{b}}",
-      "importSource": "historique"
+      "importSource": "historique",
+      "supportChannel": "Canal de support",
+      "supportChannelUnhealthy": "{{name}} nécessite une intervention"
     },
     "hold": {
       "paused": "En pause jusqu’à {{when}} : aucune notification par e-mail, sur téléphone ou sur ordinateur",

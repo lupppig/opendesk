@@ -582,6 +582,26 @@
       "description": "Bot-Zugangsdaten werden verschlüsselt gespeichert. opendesk richtet Discord und Telegram für dich ein; Slack braucht ein paar Schritte in den Slack-Einstellungen.",
       "webhook": "Ereignis-Adresse"
     },
+    "operations": {
+      "title": "Zuverlässigkeit",
+      "description": "Verbindungsstatus, Zustelllatenz und eingehende Webhook-Aktivität der letzten 24 Stunden.",
+      "refresh": "Metriken aktualisieren",
+      "unavailable": "Betriebsmetriken konnten nicht geladen werden.",
+      "alerted_one": "{{count}} Verbindung ist seit mindestens 15 Minuten fehlerhaft. Administratoren wurden benachrichtigt.",
+      "alerted_other": "{{count}} Verbindungen sind seit mindestens 15 Minuten fehlerhaft. Administratoren wurden benachrichtigt.",
+      "connectionHealth": "Verbindungsstatus",
+      "healthyCount": "{{healthy}} von {{total}} fehlerfrei",
+      "unhealthy_one": "{{count}} erfordert Aufmerksamkeit",
+      "unhealthy_other": "{{count}} erfordern Aufmerksamkeit",
+      "allHealthy": "Keine fehlerhaften Verbindungen",
+      "deliveryLatency": "Durchschnittliche Zustelllatenz",
+      "oldestPending": "Älteste ausstehende {{age}}",
+      "maximumLatency": "Maximum {{duration}}",
+      "webhookRejections": "Abgelehnte Webhooks",
+      "duplicatesSuppressed": "Unterdrückte Duplikate",
+      "lastHours": "Letzte 24 Stunden",
+      "window": "Zustellungen der letzten 24 Stunden"
+    },
     "empty": {
       "title": "Noch keine Support-Kanäle",
       "body": "Verbinde einen Bot und wähle dann, wo die E-Mail-Tickets jedes Teams erscheinen.",

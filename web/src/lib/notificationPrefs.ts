@@ -34,6 +34,7 @@ export const NOTIFICATION_DEFAULTS: Record<NotificationType, { group: Notificati
   ai_balance_out: { group: "ai_billing", defaults: { email: true, push: false, desktop: true } },
   auto_recharge_failed: { group: "ai_billing", defaults: { email: true, push: false, desktop: true } },
   import_finished: { group: "workspace", defaults: on },
+  support_channel_unhealthy: { group: "workspace", defaults: { email: true, push: false, desktop: true } },
 };
 
 /** The order rows are listed in, within and across groups. */
@@ -54,6 +55,7 @@ export const NOTIFICATION_ORDER: NotificationType[] = [
   "ai_balance_out",
   "auto_recharge_failed",
   "import_finished",
+  "support_channel_unhealthy",
 ];
 
 /** Types that may be emailed sooner than the cooldown. */

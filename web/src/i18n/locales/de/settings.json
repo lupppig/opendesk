@@ -613,6 +613,10 @@
       "import_finished": {
         "label": "Importe",
         "hint": "Ein Import, den du gestartet hast, ist fertig, wurde gestoppt oder braucht neue Zugangsdaten"
+      },
+      "support_channel_unhealthy": {
+        "label": "Probleme mit Support-Kanälen",
+        "hint": "Eine Anbieterverbindung bleibt mindestens 15 Minuten fehlerhaft"
       }
     },
     "gap": {

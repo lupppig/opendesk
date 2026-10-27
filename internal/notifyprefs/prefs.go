@@ -83,6 +83,7 @@ var Types = []Type{
 	{Type: "auto_recharge_failed", Group: GroupAIBilling, Defaults: notPhone, Admins: true},
 	// To the admin who started a history import (contracts/imports.md).
 	{Type: "import_finished", Group: GroupWorkspace, Defaults: everywhere, Admins: true},
+	{Type: "support_channel_unhealthy", Group: GroupWorkspace, Defaults: notPhone, Admins: true},
 }
 
 // Lookup finds a type of the catalogue.

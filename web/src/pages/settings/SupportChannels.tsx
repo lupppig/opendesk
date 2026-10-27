@@ -1,5 +1,5 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AtSign, Hash, KeyRound, Link2, MessagesSquare, Plus, RefreshCw, Sparkles, StickyNote, Trash2 } from "lucide-react";
+import { Activity, AtSign, Clock3, Hash, KeyRound, Link2, MessagesSquare, Plus, RefreshCw, ShieldAlert, Sparkles, StickyNote, Trash2, Webhook } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AppMark } from "@/components/appmark";
@@ -16,7 +16,7 @@ import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api/client";
 import { api } from "@/lib/api/endpoints";
-import type { SupportChannelAccount, SupportChannelConnection, SupportChannelDelivery, SupportChannelDestination, SupportChannelProvider } from "@/lib/api/types";
+import type { SupportChannelAccount, SupportChannelConnection, SupportChannelDelivery, SupportChannelDestination, SupportChannelOperations, SupportChannelProvider } from "@/lib/api/types";
 import { fullDate, relShort } from "@/lib/format";
 import { q, qk, upsertInList } from "@/lib/queries";
 import { atLeast, useRole } from "@/lib/session";
@@ -57,6 +57,13 @@ function connectionState(c: SupportChannelConnection): { state: ItemState; key: 
   }
 }
 
+function metricDuration(ms: number): string {
+  if (!ms) return "—";
+  if (ms < 1_000) return `${ms} ms`;
+  if (ms < 60_000) return `${(ms / 1_000).toFixed(ms < 10_000 ? 1 : 0)} s`;
+  return `${(ms / 60_000).toFixed(ms < 600_000 ? 1 : 0)} min`;
+}
+
 export default function SupportChannels() {
   const { t } = useTranslation("settingsChannels");
   const role = useRole();
@@ -69,6 +76,7 @@ export default function SupportChannels() {
   const { data: connections, isLoading } = useQuery(q.supportChannelConnections());
   const { data: destinations } = useQuery(q.supportChannelDestinations());
   const deliveries = useInfiniteQuery({ ...q.supportChannelDeliveries(), enabled: admin });
+  const operations = useQuery({ ...q.supportChannelOperations(), enabled: admin });
   const deliveryRows = deliveries.data?.pages.flatMap((page) => page.data) ?? [];
   const { data: teams } = useQuery(q.teams());
   const [connecting, setConnecting] = useState<SupportChannelProvider | null>(null);
@@ -81,6 +89,7 @@ export default function SupportChannels() {
     onSuccess: (_, id) => {
       qc.setQueryData<SupportChannelConnection[]>(qk.supportChannelConnections, (old) => old?.filter((x) => x.id !== id));
       qc.setQueryData<SupportChannelDestination[]>(qk.supportChannelDestinations, (old) => old?.filter((x) => x.connection_id !== id));
+      void qc.invalidateQueries({ queryKey: qk.supportChannelOperations });
       toast.success(t("supportChannels.disconnected"));
     },
     onError: (e) => toast.error(e, t("supportChannels.disconnectError")),
@@ -102,6 +111,7 @@ export default function SupportChannels() {
     mutationFn: api.supportChannels.test,
     onSuccess: (row) => {
       upsertInList(qc, qk.supportChannelConnections, row);
+      void qc.invalidateQueries({ queryKey: qk.supportChannelOperations });
       if (row.status !== "error" && row.health_status === "healthy") toast.success(t("supportChannels.health.tested"));
       else toast.info(t("supportChannels.health.testedAttention"));
     },
@@ -111,6 +121,7 @@ export default function SupportChannels() {
     mutationFn: api.supportChannels.retryDelivery,
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: qk.supportChannelDeliveries });
+      void qc.invalidateQueries({ queryKey: qk.supportChannelOperations });
       toast.success(t("supportChannels.delivery.retryQueued"));
     },
     onError: (e) => toast.error(e, t("supportChannels.delivery.retryError")),
@@ -259,6 +270,34 @@ export default function SupportChannels() {
 
       {admin && (
         <Section
+          title={t("supportChannels.operations.title")}
+          description={t("supportChannels.operations.description")}
+          actions={
+            <Button
+              variant="ghost"
+              icon={<RefreshCw />}
+              loading={operations.isFetching || deliveries.isFetching}
+              onClick={() => {
+                void operations.refetch();
+                void deliveries.refetch();
+              }}
+            >
+              {t("supportChannels.operations.refresh")}
+            </Button>
+          }
+        >
+          {operations.isLoading ? (
+            <ListSkeleton rows={2} />
+          ) : operations.data ? (
+            <OperationsSummary value={operations.data} />
+          ) : (
+            <p className="py-4 text-[12px] text-fg-3">{t("supportChannels.operations.unavailable")}</p>
+          )}
+        </Section>
+      )}
+
+      {admin && (
+        <Section
           flush
           title={t("supportChannels.delivery.title")}
           description={t("supportChannels.delivery.description")}
@@ -344,6 +383,75 @@ export default function SupportChannels() {
         <CopyField value={link?.code ?? ""} />
       </Dialog>
     </SettingsPage>
+  );
+}
+
+function OperationsSummary({ value }: { value: SupportChannelOperations }) {
+  const { t } = useTranslation("settingsChannels");
+  const statuses = ["queued", "retrying", "delivered", "failed"] as const;
+  return (
+    <div className="py-3">
+      {value.connections.alerted > 0 && (
+        <div role="alert" className="mb-3 flex items-start gap-2 rounded-lg border border-danger-fg/30 bg-danger-fg/5 px-3 py-2.5 text-[12px] text-danger-fg">
+          <ShieldAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+          <span>{t("supportChannels.operations.alerted", { count: value.connections.alerted })}</span>
+        </div>
+      )}
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <OperationMetric
+          icon={<Activity />}
+          label={t("supportChannels.operations.connectionHealth")}
+          value={t("supportChannels.operations.healthyCount", { healthy: value.connections.healthy, total: value.connections.total })}
+          detail={value.connections.unhealthy ? t("supportChannels.operations.unhealthy", { count: value.connections.unhealthy }) : t("supportChannels.operations.allHealthy")}
+        />
+        <OperationMetric
+          icon={<Clock3 />}
+          label={t("supportChannels.operations.deliveryLatency")}
+          value={metricDuration(value.deliveries.average_latency_ms)}
+          detail={
+            value.deliveries.oldest_pending_at
+              ? t("supportChannels.operations.oldestPending", { age: relShort(value.deliveries.oldest_pending_at) })
+              : t("supportChannels.operations.maximumLatency", { duration: metricDuration(value.deliveries.maximum_latency_ms) })
+          }
+        />
+        <OperationMetric
+          icon={<Webhook />}
+          label={t("supportChannels.operations.webhookRejections")}
+          value={String(value.webhooks.rejected)}
+          detail={t("supportChannels.operations.lastHours", { count: 24 })}
+        />
+        <OperationMetric
+          icon={<ShieldAlert />}
+          label={t("supportChannels.operations.duplicatesSuppressed")}
+          value={String(value.webhooks.duplicates_suppressed)}
+          detail={t("supportChannels.operations.lastHours", { count: 24 })}
+        />
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2 border-t border-line-soft pt-3">
+        {statuses.map((status) => {
+          const state: ItemState = status === "delivered" ? "active" : status === "failed" ? "failing" : "pending";
+          return (
+            <StatePill key={status} state={state} pulse={status === "retrying"}>
+              {t(`supportChannels.delivery.status.${status}`)} · {value.deliveries[status]}
+            </StatePill>
+          );
+        })}
+        <span className="ml-auto self-center text-[11px] text-fg-4">{t("supportChannels.operations.window")}</span>
+      </div>
+    </div>
+  );
+}
+
+function OperationMetric({ icon, label, value, detail }: { icon: React.ReactNode; label: string; value: string; detail: string }) {
+  return (
+    <div className="rounded-lg border border-line-soft bg-surface px-3 py-3">
+      <div className="flex items-center gap-1.5 text-[11px] font-medium text-fg-3">
+        <span className="[&>svg]:size-3.5" aria-hidden>{icon}</span>
+        {label}
+      </div>
+      <p className="mt-1 text-[20px] font-semibold tracking-tight text-fg">{value}</p>
+      <p className="mt-0.5 text-[11px] text-fg-4">{detail}</p>
+    </div>
   );
 }
 

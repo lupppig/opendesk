@@ -325,6 +325,30 @@
         }
       }
     },
+    "push.support_channel_unhealthy.body": {
+      "comment": "Push notification body for support_channel_unhealthy.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Test the connection and check its provider setup"
+          }
+        }
+      }
+    },
+    "push.support_channel_unhealthy.title": {
+      "comment": "Push notification title for support_channel_unhealthy.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Support channel needs attention"
+          }
+        }
+      }
+    },
     "push.mentioned.body": {
       "comment": "Push notification body for mentioned. %@ is the ticket number.",
       "extractionState": "manual",
