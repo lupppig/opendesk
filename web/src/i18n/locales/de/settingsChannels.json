@@ -604,7 +604,7 @@
     },
     "ollie": {
       "title": "Ollie in Support-Kanälen",
-      "description": "Ollie fasst jeden neuen Ticket-Thread zusammen, schlägt Antworten vor, beantwortet Fragen und warnt vor SLAs und unzufriedenen Kunden. Lege fest, welche Änderungen Ollie selbst vornehmen darf.",
+      "description": "Ollie fasst jeden neuen Ticket-Thread zusammen, schlägt Antworten vor, beantwortet Fragen und warnt vor SLAs und unzufriedenen Kunden. Lege fest, welche Änderungen er selbst vornehmen darf.",
       "error": "Die Einstellungen für Ollie konnten nicht gespeichert werden.",
       "commands": "Getippte Befehle wie reply, note und status sind die eigenen des Agenten und funktionieren immer. Von Ollie vorgeschlagene Kundenantworten, neue Tickets oder das Schließen werden weiterhin erst nach Bestätigung ausgeführt.",
       "actions": {
@@ -618,7 +618,7 @@
         },
         "assign_self": {
           "title": "Tickets zuweisen",
-          "hint": "Ollie darf das Ticket dem Agenten zuweisen, der mit Ollie spricht."
+          "hint": "Ollie darf das Ticket dem Agenten zuweisen, der mit ihm spricht."
         },
         "status": {
           "title": "Status ändern",
