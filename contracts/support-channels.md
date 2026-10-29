@@ -87,7 +87,8 @@ through an answer either.
 
 ## Ollie
 
-Ollie works in every mapped ticket thread while the workspace assistant is on. Each
+Ollie works in every mapped ticket thread. Summaries, suggestions and answers need the
+workspace assistant on; SLA and sentiment warnings use no AI and post either way. Each
 destination sets how:
 
 - `ollie_summary` (default on; off for destinations created before it existed, since it
