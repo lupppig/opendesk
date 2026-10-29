@@ -175,7 +175,7 @@ type Inbound struct {
 	ExternalChannelID string
 	ExternalThreadID  string
 	ExternalUserID    string
-	Command           string // chat | link | reply | note | assign_self | status | priority | confirm | cancel
+	Command           string // chat | link | reply | note | assign_self | status | priority | confirm | cancel | suggest | ask
 	Text              string
 	Value             string
 	// Directed is true when the provider says the message explicitly addressed

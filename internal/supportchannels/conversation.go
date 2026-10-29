@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -57,21 +58,31 @@ type conversationTarget struct {
 	TeamID   *uuid.UUID
 }
 
+// conversationOptions are how Ollie answers in one destination's threads.
+type conversationOptions struct {
+	// IncludeNotes lets Ollie read internal notes, where the destination mirrors them.
+	IncludeNotes bool
+	Voice        ollieVoice
+	// Suggest drafts a reply to the customer and offers Ollie no tools, so the
+	// suggestion can't be sent or change the ticket.
+	Suggest bool
+}
+
 type conversationState struct {
 	Turns          []conversationTurn
 	Pending        *conversationAction
 	PendingExpires *time.Time
 }
 
-func (s *Service) converse(ctx context.Context, p *auth.Principal, connectionID, tid uuid.UUID, includeNotes bool, in channel.Inbound) (channel.Message, error) {
-	return s.converseWithTarget(ctx, p, connectionID, conversationTarget{TicketID: &tid}, includeNotes, in)
+func (s *Service) converse(ctx context.Context, p *auth.Principal, connectionID, tid uuid.UUID, opts conversationOptions, in channel.Inbound) (channel.Message, error) {
+	return s.converseWithTarget(ctx, p, connectionID, conversationTarget{TicketID: &tid}, opts, in)
 }
 
-func (s *Service) converseCreate(ctx context.Context, p *auth.Principal, connectionID uuid.UUID, teamID *uuid.UUID, in channel.Inbound) (channel.Message, error) {
-	return s.converseWithTarget(ctx, p, connectionID, conversationTarget{TeamID: teamID}, false, in)
+func (s *Service) converseCreate(ctx context.Context, p *auth.Principal, connectionID uuid.UUID, teamID *uuid.UUID, voice ollieVoice, in channel.Inbound) (channel.Message, error) {
+	return s.converseWithTarget(ctx, p, connectionID, conversationTarget{TeamID: teamID}, conversationOptions{Voice: voice}, in)
 }
 
-func (s *Service) converseWithTarget(ctx context.Context, p *auth.Principal, connectionID uuid.UUID, target conversationTarget, includeNotes bool, in channel.Inbound) (channel.Message, error) {
+func (s *Service) converseWithTarget(ctx context.Context, p *auth.Principal, connectionID uuid.UUID, target conversationTarget, opts conversationOptions, in channel.Inbound) (channel.Message, error) {
 	processingID := uuid.New()
 	state, err := s.claimConversation(ctx, p.WorkspaceID, connectionID, processingID, in)
 	if err != nil {
@@ -102,9 +113,26 @@ func (s *Service) converseWithTarget(ctx context.Context, p *auth.Principal, con
 		}
 		return plainChannelMessage("Ollie isn't available for this workspace. You can still use reply, note, assign, status and priority commands."), nil
 	}
-	action, answer, err := s.interpretConversation(ctx, p, target, includeNotes, state.Turns, input)
+	allowed, err := s.allowedActions(ctx, s.d.DB.Pool, p.WorkspaceID)
+	if err != nil {
+		return channel.Message{}, err
+	}
+	if target.TicketID == nil && !slices.Contains(allowed, "create_ticket") {
+		return plainChannelMessage("Ollie isn't allowed to create tickets here. Create the ticket in opendesk instead."), nil
+	}
+	offered := allowed
+	if opts.Suggest {
+		offered = nil
+	}
+	action, answer, err := s.interpretConversation(ctx, p, target, opts, offered, state.Turns, input)
 	if err != nil {
 		return channel.Message{}, fmt.Errorf("%w: %v", errConversationUnavailable, err)
+	}
+	if action != nil && !slices.Contains(offered, action.Command) {
+		action, answer = nil, notAllowed
+	}
+	if opts.Suggest && strings.TrimSpace(answer) != "" {
+		answer = suggestion(answer, slices.Contains(allowed, "reply"))
 	}
 	if action != nil {
 		if needsConfirmation(*action) {
@@ -233,23 +261,39 @@ func confirmationChannelMessage(text, nonce string) channel.Message {
 	}}
 }
 
-func (s *Service) interpretConversation(ctx context.Context, p *auth.Principal, target conversationTarget, includeNotes bool, history []conversationTurn, input string) (*conversationAction, string, error) {
+// notAllowed answers a change the workspace doesn't let Ollie choose.
+const notAllowed = "Ollie isn't allowed to make that change here. Use the explicit command, or ask an admin to allow it in Settings, Support channels."
+
+// suggestion presents a drafted reply as a suggestion that has not been sent.
+func suggestion(draft string, canSend bool) string {
+	out := "Suggested reply, not sent:\n\n> " + strings.ReplaceAll(clip(draft, 3000), "\n", "\n> ") + "\n\n"
+	if canSend {
+		return out + "Ask me to send it and I'll show it for confirmation first, or send your own with `reply`."
+	}
+	return out + "Send your own with `reply` when it's ready."
+}
+
+func (s *Service) interpretConversation(ctx context.Context, p *auth.Principal, target conversationTarget, opts conversationOptions, allowed []string, history []conversationTurn, input string) (*conversationAction, string, error) {
 	system := []ai.Block{{Text: conversationSystem, Cache: true}}
-	tools := conversationTools()
+	tools := allowedTools(conversationTools(), allowed)
 	if target.TicketID == nil {
 		system = []ai.Block{{Text: createConversationSystem, Cache: true}}
-		tools = createTicketTools()
+		tools = allowedTools(createTicketTools(), allowed)
 	} else {
 		ticket, err := domain.LoadVisibleTicket(ctx, s.d.DB.Pool, p, *target.TicketID)
 		if err != nil {
 			return nil, "", err
 		}
 		// Ollie answers into the external chat, so it reads notes only where they are mirrored.
-		messages, err := domain.ListMessages(ctx, s.d.DB.Pool, p.WorkspaceID, *target.TicketID, !includeNotes)
+		messages, err := domain.ListMessages(ctx, s.d.DB.Pool, p.WorkspaceID, *target.TicketID, !opts.IncludeNotes)
 		if err != nil {
 			return nil, "", err
 		}
 		system = append(system, ai.Block{Text: ticketContext(ticket, messages)})
+	}
+	system = append(system, opts.Voice.block())
+	if opts.Suggest {
+		system = append(system, ai.Block{Text: suggestSystem})
 	}
 	turns := make([]ai.ChatTurn, 0, len(history)+1)
 	for _, turn := range history {
@@ -257,7 +301,7 @@ func (s *Service) interpretConversation(ctx context.Context, p *auth.Principal, 
 	}
 	turns = append(turns, ai.ChatTurn{Role: "user", Text: input})
 	resp, err := s.ai.AssistantTurn(ctx, p.WorkspaceID, &p.UserID, ai.ChatRequest{
-		System: system, Turns: turns, Tools: tools, MaxTokens: 500,
+		System: system, Turns: turns, Tools: tools, MaxTokens: opts.Voice.maxTokens(),
 	}, nil)
 	if err != nil {
 		return nil, "", err
@@ -281,8 +325,14 @@ const conversationSystem = `You are Ollie, the internal assistant helping a supp
 - Use exactly one tool only when the agent clearly asks you to change the ticket.
 - You may create a separate ticket when the agent clearly asks. Include only details the agent supplied.
 - A request to draft, suggest, improve or show a reply is not permission to send it. Return draft text instead.
+- When asked what the customer has already tried, list the steps the customer says they took, and say so when they mention none.
+- You can only use the tools you are given. When asked for a change you have no tool for, say an admin hasn't allowed it.
 - Never say a change happened after calling a tool. The application reports the result.
 - Keep answers concise and suitable for a team chat thread.`
+
+const suggestSystem = `The agent asked for a suggested reply to the customer's latest message.
+Write only the reply text the agent could send, in the customer's language, with no preamble, notes or sign-off name.
+Base it only on the ticket. Do not promise anything the ticket doesn't support.`
 
 const createConversationSystem = `You are Ollie, the internal assistant helping a support agent create an opendesk ticket from a team chat product.
 - Use the create_ticket tool only when the agent clearly asks to create a ticket and has supplied a usable subject.
@@ -311,7 +361,14 @@ func ticketContext(t domain.Ticket, messages []domain.Message) string {
 		}
 		fmt.Fprintf(&history, "[%s] %s\n", who, m.BodyText)
 	}
-	header := fmt.Sprintf("Ticket #%d\nSubject: %s\nCustomer: %s\nStatus: %s\nPriority: %s\nAssignee: %s\n\nConversation:\n", t.Number, t.Subject, customer, t.Status, t.Priority, assignee)
+	header := fmt.Sprintf("Ticket #%d\nSubject: %s\nCustomer: %s\nStatus: %s\nPriority: %s\nAssignee: %s\n", t.Number, t.Subject, customer, t.Status, t.Priority, assignee)
+	if sentiment, _ := t.Custom["ai_sentiment"].(string); sentiment != "" {
+		header += "Customer sentiment: " + sentiment + "\n"
+	}
+	if sla := slaLine(t, time.Now()); sla != "" {
+		header += sla + "\n"
+	}
+	header += "\nConversation:\n"
 	return ai.DataBlock("ticket", nil, header+tailClip(history.String(), 14000-len([]rune(header))))
 }
 
@@ -328,6 +385,11 @@ func tailClip(s string, n int) string {
 
 func conversationTools() []ai.ToolSpec {
 	return append(ticketActionTools(), createTicketTools()...)
+}
+
+// allowedTools keeps the tools whose action the workspace allows.
+func allowedTools(tools []ai.ToolSpec, allowed []string) []ai.ToolSpec {
+	return slices.DeleteFunc(tools, func(t ai.ToolSpec) bool { return !slices.Contains(allowed, t.Name) })
 }
 
 func ticketActionTools() []ai.ToolSpec {
@@ -537,6 +599,17 @@ func (s *Service) applyAndSaveConversation(ctx context.Context, p *auth.Principa
 			var stored conversationAction
 			if json.Unmarshal(pending, &stored) != nil || stored != action {
 				return errPendingActionGone
+			}
+		}
+		// A change Ollie chose waits for confirmation; the workspace may have
+		// stopped allowing it since.
+		if !action.Direct {
+			allowed, err := s.allowedActions(ctx, tx, p.WorkspaceID)
+			if err != nil {
+				return err
+			}
+			if !slices.Contains(allowed, action.Command) {
+				return httpx.Validation(notAllowed)
 			}
 		}
 		// Model-selected changes are attributed to Ollie on the agent's behalf.

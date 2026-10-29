@@ -1134,8 +1134,20 @@ export type SupportChannelDestination = {
   include_notes: boolean;
   /** Maximum characters before the provider message links back to opendesk. */
   message_limit: number;
+  /** Ollie posts a summary when a ticket's thread opens. */
+  ollie_summary: boolean;
+  /** Ollie posts SLA and sentiment warnings in ticket threads. */
+  ollie_warnings: boolean;
+  /** How Ollie sounds in this channel's threads; empty for the default. */
+  ollie_personality: string;
+  ollie_length: SupportChannelOllieLength;
   created_at: string;
 };
+export type SupportChannelOllieLength = "brief" | "standard" | "detailed";
+/** Ticket changes Ollie may choose in support channel threads. */
+export type SupportChannelOllieAction = "reply" | "note" | "assign_self" | "status" | "priority" | "create_ticket";
+export type SupportChannelOllie = { actions: SupportChannelOllieAction[] };
+export type SupportChannelOllieUpdate = Partial<Pick<SupportChannelDestination, "ollie_summary" | "ollie_warnings" | "ollie_personality" | "ollie_length">>;
 export type SupportChannelDelivery = {
   event_seq: number;
   event_type: string;

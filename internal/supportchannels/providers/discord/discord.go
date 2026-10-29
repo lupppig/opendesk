@@ -334,7 +334,7 @@ func (a Adapter) discordFileHost(u *url.URL) bool {
 }
 
 // controls are the custom ids opendesk's own components send.
-var controls = map[string]bool{"assign_self": true, "status": true, "priority": true, "confirm": true, "cancel": true}
+var controls = map[string]bool{"assign_self": true, "status": true, "priority": true, "confirm": true, "cancel": true, "suggest": true, "ask": true}
 
 // parseComponent reads a button or select on a ticket card or confirmation
 // preview. It is acknowledged without a visible answer (type 6): the card's

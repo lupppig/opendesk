@@ -147,7 +147,7 @@ func (s *Service) dispatch(ctx context.Context, a jobs.SupportChannelDispatchArg
 	if t.Channel != domain.ChannelEmail {
 		return nil
 	}
-	rows, err := s.d.DB.Pool.Query(ctx, `SELECT DISTINCT ON (d.connection_id) d.id,d.connection_id,d.team_id,d.priority,d.external_channel_id,d.external_channel_name,d.enabled,d.include_notes,d.message_limit,d.created_at,c.provider,c.credentials_enc
+	rows, err := s.d.DB.Pool.Query(ctx, `SELECT DISTINCT ON (d.connection_id) d.id,d.connection_id,d.team_id,d.priority,d.external_channel_id,d.external_channel_name,d.enabled,d.include_notes,d.message_limit,d.ollie_summary,d.ollie_warnings,d.ollie_personality,d.ollie_length,d.created_at,c.provider,c.credentials_enc
 		FROM support_channel_destinations d JOIN support_channel_connections c ON c.id=d.connection_id
 		LEFT JOIN support_channel_threads existing ON existing.destination_id=d.id AND existing.ticket_id=$4
 		WHERE d.workspace_id=$1 AND d.enabled
@@ -160,7 +160,7 @@ func (s *Service) dispatch(ctx context.Context, a jobs.SupportChannelDispatchArg
 	}
 	targets, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (deliveryTarget, error) {
 		var d deliveryTarget
-		err := row.Scan(&d.ID, &d.ConnectionID, &d.TeamID, &d.Priority, &d.ExternalChannelID, &d.ExternalChannelName, &d.Enabled, &d.IncludeNotes, &d.MessageLimit, &d.CreatedAt, &d.Provider, &d.CredentialsEnc)
+		err := row.Scan(append(destinationScan(&d.destination), &d.Provider, &d.CredentialsEnc)...)
 		return d, err
 	})
 	if err != nil {
@@ -197,7 +197,8 @@ func (s *Service) dispatchTo(ctx context.Context, a jobs.SupportChannelDispatchA
 	var thread channel.Thread
 	var last, historySeq int64
 	var historyBefore, historyPosted *time.Time
-	err = s.d.DB.Pool.QueryRow(ctx, `SELECT COALESCE(external_thread_id,''),COALESCE(external_root_message_id,''),COALESCE(external_channel_id,''),last_event_seq,history_event_seq,history_before,history_posted_at FROM support_channel_threads WHERE destination_id=$1 AND ticket_id=$2`, d.ID, t.ID).Scan(&thread.ID, &thread.RootID, &thread.ChannelID, &last, &historySeq, &historyBefore, &historyPosted)
+	var sentimentWarned string
+	err = s.d.DB.Pool.QueryRow(ctx, `SELECT COALESCE(external_thread_id,''),COALESCE(external_root_message_id,''),COALESCE(external_channel_id,''),last_event_seq,history_event_seq,history_before,history_posted_at,sentiment_warning FROM support_channel_threads WHERE destination_id=$1 AND ticket_id=$2`, d.ID, t.ID).Scan(&thread.ID, &thread.RootID, &thread.ChannelID, &last, &historySeq, &historyBefore, &historyPosted, &sentimentWarned)
 	if db.IsNotFound(err) {
 		// The history covers what came before this event. Its own message, and
 		// any written moments before it, are still on their way and post in full.
@@ -254,6 +255,12 @@ func (s *Service) dispatchTo(ctx context.Context, a jobs.SupportChannelDispatchA
 			}
 			if _, err = s.d.DB.Pool.Exec(ctx, `UPDATE support_channel_threads SET history_posted_at=now(),history_message_ids=$3,history_processing_expires_at=NULL,updated_at=now() WHERE destination_id=$1 AND ticket_id=$2`, d.ID, t.ID, posted); err != nil {
 				return err
+			}
+			// Ollie's summary follows the history, once per thread.
+			if d.OllieSummary {
+				if err = s.enqueueSummary(ctx, d.ID, t.ID); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -353,6 +360,11 @@ func (s *Service) dispatchTo(ctx context.Context, a jobs.SupportChannelDispatchA
 				WHERE destination_id=$1 AND ticket_id=$2 AND card_processing_seq=$3`, d.ID, t.ID, a.EventSeq); err != nil {
 				return err
 			}
+		}
+	}
+	if d.OllieWarnings {
+		if err = s.warnSentiment(ctx, adapter, creds, d, t, thread.ID, sentimentWarned); err != nil {
+			return err
 		}
 	}
 	_, err = s.d.DB.Pool.Exec(ctx, `UPDATE support_channel_threads SET last_event_seq=GREATEST(last_event_seq,$2),updated_at=now() WHERE destination_id=$1 AND ticket_id=$3`, d.ID, a.EventSeq, t.ID)
@@ -695,8 +707,9 @@ func (s *Service) handleInbound(ctx context.Context, c connection, r *reply) err
 	var destinationID uuid.UUID
 	var includeNotes bool
 	var teamID *uuid.UUID
-	err = s.d.DB.Pool.QueryRow(ctx, `SELECT t.ticket_id,d.id,d.include_notes,d.team_id FROM support_channel_threads t JOIN support_channel_destinations d ON d.id=t.destination_id
-		WHERE t.connection_id=$1 AND t.external_channel_id=$2 AND t.external_thread_id=$3`, c.ID, in.ExternalChannelID, in.ExternalThreadID).Scan(&tid, &destinationID, &includeNotes, &teamID)
+	var voice ollieVoice
+	err = s.d.DB.Pool.QueryRow(ctx, `SELECT t.ticket_id,d.id,d.include_notes,d.team_id,d.ollie_personality,d.ollie_length FROM support_channel_threads t JOIN support_channel_destinations d ON d.id=t.destination_id
+		WHERE t.connection_id=$1 AND t.external_channel_id=$2 AND t.external_thread_id=$3`, c.ID, in.ExternalChannelID, in.ExternalThreadID).Scan(&tid, &destinationID, &includeNotes, &teamID, &voice.Personality, &voice.Length)
 	if db.IsNotFound(err) {
 		creating := control || in.Command == "chat" && in.Directed
 		if in.Command == "chat" && !in.Directed {
@@ -707,8 +720,8 @@ func (s *Service) handleInbound(ctx context.Context, c connection, r *reply) err
 			}
 		}
 		if creating {
-			err = s.d.DB.Pool.QueryRow(ctx, `SELECT team_id FROM support_channel_destinations
-				WHERE connection_id=$1 AND workspace_id=$2 AND external_channel_id=$3 AND enabled`, c.ID, c.WorkspaceID, in.ExternalChannelID).Scan(&teamID)
+			err = s.d.DB.Pool.QueryRow(ctx, `SELECT team_id,ollie_personality,ollie_length FROM support_channel_destinations
+				WHERE connection_id=$1 AND workspace_id=$2 AND external_channel_id=$3 AND enabled`, c.ID, c.WorkspaceID, in.ExternalChannelID).Scan(&teamID, &voice.Personality, &voice.Length)
 			if err == nil && p == nil {
 				if p, err = s.externalPrincipal(ctx, c, in.ExternalUserID); err != nil {
 					r.notice(ctx, "Link your opendesk account before asking Ollie to create a ticket.")
@@ -719,7 +732,7 @@ func (s *Service) handleInbound(ctx context.Context, c connection, r *reply) err
 				if control {
 					return s.answerControl(ctx, c, r, p, conversationTarget{TeamID: teamID})
 				}
-				answer, converseErr := s.converseCreate(ctx, p, c.ID, teamID, *in)
+				answer, converseErr := s.converseCreate(ctx, p, c.ID, teamID, voice, *in)
 				if converseErr != nil {
 					if errors.Is(converseErr, errConversationBusy) {
 						return converseErr
@@ -782,8 +795,21 @@ func (s *Service) handleInbound(ctx context.Context, c connection, r *reply) err
 			return nil
 		}
 	}
+	opts := conversationOptions{IncludeNotes: includeNotes, Voice: voice}
+	switch in.Command {
+	case "suggest":
+		// Ollie's suggestion control: a draft, never a change.
+		in.Command, in.Text, opts.Suggest = "chat", "Suggest a reply to the customer.", true
+	case "ask":
+		question, ok := askQuestions[strings.TrimSpace(in.Value)]
+		if !ok {
+			r.notice(ctx, "That question isn't available.")
+			return nil
+		}
+		in.Command, in.Text = "chat", question
+	}
 	if in.Command == "chat" {
-		answer, err := s.converse(ctx, p, c.ID, tid, includeNotes, *in)
+		answer, err := s.converse(ctx, p, c.ID, tid, opts, *in)
 		if err != nil {
 			if errors.Is(err, errConversationBusy) {
 				return err

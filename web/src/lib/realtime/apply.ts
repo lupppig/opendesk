@@ -500,6 +500,12 @@ function applyInScope(qc: QueryClient, env: Envelope, ctx: ApplyContext): void {
     return;
   }
 
+  // What Ollie may do in support channels is one record per workspace.
+  if (resource === "support_channel_ollie") {
+    if (d.support_channel_ollie) qc.setQueryData(qk.supportChannelOllie, d.support_channel_ollie);
+    return;
+  }
+
   const simple = simpleLists[resource];
   if (simple) {
     if (verb === "deleted") removeFromList(qc, simple.key(), d[`${simple.field}_id`] as string);

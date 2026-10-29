@@ -175,6 +175,21 @@ type SupportChannelHealthAlertArgs struct{}
 
 func (SupportChannelHealthAlertArgs) Kind() string { return "support_channels.health_alert" }
 
+// SupportChannelSummaryArgs posts Ollie's summary in a ticket's new provider thread.
+// Owner: supportchannels.
+type SupportChannelSummaryArgs struct {
+	DestinationID uuid.UUID `json:"destination_id"`
+	TicketID      uuid.UUID `json:"ticket_id"`
+}
+
+func (SupportChannelSummaryArgs) Kind() string { return "support_channels.summary" }
+
+// SupportChannelSLAWarningArgs warns ticket threads whose SLA is due soon or breached.
+// Owner: supportchannels.
+type SupportChannelSLAWarningArgs struct{}
+
+func (SupportChannelSLAWarningArgs) Kind() string { return "support_channels.sla_warning" }
+
 // SystemEmailArgs sends platform email (verification, reset, invites, notifications)
 // through the system mailer. Owner: core.
 type SystemEmailArgs struct {

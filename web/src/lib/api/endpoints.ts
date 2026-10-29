@@ -490,7 +490,11 @@ export const api = {
     retryDelivery: (eventSeq: number) => http.post<{ event_seq: number; status: "queued" }>(`/v1/support-channels/deliveries/${eventSeq}/retry`),
     addDestination: (b: { connection_id: string; team_id?: string; priority?: "low" | "normal" | "high" | "urgent"; external_channel_id: string; external_channel_name?: string; include_notes?: boolean; message_limit?: number }) =>
       http.create<T.SupportChannelDestination>("/v1/support-channels/destinations", b),
+    updateDestination: (id: string, b: T.SupportChannelOllieUpdate) =>
+      http.patch<T.SupportChannelDestination>(`/v1/support-channels/destinations/${id}`, b),
     removeDestination: (id: string) => http.del(`/v1/support-channels/destinations/${id}`),
+    ollie: () => http.get<T.SupportChannelOllie>("/v1/support-channels/ollie"),
+    setOllie: (b: T.SupportChannelOllie) => http.put<T.SupportChannelOllie>("/v1/support-channels/ollie", b),
     linkCode: () => http.create<{ code: string; expires_at: string }>("/v1/me/support-channel-link-code", {}),
   },
   imports: {

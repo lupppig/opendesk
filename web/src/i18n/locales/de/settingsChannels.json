@@ -602,6 +602,62 @@
       "lastHours": "Letzte 24 Stunden",
       "window": "Zustellungen der letzten 24 Stunden"
     },
+    "ollie": {
+      "title": "Ollie in Support-Kanälen",
+      "description": "Ollie fasst jeden neuen Ticket-Thread zusammen, schlägt Antworten vor, beantwortet Fragen und warnt vor SLAs und unzufriedenen Kunden. Lege fest, welche Änderungen Ollie selbst vornehmen darf.",
+      "error": "Die Einstellungen für Ollie konnten nicht gespeichert werden.",
+      "commands": "Getippte Befehle wie reply, note und status sind die eigenen des Agenten und funktionieren immer. Von Ollie vorgeschlagene Kundenantworten, neue Tickets oder das Schließen werden weiterhin erst nach Bestätigung ausgeführt.",
+      "actions": {
+        "reply": {
+          "title": "Antworten senden",
+          "hint": "Ollie darf eine Antwort an den Kunden vorbereiten. Sie wird erst nach Bestätigung durch den Agenten gesendet."
+        },
+        "note": {
+          "title": "Interne Notizen hinzufügen",
+          "hint": "Ollie darf eine Notiz hinzufügen, die der Kunde nicht sieht."
+        },
+        "assign_self": {
+          "title": "Tickets zuweisen",
+          "hint": "Ollie darf das Ticket dem Agenten zuweisen, der mit Ollie spricht."
+        },
+        "status": {
+          "title": "Status ändern",
+          "hint": "Ollie darf den Status des Tickets ändern. Das Schließen wird bestätigt."
+        },
+        "priority": {
+          "title": "Priorität ändern",
+          "hint": "Ollie darf die Priorität des Tickets erhöhen oder senken."
+        },
+        "create_ticket": {
+          "title": "Tickets erstellen",
+          "hint": "Ollie darf nach Bestätigung ein Ticket aus einer Kanalnachricht erstellen."
+        }
+      },
+      "channel": {
+        "label": "Ollie-Einstellungen für {{name}}",
+        "title": "Ollie in #{{name}}",
+        "description": "Wie Ollie in den Ticket-Threads dieses Kanals arbeitet.",
+        "summary": "Neue Threads zusammenfassen",
+        "summaryHint": "Wenn ein Ticket-Thread geöffnet wird, schreibt Ollie, was der Kunde braucht, was er schon versucht hat, seine Stimmung und die Dringlichkeit. Verbraucht KI-Guthaben.",
+        "warnings": "SLA- und Stimmungswarnungen",
+        "warningsHint": "Ollie warnt im Thread, wenn ein SLA-Ziel naht oder verpasst ist und wenn der Kunde unzufrieden klingt.",
+        "length": "Antwortlänge",
+        "lengthHint": "Wie lang Ollies Antworten und Vorschläge in diesem Kanal sind.",
+        "lengthValues": {
+          "brief": "Kurz",
+          "standard": "Standard",
+          "detailed": "Ausführlich"
+        },
+        "personality": "Persönlichkeit",
+        "personalityHint": "Wie Ollie hier klingt. Sie prägt nur den Ton und ändert nie, was Ollie tun darf.",
+        "personalityPlaceholder": "Freundlich und positiv, einfache Worte, kein Fachjargon",
+        "personalityInvalid": "Die Persönlichkeit darf weder < noch > enthalten.",
+        "submit": "Speichern",
+        "cancel": "Abbrechen",
+        "saved": "Ollie-Einstellungen gespeichert.",
+        "error": "Ollies Einstellungen konnten nicht gespeichert werden."
+      }
+    },
     "empty": {
       "title": "Noch keine Support-Kanäle",
       "body": "Verbinde einen Bot und wähle dann, wo die E-Mail-Tickets jedes Teams erscheinen.",

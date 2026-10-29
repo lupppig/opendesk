@@ -607,6 +607,62 @@
       "lastHours": "Dernières 24 heures",
       "window": "Total des livraisons sur les dernières 24 heures"
     },
+    "ollie": {
+      "title": "Ollie dans les canaux de support",
+      "description": "Ollie résume chaque nouveau fil de ticket, suggère des réponses, répond aux questions et prévient des SLA et des clients mécontents. Choisissez les modifications qu'il peut faire de lui-même.",
+      "error": "Impossible d'enregistrer ce qu'Ollie peut faire.",
+      "commands": "Les commandes saisies comme reply, note et status sont celles de l'agent et fonctionnent toujours. Les réponses au client, les nouveaux tickets et les fermetures proposés par Ollie demandent toujours une confirmation.",
+      "actions": {
+        "reply": {
+          "title": "Envoyer des réponses",
+          "hint": "Ollie peut préparer une réponse au client. Elle n'est envoyée qu'après la confirmation de l'agent."
+        },
+        "note": {
+          "title": "Ajouter des notes internes",
+          "hint": "Ollie peut ajouter une note que le client ne voit pas."
+        },
+        "assign_self": {
+          "title": "Assigner les tickets",
+          "hint": "Ollie peut assigner le ticket à l'agent qui lui parle."
+        },
+        "status": {
+          "title": "Changer le statut",
+          "hint": "Ollie peut changer le statut du ticket. La fermeture demande une confirmation."
+        },
+        "priority": {
+          "title": "Changer la priorité",
+          "hint": "Ollie peut augmenter ou baisser la priorité du ticket."
+        },
+        "create_ticket": {
+          "title": "Créer des tickets",
+          "hint": "Ollie peut créer un ticket à partir d'un message du canal après confirmation."
+        }
+      },
+      "channel": {
+        "label": "Réglages d'Ollie pour {{name}}",
+        "title": "Ollie dans #{{name}}",
+        "description": "Comment Ollie travaille dans les fils de tickets de ce canal.",
+        "summary": "Résumer les nouveaux fils",
+        "summaryHint": "À l'ouverture du fil d'un ticket, Ollie indique ce dont le client a besoin, ce qu'il a déjà essayé, son ressenti et l'urgence. Utilise des crédits IA.",
+        "warnings": "Alertes SLA et ressenti",
+        "warningsHint": "Ollie prévient dans le fil quand un objectif SLA approche ou est dépassé, et quand le client semble mécontent.",
+        "length": "Longueur des réponses",
+        "lengthHint": "La longueur des réponses et suggestions d'Ollie dans ce canal.",
+        "lengthValues": {
+          "brief": "Courte",
+          "standard": "Standard",
+          "detailed": "Détaillée"
+        },
+        "personality": "Personnalité",
+        "personalityHint": "Le ton d'Ollie ici. Elle ne change jamais ce qu'Ollie peut faire.",
+        "personalityPlaceholder": "Chaleureux et positif, des mots simples, sans jargon",
+        "personalityInvalid": "La personnalité ne peut pas contenir < ou >.",
+        "submit": "Enregistrer",
+        "cancel": "Annuler",
+        "saved": "Réglages d'Ollie enregistrés.",
+        "error": "Impossible d'enregistrer les réglages d'Ollie."
+      }
+    },
     "empty": {
       "title": "Aucun canal de support pour le moment",
       "body": "Connectez un bot, puis choisissez où afficher les tickets par e-mail de chaque équipe.",

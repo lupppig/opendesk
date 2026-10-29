@@ -184,6 +184,9 @@ export const qk = {
   get supportChannelOperations() {
     return w(["support-channels", "operations"] as const);
   },
+  get supportChannelOllie() {
+    return w(["support-channels", "ollie"] as const);
+  },
   supportChannelAvailableDestinations: (id: string) => w(["support-channels", "connections", id, "destinations"] as const),
   get imports() {
     return w(["imports"] as const);
@@ -439,6 +442,7 @@ export const q = {
       getNextPageParam: (page) => page.next_cursor,
     }),
   supportChannelOperations: () => queryOptions({ queryKey: qk.supportChannelOperations, queryFn: api.supportChannels.operations }),
+  supportChannelOllie: () => queryOptions({ queryKey: qk.supportChannelOllie, queryFn: api.supportChannels.ollie }),
   supportChannelAvailableDestinations: (id: string) =>
     list(qk.supportChannelAvailableDestinations(id), () => api.supportChannels.availableDestinations(id), { staleTime: 30_000 }),
   imports: () => list(qk.imports, () => api.imports.list()),

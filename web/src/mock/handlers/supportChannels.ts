@@ -1,5 +1,5 @@
-import type { SupportChannelConnection, SupportChannelDelivery, SupportChannelDestination, SupportChannelOperations, SupportChannelProvider } from "@/lib/api/types";
-import { del, get, HttpError, invalid, notFound, paginate, patch, post, respond } from "../router";
+import type { SupportChannelConnection, SupportChannelDelivery, SupportChannelDestination, SupportChannelOllie, SupportChannelOllieAction, SupportChannelOllieLength, SupportChannelOperations, SupportChannelProvider } from "@/lib/api/types";
+import { del, get, HttpError, invalid, notFound, paginate, patch, post, put, respond } from "../router";
 import { nowIso, uuid } from "../util";
 
 const providers: SupportChannelProvider[] = [
@@ -65,6 +65,26 @@ const health = (provider: string) =>
     ? { health_status: "action_required" as const, health_detail: provider === "slack" ? "Credentials work. Verify the Events API, interactivity and /opendesk request URLs in Slack." : "Set the Chat app's connection URL and authentication audience to the webhook address." }
     : { health_status: "healthy" as const, health_detail: provider === "discord" ? "Discord's interactions endpoint and commands are configured." : "Telegram's webhook is configured and accepting updates." };
 const destinations: SupportChannelDestination[] = [];
+const ollieActions: SupportChannelOllieAction[] = ["reply", "note", "assign_self", "status", "priority", "create_ticket"];
+const ollieLengths: SupportChannelOllieLength[] = ["brief", "standard", "detailed"];
+const ollie: SupportChannelOllie = { actions: [...ollieActions] };
+
+// Applies a destination's Ollie settings as the API does.
+function applyOllie(row: SupportChannelDestination, body: Record<string, unknown>) {
+  if (typeof body.ollie_summary === "boolean") row.ollie_summary = body.ollie_summary;
+  if (typeof body.ollie_warnings === "boolean") row.ollie_warnings = body.ollie_warnings;
+  if (body.ollie_personality !== undefined) {
+    const personality = String(body.ollie_personality).trim();
+    if (/[<>]/.test(personality)) throw invalid("The personality can't contain < or >.");
+    if (personality.length > 500) throw invalid("The personality must be 500 characters or less.");
+    row.ollie_personality = personality;
+  }
+  if (body.ollie_length !== undefined) {
+    const length = ollieLengths.find((value) => value === body.ollie_length);
+    if (!length) throw invalid("Response length must be brief, standard or detailed.");
+    row.ollie_length = length;
+  }
+}
 const deliveries: SupportChannelDelivery[] = [
   { event_seq: 1842, event_type: "ticket.created", ticket_number: 284, status: "queued", attempts: 0, last_error: "", created_at: new Date(Date.now() - 2 * 60_000).toISOString(), updated_at: new Date(Date.now() - 2 * 60_000).toISOString() },
   { event_seq: 1841, event_type: "message.created", ticket_number: 283, status: "retrying", attempts: 2, last_error: "", created_at: new Date(Date.now() - 8 * 60_000).toISOString(), updated_at: new Date(Date.now() - 45_000).toISOString() },
@@ -189,10 +209,28 @@ export function registerSupportChannels() {
       enabled: true,
       include_notes: ctx.body.include_notes === true,
       message_limit: typeof ctx.body.message_limit === "number" ? ctx.body.message_limit : 3500,
+      ollie_summary: true,
+      ollie_warnings: true,
+      ollie_personality: "",
+      ollie_length: "standard",
       created_at: nowIso(),
     };
+    applyOllie(row, ctx.body);
     destinations.push(row);
     return row;
+  });
+  patch("/v1/support-channels/destinations/:id", (ctx) => {
+    const row = destinations.find((x) => x.id === ctx.params.id);
+    if (!row) throw notFound("Support channel destination");
+    applyOllie(row, ctx.body);
+    return row;
+  });
+  get("/v1/support-channels/ollie", () => ollie);
+  put("/v1/support-channels/ollie", (ctx) => {
+    const actions = Array.isArray(ctx.body.actions) ? (ctx.body.actions as string[]) : [];
+    if (actions.some((a) => !ollieActions.includes(a as SupportChannelOllieAction))) throw invalid(`actions takes only ${ollieActions.join(", ")}`);
+    ollie.actions = ollieActions.filter((a) => actions.includes(a));
+    return ollie;
   });
   del("/v1/support-channels/destinations/:id", (ctx) => {
     const i = destinations.findIndex((x) => x.id === ctx.params.id);

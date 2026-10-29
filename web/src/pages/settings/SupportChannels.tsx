@@ -10,13 +10,23 @@ import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm";
 import { CopyField } from "@/components/ui/copy-button";
 import { Dialog } from "@/components/ui/dialog";
-import { Field, TextInput } from "@/components/ui/input";
+import { Field, Textarea, TextInput } from "@/components/ui/input";
 import { Select, type SelectOption } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api/client";
 import { api } from "@/lib/api/endpoints";
-import type { SupportChannelAccount, SupportChannelConnection, SupportChannelDelivery, SupportChannelDestination, SupportChannelOperations, SupportChannelProvider } from "@/lib/api/types";
+import type {
+  SupportChannelAccount,
+  SupportChannelConnection,
+  SupportChannelDelivery,
+  SupportChannelDestination,
+  SupportChannelOllie,
+  SupportChannelOllieAction,
+  SupportChannelOllieLength,
+  SupportChannelOperations,
+  SupportChannelProvider,
+} from "@/lib/api/types";
 import { fullDate, relShort } from "@/lib/format";
 import { q, qk, upsertInList } from "@/lib/queries";
 import { atLeast, useRole } from "@/lib/session";
@@ -29,6 +39,8 @@ const PRIORITIES = ["low", "normal", "high", "urgent"] as const;
 type DestinationPriority = "all" | (typeof PRIORITIES)[number];
 const FIELDS = ["bot_token", "signing_secret", "public_key", "guild_id", "webhook_secret", "service_account_json"] as const;
 type FieldKey = (typeof FIELDS)[number];
+const OLLIE_ACTIONS: SupportChannelOllieAction[] = ["reply", "note", "assign_self", "status", "priority", "create_ticket"];
+const OLLIE_LENGTHS: SupportChannelOllieLength[] = ["brief", "standard", "detailed"];
 const knownProvider = (k: string): k is ProviderKey => (PROVIDERS as readonly string[]).includes(k);
 const knownField = (k: string): k is FieldKey => (FIELDS as readonly string[]).includes(k);
 
@@ -84,6 +96,7 @@ export default function SupportChannels() {
   const [connecting, setConnecting] = useState<SupportChannelProvider | null>(null);
   const [routing, setRouting] = useState<string | null>(null);
   const [rotating, setRotating] = useState<SupportChannelConnection | null>(null);
+  const [tuning, setTuning] = useState<SupportChannelDestination | null>(null);
   const [link, setLink] = useState<{ code: string; expires_at: string } | null>(null);
 
   const disconnect = useMutation({
@@ -218,7 +231,17 @@ export default function SupportChannels() {
                                 {admin && (
                                   <button
                                     type="button"
-                                    className="ml-0.5 flex size-5 items-center justify-center rounded text-fg-4 hover:bg-hover hover:text-danger-fg"
+                                    className="ml-0.5 flex size-5 items-center justify-center rounded text-tone-violet hover:bg-hover hover:text-tone-violet-solid"
+                                    aria-label={t("supportChannels.ollie.channel.label", { name })}
+                                    onClick={() => setTuning(route)}
+                                  >
+                                    <Sparkles className="size-3" />
+                                  </button>
+                                )}
+                                {admin && (
+                                  <button
+                                    type="button"
+                                    className="flex size-5 items-center justify-center rounded text-fg-4 hover:bg-hover hover:text-danger-fg"
                                     aria-label={t("supportChannels.removeDestinationLabel", { name })}
                                     onClick={() =>
                                       confirm.show(t("supportChannels.removeDestinationBody", { name }), () => removeDestination.mutateAsync(route.id), {
@@ -270,6 +293,8 @@ export default function SupportChannels() {
           </div>
         )}
       </Section>
+
+      {!!connections?.length && <OllieSection admin={admin} />}
 
       {admin && (
         <Section
@@ -365,6 +390,7 @@ export default function SupportChannels() {
           onClose={() => setRotating(null)}
         />
       )}
+      {tuning && <OllieDialog destination={tuning} onClose={() => setTuning(null)} />}
       {routing && (
         <DestinationDialog
           connectionId={routing}
@@ -386,6 +412,149 @@ export default function SupportChannels() {
         <CopyField value={link?.code ?? ""} />
       </Dialog>
     </SettingsPage>
+  );
+}
+
+// What Ollie may change when it chooses, for every support channel. Explicit
+// commands are the agent's own and aren't listed.
+function OllieSection({ admin }: { admin: boolean }) {
+  const { t } = useTranslation("settingsChannels");
+  const qc = useQueryClient();
+  const idPrefix = useId();
+  const { data, isLoading } = useQuery(q.supportChannelOllie());
+  const save = useMutation({
+    mutationFn: api.supportChannels.setOllie,
+    onMutate: async (next) => {
+      await qc.cancelQueries({ queryKey: qk.supportChannelOllie });
+      const before = qc.getQueryData<SupportChannelOllie>(qk.supportChannelOllie);
+      qc.setQueryData(qk.supportChannelOllie, next);
+      return { before };
+    },
+    onSuccess: (row) => qc.setQueryData(qk.supportChannelOllie, row),
+    onError: (e, _, context) => {
+      if (context?.before) qc.setQueryData(qk.supportChannelOllie, context.before);
+      toast.error(e, t("supportChannels.ollie.error"));
+    },
+  });
+  const actions = data?.actions ?? [];
+  const toggle = (action: SupportChannelOllieAction, on: boolean) =>
+    save.mutate({ actions: OLLIE_ACTIONS.filter((a) => (a === action ? on : actions.includes(a))) });
+  return (
+    <Section title={t("supportChannels.ollie.title")} description={t("supportChannels.ollie.description")}>
+      {isLoading ? (
+        <ListSkeleton rows={3} />
+      ) : (
+        <div className="divide-y divide-line-soft">
+          {OLLIE_ACTIONS.map((action) => {
+            const id = `${idPrefix}-${action}`;
+            return (
+              <div key={action} className="flex items-start justify-between gap-4 py-3">
+                <label htmlFor={id} className="min-w-0">
+                  <span className="block text-[13px] font-medium">{t(`supportChannels.ollie.actions.${action}.title`)}</span>
+                  <span className="mt-0.5 block text-[12px] leading-[17px] text-fg-3">{t(`supportChannels.ollie.actions.${action}.hint`)}</span>
+                </label>
+                <Switch id={id} checked={actions.includes(action)} disabled={!admin || !data} onCheckedChange={(on) => toggle(action, on)} />
+              </div>
+            );
+          })}
+          <p className="py-3 text-[12px] leading-[17px] text-fg-3">{t("supportChannels.ollie.commands")}</p>
+        </div>
+      )}
+    </Section>
+  );
+}
+
+function OllieDialog({ destination, onClose }: { destination: SupportChannelDestination; onClose: () => void }) {
+  const { t } = useTranslation("settingsChannels");
+  const qc = useQueryClient();
+  const summaryId = useId();
+  const warningsId = useId();
+  const [summary, setSummary] = useState(destination.ollie_summary);
+  const [warnings, setWarnings] = useState(destination.ollie_warnings);
+  const [length, setLength] = useState<SupportChannelOllieLength>(destination.ollie_length);
+  const [personality, setPersonality] = useState(destination.ollie_personality);
+  const [error, setError] = useState("");
+  const name = destination.external_channel_name || destination.external_channel_id;
+  const save = useMutation({
+    mutationFn: () =>
+      api.supportChannels.updateDestination(destination.id, {
+        ollie_summary: summary,
+        ollie_warnings: warnings,
+        ollie_length: length,
+        ollie_personality: personality.trim(),
+      }),
+    onSuccess: (row) => {
+      upsertInList(qc, qk.supportChannelDestinations, row);
+      toast.success(t("supportChannels.ollie.channel.saved"));
+      onClose();
+    },
+    onError: (e) => setError(errorMessage(e, t("supportChannels.ollie.channel.error"))),
+  });
+  const invalid = /[<>]/.test(personality);
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => !open && onClose()}
+      title={t("supportChannels.ollie.channel.title", { name })}
+      description={t("supportChannels.ollie.channel.description")}
+      footer={
+        <>
+          <Button onClick={onClose}>{t("supportChannels.ollie.channel.cancel")}</Button>
+          <Button variant="primary" disabled={invalid} loading={save.isPending} onClick={() => save.mutate()}>
+            {t("supportChannels.ollie.channel.submit")}
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <div className="flex items-start justify-between gap-4">
+          <label htmlFor={summaryId} className="min-w-0">
+            <span className="block text-[13px] font-medium">{t("supportChannels.ollie.channel.summary")}</span>
+            <span className="mt-0.5 block text-[12px] leading-[17px] text-fg-3">{t("supportChannels.ollie.channel.summaryHint")}</span>
+          </label>
+          <Switch id={summaryId} checked={summary} onCheckedChange={setSummary} />
+        </div>
+        <div className="flex items-start justify-between gap-4">
+          <label htmlFor={warningsId} className="min-w-0">
+            <span className="block text-[13px] font-medium">{t("supportChannels.ollie.channel.warnings")}</span>
+            <span className="mt-0.5 block text-[12px] leading-[17px] text-fg-3">{t("supportChannels.ollie.channel.warningsHint")}</span>
+          </label>
+          <Switch id={warningsId} checked={warnings} onCheckedChange={setWarnings} />
+        </div>
+        <Field label={t("supportChannels.ollie.channel.length")} hint={t("supportChannels.ollie.channel.lengthHint")}>
+          {({ id }) => (
+            <Select<SupportChannelOllieLength>
+              id={id}
+              value={length}
+              onChange={setLength}
+              options={OLLIE_LENGTHS.map((value) => ({ value, label: t(`supportChannels.ollie.channel.lengthValues.${value}`) }))}
+            />
+          )}
+        </Field>
+        <Field
+          label={t("supportChannels.ollie.channel.personality")}
+          hint={t("supportChannels.ollie.channel.personalityHint")}
+          error={invalid ? t("supportChannels.ollie.channel.personalityInvalid") : undefined}
+          optional
+        >
+          {(props) => (
+            <Textarea
+              {...props}
+              rows={3}
+              maxLength={500}
+              value={personality}
+              placeholder={t("supportChannels.ollie.channel.personalityPlaceholder")}
+              onChange={(e) => setPersonality(e.target.value)}
+            />
+          )}
+        </Field>
+        {error && (
+          <p role="alert" className="text-[12px] text-danger-fg">
+            {error}
+          </p>
+        )}
+      </div>
+    </Dialog>
   );
 }
 

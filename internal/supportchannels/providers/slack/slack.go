@@ -280,7 +280,7 @@ func (a Adapter) slackFileHost(u *url.URL) bool {
 
 // controls are the action ids opendesk's own blocks send. Any other action,
 // including the "Open in opendesk" link button, is acknowledged and ignored.
-var controls = map[string]bool{"assign_self": true, "status": true, "priority": true, "confirm": true, "cancel": true}
+var controls = map[string]bool{"assign_self": true, "status": true, "priority": true, "confirm": true, "cancel": true, "suggest": true, "ask": true}
 
 // parseInteraction reads a block_actions payload from a ticket card or a
 // confirmation preview.

@@ -275,7 +275,7 @@ func (a Adapter) Parse(_ http.Header, body []byte) (channel.WebhookResult, error
 			}
 		}
 		switch command {
-		case "assign_self", "status", "priority", "confirm", "cancel":
+		case "assign_self", "status", "priority", "confirm", "cancel", "suggest", "ask":
 		default:
 			return channel.WebhookResult{Control: true, Status: http.StatusOK, ContentType: "application/json", Body: []byte("{}")}, nil
 		}

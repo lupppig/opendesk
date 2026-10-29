@@ -56,12 +56,18 @@ func RegisterWorkers(d *deps.Deps, w *river.Workers) {
 	river.AddWorker(w, &dispatchWorker{s: For(d)})
 	river.AddWorker(w, &inboundWorker{s: For(d)})
 	river.AddWorker(w, &healthAlertWorker{s: For(d)})
+	river.AddWorker(w, &summaryWorker{s: For(d)})
+	river.AddWorker(w, &slaWarningWorker{s: For(d)})
 }
 func Periodic(*deps.Deps) []*river.PeriodicJob {
 	return []*river.PeriodicJob{river.NewPeriodicJob(river.PeriodicInterval(5*time.Minute),
 		func() (river.JobArgs, *river.InsertOpts) {
 			return jobs.SupportChannelHealthAlertArgs{}, &river.InsertOpts{MaxAttempts: 3, UniqueOpts: river.UniqueOpts{ByPeriod: 5 * time.Minute}}
-		}, &river.PeriodicJobOpts{RunOnStart: true, ID: jobs.SupportChannelHealthAlertArgs{}.Kind()})}
+		}, &river.PeriodicJobOpts{RunOnStart: true, ID: jobs.SupportChannelHealthAlertArgs{}.Kind()}),
+		river.NewPeriodicJob(river.PeriodicInterval(slaWarningInterval),
+			func() (river.JobArgs, *river.InsertOpts) {
+				return jobs.SupportChannelSLAWarningArgs{}, &river.InsertOpts{MaxAttempts: 3, UniqueOpts: river.UniqueOpts{ByPeriod: slaWarningInterval}}
+			}, &river.PeriodicJobOpts{RunOnStart: true, ID: jobs.SupportChannelSLAWarningArgs{}.Kind()})}
 }
 func Background(ctx context.Context, d *deps.Deps) {
 	s := For(d)
@@ -100,7 +106,19 @@ type destination struct {
 	Enabled             bool       `json:"enabled"`
 	IncludeNotes        bool       `json:"include_notes"`
 	MessageLimit        int        `json:"message_limit"`
-	CreatedAt           time.Time  `json:"created_at"`
+	// Ollie in this destination's threads (contracts/support-channels.md "Ollie").
+	OllieSummary     bool      `json:"ollie_summary"`
+	OllieWarnings    bool      `json:"ollie_warnings"`
+	OlliePersonality string    `json:"ollie_personality"`
+	OllieLength      string    `json:"ollie_length" enum:"brief,standard,detailed"`
+	CreatedAt        time.Time `json:"created_at"`
+}
+
+// destinationColumns are a destination's columns in the order scanDestination reads them.
+const destinationColumns = `id,connection_id,team_id,priority,external_channel_id,external_channel_name,enabled,include_notes,message_limit,ollie_summary,ollie_warnings,ollie_personality,ollie_length,created_at`
+
+func destinationScan(d *destination) []any {
+	return []any{&d.ID, &d.ConnectionID, &d.TeamID, &d.Priority, &d.ExternalChannelID, &d.ExternalChannelName, &d.Enabled, &d.IncludeNotes, &d.MessageLimit, &d.OllieSummary, &d.OllieWarnings, &d.OlliePersonality, &d.OllieLength, &d.CreatedAt}
 }
 
 type delivery struct {

@@ -356,7 +356,7 @@ func (a Adapter) DownloadAttachment(ctx context.Context, c *http.Client, cr map[
 }
 
 // controls are the callback commands opendesk's own keyboards send.
-var controls = map[string]bool{"assign_self": true, "status": true, "priority": true, "confirm": true, "cancel": true}
+var controls = map[string]bool{"assign_self": true, "status": true, "priority": true, "confirm": true, "cancel": true, "suggest": true, "ask": true}
 
 func explicitCommand(s string) bool {
 	switch s {

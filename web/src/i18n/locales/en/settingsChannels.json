@@ -627,6 +627,62 @@
       "lastHours": "Last 24 hours",
       "window": "Delivery totals from the last 24 hours"
     },
+    "ollie": {
+      "title": "Ollie in support channels",
+      "description": "Ollie summarizes each new ticket thread, suggests replies, answers questions and warns about SLAs and unhappy customers. Choose which changes it may make when it decides to.",
+      "error": "Couldn't save what Ollie may do.",
+      "commands": "Typed commands such as reply, note and status are the agent's own and always work. Changes Ollie suggests to a customer reply, a new ticket or a close still ask for confirmation.",
+      "actions": {
+        "reply": {
+          "title": "Send replies",
+          "hint": "Ollie may prepare a reply to the customer. It's sent only after the agent confirms."
+        },
+        "note": {
+          "title": "Add internal notes",
+          "hint": "Ollie may add a note the customer can't see."
+        },
+        "assign_self": {
+          "title": "Assign tickets",
+          "hint": "Ollie may assign the ticket to the agent talking to it."
+        },
+        "status": {
+          "title": "Change status",
+          "hint": "Ollie may change the ticket's status. Closing asks for confirmation."
+        },
+        "priority": {
+          "title": "Change priority",
+          "hint": "Ollie may raise or lower the ticket's priority."
+        },
+        "create_ticket": {
+          "title": "Create tickets",
+          "hint": "Ollie may create a ticket from a channel message after confirmation."
+        }
+      },
+      "channel": {
+        "label": "Ollie settings for {{name}}",
+        "title": "Ollie in #{{name}}",
+        "description": "How Ollie works in this channel's ticket threads.",
+        "summary": "Summarize new threads",
+        "summaryHint": "Ollie posts what the customer needs, what they've tried, their sentiment and urgency when a ticket's thread opens. Uses AI credits.",
+        "warnings": "SLA and sentiment warnings",
+        "warningsHint": "Ollie warns in the thread when an SLA target is near or missed, and when the customer sounds unhappy.",
+        "length": "Response length",
+        "lengthHint": "How long Ollie's answers and suggestions are in this channel.",
+        "lengthValues": {
+          "brief": "Brief",
+          "standard": "Standard",
+          "detailed": "Detailed"
+        },
+        "personality": "Personality",
+        "personalityHint": "How Ollie sounds here. It shapes tone only and never changes what Ollie may do.",
+        "personalityPlaceholder": "Friendly and upbeat, plain words, no jargon",
+        "personalityInvalid": "The personality can't contain < or >.",
+        "submit": "Save",
+        "cancel": "Cancel",
+        "saved": "Ollie settings saved.",
+        "error": "Couldn't save Ollie's settings."
+      }
+    },
     "empty": {
       "title": "No support channels yet",
       "body": "Connect a bot, then choose where each team's email tickets appear.",

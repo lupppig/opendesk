@@ -65,6 +65,13 @@ describe("support channel events", () => {
     applyEnvelope(qc, env(8, { type: "support_channel_destination.deleted", data: { support_channel_destination_id: "d1" } }), { me: "u1" });
     expect(qc.getQueryData<SupportChannelDestination[]>(qk.supportChannelDestinations)).toEqual([]);
   });
+
+  it("keeps what Ollie may do current", () => {
+    const qc = new QueryClient();
+    qc.setQueryData(qk.supportChannelOllie, { actions: ["reply", "note"] });
+    applyEnvelope(qc, env(9, { type: "support_channel_ollie.updated", data: { support_channel_ollie: { actions: ["note"] } } }), { me: "u1" });
+    expect(qc.getQueryData(qk.supportChannelOllie)).toEqual({ actions: ["note"] });
+  });
 });
 
 describe("phone events", () => {

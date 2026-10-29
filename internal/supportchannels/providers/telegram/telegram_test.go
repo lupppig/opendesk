@@ -171,6 +171,13 @@ func TestParseCallbackQuery(t *testing.T) {
 		t.Fatalf("confirm: %+v", result.Events)
 	}
 
+	// Ollie's quick controls on its summary.
+	body = []byte(`{"update_id":17,"callback_query":{"id":"Q4","from":{"id":9},"data":"opendesk:ask:next","message":{"message_id":10,"message_thread_id":22,"chat":{"id":-10}}}}`)
+	result, _ = (Adapter{}).Parse(http.Header{}, body)
+	if len(result.Events) != 1 || result.Events[0].Command != "ask" || result.Events[0].Value != "next" || result.Events[0].SourceMessageID != "10" {
+		t.Fatalf("ask: %+v", result.Events)
+	}
+
 	body = []byte(`{"update_id":16,"callback_query":{"id":"Q3","from":{"id":9},"data":"opendesk:delete","message":{"message_id":9,"message_thread_id":22,"chat":{"id":-10}}}}`)
 	result, _ = (Adapter{}).Parse(http.Header{}, body)
 	if len(result.Events) != 0 || !strings.Contains(string(result.Body), "answerCallbackQuery") {

@@ -23,7 +23,10 @@ type AvailableDestination = { id: string; name: string; kind?: string; available
 type Destination = { id: string; connection_id: string; team_id: string|null;
 	priority: "low"|"normal"|"high"|"urgent"|null;
   external_channel_id: string; external_channel_name: string; enabled: boolean;
-  include_notes: boolean; message_limit: number; created_at: string };
+  include_notes: boolean; message_limit: number;
+  ollie_summary: boolean; ollie_warnings: boolean; ollie_personality: string;
+  ollie_length: "brief"|"standard"|"detailed"; created_at: string };
+type OllieSettings = { actions: ("reply"|"note"|"assign_self"|"status"|"priority"|"create_ticket")[] };
 type Delivery = { event_seq: number; event_type: string; ticket_number?: number;
   status: "queued"|"retrying"|"delivered"|"failed"; attempts: number;
   last_error: string; created_at: string; updated_at: string; delivered_at?: string };
@@ -48,7 +51,10 @@ type Operations = { window_started_at: string; generated_at: string;
 | GET | `/v1/support-channels/deliveries` | admin, `settings:read` | `limit?`, `cursor?` → `Page<Delivery>` |
 | GET | `/v1/support-channels/operations` | admin, `settings:read` | → `Operations`, a rolling 24-hour view |
 | POST | `/v1/support-channels/deliveries/{event_seq}/retry` | admin user | → 202 `{event_seq,status:"queued"}` for a failed event |
-| POST | `/v1/support-channels/destinations` | admin user | `{connection_id,team_id?,priority?,external_channel_id,external_channel_name?,include_notes?,message_limit?}` → 201 `Destination` |
+| POST | `/v1/support-channels/destinations` | admin user | `{connection_id,team_id?,priority?,external_channel_id,external_channel_name?,include_notes?,message_limit?,ollie_summary?,ollie_warnings?,ollie_personality?,ollie_length?}` → 201 `Destination` |
+| PATCH | `/v1/support-channels/destinations/{id}` | admin user | `{ollie_summary?,ollie_warnings?,ollie_personality?,ollie_length?}` → `Destination` |
+| GET | `/v1/support-channels/ollie` | viewer, `settings:read` | → `OllieSettings` |
+| PUT | `/v1/support-channels/ollie` | admin user | `OllieSettings` → `OllieSettings`, replaces the list |
 | DELETE | `/v1/support-channels/destinations/{id}` | admin user | → 204, including its thread mappings |
 | POST | `/v1/me/support-channel-link-code` | agent user | → 201 `{code,expires_at}` |
 | POST | `/v1/support-channels/hooks/{provider}/{connectionId}` | signed provider | provider payload → provider acknowledgement |
@@ -79,6 +85,50 @@ Without it, only customer and agent replies are posted, and Ollie reads only the
 conversation when it answers in that destination's threads, so a note can't surface there
 through an answer either.
 
+## Ollie
+
+Ollie works in every mapped ticket thread while the workspace assistant is on. Each
+destination sets how:
+
+- `ollie_summary` (default on; off for destinations created before it existed, since it
+  uses AI credits): once a new thread's history is posted, a job posts Ollie's summary:
+  what the customer needs, the steps they say they already tried, their sentiment, the
+  request's urgency with a short reason, and the SLA target. It reads only what the thread
+  may show (notes only with `include_notes`), never runs for a private team, and is posted
+  once per thread (`summary_posted_at`, with a processing lease). It carries quick controls:
+  **Suggest a reply** (`suggest`), **What should I do next?** (`ask` with the key `next`)
+  and, when Ollie reads the ticket as more urgent than its priority, **Set priority**, the
+  card's own `priority` control. An `ask` control carries only a key (`tried`, `next`)
+  that the engine maps to a fixed question, so a provider payload never writes the prompt.
+- `ollie_warnings` (default on): a two-minute worker posts one warning per SLA stage in a
+  thread whose open ticket's next target (first response, then resolution) is within 30
+  minutes, and again once it is missed. The thread remembers the stage it warned about
+  (`sla_warning`: kind, stage and due time), so a new target warns again and a failed post
+  is retried by the next run. A delivery posts one warning when the ticket's stored
+  sentiment (`custom.ai_sentiment`) turns `negative` or `frustrated`, and forgets it once
+  the sentiment recovers, so a later change warns again.
+- `ollie_length` (`brief`, `standard`, `detailed`) sets the length of Ollie's answers,
+  suggestions and summaries in the destination's threads and its general channel.
+- `ollie_personality` (up to 500 characters, no `<` or `>`, control characters other than
+  newlines dropped) is how Ollie sounds there. It reaches the model as delimited data that
+  shapes tone and wording only and never changes the rules or the tools.
+
+Destination changes are audit logged (`support_channel.destination_updated` with the
+changed keys) and publish `support_channel_destination.updated`.
+
+A suggestion drafts a reply to the customer's latest message with no tools offered, so it
+cannot send anything or change the ticket. It is posted as "Suggested reply, not sent" and
+kept in the agent's conversation history: asking Ollie to send it goes through the normal
+`reply` action, which waits for confirmation.
+
+`OllieSettings.actions` are the ticket changes Ollie may choose when it reads a message
+(default: all of them). Ollie is offered only those tools; a tool call for anything else
+is refused without a change, and a pending change the workspace stopped allowing is
+refused when it is confirmed. Explicit commands and card controls are the agent's own and
+are never limited by this list. Ticket creation outside a ticket thread needs
+`create_ticket`. Saving the list is audit logged (`support_channel.ollie_updated`) and
+publishes `support_channel_ollie.updated`.
+
 ## Provider adapter boundary
 
 The engine owns connections, encrypted credentials, routing, idempotency, retries,
@@ -101,7 +151,7 @@ Adapters with native controls also implement `InteractiveAdapter`. The engine gi
 provider-neutral message and actions; the adapter renders Block Kit, Discord components or
 a Telegram inline keyboard (`PostInteractive`) and removes a message's controls while keeping
 its text (`ClearActions`). Parsing accepts only opendesk's own controls (`assign_self`,
-`status`, `priority`, `confirm`, `cancel`); any other callback, such as the card's "Open in
+`status`, `priority`, `confirm`, `cancel`, `suggest`, `ask`); any other callback, such as the card's "Open in
 opendesk" link (`opendesk:open`), is acknowledged without a command. A control's `Inbound`
 names the message it sat on (`SourceMessageID`), which is how the engine tells a card action
 from a typed command. Action payloads carry only a validated command and value. The engine
@@ -372,5 +422,7 @@ Events: `support_channel_connection.created {support_channel_connection}`,
 `support_channel_connection.updated {support_channel_connection}` (rotated credentials, a
 renamed account, a new health state from a test or the first signed webhook),
 `support_channel_connection.deleted {support_channel_connection_id}`,
-`support_channel_destination.created {support_channel_destination}` and
-`support_channel_destination.deleted {support_channel_destination_id}`.
+`support_channel_destination.created {support_channel_destination}`,
+`support_channel_destination.updated {support_channel_destination}`,
+`support_channel_destination.deleted {support_channel_destination_id}` and
+`support_channel_ollie.updated {support_channel_ollie}`.
