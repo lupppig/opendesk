@@ -269,7 +269,11 @@ func (w *summaryWorker) Timeout(*river.Job[jobs.SupportChannelSummaryArgs]) time
 }
 
 func (w *summaryWorker) Work(ctx context.Context, j *river.Job[jobs.SupportChannelSummaryArgs]) error {
-	return snoozeRateLimit(w.s.postSummary(ctx, j.Args))
+	err := w.s.postSummary(ctx, j.Args)
+	if deliveryBusy(err) || errors.Is(err, errSummaryBusy) {
+		return river.JobSnooze(2 * time.Second)
+	}
+	return snoozeRateLimit(err)
 }
 
 // ticketSummary is Ollie's reading of a ticket for its thread.
@@ -309,53 +313,9 @@ func (s *Service) enqueueSummary(ctx context.Context, destinationID, ticketID uu
 	return err
 }
 
+var errSummaryBusy = errors.New("support channel summary is still processing")
+
 func (s *Service) postSummary(ctx context.Context, a jobs.SupportChannelSummaryArgs) error {
-	var wid uuid.UUID
-	var channelID, threadID, provider, personality, length string
-	var posted, enabled, includeNotes, wanted bool
-	var credentialsEnc []byte
-	var connectionID uuid.UUID
-	err := s.d.DB.Pool.QueryRow(ctx, `SELECT t.workspace_id,COALESCE(t.external_channel_id,''),COALESCE(t.external_thread_id,''),t.summary_posted_at IS NOT NULL,
-		d.enabled,d.include_notes,d.ollie_summary,d.ollie_personality,d.ollie_length,c.id,c.provider,c.credentials_enc
-		FROM support_channel_threads t JOIN support_channel_destinations d ON d.id=t.destination_id
-		JOIN support_channel_connections c ON c.id=d.connection_id
-		WHERE t.destination_id=$1 AND t.ticket_id=$2`, a.DestinationID, a.TicketID).
-		Scan(&wid, &channelID, &threadID, &posted, &enabled, &includeNotes, &wanted, &personality, &length, &connectionID, &provider, &credentialsEnc)
-	if db.IsNotFound(err) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if posted || !enabled || !wanted {
-		return nil
-	}
-	if threadID == "" {
-		return errors.New("support channel thread is being created")
-	}
-	adapter, ok := s.registry.Get(provider)
-	if !ok {
-		return nil
-	}
-	if settings, err := s.ai.WorkspaceAI(ctx, wid); err != nil || !settings.Assistant {
-		return nil
-	}
-	t, err := domain.LoadTicket(ctx, s.d.DB.Pool, wid, a.TicketID)
-	if db.IsNotFound(err) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	var private bool
-	if t.TeamID != nil {
-		if err := s.d.DB.Pool.QueryRow(ctx, `SELECT private FROM teams WHERE workspace_id=$1 AND id=$2`, wid, *t.TeamID).Scan(&private); err != nil && !db.IsNotFound(err) {
-			return err
-		}
-	}
-	if private {
-		return nil
-	}
 	tag, err := s.d.DB.Pool.Exec(ctx, `UPDATE support_channel_threads SET summary_processing_expires_at=now()+interval '3 minutes'
 		WHERE destination_id=$1 AND ticket_id=$2 AND summary_posted_at IS NULL
 		AND (summary_processing_expires_at IS NULL OR summary_processing_expires_at<now())`, a.DestinationID, a.TicketID)
@@ -363,46 +323,83 @@ func (s *Service) postSummary(ctx context.Context, a jobs.SupportChannelSummaryA
 		return err
 	}
 	if tag.RowsAffected() == 0 {
+		var pending bool
+		if err := s.d.DB.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM support_channel_threads
+			WHERE destination_id=$1 AND ticket_id=$2 AND summary_posted_at IS NULL)`, a.DestinationID, a.TicketID).Scan(&pending); err != nil {
+			return err
+		}
+		if pending {
+			return errSummaryBusy
+		}
 		return nil
 	}
-	done := false
 	defer func() {
-		if !done {
-			release, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
-			defer cancel()
-			_, _ = s.d.DB.Pool.Exec(release, `UPDATE support_channel_threads SET summary_processing_expires_at=NULL
+		release, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+		defer cancel()
+		_, _ = s.d.DB.Pool.Exec(release, `UPDATE support_channel_threads SET summary_processing_expires_at=NULL
 				WHERE destination_id=$1 AND ticket_id=$2 AND summary_posted_at IS NULL`, a.DestinationID, a.TicketID)
-		}
 	}()
-	// Ollie reads notes only where the destination mirrors them.
-	messages, err := domain.ListMessages(ctx, s.d.DB.Pool, wid, t.ID, !includeNotes)
+	d, messages, err := s.summarySnapshot(ctx, a.DestinationID, a.TicketID)
+	if db.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if _, ok := s.registry.Get(d.Provider); !ok {
+		return nil
+	}
+	if d.SummaryPosted {
+		return nil
+	}
+	if settings, err := s.ai.WorkspaceAI(ctx, d.WorkspaceID); err != nil || !settings.Assistant {
+		return nil
+	}
+	voice := ollieVoice{Personality: d.Personality, Length: d.Length}
+	summary, err := s.summarizeTicket(ctx, d.WorkspaceID, d.Ticket, messages, voice)
 	if err != nil {
 		return err
 	}
-	voice := ollieVoice{Personality: personality, Length: length}
-	summary, err := s.summarizeTicket(ctx, wid, t, messages, voice)
+	var postErr error
+	err = s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
+		current, err := loadOllieDelivery(ctx, tx, a.DestinationID, a.TicketID, true, true)
+		if err != nil {
+			return err
+		}
+		if current.SummaryPosted || (d.IncludeNotes && !current.IncludeNotes) {
+			return nil
+		}
+		adapter, ok := s.registry.Get(current.Provider)
+		if !ok {
+			return nil
+		}
+		creds := map[string]string{}
+		if err := s.d.Box.OpenJSON(current.CredentialsEnc, &creds); err != nil {
+			return err
+		}
+		creds["channel_id"] = current.ChannelID
+		message := summaryMessage(current.Ticket, summary, time.Now())
+		if interactive, ok := adapter.(channel.InteractiveAdapter); ok {
+			_, postErr = interactive.PostInteractive(ctx, s.http, creds, current.ThreadID, message)
+		} else {
+			postErr = adapter.Post(ctx, s.http, creds, current.ThreadID, message.Text)
+		}
+		if postErr != nil {
+			return postErr
+		}
+		_, err = tx.Exec(ctx, `UPDATE support_channel_threads SET summary_posted_at=now(),summary_processing_expires_at=NULL,updated_at=now()
+			WHERE destination_id=$1 AND ticket_id=$2`, a.DestinationID, a.TicketID)
+		return err
+	})
+	if postErr != nil {
+		return s.connectionError(ctx, d.ConnectionID, postErr)
+	}
+	if db.IsNotFound(err) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
-	creds := map[string]string{}
-	if err = s.d.Box.OpenJSON(credentialsEnc, &creds); err != nil {
-		return err
-	}
-	creds["channel_id"] = channelID
-	message := summaryMessage(t, summary, time.Now())
-	if interactive, ok := adapter.(channel.InteractiveAdapter); ok {
-		_, err = interactive.PostInteractive(ctx, s.http, creds, threadID, message)
-	} else {
-		err = adapter.Post(ctx, s.http, creds, threadID, message.Text)
-	}
-	if err != nil {
-		return s.connectionError(ctx, connectionID, err)
-	}
-	if _, err = s.d.DB.Pool.Exec(ctx, `UPDATE support_channel_threads SET summary_posted_at=now(),summary_processing_expires_at=NULL,updated_at=now()
-		WHERE destination_id=$1 AND ticket_id=$2`, a.DestinationID, a.TicketID); err != nil {
-		return err
-	}
-	done = true
 	return nil
 }
 
@@ -545,11 +542,11 @@ func slaWarningText(kind, stage string, due, now time.Time) string {
 // within slaWarningLead, and again once it is breached. A thread remembers the stage it
 // was warned about (kind, stage and due time), so a new target warns again.
 func (s *Service) warnSLAs(ctx context.Context) error {
-	rows, err := s.d.DB.Pool.Query(ctx, `SELECT id,external_channel_id,external_thread_id,connection_id,provider,credentials_enc,sla_warning,warning,kind,stage,due FROM (
-		SELECT t.id,t.external_channel_id,t.external_thread_id,c.id AS connection_id,c.provider,c.credentials_enc,t.sla_warning,w.kind,w.due,
-			CASE WHEN w.due<=now() THEN 'breached' ELSE 'due_soon' END AS stage,
+	rows, err := s.d.DB.Pool.Query(ctx, `SELECT destination_id,ticket_id FROM (
+		SELECT t.destination_id,t.ticket_id,t.sla_warning,w.due,
 			w.kind||':'||CASE WHEN w.due<=now() THEN 'breached' ELSE 'due_soon' END||':'||floor(extract(epoch FROM w.due))::bigint AS warning
 		FROM support_channel_threads t
+		JOIN workspaces ws ON ws.id=t.workspace_id AND ws.suspended_at IS NULL
 		JOIN support_channel_destinations d ON d.id=t.destination_id AND d.enabled AND d.ollie_warnings
 		JOIN support_channel_connections c ON c.id=d.connection_id
 		JOIN tickets k ON k.workspace_id=t.workspace_id AND k.id=t.ticket_id
@@ -558,51 +555,55 @@ func (s *Service) warnSLAs(ctx context.Context) error {
 			CASE WHEN k.first_responded_at IS NULL AND k.first_response_due_at IS NOT NULL THEN 'first_response' ELSE 'resolution' END AS kind,
 			CASE WHEN k.first_responded_at IS NULL AND k.first_response_due_at IS NOT NULL THEN k.first_response_due_at ELSE k.resolution_due_at END AS due) w
 		WHERE t.external_thread_id IS NOT NULL AND t.external_channel_id IS NOT NULL
-			AND k.deleted_at IS NULL AND k.sla_policy_id IS NOT NULL AND k.status NOT IN ('solved','closed')
+			AND k.deleted_at IS NULL AND k.channel='email' AND k.sla_policy_id IS NOT NULL AND k.status NOT IN ('solved','closed')
+ AND (d.team_id IS NULL OR d.team_id=k.team_id)
 			AND NOT COALESCE(tm.private,false) AND w.due IS NOT NULL AND w.due<now()+make_interval(secs=>$1)
 	) x WHERE warning<>sla_warning ORDER BY due LIMIT 200`, slaWarningLead.Seconds())
 	if err != nil {
 		return err
 	}
-	type pending struct {
-		ThreadID              uuid.UUID
-		ChannelID, ExternalID string
-		ConnectionID          uuid.UUID
-		Provider              string
-		CredentialsEnc        []byte
-		Previous, Warning     string
-		Kind, Stage           string
-		Due                   time.Time
-	}
+	type pending struct{ DestinationID, TicketID uuid.UUID }
 	list, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (pending, error) {
 		var x pending
-		return x, r.Scan(&x.ThreadID, &x.ChannelID, &x.ExternalID, &x.ConnectionID, &x.Provider, &x.CredentialsEnc, &x.Previous, &x.Warning, &x.Kind, &x.Stage, &x.Due)
+		return x, r.Scan(&x.DestinationID, &x.TicketID)
 	})
 	if err != nil {
 		return err
 	}
 	for _, x := range list {
-		adapter, ok := s.registry.Get(x.Provider)
-		if !ok {
-			continue
-		}
-		// The claim comes first, so two workers never post the same warning.
-		tag, err := s.d.DB.Pool.Exec(ctx, `UPDATE support_channel_threads SET sla_warning=$3,updated_at=now() WHERE id=$1 AND sla_warning=$2`, x.ThreadID, x.Previous, x.Warning)
-		if err != nil {
+		var connectionID uuid.UUID
+		var postErr error
+		err := s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
+			d, err := loadOllieDelivery(ctx, tx, x.DestinationID, x.TicketID, false, true)
+			if err != nil {
+				return err
+			}
+			connectionID = d.ConnectionID
+			warning, text := ticketSLAWarning(d.Ticket, time.Now())
+			if warning == "" || warning == d.SLAWarning {
+				return nil
+			}
+			adapter, ok := s.registry.Get(d.Provider)
+			if !ok {
+				return nil
+			}
+			creds := map[string]string{}
+			if err := s.d.Box.OpenJSON(d.CredentialsEnc, &creds); err != nil {
+				return err
+			}
+			creds["channel_id"] = d.ChannelID
+			postErr = adapter.Post(ctx, s.http, creds, d.ThreadID, text)
+			if postErr != nil {
+				return postErr
+			}
+			_, err = tx.Exec(ctx, `UPDATE support_channel_threads SET sla_warning=$3,updated_at=now()
+				WHERE destination_id=$1 AND ticket_id=$2`, x.DestinationID, x.TicketID, warning)
 			return err
-		}
-		if tag.RowsAffected() == 0 {
-			continue
-		}
-		creds := map[string]string{}
-		if err = s.d.Box.OpenJSON(x.CredentialsEnc, &creds); err == nil {
-			creds["channel_id"] = x.ChannelID
-			err = adapter.Post(ctx, s.http, creds, x.ExternalID, slaWarningText(x.Kind, x.Stage, x.Due, time.Now()))
-		}
-		if err != nil {
-			// The next run tries again.
-			_, _ = s.d.DB.Pool.Exec(ctx, `UPDATE support_channel_threads SET sla_warning=$2 WHERE id=$1 AND sla_warning=$3`, x.ThreadID, x.Previous, x.Warning)
-			s.d.Log.Warn("support channel SLA warning failed", "connection_id", x.ConnectionID, "err", s.connectionError(ctx, x.ConnectionID, err))
+		})
+		if postErr != nil {
+			s.d.Log.Warn("support channel SLA warning failed", "connection_id", connectionID, "err", s.connectionError(ctx, connectionID, postErr))
+		} else if err != nil && !db.IsNotFound(err) && !deliveryBusy(err) {
+			return err
 		}
 	}
 	return nil
@@ -624,20 +625,41 @@ func sentimentWarning(t domain.Ticket) (string, string) {
 
 // warnSentiment posts once when a thread's ticket turns frustrated or negative, and
 // forgets the warning once it no longer is, so a later change warns again.
-func (s *Service) warnSentiment(ctx context.Context, adapter channel.Adapter, creds map[string]string, d deliveryTarget, t domain.Ticket, thread, warned string) error {
-	sentiment, text := sentimentWarning(t)
-	if sentiment == warned {
+func (s *Service) warnSentiment(ctx context.Context, d deliveryTarget, t domain.Ticket) error {
+	var postErr error
+	err := s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
+		current, err := loadOllieDelivery(ctx, tx, d.ID, t.ID, false, true)
+		if err != nil {
+			return err
+		}
+		sentiment, text := sentimentWarning(current.Ticket)
+		if sentiment == current.SentimentWarning {
+			return nil
+		}
+		if text != "" {
+			adapter, ok := s.registry.Get(current.Provider)
+			if !ok {
+				return nil
+			}
+			creds := map[string]string{}
+			if err := s.d.Box.OpenJSON(current.CredentialsEnc, &creds); err != nil {
+				return err
+			}
+			creds["channel_id"] = current.ChannelID
+			postErr = adapter.Post(ctx, s.http, creds, current.ThreadID, text)
+			if postErr != nil {
+				return postErr
+			}
+		}
+		_, err = tx.Exec(ctx, `UPDATE support_channel_threads SET sentiment_warning=$3,updated_at=now()
+			WHERE destination_id=$1 AND ticket_id=$2`, d.ID, t.ID, sentiment)
+		return err
+	})
+	if postErr != nil {
+		return s.connectionError(ctx, d.ConnectionID, postErr)
+	}
+	if db.IsNotFound(err) || deliveryBusy(err) {
 		return nil
 	}
-	tag, err := s.d.DB.Pool.Exec(ctx, `UPDATE support_channel_threads SET sentiment_warning=$4,updated_at=now()
-		WHERE destination_id=$1 AND ticket_id=$2 AND sentiment_warning=$3`, d.ID, t.ID, warned, sentiment)
-	if err != nil || tag.RowsAffected() == 0 || text == "" {
-		return err
-	}
-	if err = adapter.Post(ctx, s.http, creds, thread, text); err != nil {
-		_, _ = s.d.DB.Pool.Exec(ctx, `UPDATE support_channel_threads SET sentiment_warning=$3
-			WHERE destination_id=$1 AND ticket_id=$2 AND sentiment_warning=$4`, d.ID, t.ID, warned, sentiment)
-		return s.connectionError(ctx, d.ConnectionID, err)
-	}
-	return nil
+	return err
 }

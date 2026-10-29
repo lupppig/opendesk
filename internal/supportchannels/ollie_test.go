@@ -314,9 +314,8 @@ func TestSentimentWarningPostsOnceUntilItRecovers(t *testing.T) {
 	ticket := w.ticket
 	warn := func() {
 		t.Helper()
-		var warned string
-		w.e.Scalar(`SELECT sentiment_warning FROM support_channel_threads WHERE ticket_id=$1`, &warned, w.ticket.ID)
-		if err := w.s.warnSentiment(w.e.Ctx, w.fake, map[string]string{}, d, ticket, "10.1", warned); err != nil {
+		w.e.Exec(`UPDATE tickets SET custom=$2 WHERE id=$1`, ticket.ID, ticket.Custom)
+		if err := w.s.warnSentiment(w.e.Ctx, d, ticket); err != nil {
 			t.Fatal(err)
 		}
 	}

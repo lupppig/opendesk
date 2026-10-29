@@ -197,8 +197,7 @@ func (s *Service) dispatchTo(ctx context.Context, a jobs.SupportChannelDispatchA
 	var thread channel.Thread
 	var last, historySeq int64
 	var historyBefore, historyPosted *time.Time
-	var sentimentWarned string
-	err = s.d.DB.Pool.QueryRow(ctx, `SELECT COALESCE(external_thread_id,''),COALESCE(external_root_message_id,''),COALESCE(external_channel_id,''),last_event_seq,history_event_seq,history_before,history_posted_at,sentiment_warning FROM support_channel_threads WHERE destination_id=$1 AND ticket_id=$2`, d.ID, t.ID).Scan(&thread.ID, &thread.RootID, &thread.ChannelID, &last, &historySeq, &historyBefore, &historyPosted, &sentimentWarned)
+	err = s.d.DB.Pool.QueryRow(ctx, `SELECT COALESCE(external_thread_id,''),COALESCE(external_root_message_id,''),COALESCE(external_channel_id,''),last_event_seq,history_event_seq,history_before,history_posted_at FROM support_channel_threads WHERE destination_id=$1 AND ticket_id=$2`, d.ID, t.ID).Scan(&thread.ID, &thread.RootID, &thread.ChannelID, &last, &historySeq, &historyBefore, &historyPosted)
 	if db.IsNotFound(err) {
 		// The history covers what came before this event. Its own message, and
 		// any written moments before it, are still on their way and post in full.
@@ -363,7 +362,7 @@ func (s *Service) dispatchTo(ctx context.Context, a jobs.SupportChannelDispatchA
 		}
 	}
 	if d.OllieWarnings {
-		if err = s.warnSentiment(ctx, adapter, creds, d, t, thread.ID, sentimentWarned); err != nil {
+		if err = s.warnSentiment(ctx, d, t); err != nil {
 			return err
 		}
 	}
