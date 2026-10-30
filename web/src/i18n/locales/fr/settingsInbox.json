@@ -408,7 +408,8 @@
     "call_missed_reason": "Raison de l'appel manqué",
     "call_line": "Ligne de l'appel",
     "call_tag": "Étiquette de l'appel",
-    "assignee_id": "Responsable"
+    "assignee_id": "Responsable",
+    "time": "Heures d'ouverture"
   },
   "ops": {
     "contains": "contient",

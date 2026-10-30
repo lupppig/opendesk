@@ -728,6 +728,8 @@ export type ConditionField =
   | "assignee_id" | "team_id" | "brand_id" | "widget_id" | "received_at"
   /** The call of a call_ended automation (contracts/phone.md "Automations"). */
   | "call_outcome" | "call_direction" | "call_missed_reason" | "call_time" | "call_line" | "call_tag"
+  /** A support channel destination's: business_hours or outside_business_hours when the event happens. */
+  | "time"
   /** A ticket custom field, or the ticket contact's. */
   | `field.${string}` | `contact.field.${string}`;
 /** `eq` is the AI sentiment condition's operator (contracts/ai.md). `any` and `none` on subject, body, from_email,
@@ -1143,6 +1145,12 @@ export type SupportChannelDestination = {
   include_notes: boolean;
   /** Maximum characters before the provider message links back to opendesk. */
   message_limit: number;
+  /** route: the most specific matching route on the connection posts the ticket. copy: posts every matching ticket as well. */
+  mode: SupportChannelDestinationMode;
+  /** Every condition must hold for a ticket's thread to start here (contracts/support-channels.md "Routing"). */
+  conditions: Condition[];
+  /** What the threads show besides the ticket card. */
+  mirror: SupportChannelMirror[];
   /** Ollie posts a summary when a ticket's thread opens. */
   ollie_summary: boolean;
   /** Ollie posts SLA and sentiment warnings in ticket threads. */
@@ -1152,6 +1160,10 @@ export type SupportChannelDestination = {
   ollie_length: SupportChannelOllieLength;
   created_at: string;
 };
+export type SupportChannelDestinationMode = "route" | "copy";
+export type SupportChannelMirror = "customer_replies" | "agent_replies" | "status_changes" | "assignee_changes" | "priority_changes";
+/** Where a destination's threads start and what they show; the create and update bodies share it. */
+export type SupportChannelRouting = Partial<Pick<SupportChannelDestination, "mode" | "conditions" | "mirror" | "include_notes">>;
 export type SupportChannelOllieLength = "brief" | "standard" | "detailed";
 /** Ticket changes Ollie may choose in support channel threads. */
 export type SupportChannelOllieAction = "reply" | "note" | "assign_self" | "status" | "priority" | "create_ticket";

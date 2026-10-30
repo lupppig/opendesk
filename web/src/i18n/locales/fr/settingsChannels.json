@@ -770,13 +770,18 @@
     },
     "destination": {
       "title": "Ajouter une destination",
-      "description": "Choisissez l’équipe publique et la priorité des tickets par e-mail envoyés vers ce canal. Les règles d’équipe et de priorité les plus précises sont prioritaires.",
+      "description": "Choisissez les tickets par e-mail envoyés vers ce canal : une équipe publique, une priorité et des conditions. Les règles les plus précises sont prioritaires.",
       "team": "Équipe",
       "teamPlaceholder": "Choisir une équipe",
       "allTeams": "Toutes les équipes publiques",
       "priority": "Priorité",
       "allPriorities": "Toutes les priorités",
-      "priorityValues": { "low": "Basse", "normal": "Normale", "high": "Élevée", "urgent": "Urgente" },
+      "priorityValues": {
+        "low": "Basse",
+        "normal": "Normale",
+        "high": "Élevée",
+        "urgent": "Urgente"
+      },
       "routeExists": "Une destination existe déjà pour cette équipe et cette priorité.",
       "channel": "Canal du fournisseur",
       "channelHint": "Les canaux dans lesquels le bot peut publier.",
@@ -809,6 +814,40 @@
       "hide": "Masquer",
       "generic": "Saisissez cette adresse dans les paramètres du fournisseur comme destination de ses événements.",
       "waiting": "Le statut passe à Connecté lorsque le fournisseur envoie son premier événement. Mentionnez le bot dans un canal pour en envoyer un."
+    },
+    "routing": {
+      "mode": "Publication",
+      "modeValues": {
+        "route": "Acheminer ici",
+        "copy": "Publier aussi ici"
+      },
+      "modeHint": {
+        "route": "Une connexion publie chaque ticket dans sa règle correspondante la plus précise : l’équipe d’abord, puis la priorité, puis la règle avec le plus de conditions.",
+        "copy": "Publie chaque ticket correspondant en plus de sa règle, par exemple les tickets urgents dans un canal d’escalade."
+      },
+      "conditions": "Seulement si",
+      "conditionsHint": "Les conditions choisissent où commence le fil d’un ticket. Une fois qu’un ticket a un fil ici, ce fil continue de le suivre.",
+      "addCondition": "Ajouter une condition",
+      "incomplete": "Remplissez chaque condition ou supprimez-la.",
+      "mirror": "Afficher dans les fils",
+      "mirrorHint": "La carte du ticket reste toujours à jour.",
+      "mirrorValues": {
+        "customer_replies": "Réponses des clients",
+        "agent_replies": "Réponses des agents",
+        "status_changes": "Changements de statut",
+        "assignee_changes": "Changements d’assignation",
+        "priority_changes": "Changements de priorité"
+      },
+      "conditionCount_one": "{{count}} condition",
+      "conditionCount_other": "{{count}} conditions",
+      "alsoPosts": "publie aussi",
+      "label": "Acheminement pour {{name}}",
+      "title": "Acheminement pour #{{name}}",
+      "description": "Choisissez quels tickets ouvrent un fil dans ce canal et ce que leurs fils affichent.",
+      "submit": "Enregistrer",
+      "cancel": "Annuler",
+      "saved": "Acheminement enregistré.",
+      "error": "Impossible d’enregistrer l’acheminement."
     }
   },
   "aliases": {

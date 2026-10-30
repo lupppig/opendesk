@@ -24,8 +24,10 @@ type Destination = { id: string; connection_id: string; team_id: string|null;
 	priority: "low"|"normal"|"high"|"urgent"|null;
   external_channel_id: string; external_channel_name: string; enabled: boolean;
   include_notes: boolean; message_limit: number;
+  mode: "route"|"copy"; conditions: Condition[]; mirror: Mirror[];
   ollie_summary: boolean; ollie_warnings: boolean; ollie_personality: string;
   ollie_length: "brief"|"standard"|"detailed"; created_at: string };
+type Mirror = "customer_replies"|"agent_replies"|"status_changes"|"assignee_changes"|"priority_changes";
 type OllieSettings = { actions: ("reply"|"note"|"assign_self"|"status"|"priority"|"create_ticket")[] };
 type Delivery = { event_seq: number; event_type: string; ticket_number?: number;
   status: "queued"|"retrying"|"delivered"|"failed"; attempts: number;
@@ -51,8 +53,8 @@ type Operations = { window_started_at: string; generated_at: string;
 | GET | `/v1/support-channels/deliveries` | admin, `settings:read` | `limit?`, `cursor?` → `Page<Delivery>` |
 | GET | `/v1/support-channels/operations` | admin, `settings:read` | → `Operations`, a rolling 24-hour view |
 | POST | `/v1/support-channels/deliveries/{event_seq}/retry` | admin user | → 202 `{event_seq,status:"queued"}` for a failed event |
-| POST | `/v1/support-channels/destinations` | admin user | `{connection_id,team_id?,priority?,external_channel_id,external_channel_name?,include_notes?,message_limit?,ollie_summary?,ollie_warnings?,ollie_personality?,ollie_length?}` → 201 `Destination` |
-| PATCH | `/v1/support-channels/destinations/{id}` | admin user | `{ollie_summary?,ollie_warnings?,ollie_personality?,ollie_length?}` → `Destination` |
+| POST | `/v1/support-channels/destinations` | admin user | `{connection_id,team_id?,priority?,external_channel_id,external_channel_name?,include_notes?,message_limit?,mode?,conditions?,mirror?,ollie_summary?,ollie_warnings?,ollie_personality?,ollie_length?}` → 201 `Destination` |
+| PATCH | `/v1/support-channels/destinations/{id}` | admin user | `{include_notes?,mode?,conditions?,mirror?,ollie_summary?,ollie_warnings?,ollie_personality?,ollie_length?}` → `Destination` |
 | GET | `/v1/support-channels/ollie` | viewer, `settings:read` | → `OllieSettings` |
 | PUT | `/v1/support-channels/ollie` | admin user | `OllieSettings` → `OllieSettings`, replaces the list |
 | DELETE | `/v1/support-channels/destinations/{id}` | admin user | → 204, including its thread mappings |
@@ -64,17 +66,42 @@ ticket access to another service, so API keys get `403` (as integrations' connec
 do). An AI client's OAuth grant may manage connections and destinations with
 `settings:write`, never create a link code.
 
-A destination maps one provider connection and an optional public team and priority to an
-external channel. A null team matches any team; a null priority matches any priority.
-For one connection, the most specific match wins in this order: team and priority, team,
-priority, then the all-team/all-priority fallback. This keeps an existing team route ahead
-of a new priority-only route. Every matching connection receives the event, so a team can
-be mirrored to Slack, Discord and Telegram at the same time. A connection can have one
-destination per team/priority combination, and an external channel can appear only once on
-that connection. Once a thread exists, priority changes keep updating that thread while
-its destination is enabled and still matches the ticket's team. Priority routing selects
-the destination for the first post. A move to a team with its own destination posts to
-that team's destination.
+### Routing
+
+A destination maps one provider connection to an external channel, for an optional public
+team and priority and any conditions. A null team matches any team; a null priority
+matches any priority. An external channel can appear only once on a connection.
+
+`conditions` (at most 10, all must hold) read the ticket as automation conditions do
+(`contracts/api.md`), on `subject`, `from_email`, `received_at`, `mailbox_id`, `brand_id`,
+`severity`, `sentiment`, `tag`, `field.<key>` and `contact.field.<key>`, and validate the
+same way. `time` (`equals` or `not_equals` `business_hours` or `outside_business_hours`)
+reads the business hours of the ticket's team, else the workspace's, at the moment of the
+event, so a retry decides as the first attempt did. Hours that are off read as open.
+
+`mode` decides how a matching destination posts:
+
+- `route` (default): per connection, the most specific matching route posts the ticket: one
+  with a team, then the one already holding the ticket's thread, then one with a priority,
+  then the one with more conditions. This keeps an existing team route ahead of a newer
+  priority-only route, and lets a move to a team with its own route post there. Two routes
+  on a connection may not share a team, priority and conditions (`409`), since only one
+  could ever post.
+- `copy`: every matching copy posts the ticket as well, in its own thread, such as urgent
+  tickets in an escalation channel next to the team's route.
+
+Every matching connection receives the event, so a team can be mirrored to Slack, Discord
+and Telegram at the same time. Priority and conditions choose where a thread starts. Once
+a destination holds a ticket's thread, the thread keeps following the ticket while the
+destination is enabled and still matches its team, whatever its priority or conditions
+say now, so an escalation thread sees the ticket through.
+
+`mirror` (default `customer_replies`, `agent_replies`) is what the threads show besides the
+ticket card, which always stays current: customer replies, agent replies, and one line in
+the thread when the status, assignee or priority changes (`status_changes`,
+`assignee_changes`, `priority_changes`), read from the event's own ticket. The recent
+history a new thread opens with follows the same choice. Routing changes are audit logged
+and published like the other destination changes below.
 
 Private teams cannot have a destination. The dispatcher also rejects any event marked
 with private-team visibility, even if old or manually written data contains a mapping.
@@ -114,8 +141,8 @@ destination sets how:
   newlines dropped) is how Ollie sounds there. It reaches the model as delimited data that
   shapes tone and wording only and never changes the rules or the tools.
 
-Destination changes are audit logged (`support_channel.destination_updated` with the
-changed keys) and publish `support_channel_destination.updated`.
+Destination changes, routing included, are audit logged (`support_channel.destination_updated`
+with the changed keys) and publish `support_channel_destination.updated`.
 
 A suggestion drafts a reply to the customer's latest message with no tools offered, so it
 cannot send anything or change the ticket. It is posted as "Suggested reply, not sent" and

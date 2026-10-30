@@ -16,6 +16,7 @@ import (
 
 	"github.com/useopendesk/opendesk/internal/ai"
 	"github.com/useopendesk/opendesk/internal/deps"
+	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
 	"github.com/useopendesk/opendesk/internal/jobs"
 	"github.com/useopendesk/opendesk/internal/supportchannels/providers/discord"
 	"github.com/useopendesk/opendesk/internal/supportchannels/providers/googlechat"
@@ -106,6 +107,10 @@ type destination struct {
 	Enabled             bool       `json:"enabled"`
 	IncludeNotes        bool       `json:"include_notes"`
 	MessageLimit        int        `json:"message_limit"`
+	// Routing (contracts/support-channels.md "Routing").
+	Mode       string         `json:"mode" enum:"route,copy"`
+	Conditions []hd.Condition `json:"conditions"`
+	Mirror     []string       `json:"mirror"`
 	// Ollie in this destination's threads (contracts/support-channels.md "Ollie").
 	OllieSummary     bool      `json:"ollie_summary"`
 	OllieWarnings    bool      `json:"ollie_warnings"`
@@ -115,10 +120,10 @@ type destination struct {
 }
 
 // destinationColumns are a destination's columns in the order scanDestination reads them.
-const destinationColumns = `id,connection_id,team_id,priority,external_channel_id,external_channel_name,enabled,include_notes,message_limit,ollie_summary,ollie_warnings,ollie_personality,ollie_length,created_at`
+const destinationColumns = `id,connection_id,team_id,priority,external_channel_id,external_channel_name,enabled,include_notes,message_limit,mode,conditions,mirror,ollie_summary,ollie_warnings,ollie_personality,ollie_length,created_at`
 
 func destinationScan(d *destination) []any {
-	return []any{&d.ID, &d.ConnectionID, &d.TeamID, &d.Priority, &d.ExternalChannelID, &d.ExternalChannelName, &d.Enabled, &d.IncludeNotes, &d.MessageLimit, &d.OllieSummary, &d.OllieWarnings, &d.OlliePersonality, &d.OllieLength, &d.CreatedAt}
+	return []any{&d.ID, &d.ConnectionID, &d.TeamID, &d.Priority, &d.ExternalChannelID, &d.ExternalChannelName, &d.Enabled, &d.IncludeNotes, &d.MessageLimit, &d.Mode, &d.Conditions, &d.Mirror, &d.OllieSummary, &d.OllieWarnings, &d.OlliePersonality, &d.OllieLength, &d.CreatedAt}
 }
 
 type delivery struct {

@@ -766,13 +766,18 @@
     },
     "destination": {
       "title": "Ziel hinzufügen",
-      "description": "Wähle das öffentliche Team und die Priorität für E-Mail-Tickets in diesem Kanal. Genauere Team- und Prioritätsregeln haben Vorrang.",
+      "description": "Wähle, welche E-Mail-Tickets in diesen Kanal gehen: ein öffentliches Team, eine Priorität und beliebige Bedingungen. Genauere Regeln haben Vorrang.",
       "team": "Team",
       "teamPlaceholder": "Team wählen",
       "allTeams": "Alle öffentlichen Teams",
       "priority": "Priorität",
       "allPriorities": "Alle Prioritäten",
-      "priorityValues": { "low": "Niedrig", "normal": "Normal", "high": "Hoch", "urgent": "Dringend" },
+      "priorityValues": {
+        "low": "Niedrig",
+        "normal": "Normal",
+        "high": "Hoch",
+        "urgent": "Dringend"
+      },
       "routeExists": "Für dieses Team und diese Priorität gibt es bereits ein Ziel.",
       "channel": "Anbieterkanal",
       "channelHint": "Kanäle, in denen der Bot posten kann.",
@@ -802,6 +807,40 @@
       "hide": "Ausblenden",
       "generic": "Gib diese Adresse in den Einstellungen des Anbieters als Adresse ein, an die er Ereignisse sendet.",
       "waiting": "Der Status wechselt zu Verbunden, sobald der Anbieter sein erstes Ereignis sendet. Erwähne den Bot in einem Kanal, um eines auszulösen."
+    },
+    "routing": {
+      "mode": "Posten",
+      "modeValues": {
+        "route": "Hierher leiten",
+        "copy": "Zusätzlich hier posten"
+      },
+      "modeHint": {
+        "route": "Eine Verbindung postet jedes Ticket in die genaueste passende Regel: zuerst Team, dann Priorität, dann die Regel mit mehr Bedingungen.",
+        "copy": "Postet jedes passende Ticket zusätzlich zu seiner Regel, etwa dringende Tickets in einem Eskalationskanal."
+      },
+      "conditions": "Nur wenn",
+      "conditionsHint": "Bedingungen bestimmen, wo der Thread eines Tickets beginnt. Hat ein Ticket hier einen Thread, folgt dieser dem Ticket weiter.",
+      "addCondition": "Bedingung hinzufügen",
+      "incomplete": "Fülle jede Bedingung aus oder entferne sie.",
+      "mirror": "In Threads zeigen",
+      "mirrorHint": "Die Ticketkarte bleibt immer aktuell.",
+      "mirrorValues": {
+        "customer_replies": "Kundenantworten",
+        "agent_replies": "Agentenantworten",
+        "status_changes": "Statusänderungen",
+        "assignee_changes": "Zuweisungsänderungen",
+        "priority_changes": "Prioritätsänderungen"
+      },
+      "conditionCount_one": "{{count}} Bedingung",
+      "conditionCount_other": "{{count}} Bedingungen",
+      "alsoPosts": "postet zusätzlich",
+      "label": "Weiterleitung für {{name}}",
+      "title": "Weiterleitung für #{{name}}",
+      "description": "Wähle, welche Tickets in diesem Kanal einen Thread starten und was ihre Threads zeigen.",
+      "submit": "Speichern",
+      "cancel": "Abbrechen",
+      "saved": "Weiterleitung gespeichert.",
+      "error": "Die Weiterleitung konnte nicht gespeichert werden."
     }
   },
   "aliases": {

@@ -374,6 +374,17 @@ func (r *triggerRun) facts(ctx context.Context, messageID *uuid.UUID) (facts, er
 	return f, nil
 }
 
+// Matcher reads a ticket's facts once and returns a test of condition lists against
+// them, as automations hold them. ai_decide and call conditions never hold there.
+func Matcher(ctx context.Context, tx pgx.Tx, wid, tid uuid.UUID) (func([]hd.Condition) bool, error) {
+	r := &triggerRun{tx: tx, wid: wid, tid: tid}
+	f, err := r.facts(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	return func(cs []hd.Condition) bool { return matchAll(cs, f) }, nil
+}
+
 // matchAll reports whether every condition holds (an empty list always matches).
 func matchAll(cs []hd.Condition, f facts) bool {
 	for _, c := range cs {

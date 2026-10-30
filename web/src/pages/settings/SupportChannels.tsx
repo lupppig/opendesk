@@ -1,11 +1,12 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, AtSign, Clock3, Hash, KeyRound, Link2, MessagesSquare, Plus, RefreshCw, ShieldAlert, Sparkles, StickyNote, Trash2, Webhook } from "lucide-react";
+import { Activity, AtSign, Clock3, Hash, KeyRound, Link2, MessagesSquare, Plus, RefreshCw, ShieldAlert, SlidersHorizontal, Sparkles, StickyNote, Trash2, Webhook } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AppMark } from "@/components/appmark";
 import { Section, SettingsPage } from "@/components/layout";
 import { type ItemState, ListSkeleton, StatePill } from "@/components/settings2/bits";
 import { SettingsEmpty } from "@/components/settings2/SettingsEmpty";
+import { ConditionRow, conditionInvalid, type Rule } from "@/components/settings2/ConditionRow";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm";
 import { CopyField } from "@/components/ui/copy-button";
@@ -17,10 +18,14 @@ import { toast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api/client";
 import { api } from "@/lib/api/endpoints";
 import type {
+  Condition,
+  ConditionField,
   SupportChannelAccount,
   SupportChannelConnection,
   SupportChannelDelivery,
   SupportChannelDestination,
+  SupportChannelDestinationMode,
+  SupportChannelMirror,
   SupportChannelOllie,
   SupportChannelOllieAction,
   SupportChannelOllieLength,
@@ -41,6 +46,12 @@ const FIELDS = ["bot_token", "signing_secret", "public_key", "guild_id", "webhoo
 type FieldKey = (typeof FIELDS)[number];
 const OLLIE_ACTIONS: SupportChannelOllieAction[] = ["reply", "note", "assign_self", "status", "priority", "create_ticket"];
 const OLLIE_LENGTHS: SupportChannelOllieLength[] = ["brief", "standard", "detailed"];
+const MODES: SupportChannelDestinationMode[] = ["route", "copy"];
+const MIRRORS: SupportChannelMirror[] = ["customer_replies", "agent_replies", "status_changes", "assignee_changes", "priority_changes"];
+const MAX_CONDITIONS = 10;
+// The built-in fields a destination's conditions read; team and priority have their own pickers.
+const DESTINATION_FIELDS: ReadonlySet<ConditionField> = new Set(["subject", "from_email", "received_at", "mailbox_id", "brand_id", "severity", "sentiment", "tag", "time"]);
+const destinationField = (f: ConditionField) => DESTINATION_FIELDS.has(f);
 const knownProvider = (k: string): k is ProviderKey => (PROVIDERS as readonly string[]).includes(k);
 const knownField = (k: string): k is FieldKey => (FIELDS as readonly string[]).includes(k);
 
@@ -97,6 +108,7 @@ export default function SupportChannels() {
   const [routing, setRouting] = useState<string | null>(null);
   const [rotating, setRotating] = useState<SupportChannelConnection | null>(null);
   const [tuning, setTuning] = useState<SupportChannelDestination | null>(null);
+  const [editing, setEditing] = useState<SupportChannelDestination | null>(null);
   const [link, setLink] = useState<{ code: string; expires_at: string } | null>(null);
 
   const disconnect = useMutation({
@@ -222,6 +234,8 @@ export default function SupportChannels() {
                                 {name}
                                 <span className="text-fg-4">· {team?.name ?? t("supportChannels.allTeams")}</span>
                                 {route.priority && <span className="text-fg-4">· {t(`supportChannels.destination.priorityValues.${route.priority}`)}</span>}
+                                {!!route.conditions.length && <span className="text-fg-4">· {t("supportChannels.routing.conditionCount", { count: route.conditions.length })}</span>}
+                                {route.mode === "copy" && <span className="text-fg-4">· {t("supportChannels.routing.alsoPosts")}</span>}
                                 {route.include_notes && (
                                   <span className="inline-flex items-center gap-0.5 text-fg-4">
                                     · <StickyNote className="size-3" aria-hidden />
@@ -231,7 +245,17 @@ export default function SupportChannels() {
                                 {admin && (
                                   <button
                                     type="button"
-                                    className="ml-0.5 flex size-5 items-center justify-center rounded text-tone-violet hover:bg-hover hover:text-tone-violet-solid"
+                                    className="ml-0.5 flex size-5 items-center justify-center rounded text-fg-4 hover:bg-hover hover:text-fg"
+                                    aria-label={t("supportChannels.routing.label", { name })}
+                                    onClick={() => setEditing(route)}
+                                  >
+                                    <SlidersHorizontal className="size-3" />
+                                  </button>
+                                )}
+                                {admin && (
+                                  <button
+                                    type="button"
+                                    className="flex size-5 items-center justify-center rounded text-tone-violet hover:bg-hover hover:text-tone-violet-solid"
                                     aria-label={t("supportChannels.ollie.channel.label", { name })}
                                     onClick={() => setTuning(route)}
                                   >
@@ -391,6 +415,7 @@ export default function SupportChannels() {
         />
       )}
       {tuning && <OllieDialog destination={tuning} onClose={() => setTuning(null)} />}
+      {editing && <RoutingDialog destination={editing} onClose={() => setEditing(null)} />}
       {routing && (
         <DestinationDialog
           connectionId={routing}
@@ -875,14 +900,13 @@ function DestinationDialog({ connectionId, provider, onClose }: { connectionId: 
   const { t } = useTranslation("settingsChannels");
   const copy = useProviderCopy();
   const qc = useQueryClient();
-  const notesId = useId();
   const { data: teams } = useQuery(q.teams());
   const { data: destinations } = useQuery(q.supportChannelDestinations());
   const available = useQuery(q.supportChannelAvailableDestinations(connectionId));
   const [team, setTeam] = useState("all");
   const [priority, setPriority] = useState<DestinationPriority>("all");
   const [channelId, setChannelId] = useState("");
-  const [includeNotes, setIncludeNotes] = useState(false);
+  const [routing, setRoutingDraft] = useState<Routing>(routingOf());
   const [messageLimit, setMessageLimit] = useState("3500");
   // When the bot can't list channels (missing scopes, an older bot), its id still works.
   const [manual, setManual] = useState(false);
@@ -895,9 +919,16 @@ function DestinationDialog({ connectionId, provider, onClose }: { connectionId: 
     [teams, t],
   );
   const selected = options.some((x) => x.value === team) ? team : options[0]?.value;
-  const routeExists = (destinations ?? []).some(
-    (destination) => destination.connection_id === connectionId && (destination.team_id ?? "all") === selected && (destination.priority ?? "all") === priority,
-  );
+  const routeExists =
+    routing.mode === "route" &&
+    (destinations ?? []).some(
+      (destination) =>
+        destination.connection_id === connectionId &&
+        destination.mode === "route" &&
+        (destination.team_id ?? "all") === selected &&
+        (destination.priority ?? "all") === priority &&
+        sameConditions(destination.conditions, routing.conditions),
+    );
   const priorityOptions: SelectOption<DestinationPriority>[] = [
     { value: "all", label: t("supportChannels.destination.allPriorities") },
     ...PRIORITIES.map((value) => ({ value, label: t(`supportChannels.destination.priorityValues.${value}`) })),
@@ -917,7 +948,7 @@ function DestinationDialog({ connectionId, provider, onClose }: { connectionId: 
         priority: priority === "all" ? undefined : priority,
         external_channel_id: manual ? manualId : channelId.trim(),
         external_channel_name: selectedChannel?.name,
-        include_notes: includeNotes,
+        ...routingBody(routing),
         message_limit: Number(messageLimit),
       }),
     onSuccess: (row) => {
@@ -930,13 +961,14 @@ function DestinationDialog({ connectionId, provider, onClose }: { connectionId: 
   return (
     <Dialog
       open
+      size="lg"
       onOpenChange={(open) => !open && onClose()}
       title={t("supportChannels.destination.title")}
       description={t("supportChannels.destination.description")}
       footer={
         <>
           <Button onClick={onClose}>{t("supportChannels.destination.cancel")}</Button>
-          <Button variant="primary" disabled={!selected || !channelReady || routeExists} loading={create.isPending} onClick={() => create.mutate()}>
+          <Button variant="primary" disabled={!selected || !channelReady || routeExists || !routingReady(routing)} loading={create.isPending} onClick={() => create.mutate()}>
             {t("supportChannels.destination.submit")}
           </Button>
         </>
@@ -989,13 +1021,7 @@ function DestinationDialog({ connectionId, provider, onClose }: { connectionId: 
         >
           {manual ? t("supportChannels.destination.pickFromList") : t("supportChannels.destination.enterId")}
         </Button>
-        <div className="flex items-start justify-between gap-4">
-          <label htmlFor={notesId} className="min-w-0">
-            <span className="block text-[13px] font-medium">{t("supportChannels.destination.notes")}</span>
-            <span className="mt-0.5 block text-[12px] leading-[17px] text-fg-3">{t("supportChannels.destination.notesHint")}</span>
-          </label>
-          <Switch id={notesId} checked={includeNotes} onCheckedChange={setIncludeNotes} />
-        </div>
+        <RoutingFields value={routing} onChange={setRoutingDraft} />
         <Field label={t("supportChannels.destination.messageLimit")} hint={t("supportChannels.destination.messageLimitHint")}>
           {({ id }) => (
             <Select
@@ -1010,6 +1036,147 @@ function DestinationDialog({ connectionId, provider, onClose }: { connectionId: 
             />
           )}
         </Field>
+        {error && (
+          <p role="alert" className="text-[12px] text-danger-fg">
+            {error}
+          </p>
+        )}
+      </div>
+    </Dialog>
+  );
+}
+
+/** Where a destination's threads start and what they show (contracts/support-channels.md "Routing"). */
+type Routing = { mode: SupportChannelDestinationMode; conditions: Rule[]; mirror: SupportChannelMirror[]; include_notes: boolean };
+
+const routingOf = (d?: SupportChannelDestination): Routing =>
+  d
+    ? { mode: d.mode, conditions: d.conditions, mirror: d.mirror, include_notes: d.include_notes }
+    : { mode: "route", conditions: [], mirror: ["customer_replies", "agent_replies"], include_notes: false };
+const routingReady = (r: Routing) => !r.conditions.some(conditionInvalid);
+const routingBody = (r: Routing) => ({ mode: r.mode, conditions: r.conditions as Condition[], mirror: r.mirror, include_notes: r.include_notes });
+const sameConditions = (a: Rule[], b: Rule[]) =>
+  a.length === b.length && a.every((c, i) => c.field === b[i].field && c.op === b[i].op && c.value.trim().toLowerCase() === b[i].value.trim().toLowerCase());
+
+function RoutingFields({ value, onChange }: { value: Routing; onChange: (r: Routing) => void }) {
+  const { t } = useTranslation("settingsChannels");
+  const notesId = useId();
+  const set = (patch: Partial<Routing>) => onChange({ ...value, ...patch });
+  const toggle = (m: SupportChannelMirror, on: boolean) => set({ mirror: MIRRORS.filter((x) => (x === m ? on : value.mirror.includes(x))) });
+  return (
+    <>
+      <Field label={t("supportChannels.routing.mode")} hint={t(`supportChannels.routing.modeHint.${value.mode}`)}>
+        {({ id }) => (
+          <Select<SupportChannelDestinationMode>
+            id={id}
+            value={value.mode}
+            onChange={(mode) => set({ mode })}
+            options={MODES.map((mode) => ({ value: mode, label: t(`supportChannels.routing.modeValues.${mode}`) }))}
+          />
+        )}
+      </Field>
+      <div>
+        <span className="block text-[13px] font-medium">{t("supportChannels.routing.conditions")}</span>
+        <span className="mt-0.5 block text-[12px] leading-[17px] text-fg-3">{t("supportChannels.routing.conditionsHint")}</span>
+        {!!value.conditions.length && (
+          <div className="mt-2 rounded-lg border border-line-soft">
+            {value.conditions.map((c, i) => (
+              <div key={i} className="border-b border-line-soft last:border-0">
+                <ConditionRow
+                  c={c}
+                  first={i === 0}
+                  invalid={false}
+                  allow={destinationField}
+                  onChange={(next) => set({ conditions: value.conditions.map((x, j) => (j === i ? next : x)) })}
+                  onRemove={() => set({ conditions: value.conditions.filter((_, j) => j !== i) })}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+        {value.conditions.length < MAX_CONDITIONS && (
+          <Button
+            variant="link"
+            size="xs"
+            icon={<Plus />}
+            className="mt-1.5 px-0 text-[12px]"
+            onClick={() => set({ conditions: [...value.conditions, { field: "tag", op: "equals", value: "" }] })}
+          >
+            {t("supportChannels.routing.addCondition")}
+          </Button>
+        )}
+        {!routingReady(value) && <p className="mt-1 text-[12px] text-fg-3">{t("supportChannels.routing.incomplete")}</p>}
+      </div>
+      <div>
+        <span className="block text-[13px] font-medium">{t("supportChannels.routing.mirror")}</span>
+        <span className="mt-0.5 block text-[12px] leading-[17px] text-fg-3">{t("supportChannels.routing.mirrorHint")}</span>
+        <div className="mt-2 flex flex-col gap-2">
+          {MIRRORS.slice(0, 2).map((m) => (
+            <MirrorSwitch key={m} label={t(`supportChannels.routing.mirrorValues.${m}`)} checked={value.mirror.includes(m)} onChange={(on) => toggle(m, on)} />
+          ))}
+          <MirrorSwitch
+            id={notesId}
+            label={t("supportChannels.destination.notes")}
+            hint={t("supportChannels.destination.notesHint")}
+            checked={value.include_notes}
+            onChange={(include_notes) => set({ include_notes })}
+          />
+          {MIRRORS.slice(2).map((m) => (
+            <MirrorSwitch key={m} label={t(`supportChannels.routing.mirrorValues.${m}`)} checked={value.mirror.includes(m)} onChange={(on) => toggle(m, on)} />
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function MirrorSwitch({ id, label, hint, checked, onChange }: { id?: string; label: string; hint?: string; checked: boolean; onChange: (on: boolean) => void }) {
+  const own = useId();
+  const switchId = id ?? own;
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <label htmlFor={switchId} className="min-w-0">
+        <span className="block text-[13px]">{label}</span>
+        {hint && <span className="mt-0.5 block text-[12px] leading-[17px] text-fg-3">{hint}</span>}
+      </label>
+      <Switch id={switchId} checked={checked} onCheckedChange={onChange} />
+    </div>
+  );
+}
+
+function RoutingDialog({ destination, onClose }: { destination: SupportChannelDestination; onClose: () => void }) {
+  const { t } = useTranslation("settingsChannels");
+  const qc = useQueryClient();
+  const [routing, setRouting] = useState<Routing>(routingOf(destination));
+  const [error, setError] = useState("");
+  const name = destination.external_channel_name || destination.external_channel_id;
+  const save = useMutation({
+    mutationFn: () => api.supportChannels.updateDestination(destination.id, routingBody(routing)),
+    onSuccess: (row) => {
+      upsertInList(qc, qk.supportChannelDestinations, row);
+      toast.success(t("supportChannels.routing.saved"));
+      onClose();
+    },
+    onError: (e) => setError(errorMessage(e, t("supportChannels.routing.error"))),
+  });
+  return (
+    <Dialog
+      open
+      size="lg"
+      onOpenChange={(open) => !open && onClose()}
+      title={t("supportChannels.routing.title", { name })}
+      description={t("supportChannels.routing.description")}
+      footer={
+        <>
+          <Button onClick={onClose}>{t("supportChannels.routing.cancel")}</Button>
+          <Button variant="primary" disabled={!routingReady(routing)} loading={save.isPending} onClick={() => save.mutate()}>
+            {t("supportChannels.routing.submit")}
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <RoutingFields value={routing} onChange={setRouting} />
         {error && (
           <p role="alert" className="text-[12px] text-danger-fg">
             {error}

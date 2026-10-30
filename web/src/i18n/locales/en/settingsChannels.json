@@ -791,13 +791,18 @@
     },
     "destination": {
       "title": "Add destination",
-      "description": "Choose the public team and priority whose email tickets go to this channel. More specific team and priority routes take precedence.",
+      "description": "Choose which email tickets go to this channel: a public team, a priority and any conditions. More specific routes take precedence.",
       "team": "Team",
       "teamPlaceholder": "Choose a team",
       "allTeams": "All public teams",
       "priority": "Priority",
       "allPriorities": "All priorities",
-      "priorityValues": { "low": "Low", "normal": "Normal", "high": "High", "urgent": "Urgent" },
+      "priorityValues": {
+        "low": "Low",
+        "normal": "Normal",
+        "high": "High",
+        "urgent": "Urgent"
+      },
       "routeExists": "A destination already uses this team and priority.",
       "channel": "Provider channel",
       "channelHint": "Channels the bot can post in.",
@@ -830,6 +835,40 @@
       "hide": "Hide",
       "generic": "Enter this address in the provider's settings as the address it sends events to.",
       "waiting": "This changes to Connected once the provider sends its first event. Mention the bot in a channel to send one."
+    },
+    "routing": {
+      "mode": "Posting",
+      "modeValues": {
+        "route": "Route here",
+        "copy": "Also post here"
+      },
+      "modeHint": {
+        "route": "A connection posts each ticket to its most specific matching route: team first, then priority, then the route with more conditions.",
+        "copy": "Posts every matching ticket as well as its route, such as urgent tickets in an escalation channel."
+      },
+      "conditions": "Only when",
+      "conditionsHint": "Conditions choose where a ticket's thread starts. Once a ticket has a thread here, it keeps following the ticket.",
+      "addCondition": "Add condition",
+      "incomplete": "Fill in every condition, or remove it.",
+      "mirror": "Show in threads",
+      "mirrorHint": "The ticket card always stays current.",
+      "mirrorValues": {
+        "customer_replies": "Customer replies",
+        "agent_replies": "Agent replies",
+        "status_changes": "Status changes",
+        "assignee_changes": "Assignee changes",
+        "priority_changes": "Priority changes"
+      },
+      "conditionCount_one": "{{count}} condition",
+      "conditionCount_other": "{{count}} conditions",
+      "alsoPosts": "also posts",
+      "label": "Routing for {{name}}",
+      "title": "Routing for #{{name}}",
+      "description": "Choose which tickets start a thread in this channel and what their threads show.",
+      "submit": "Save",
+      "cancel": "Cancel",
+      "saved": "Routing saved.",
+      "error": "Couldn't save the routing."
     }
   },
   "aliases": {

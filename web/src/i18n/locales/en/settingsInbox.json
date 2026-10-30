@@ -402,7 +402,8 @@
     "call_time": "Call time",
     "call_missed_reason": "Missed call reason",
     "call_line": "Call line",
-    "call_tag": "Call label"
+    "call_tag": "Call label",
+    "time": "Business hours"
   },
   "ops": {
     "contains": "contains",

@@ -386,7 +386,8 @@
     "call_time": "Zeit des Anrufs",
     "call_missed_reason": "Grund des verpassten Anrufs",
     "call_line": "Leitung des Anrufs",
-    "call_tag": "Label des Anrufs"
+    "call_tag": "Label des Anrufs",
+    "time": "Geschäftszeiten"
   },
   "ops": {
     "contains": "enthält",

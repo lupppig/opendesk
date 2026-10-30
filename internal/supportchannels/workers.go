@@ -147,25 +147,37 @@ func (s *Service) dispatch(ctx context.Context, a jobs.SupportChannelDispatchArg
 	if t.Channel != domain.ChannelEmail {
 		return nil
 	}
-	rows, err := s.d.DB.Pool.Query(ctx, `SELECT DISTINCT ON (d.connection_id) d.id,d.connection_id,d.team_id,d.priority,d.external_channel_id,d.external_channel_name,d.enabled,d.include_notes,d.message_limit,d.ollie_summary,d.ollie_warnings,d.ollie_personality,d.ollie_length,d.created_at,c.provider,c.credentials_enc
+	rows, err := s.d.DB.Pool.Query(ctx, `SELECT d.id,d.connection_id,d.team_id,d.priority,d.external_channel_id,d.external_channel_name,d.enabled,d.include_notes,d.message_limit,d.mode,d.conditions,d.mirror,d.ollie_summary,d.ollie_warnings,d.ollie_personality,d.ollie_length,d.created_at,c.provider,c.credentials_enc,existing.id IS NOT NULL
 		FROM support_channel_destinations d JOIN support_channel_connections c ON c.id=d.connection_id
-		LEFT JOIN support_channel_threads existing ON existing.destination_id=d.id AND existing.ticket_id=$4
-		WHERE d.workspace_id=$1 AND d.enabled
-			AND (d.team_id IS NULL OR d.team_id IS NOT DISTINCT FROM $2)
-			AND (existing.id IS NOT NULL OR d.priority IS NULL OR d.priority=$3)
-		ORDER BY d.connection_id, (d.team_id IS NOT NULL) DESC, (existing.id IS NOT NULL) DESC,
-			(d.priority IS NOT NULL) DESC, d.id`, a.WorkspaceID, t.TeamID, t.Priority, t.ID)
+		LEFT JOIN support_channel_threads existing ON existing.destination_id=d.id AND existing.ticket_id=$3
+		WHERE d.workspace_id=$1 AND d.enabled AND (d.team_id IS NULL OR d.team_id IS NOT DISTINCT FROM $2)
+		ORDER BY d.connection_id, d.id`, a.WorkspaceID, t.TeamID, t.ID)
 	if err != nil {
 		return err
 	}
-	targets, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (deliveryTarget, error) {
-		var d deliveryTarget
-		err := row.Scan(append(destinationScan(&d.destination), &d.Provider, &d.CredentialsEnc)...)
-		return d, err
+	candidates, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (routeCandidate, error) {
+		var c routeCandidate
+		err := row.Scan(append(destinationScan(&c.destination), &c.Provider, &c.CredentialsEnc, &c.existing)...)
+		return c, err
 	})
 	if err != nil {
 		return err
 	}
+	// Conditions choose where a thread starts; a thread follows its ticket after that.
+	check := &eligibility{s: s, wid: a.WorkspaceID, t: t, at: at}
+	eligible := candidates[:0]
+	for _, c := range candidates {
+		ok := c.existing
+		if !ok {
+			if ok, err = check.starts(ctx, c.destination); err != nil {
+				return err
+			}
+		}
+		if ok {
+			eligible = append(eligible, c)
+		}
+	}
+	targets := pickTargets(eligible)
 	for _, d := range targets {
 		if err := s.dispatchTo(ctx, a, typ, data, at, t, d); err != nil {
 			return err
@@ -243,7 +255,7 @@ func (s *Service) dispatchTo(ctx context.Context, a jobs.SupportChannelDispatchA
 			if historyBefore != nil {
 				before = *historyBefore
 			}
-			text, posted, historyErr := s.recentHistory(ctx, a.WorkspaceID, t.ID, d.IncludeNotes, before)
+			text, posted, historyErr := s.recentHistory(ctx, a.WorkspaceID, t.ID, d.shows(), before)
 			if historyErr != nil {
 				return historyErr
 			}
@@ -275,7 +287,7 @@ func (s *Service) dispatchTo(ctx context.Context, a jobs.SupportChannelDispatchA
 				break
 			}
 		}
-		message, source, decodeErr := messageEvent(data, d.IncludeNotes, richTextLimit(adapter, d.MessageLimit), ct.URL)
+		message, source, decodeErr := messageEvent(data, d.shows(), richTextLimit(adapter, d.MessageLimit), ct.URL)
 		if decodeErr != nil {
 			return decodeErr
 		}
@@ -295,7 +307,7 @@ func (s *Service) dispatchTo(ctx context.Context, a jobs.SupportChannelDispatchA
 			}
 		}
 	case "message.updated":
-		message, source, decodeErr := messageEvent(data, d.IncludeNotes, richTextLimit(adapter, d.MessageLimit), ct.URL)
+		message, source, decodeErr := messageEvent(data, d.shows(), richTextLimit(adapter, d.MessageLimit), ct.URL)
 		if decodeErr != nil {
 			return decodeErr
 		}
@@ -345,19 +357,28 @@ func (s *Service) dispatchTo(ctx context.Context, a jobs.SupportChannelDispatchA
 			if claimErr != nil {
 				return claimErr
 			}
-			if !claimed {
-				break
+			if claimed {
+				defer s.releaseCardUpdate(d.ID, t.ID, a.EventSeq)
+				if err = adapter.Update(ctx, s.http, creds, thread.RootID, ct); err != nil {
+					// A card that can't be edited is retried, but says nothing about
+					// the connection: posting may well still work.
+					s.d.Log.Warn("support channel card update failed", "connection_id", d.ConnectionID, "ticket_id", t.ID)
+					return fmt.Errorf("support channel card update: %w", err)
+				}
+				if _, err = s.d.DB.Pool.Exec(ctx, `UPDATE support_channel_threads SET card_event_seq=$3,card_processing_seq=NULL,card_processing_expires_at=NULL,updated_at=now()
+					WHERE destination_id=$1 AND ticket_id=$2 AND card_processing_seq=$3`, d.ID, t.ID, a.EventSeq); err != nil {
+					return err
+				}
 			}
-			defer s.releaseCardUpdate(d.ID, t.ID, a.EventSeq)
-			if err = adapter.Update(ctx, s.http, creds, thread.RootID, ct); err != nil {
-				// A card that can't be edited is retried, but says nothing about
-				// the connection: posting may well still work.
-				s.d.Log.Warn("support channel card update failed", "connection_id", d.ConnectionID, "ticket_id", t.ID)
-				return fmt.Errorf("support channel card update: %w", err)
-			}
-			if _, err = s.d.DB.Pool.Exec(ctx, `UPDATE support_channel_threads SET card_event_seq=$3,card_processing_seq=NULL,card_processing_expires_at=NULL,updated_at=now()
-				WHERE destination_id=$1 AND ticket_id=$2 AND card_processing_seq=$3`, d.ID, t.ID, a.EventSeq); err != nil {
-				return err
+		}
+		// After the card, so a retry for a failed post finds the card already current.
+		text, decodeErr := activityText(data, d.Mirror)
+		if decodeErr != nil {
+			return decodeErr
+		}
+		if text != "" {
+			if err = adapter.Post(ctx, s.http, creds, thread.ID, text); err != nil {
+				return s.connectionError(ctx, d.ConnectionID, err)
 			}
 		}
 	}
@@ -478,10 +499,11 @@ type historyLine struct {
 // recentHistory is the bounded context posted once when a ticket first gets a
 // provider thread: its five latest messages from before the event that created
 // the thread, with the ids of the messages it holds.
-func (s *Service) recentHistory(ctx context.Context, workspaceID, ticketID uuid.UUID, includeNotes bool, before time.Time) (string, []uuid.UUID, error) {
+func (s *Service) recentHistory(ctx context.Context, workspaceID, ticketID uuid.UUID, show shown, before time.Time) (string, []uuid.UUID, error) {
 	rows, err := s.d.DB.Pool.Query(ctx, `SELECT id,kind,direction,body_text,created_at FROM messages
-		WHERE ticket_id=$2 AND workspace_id=$1 AND created_at<$4 AND ($3 OR kind<>'note') AND body_text<>''
-		ORDER BY created_at DESC,id DESC LIMIT 5`, workspaceID, ticketID, includeNotes, before)
+		WHERE ticket_id=$2 AND workspace_id=$1 AND created_at<$4 AND body_text<>''
+			AND CASE WHEN kind='note' THEN $3::boolean WHEN direction='inbound' THEN $5::boolean ELSE $6::boolean END
+		ORDER BY created_at DESC,id DESC LIMIT 5`, workspaceID, ticketID, show.notes, before, show.customer, show.agent)
 	if err != nil {
 		return "", nil, err
 	}
@@ -520,7 +542,7 @@ type messageCreatedEvent struct {
 // messageEvent is the bounded provider message, or nil when the destination
 // excludes it. Attachment URLs are freshly signed instead of trusting an old
 // event's URL, which may have expired before a retry.
-func messageEvent(data []byte, includeNotes bool, limit int, viewURL string) (channel.RichMessage, *domain.Message, error) {
+func messageEvent(data []byte, show shown, limit int, viewURL string) (channel.RichMessage, *domain.Message, error) {
 	var ev messageCreatedEvent
 	if err := json.Unmarshal(data, &ev); err != nil {
 		return channel.RichMessage{}, nil, fmt.Errorf("decode message event: %w", err)
@@ -528,7 +550,7 @@ func messageEvent(data []byte, includeNotes bool, limit int, viewURL string) (ch
 	if ev.Message == nil {
 		return channel.RichMessage{}, nil, errors.New("decode message event: message is missing")
 	}
-	if ev.Message.Kind == "note" && !includeNotes {
+	if !show.message(ev.Message) {
 		return channel.RichMessage{}, nil, nil
 	}
 	body := strings.TrimSpace(ev.Message.BodyText)

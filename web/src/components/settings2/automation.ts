@@ -30,7 +30,7 @@ export const triggerTone: Record<AutomationTrigger, Tone> = {
 };
 
 const plainFields = ["subject", "body", "from_email", "channel", "mailbox_id", "received_at", "assignee_id", "team_id", "brand_id", "widget_id", "priority", "severity", "status", "tag",
-  "call_outcome", "call_direction", "call_time", "call_missed_reason", "call_line", "call_tag"] as const;
+  "call_outcome", "call_direction", "call_time", "call_missed_reason", "call_line", "call_tag", "time"] as const;
 
 /** The call of a call_ended automation (contracts/phone.md "Automations"): only that trigger offers them. */
 export const callFields: ReadonlySet<ConditionField> = new Set(["call_outcome", "call_direction", "call_time", "call_missed_reason", "call_line", "call_tag"]);

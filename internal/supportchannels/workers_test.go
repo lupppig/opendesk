@@ -44,7 +44,7 @@ func TestMessageEventDecodesEventPayload(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, source, err := messageEvent([]byte(tt.data), tt.notes, 3500, "https://app.test/ticket")
+			got, source, err := messageEvent([]byte(tt.data), shown{notes: tt.notes, customer: true, agent: true}, 3500, "https://app.test/ticket")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -57,7 +57,7 @@ func TestMessageEventDecodesEventPayload(t *testing.T) {
 
 func TestMessageEventRejectsMalformedPayload(t *testing.T) {
 	for _, data := range []string{`{"message":`, `{}`} {
-		if _, _, err := messageEvent([]byte(data), true, 3500, "https://app.test/ticket"); err == nil {
+		if _, _, err := messageEvent([]byte(data), shown{notes: true, customer: true, agent: true}, 3500, "https://app.test/ticket"); err == nil {
 			t.Fatalf("accepted malformed payload %q", data)
 		}
 	}
@@ -66,7 +66,7 @@ func TestMessageEventRejectsMalformedPayload(t *testing.T) {
 func TestMessageEventKeepsAttachmentsAndLinksTruncatedText(t *testing.T) {
 	id := "0192f0c4-0000-7000-8000-000000000000"
 	data := `{"message":{"id":"0192f0c4-0000-7000-8000-000000000001","kind":"reply","direction":"inbound","body_text":"` + strings.Repeat("long ", 200) + `","attachments":[{"id":"` + id + `","filename":"screen.png","content_type":"image/png","size_bytes":42}]}}`
-	got, source, err := messageEvent([]byte(data), false, 500, "https://app.test/ticket")
+	got, source, err := messageEvent([]byte(data), shown{customer: true, agent: true}, 500, "https://app.test/ticket")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestMessageEventKeepsAttachmentsAndLinksTruncatedText(t *testing.T) {
 
 func TestMessageEventKeepsEmptyDeletionMarker(t *testing.T) {
 	data := `{"message":{"id":"0192f0c4-0000-7000-8000-000000000001","kind":"note","direction":"outbound","deleted_at":"2026-10-24T12:00:00Z"}}`
-	got, source, err := messageEvent([]byte(data), true, 3500, "https://app.test/ticket")
+	got, source, err := messageEvent([]byte(data), shown{notes: true, customer: true, agent: true}, 3500, "https://app.test/ticket")
 	if err != nil {
 		t.Fatal(err)
 	}

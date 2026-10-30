@@ -216,10 +216,14 @@ func (s *Service) registerOllie(api huma.API, tags []string) {
 			return &struct{ Body ollieSettings }{out}, nil
 		})
 
-	huma.Register(api, huma.Operation{OperationID: "update-support-channel-destination", Method: http.MethodPatch, Path: "/v1/support-channels/destinations/{id}", Tags: tags, Summary: "Change how Ollie works in a destination's threads"},
+	huma.Register(api, huma.Operation{OperationID: "update-support-channel-destination", Method: http.MethodPatch, Path: "/v1/support-channels/destinations/{id}", Tags: tags, Summary: "Change a destination's routing, mirroring and Ollie"},
 		func(ctx context.Context, in *struct {
 			ID   string `path:"id"`
-			Body OllieInput
+			Body struct {
+				IncludeNotes *bool `json:"include_notes,omitempty" doc:"Mirror internal notes too."`
+				RoutingInput
+				OllieInput
+			}
 		}) (*struct{ Body destination }, error) {
 			p, err := requireAdminUser(ctx)
 			if err != nil {
@@ -234,12 +238,29 @@ func (s *Service) registerOllie(api huma.API, tags []string) {
 				if err := tx.QueryRow(ctx, `SELECT `+destinationColumns+` FROM support_channel_destinations WHERE workspace_id=$1 AND id=$2 FOR UPDATE`, p.WorkspaceID, id).Scan(destinationScan(&d)...); err != nil {
 					return err
 				}
-				changed, err := in.Body.apply(&d)
-				if err != nil || len(changed) == 0 {
+				changed, err := in.Body.OllieInput.apply(&d)
+				if err != nil {
 					return err
 				}
-				if _, err := tx.Exec(ctx, `UPDATE support_channel_destinations SET ollie_summary=$3,ollie_warnings=$4,ollie_personality=$5,ollie_length=$6,updated_at=now()
-					WHERE workspace_id=$1 AND id=$2`, p.WorkspaceID, id, d.OllieSummary, d.OllieWarnings, d.OlliePersonality, d.OllieLength); err != nil {
+				routing, err := in.Body.RoutingInput.apply(ctx, tx, p.WorkspaceID, &d)
+				if err != nil {
+					return err
+				}
+				changed = append(changed, routing...)
+				if in.Body.IncludeNotes != nil && *in.Body.IncludeNotes != d.IncludeNotes {
+					d.IncludeNotes = *in.Body.IncludeNotes
+					changed = append(changed, "include_notes")
+				}
+				if len(changed) == 0 {
+					return nil
+				}
+				if slices.Contains(routing, "mode") || slices.Contains(routing, "conditions") {
+					if err := checkRouteUnique(ctx, tx, p.WorkspaceID, d); err != nil {
+						return err
+					}
+				}
+				if _, err := tx.Exec(ctx, `UPDATE support_channel_destinations SET include_notes=$3,mode=$4,conditions=$5,mirror=$6,ollie_summary=$7,ollie_warnings=$8,ollie_personality=$9,ollie_length=$10,updated_at=now()
+					WHERE workspace_id=$1 AND id=$2`, p.WorkspaceID, id, d.IncludeNotes, d.Mode, d.Conditions, d.Mirror, d.OllieSummary, d.OllieWarnings, d.OlliePersonality, d.OllieLength); err != nil {
 					return err
 				}
 				if _, err := events.Publish(ctx, tx, events.Event{WorkspaceID: p.WorkspaceID, Type: "support_channel_destination.updated", Data: map[string]any{"support_channel_destination": d}}); err != nil {

@@ -1,4 +1,4 @@
-import type { SupportChannelConnection, SupportChannelDelivery, SupportChannelDestination, SupportChannelOllie, SupportChannelOllieAction, SupportChannelOllieLength, SupportChannelOperations, SupportChannelProvider } from "@/lib/api/types";
+import type { Condition, SupportChannelConnection, SupportChannelDelivery, SupportChannelDestination, SupportChannelMirror, SupportChannelOllie, SupportChannelOllieAction, SupportChannelOllieLength, SupportChannelOperations, SupportChannelProvider } from "@/lib/api/types";
 import { del, get, HttpError, invalid, notFound, paginate, patch, post, put, respond } from "../router";
 import { nowIso, uuid } from "../util";
 
@@ -84,6 +84,40 @@ function applyOllie(row: SupportChannelDestination, body: Record<string, unknown
     if (!length) throw invalid("Response length must be brief, standard or detailed.");
     row.ollie_length = length;
   }
+}
+const mirrors: SupportChannelMirror[] = ["customer_replies", "agent_replies", "status_changes", "assignee_changes", "priority_changes"];
+const destinationFields = ["subject", "from_email", "received_at", "mailbox_id", "brand_id", "severity", "sentiment", "tag", "time"];
+
+// Applies a destination's routing as the API does.
+function applyRouting(row: SupportChannelDestination, body: Record<string, unknown>) {
+  if (body.mode !== undefined) {
+    if (body.mode !== "route" && body.mode !== "copy") throw invalid("Mode must be route or copy.");
+    row.mode = body.mode;
+  }
+  if (body.conditions !== undefined) {
+    const conditions = Array.isArray(body.conditions) ? (body.conditions as Condition[]) : [];
+    if (conditions.length > 10) throw invalid("A destination can have at most 10 conditions.");
+    for (const c of conditions) {
+      if (!destinationFields.includes(c.field) && !c.field.startsWith("field.") && !c.field.startsWith("contact.field.")) {
+        throw invalid(`Condition field must be one of ${destinationFields.join(", ")}, field.<key> or contact.field.<key>.`);
+      }
+    }
+    row.conditions = conditions.map((c) => ({ field: c.field, op: c.op, value: c.value }));
+  }
+  if (body.mirror !== undefined) {
+    const list = Array.isArray(body.mirror) ? (body.mirror as string[]) : [];
+    if (list.some((m) => !mirrors.includes(m as SupportChannelMirror))) throw invalid(`mirror takes only ${mirrors.join(", ")}.`);
+    row.mirror = mirrors.filter((m) => list.includes(m));
+  }
+  if (typeof body.include_notes === "boolean") row.include_notes = body.include_notes;
+}
+
+// Only one of two routes with the same team, priority and conditions could ever post.
+function sameRoute(a: SupportChannelDestination, b: SupportChannelDestination) {
+  return a.id !== b.id && a.mode === "route" && b.mode === "route" && a.connection_id === b.connection_id && a.team_id === b.team_id && a.priority === b.priority && JSON.stringify(a.conditions) === JSON.stringify(b.conditions);
+}
+function checkRoute(row: SupportChannelDestination) {
+  if (destinations.some((other) => sameRoute(row, other))) throw new HttpError(409, "conflict", "Another route on this connection already has that team, priority and conditions.");
 }
 const deliveries: SupportChannelDelivery[] = [
   { event_seq: 1842, event_type: "ticket.created", ticket_number: 284, status: "queued", attempts: 0, last_error: "", created_at: new Date(Date.now() - 2 * 60_000).toISOString(), updated_at: new Date(Date.now() - 2 * 60_000).toISOString() },
@@ -196,9 +230,6 @@ export function registerSupportChannels() {
     if (destinations.some((destination) => destination.connection_id === connection.id && destination.external_channel_id === external)) {
       throw new HttpError(409, "conflict", "That provider channel already has a destination.");
     }
-    if (destinations.some((destination) => destination.connection_id === connection.id && (destination.team_id ?? "all") === (typeof ctx.body.team_id === "string" ? ctx.body.team_id : "all") && (destination.priority ?? "all") === (priority ?? "all"))) {
-      throw new HttpError(409, "conflict", "That team and priority already has a destination.");
-    }
     const row: SupportChannelDestination = {
       id: uuid(),
       connection_id: connection.id,
@@ -209,6 +240,9 @@ export function registerSupportChannels() {
       enabled: true,
       include_notes: ctx.body.include_notes === true,
       message_limit: typeof ctx.body.message_limit === "number" ? ctx.body.message_limit : 3500,
+      mode: "route",
+      conditions: [],
+      mirror: ["customer_replies", "agent_replies"],
       ollie_summary: true,
       ollie_warnings: true,
       ollie_personality: "",
@@ -216,13 +250,19 @@ export function registerSupportChannels() {
       created_at: nowIso(),
     };
     applyOllie(row, ctx.body);
+    applyRouting(row, ctx.body);
+    checkRoute(row);
     destinations.push(row);
     return row;
   });
   patch("/v1/support-channels/destinations/:id", (ctx) => {
     const row = destinations.find((x) => x.id === ctx.params.id);
     if (!row) throw notFound("Support channel destination");
-    applyOllie(row, ctx.body);
+    const next = { ...row };
+    applyOllie(next, ctx.body);
+    applyRouting(next, ctx.body);
+    checkRoute(next);
+    Object.assign(row, next);
     return row;
   });
   get("/v1/support-channels/ollie", () => ollie);

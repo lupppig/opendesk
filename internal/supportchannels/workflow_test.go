@@ -719,7 +719,7 @@ func TestRecentHistoryLeavesTheNewestMessagesToTheirOwnEvents(t *testing.T) {
 	latest := add(strings.Repeat("Full first message. ", 40), now)
 	trigger, _ := json.Marshal(map[string]any{"message": latest})
 	before := historyCutoff("message.created", trigger, now.Add(time.Second)).Add(-historySettle)
-	text, posted, err := w.s.recentHistory(e.Ctx, w.ws.ID, w.ticket.ID, false, before)
+	text, posted, err := w.s.recentHistory(e.Ctx, w.ws.ID, w.ticket.ID, shown{customer: true, agent: true}, before)
 	if err != nil {
 		t.Fatal(err)
 	}
