@@ -839,6 +839,7 @@
         "priority_changes": "Changements de priorité"
       },
       "conditionCount_one": "{{count}} condition",
+      "conditionCount_many": "{{count}} conditions",
       "conditionCount_other": "{{count}} conditions",
       "alsoPosts": "publie aussi",
       "label": "Acheminement pour {{name}}",
