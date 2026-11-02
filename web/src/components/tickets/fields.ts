@@ -38,6 +38,7 @@ type DisplaySettings = {
   status_labels?: Record<string, Override>;
   priority_labels?: Record<string, Override>;
   send_and_finish_button?: boolean;
+  severity_enabled?: boolean;
 };
 
 /** The workspace's display overrides for status and priority names and colours, and who may create labels. */
@@ -61,6 +62,8 @@ export function useDisplay() {
     finishWords: finishWords(s.status_labels),
     /** Whether the composer shows sending and finishing on a button of its own, next to Send. */
     finishButton: !!s.send_and_finish_button,
+    /** Whether the workspace uses ticket severity; off, the app leaves it out (settings.severity_enabled). */
+    severity: s.severity_enabled !== false,
   };
 }
 

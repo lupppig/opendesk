@@ -53,6 +53,7 @@ type CoreWorkspaceSettings struct {
 	UndoSendChatSecs  *int    `json:"undo_send_chat_seconds,omitempty" enum:"0,5,10,20,30" doc:"The same for replies on chat tickets. Default 0: a chat reply goes at once"`
 	SendAndFinish     *bool   `json:"send_and_finish_button,omitempty" doc:"Show a button that sends and solves, using the workspace's finish label next to Send in the reply composer, instead of only in its menu. Default false"`
 	AgentOnlineTime   *bool   `json:"agent_online_time,omitempty" doc:"Record each member's online time from the app's heartbeats and show it in the agents report. Default true; false records none, deletes what was recorded, and the report shows none"`
+	SeverityEnabled   *bool   `json:"severity_enabled,omitempty" doc:"Tickets have a severity beside their priority. Default true; false leaves severity out of the app (ticket, lists, filters, views, bulk actions, automations, reports) and AI never sets or proposes one. The API still reads and writes it, and tickets keep theirs"`
 	// StatusLabels and PriorityLabels rename and recolour the fixed values for display only;
 	// a status can also be hidden from the menus agents pick from.
 	StatusLabels   map[string]DisplayOverride `json:"status_labels,omitempty"`
@@ -283,6 +284,9 @@ func validateSettings(s *CoreWorkspaceSettings) (map[string]any, error) {
 	}
 	if s.AgentOnlineTime != nil {
 		out["agent_online_time"] = *s.AgentOnlineTime
+	}
+	if s.SeverityEnabled != nil {
+		out["severity_enabled"] = *s.SeverityEnabled
 	}
 	if s.CollabReplyTo != nil {
 		if !slices.Contains([]string{"address", "mailbox"}, *s.CollabReplyTo) {

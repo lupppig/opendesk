@@ -48,6 +48,7 @@ type WorkspaceSettings = {
   send_and_finish_button?: boolean;              // default false: a Send and solve button (named after solved's display label) next to Send in the reply box
   message_delete?: "off" | "own" | "all";        // default "own" (own internal notes); "all": any agent's notes and replies; admins any
   agent_online_time?: boolean;                   // default true: record each member's online time for the agents report; false deletes it and records none
+  severity_enabled?: boolean;                    // default true: tickets have a severity; false hides it in the app and AI never sets it (the API still reads and writes it)
 };
 type Member = {
   user: UserRef & { avatar_source: AvatarSource | null }; role: "owner" | "admin" | "agent" | "viewer";

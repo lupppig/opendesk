@@ -83,14 +83,14 @@ afterEach(async () => {
 });
 
 /** Renders with the workspace's teams and addresses known, and nothing fetched. */
-async function render(node: ReactNode, role: "agent" | "viewer" = "agent") {
+async function render(node: ReactNode, role: "agent" | "viewer" = "agent", settings: Workspace["settings"] = {}) {
   useSession.setState({
     user: { id: "u9", name: "Lea Martin", email: "lea@margin.test" } as never,
     memberships: [{ workspace: { id: "w" }, role }] as never,
     workspaceId: "w",
   });
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity, enabled: false } } });
-  qc.setQueryData<Workspace>(qk.workspace, { id: "w", name: "Acme", settings: {} } as Workspace);
+  qc.setQueryData<Workspace>(qk.workspace, { id: "w", name: "Acme", settings } as Workspace);
   qc.setQueryData(qk.teams, [team]);
   qc.setQueryData(qk.brands, []);
   qc.setQueryData(qk.mailboxes, [mailbox]);
@@ -175,6 +175,25 @@ describe("the details column", () => {
     expect(column.textContent).not.toContain("Assignee");
     expect(column.textContent).not.toContain("Lea Martin");
     expect(column.textContent).not.toContain("Reply from");
+  });
+});
+
+describe("a workspace without severity", () => {
+  const off = { severity_enabled: false };
+
+  it("leaves it out of the bar, the column and the header, even on a ticket that has one", async () => {
+    await render(<TicketPropertiesBar t={ticket({ severity: "sev2" })} picker={null} onPicker={() => {}} />, "agent", off);
+    expect(names(host.querySelector("[data-properties-bar]")!)).toEqual(["Status: Open", "Priority: High", "Assignee: Lea Martin", "Team: Support", "Reply from: support@margin.test"]);
+    await render(<TicketProperties t={ticket({ severity: "sev2" })} picker={null} onPicker={() => {}} />, "agent", off);
+    expect(host.textContent).toContain("Priority");
+    expect(host.textContent).not.toContain("Severity");
+    await render(<HeaderPills t={ticket({ severity: "sev2" })} bar={false} />, "agent", off);
+    expect(host.querySelector("[data-header-pills]")!.textContent).not.toContain("S2");
+  });
+
+  it("shows it again once the workspace turns it back on", async () => {
+    await render(<HeaderPills t={ticket({ severity: "sev2" })} bar={false} />, "agent", { severity_enabled: true });
+    expect(host.querySelector("[data-header-pills]")!.textContent).toContain("S2");
   });
 });
 

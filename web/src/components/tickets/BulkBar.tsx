@@ -152,23 +152,25 @@ export function BulkBar({
               <Act compact={compact} icon={<Signal className="size-3.5" />} label={t("bulk.priority")} />
             }
           />
-          <Picker
-            side="top"
-            placeholder={t("bulk.setSeverity")}
-            value={null}
-            items={[
-              ...severityOrder.map((v) => ({ value: v, label: severityLabel(v), hint: severityHint(v), icon: <SeverityChip severity={v} /> })),
-              { value: "__none", label: t("bulk.noSeverity"), icon: <span className="h-[16px] w-[22px] rounded-[4px] border border-dashed border-line-strong" /> },
-            ]}
-            onSelect={(v) =>
-              v === "__none"
-                ? run({ patch: { severity: null } }, (count) => t("bulk.severityCleared", { count }))
-                : run({ patch: { severity: v as Severity } }, (count) => t("bulk.severitySet", { count, severity: severityLabel(v as Severity) }))
-            }
-            trigger={
-              <Act compact={compact} icon={<Siren className="size-3.5" />} label={t("bulk.severity")} />
-            }
-          />
+          {display.severity && (
+            <Picker
+              side="top"
+              placeholder={t("bulk.setSeverity")}
+              value={null}
+              items={[
+                ...severityOrder.map((v) => ({ value: v, label: severityLabel(v), hint: severityHint(v), icon: <SeverityChip severity={v} /> })),
+                { value: "__none", label: t("bulk.noSeverity"), icon: <span className="h-[16px] w-[22px] rounded-[4px] border border-dashed border-line-strong" /> },
+              ]}
+              onSelect={(v) =>
+                v === "__none"
+                  ? run({ patch: { severity: null } }, (count) => t("bulk.severityCleared", { count }))
+                  : run({ patch: { severity: v as Severity } }, (count) => t("bulk.severitySet", { count, severity: severityLabel(v as Severity) }))
+              }
+              trigger={
+                <Act compact={compact} icon={<Siren className="size-3.5" />} label={t("bulk.severity")} />
+              }
+            />
+          )}
           <Picker
             side="top"
             multi

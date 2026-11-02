@@ -59,6 +59,7 @@ import {
   validQuestion,
 } from "@/components/settings2/automation";
 import { brandItems, teamItems, useBrands, useTeams } from "@/components/settings2/teams";
+import { useDisplay } from "@/components/tickets/fields";
 import { AiIcon, useCostText } from "@/components/ai/bits";
 import { formatUsd } from "@/lib/format";
 import { useAI } from "@/lib/ai";
@@ -106,18 +107,25 @@ const blank: Draft = {
 const allFields = Object.keys(fieldLabel) as ConditionField[];
 const allActions = Object.keys(actionLabel) as ActionType[];
 
-/** Builder lists; AI fields and actions only when the instance has AI, call fields only for call_ended, unless already in use. */
+/**
+ * Builder lists; AI fields and actions only when the instance has AI, call fields only for call_ended,
+ * severity only when the workspace uses it, unless already in use.
+ */
 function useFieldItems(current: string, trigger: AutomationTrigger) {
   const { enabled } = useAI();
   const { t } = useTranslation("settingsInbox");
   const custom = useFieldConditionItems(current);
   const { teams } = useTeams();
   const { multi } = useBrands();
+  const display = useDisplay();
   const builtIn = offered(allFields, aiFields, enabled, isFieldRef(current) ? undefined : (current as ConditionField))
     .filter(
       (f) =>
         f === current ||
-        ((teams.length > 0 || !teamFields.has(f)) && (multi || !brandFields.has(f)) && (trigger === "call_ended" || !callFields.has(f))),
+        ((teams.length > 0 || !teamFields.has(f)) &&
+          (multi || !brandFields.has(f)) &&
+          (trigger === "call_ended" || !callFields.has(f)) &&
+          (display.severity || f !== "severity")),
     )
     .map((f) => ({
     value: f as string,
@@ -132,8 +140,10 @@ function useActionItems(current: ActionType, trigger: AutomationTrigger) {
   const costText = useCostText();
   const { all } = useAutomationFields();
   const hasTicketFields = all.some((f) => f.entity === "ticket" && !f.archived);
+  const display = useDisplay();
   return offered(allActions, aiActions, enabled, current)
     .filter((a) => a !== "set_field" || hasTicketFields || current === "set_field")
+    .filter((a) => a !== "set_severity" || display.severity || current === "set_severity")
     .filter((a) => actionFitsTrigger(a, trigger) || a === current)
     .map((a) => {
       const n = aiActions.has(a) ? cost(a === "run_procedure" ? "procedure" : "triage") : null;

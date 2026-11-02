@@ -45,6 +45,7 @@ import {
   useTeamItems,
 } from "@/components/settings2/pickers";
 import { ChannelIcon, PriorityIcon, SeverityChip, StatusIcon, channelLabel, priorityLabel, severityLabel, statusLabel } from "@/components/tickets/bits";
+import { useDisplay } from "@/components/tickets/fields";
 import { api } from "@/lib/api/endpoints";
 import { errorMessage } from "@/lib/api/client";
 import type { Channel, Priority, Severity, TicketFilters, TicketStatus, View, ViewIcon as ViewIconValue } from "@/lib/api/types";
@@ -433,6 +434,8 @@ function ViewDrawer({ view, copyOf, views, nextPosition, onClose }: { view: View
   const qc = useQueryClient();
   const confirm = useConfirm();
   const { teams: allTeams } = useTeams();
+  // Without severity in the workspace, its filter is offered only to clear one the view has.
+  const display = useDisplay();
   const role = useRole();
   const me = useUser();
   const rights = viewRights(atLeast(role, "admin"), allTeams, me.id);
@@ -667,14 +670,16 @@ function ViewDrawer({ view, copyOf, views, nextPosition, onClose }: { view: View
                   placeholder={t("views.any.priority")}
                 />
               </FilterRow>
-              <FilterRow label={t("views.filters.severity")} onClear={f.severity?.length ? () => set("severity", undefined) : undefined}>
-                <MultiPick
-                  items={severityFilterItems()}
-                  values={f.severity ?? []}
-                  onChange={(v) => set("severity", v as (Severity | "none")[])}
-                  placeholder={t("views.any.severity")}
-                />
-              </FilterRow>
+              {(display.severity || !!f.severity?.length) && (
+                <FilterRow label={t("views.filters.severity")} onClear={f.severity?.length ? () => set("severity", undefined) : undefined}>
+                  <MultiPick
+                    items={severityFilterItems()}
+                    values={f.severity ?? []}
+                    onChange={(v) => set("severity", v as (Severity | "none")[])}
+                    placeholder={t("views.any.severity")}
+                  />
+                </FilterRow>
+              )}
               <FilterRow label={t("views.filters.assignee")} onClear={f.assignee ? () => set("assignee", undefined) : undefined}>
                 <SinglePick items={assigneeItems} value={f.assignee} onChange={(v) => set("assignee", v)} placeholder={t("views.any.assignee")} width={280} />
               </FilterRow>

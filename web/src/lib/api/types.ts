@@ -59,6 +59,8 @@ export type WorkspaceSettings = {
   send_and_finish_button?: boolean;
   /** Heartbeats count toward each member's online time, shown in the agents report. Default true; false records and shows none. */
   agent_online_time?: boolean;
+  /** Tickets have a severity beside their priority. Default true; false leaves it out of the app, and AI never sets it. The API still reads and writes it. */
+  severity_enabled?: boolean;
   /** Display-only names and colours for the fixed statuses and priorities. */
   status_labels?: Partial<Record<TicketStatus, DisplayOverride>>;
   priority_labels?: Partial<Record<Priority, DisplayOverride>>;

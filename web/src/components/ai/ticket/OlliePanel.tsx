@@ -301,7 +301,7 @@ function useSuggestions(ticket: Ticket, run: Run, say: (s: string) => void) {
     });
     if (result.priority !== ticket.priority)
       asked.push(askedRow("priority", t("suggest.fields.priority"), <PriorityPill priority={result.priority} label={display.priority(result.priority)} hue={display.priorityTone(result.priority)} />, display.priority(result.priority), { priority: result.priority }));
-    if (result.severity && result.severity !== ticket.severity)
+    if (display.severity && result.severity && result.severity !== ticket.severity)
       asked.push(askedRow("severity", t("suggest.fields.severity"), <SeverityValue s={result.severity} />, severityLabel(result.severity), { severity: result.severity }));
     if (result.team_id && result.team_id !== ticket.team_id)
       asked.push(askedRow("team", t("suggest.fields.team"), <span className="truncate">{teamName(result.team_id)}</span>, teamName(result.team_id), { team_id: result.team_id }));
@@ -324,9 +324,9 @@ function useSuggestions(ticket: Ticket, run: Run, say: (s: string) => void) {
   const askedLeft = asked.filter((r) => !handled.has(r.key as AskedKey));
   const askedFields = new Set<SuggestionField>(result ? ["priority", "severity", "team", "labels"] : []);
 
-  // Ollie's own decisions that fell below the workspace threshold.
+  // Ollie's own decisions that fell below the workspace threshold; a severity one only while the workspace uses severity.
   const auto: Row[] = aiSuggestions(ticket)
-    .filter(([f]) => !askedFields.has(f))
+    .filter(([f]) => !askedFields.has(f) && (f !== "severity" || display.severity))
     .map(([field, s]) => {
       let value: ReactNode;
       let text: string;

@@ -211,7 +211,7 @@ func (rc *runCtx) resolveChanges(ctx context.Context, c ticketChanges, allowFiel
 		}
 		p.Priority = c.Priority
 	}
-	if c.Severity != "" {
+	if c.Severity != "" && !rc.noSeverity {
 		if err := validEnum([]string{c.Severity}, append(append([]string{}, severities...), "none"), "severity"); err != nil {
 			return p, err
 		}
