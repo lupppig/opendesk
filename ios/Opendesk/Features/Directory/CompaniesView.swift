@@ -105,8 +105,7 @@ struct CompaniesListView: View {
         if !store.loadedOnce {
             ScrollView { SkeletonRows() }
                 .scrollDisabled(true)
-                .background(Theme.surface)
-                .clipShape(UnevenRoundedRectangle(topLeadingRadius: Theme.Radius.card, topTrailingRadius: Theme.Radius.card, style: .continuous))
+                .panelSurface()
         } else if let error = store.error, store.companies.isEmpty {
             ErrorState(title: "Couldn't load companies", message: error) { store.reload() }
                 .frame(maxHeight: .infinity)
@@ -129,8 +128,7 @@ struct CompaniesListView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
-            .background(Theme.surface)
-            .clipShape(UnevenRoundedRectangle(topLeadingRadius: Theme.Radius.card, topTrailingRadius: Theme.Radius.card, style: .continuous))
+            .panelSurface()
             .refreshable { await store.refresh() }
             .motion(Motion.snappy, value: store.companies.map(\.id))
         }

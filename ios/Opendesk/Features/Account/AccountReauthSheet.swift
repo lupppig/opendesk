@@ -55,6 +55,7 @@ struct AccountReauthSheet: View {
                 Button(action: submit) { ButtonLabel(title: mfaToken == nil ? "Continue" : "Confirm", busy: busy) }
                     .buttonStyle(InkButtonStyle())
                     .disabled(busy || (mfaToken == nil ? password.isEmpty : code.count != 6))
+                if mfaToken == nil { signInAgain }
             }
             .padding(22)
             .motion(Motion.snappy, value: error)
@@ -66,8 +67,25 @@ struct AccountReauthSheet: View {
     private var message: String {
         if mfaToken != nil { return "Enter the 6-digit code from your authenticator app." }
         return prompt.needsMFA
-            ? "This change needs a sign-in that passed two-factor. Enter your password, then a code."
-            : "This change needs a recent sign-in. Enter your password to continue."
+            ? "For your security, this change needs a sign-in with your two-factor code. Enter your password, then a code."
+            : "For your security, this change needs a sign-in from the last 12 hours. Enter your password to confirm it's you."
+    }
+
+    /// For an account without a password (Google, GitHub or a passkey): a new sign-in from the start.
+    private var signInAgain: some View {
+        Button {
+            Haptics.tap()
+            dismiss()
+            Task { await env.session.signOut() }
+        } label: {
+            Text("No password? Sign out and sign in again")
+                .font(ODFont.sans(13.5, weight: .medium))
+                .foregroundStyle(Theme.fg2)
+                .frame(maxWidth: .infinity)
+                .frame(height: 36)
+        }
+        .buttonStyle(.plain)
+        .disabled(busy)
     }
 
     private func submit() {

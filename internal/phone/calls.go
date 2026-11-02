@@ -314,7 +314,23 @@ func (s *Service) applyCall(ctx context.Context, tx pgx.Tx, c PhoneConnection, e
 	if ev.Call == nil || ev.CallID == "" {
 		return nil
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO phone_calls (id, workspace_id, connection_id, provider, external_call_id, direction)
+	if ev.Continues != "" {
+		if err := s.continueCall(ctx, tx, c, ev.Continues, ev.CallID); err != nil {
+			return err
+		}
+	}
+	if ev.Call.Direction == "" {
+		// An event that doesn't know the call's direction (Voys' recording event) only
+		// updates a call already seen.
+		var known bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM phone_calls WHERE workspace_id = $1 AND provider = $2 AND external_call_id = $3)`,
+			c.WorkspaceID, c.Provider, ev.CallID).Scan(&known); err != nil {
+			return err
+		}
+		if !known {
+			return errCallUnknown
+		}
+	} else if _, err := tx.Exec(ctx, `INSERT INTO phone_calls (id, workspace_id, connection_id, provider, external_call_id, direction)
 		VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (workspace_id, provider, external_call_id) DO NOTHING`,
 		ids.New(), c.WorkspaceID, c.ID, c.Provider, ev.CallID, ev.Call.Direction); err != nil {
 		return fmt.Errorf("insert call: %w", err)
@@ -353,7 +369,7 @@ func (s *Service) applyCall(ctx context.Context, tx pgx.Tx, c PhoneConnection, e
 		now := time.Now().UTC()
 		call.EndedTriggerAt = &now
 	}
-	card := c.InsightCards && call.Direction == "inbound" && call.Stage == provider.StageRinging && call.CardQueuedAt == nil
+	card := c.InsightCards && s.describe(c.Provider).InsightCards && call.Direction == "inbound" && call.Stage == provider.StageRinging && call.CardQueuedAt == nil
 	if card {
 		now := time.Now().UTC()
 		call.CardQueuedAt = &now
@@ -391,6 +407,24 @@ func (s *Service) applyCall(ctx context.Context, tx pgx.Tx, c PhoneConnection, e
 	return nil
 }
 
+// continueCall moves the call documented under the id from to the id to, under which a
+// transfer joined it with another call goes on, so their events make one call on one
+// ticket. A call already known under to stays as it is.
+func (s *Service) continueCall(ctx context.Context, tx pgx.Tx, c PhoneConnection, from, to string) error {
+	// Locked like any event of the call, ticket first, so this never waits on an event
+	// of the call that waits on it.
+	if _, err := s.lockCall(ctx, tx, c, from); db.IsNotFound(err) {
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("lock continued call: %w", err)
+	}
+	_, err := tx.Exec(ctx, `UPDATE phone_calls SET external_call_id = $4, updated_at = now()
+		WHERE workspace_id = $1 AND provider = $2 AND external_call_id = $3
+		AND NOT EXISTS (SELECT 1 FROM phone_calls WHERE workspace_id = $1 AND provider = $2 AND external_call_id = $4)`,
+		c.WorkspaceID, c.Provider, from, to)
+	return err
+}
+
 // applyIntelligence adds a provider's AI summary or transcript to its call's entry.
 func (s *Service) applyIntelligence(ctx context.Context, tx pgx.Tx, c PhoneConnection, ev provider.Event) error {
 	call, err := s.lockCall(ctx, tx, c, ev.CallID)
@@ -403,14 +437,25 @@ func (s *Service) applyIntelligence(ctx context.Context, tx pgx.Tx, c PhoneConne
 	if call.TicketID == nil {
 		return nil // a blocked contact's call keeps no content
 	}
-	if ev.Kind == provider.KindTranscript {
+	// A transcript event only announces it, and so does a summary event without its text
+	// (a provider whose events are not signed): the text comes from the provider.
+	if ev.Kind == provider.KindTranscript || ev.Summary == "" {
+		a, ok := s.adapters[c.Provider]
+		if !ok {
+			return nil
+		}
 		creds, err := s.credentials(c)
 		if err != nil {
 			return err
 		}
-		ev.Transcript, err = s.adapters[c.Provider].Transcript(ctx, s.http, creds, ev.CallID)
+		text, err := a.Content(ctx, s.http, creds, ev.Kind, ev.CallID)
 		if err != nil {
 			return err
+		}
+		if ev.Kind == provider.KindTranscript {
+			ev.Transcript = text
+		} else {
+			ev.Summary = text
 		}
 	}
 	if ev.Summary != "" {

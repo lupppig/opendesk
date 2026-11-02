@@ -64,9 +64,12 @@ enum Theme {
     static let inverse = Color.dynamic(light: 0x0A0A0A, dark: 0xF7F7F7)
     static let inverseFg = Color.dynamic(light: 0xFFFFFF, dark: 0x0A0A0A)
 
-    // Notes (internal)
-    static let note = Color.dynamic(light: 0xFAFAFA, dark: 0x1F2023)
-    static let noteLine = Color.dynamic(light: 0xD4D4D4, dark: 0x3A3A3A)
+    // Timeline frames (web `--reply`, `--note`): the team's replies carry a blue tint,
+    // internal notes an amber one, so who wrote a message reads before its words.
+    static let reply = Color.dynamic(light: 0xF4F8FF, dark: 0x222630)
+    static let replyLine = Color.dynamic(light: 0xBED5FF, dark: 0x364565)
+    static let note = Color.dynamic(light: 0xFBF3EA, dark: 0x2F2B26)
+    static let noteLine = Color.dynamic(light: 0xE7B882, dark: 0x7F6437)
 
     // States
     static let ok = Color.dynamic(light: 0x16A34A, dark: 0x3DD68C)

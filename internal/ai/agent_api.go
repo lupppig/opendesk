@@ -71,7 +71,9 @@ type PlaygroundOutput struct {
 	Sources  []CitedSource     `json:"sources"`
 	Handoff  bool              `json:"handoff"`
 	Action   *PlaygroundAction `json:"action"`
-	USD      float64           `json:"usd" doc:"What the reply cost, in US dollars"`
+	// Procedures are the ones the agent read for this reply.
+	Procedures []ProcedureRef `json:"procedures"`
+	USD        float64        `json:"usd" doc:"What the reply cost, in US dollars"`
 }
 
 // AgentReport is GET /v1/ai/agent/report.
@@ -220,7 +222,7 @@ func (s *Service) Playground(ctx context.Context, p *auth.Principal, in Playgrou
 		return nil, err
 	}
 	body, cited := finishReply(res.Text, res.Passages)
-	out := &PlaygroundOutput{TextHTML: body, Sources: toSources(cited), Handoff: res.Handoff, USD: res.USD.USD()}
+	out := &PlaygroundOutput{TextHTML: body, Sources: toSources(cited), Handoff: res.Handoff, Procedures: procedureRefs(res.Procedures), USD: res.USD.USD()}
 	if a := res.Action; a != nil {
 		out.Action = &PlaygroundAction{Tool: a.Tool.displayName(), Title: firstNonEmpty(a.Tool.Title, a.Tool.displayName()), Summary: a.Summary}
 	}

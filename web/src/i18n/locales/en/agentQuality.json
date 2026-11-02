@@ -32,6 +32,7 @@
     "handoff": "Hands off to the team",
     "no_handoff": "Doesn't hand off",
     "uses_tool": "Uses a tool",
+    "uses_procedure": "Follows a procedure",
     "cites_knowledge": "Cites the knowledge base"
   },
   "kindHint": {
@@ -40,6 +41,7 @@
     "handoff": "Ollie passes the conversation to a person",
     "no_handoff": "Ollie answers without passing it on",
     "uses_tool": "Ollie calls this tool",
+    "uses_procedure": "Ollie reads this procedure",
     "cites_knowledge": "The answer cites at least one source"
   },
   "check": {
@@ -104,7 +106,8 @@
     "notRun": "This test hasn't run yet.",
     "noAnswer": "Ollie wrote no answer.",
     "handedOff": "Handed off",
-    "action": "Asked to confirm: {{title}}"
+    "action": "Asked to confirm: {{title}}",
+    "procedure": "Followed {{name}}"
   },
   "editor": {
     "title": "New test",
@@ -136,6 +139,9 @@
     "tool": "Tool",
     "pickTool": "Choose a tool",
     "noTools": "Connect a tool on the Tools page first.",
+    "procedure": "Procedure",
+    "pickProcedure": "Choose a procedure",
+    "noProcedures": "Write a procedure on the Procedures page first.",
     "valueEmpty": "Describe what to look for.",
     "valueLong": "Keep it under 1,000 characters.",
     "mentionsPlaceholder": "Refunds take 5 to 10 business days",

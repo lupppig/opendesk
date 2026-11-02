@@ -115,6 +115,7 @@ var Typical = map[string]Micro{
 	"copilot":         20_000, // free-form question about a ticket
 	"assistant":       20_000, // one model turn of the assistant (Ollie)
 	"assistant_peer":  10_000, // one answer of a teammate's Ollie, paid by the asker's workspace
+	"procedure":       20_000, // one model turn of a procedure an automation runs (Ollie)
 }
 
 var (

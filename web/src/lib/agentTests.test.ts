@@ -12,6 +12,7 @@ const result = (p: Partial<AgentTestResult>): AgentTestResult => ({
   handoff: false,
   tools: [],
   sources: [],
+  procedures: [],
   action: null,
   checks: [],
   error: null,

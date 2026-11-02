@@ -61,7 +61,7 @@ func (a Adapter) base() string {
 }
 
 func (Adapter) Describe() provider.Descriptor {
-	return provider.Descriptor{Key: "aircall", Name: "Aircall", Fields: []provider.Field{
+	return provider.Descriptor{Key: "aircall", Name: "Aircall", InsightCards: true, Fields: []provider.Field{
 		{Name: "api_id", Label: "API ID", Secret: false},
 		{Name: "api_token", Label: "API token", Secret: true},
 	}}
@@ -521,8 +521,12 @@ func transcriptText(raw json.RawMessage) string {
 	return b.String()
 }
 
-// Transcript retrieves the content announced by transcription.created.
-func (a Adapter) Transcript(ctx context.Context, client *http.Client, creds map[string]string, callID string) (string, error) {
+// Content retrieves the transcript announced by transcription.created; summary.created
+// carries its summary.
+func (a Adapter) Content(ctx context.Context, client *http.Client, creds map[string]string, kind, callID string) (string, error) {
+	if kind != provider.KindTranscript {
+		return "", provider.ErrUnsupported
+	}
 	var out struct {
 		Transcription struct {
 			Content json.RawMessage `json:"content"`

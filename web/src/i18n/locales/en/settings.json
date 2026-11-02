@@ -260,6 +260,12 @@
       "label": "Conversation layout",
       "hint": "The customer's messages on the left, your team's replies and notes on the right, like a chat. Full width on a narrow screen."
     },
+    "properties": {
+      "label": "Ticket properties",
+      "hint": "Status, priority, assignee, team and labels in the details column, or in a bar above the conversation, edited in place. In the bar, the details column starts with the customer and what your apps know about them.",
+      "column": "In the details column",
+      "bar": "In a bar above the conversation"
+    },
     "nextTicket": {
       "label": "Open the next ticket after “{{action}}”",
       "hint": "Also after sending with a status that takes the ticket out of the list. The next ticket of the list or view you came from opens, with its filters and sort; after the last one, you are back on the list. Undoing the send brings you back to the ticket."

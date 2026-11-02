@@ -58,7 +58,7 @@ describe("automation labels", () => {
     expect(fieldLabel.tag).toBe("Label");
     expect(fieldLabel.from_email).toBe("Sender email");
     expect(Object.keys(fieldLabel)).toContain("sentiment");
-    expect(Object.keys(actionLabel).at(-1)).toBe("ai_triage");
+    expect(Object.keys(actionLabel).slice(-2)).toEqual(["ai_triage", "run_procedure"]);
     expect(actionLabel.set_field).toBe("Set field");
     expect(actionLabel.delete_ticket).toBe("Delete ticket");
     expect(actionLabel.assign_replier).toBe("Assign to the agent who replied");
@@ -101,6 +101,12 @@ describe("merge into the contact's open ticket", () => {
       expect(actionFitsTrigger("merge_into_open_ticket", t)).toBe(false);
       expect(actionFitsTrigger("add_tag", t)).toBe(true);
     }
+  });
+
+  it("lets Ollie run a procedure on every trigger but ticket_updated", () => {
+    expect(actionLabel.run_procedure).toBe("Ollie runs a procedure");
+    for (const t of ["ticket_created", "customer_replied", "agent_replied", "call_ended"] as const) expect(actionFitsTrigger("run_procedure", t)).toBe(true);
+    expect(actionFitsTrigger("run_procedure", "ticket_updated")).toBe(false);
   });
 
   it("takes a window of 1 to 30 whole days, and offers one saved outside the choices", () => {

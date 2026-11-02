@@ -293,6 +293,30 @@ func TestNotificationEmailReadFirst(t *testing.T) {
 	}
 }
 
+// TestNotificationReadReachesOtherWindows: marking read tells the reader's other windows and
+// devices which notifications were read, and no one else.
+func TestNotificationReadReachesOtherWindows(t *testing.T) {
+	f := newNotifyFixture(t, "notifevent")
+	tid := f.ticket("Refund", nil, &f.uid)
+	first := f.notify(hd.NotifyAssigned, &tid, nil)
+	f.notify(hd.NotifyMentioned, &tid, nil)
+	if r := f.c.do("POST", "/v1/notifications/read", map[string]any{"ids": []string{first.String()}}); r.Status != 204 {
+		t.Fatalf("read: %d", r.Status)
+	}
+	if n := f.count(`SELECT count(*) FROM events WHERE workspace_id = $1 AND type = 'notification.read'
+		AND user_ids = ARRAY[$2::uuid] AND data->'ids' = to_jsonb(ARRAY[$3::text]) AND data ? 'read_at'`, f.wid, f.uid, first.String()); n != 1 {
+		t.Fatalf("read by id: %d events", n)
+	}
+	if r := f.c.do("POST", "/v1/notifications/read", map[string]any{"all": true}); r.Status != 204 {
+		t.Fatalf("read all: %d", r.Status)
+	}
+	// Nothing left unread: a second Mark all read publishes nothing.
+	f.c.do("POST", "/v1/notifications/read", map[string]any{"all": true})
+	if n := f.count(`SELECT count(*) FROM events WHERE workspace_id = $1 AND type = 'notification.read'`, f.wid); n != 2 {
+		t.Fatalf("read events: %d", n)
+	}
+}
+
 // TestNotificationEmailBatch: several waiting notifications become one email, including
 // one not due yet; the sweep queues one job per user and workspace.
 func TestNotificationEmailBatch(t *testing.T) {

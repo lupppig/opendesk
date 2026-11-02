@@ -4,7 +4,7 @@ A phone connection links a workspace to a cloud phone system. Every call, inboun
 outbound, is documented on the caller's ticket as one call entry in its timeline, kept
 current while the call rings, is answered, ends and gets its recording, comments and AI
 summary. The end of a call runs the `call_ended` automations, so a team decides with
-its own rules what a missed call outside opening hours does. Version 1 ships Aircall.
+its own rules what a missed call outside opening hours does. It ships Aircall and Voys.
 
 This is not a support channel (`contracts/support-channels.md`): those mirror tickets
 into chat tools where agents work them, and their engine is built around threads, cards
@@ -19,7 +19,9 @@ The cloud and self-host use the same code. There is no plan gate.
 ## Model and API
 
 ```ts
-type PhoneProvider = { key: string; name: string; fields: { name: string; label: string; secret: boolean }[] };
+type PhoneProvider = { key: string; name: string; fields: { name: string; label: string; secret: boolean }[];
+  manual_webhook: boolean;     // an admin adds the webhook URL in the provider by hand (Voys)
+  insight_cards: boolean };    // a ringing call can show a card in the provider's app (Aircall)
 type PhoneConnection = { id: string; provider: string; name: string; account_name: string;
   status: "connected" | "error"; last_error: string;
   health_status: "unknown" | "healthy" | "action_required" | "error";
@@ -27,9 +29,10 @@ type PhoneConnection = { id: string; provider: string; name: string; account_nam
   health_detail: string; health_checked_at: string | null;
   reuse_days: number;          // 0..90, default 7 (Placement)
   assign_answered: boolean;    // default false (Agents)
-  insight_cards: boolean;      // default true (Insight cards)
+  insight_cards: boolean;      // default true where the provider has cards (Insight cards)
   last_event_at: string | null;
-  webhook_url?: string;        // admins only: people with the admin role, API keys and AI clients with settings:write
+  webhook_url?: string;        // admins only: people with the admin role, API keys and AI clients with settings:write;
+                               // a manual webhook's ends with its secret (Security)
   created_at: string };
 type PhoneLine = { id: string; name: string; provider: string }; // id: the provider's, what call_line conditions compare
 ```
@@ -40,10 +43,12 @@ type PhoneLine = { id: string; name: string; provider: string }; // id: the prov
 | GET | `/v1/phone/connections` | viewer, `settings:read` | → `{data: PhoneConnection[]}`; never credentials, `webhook_url` for admins only |
 | POST | `/v1/phone/connections` | admin user | `{provider, name?, credentials}` → 201 `PhoneConnection`; 422 `phone_credentials_refused`; 409 when the workspace already has that provider |
 | PATCH | `/v1/phone/connections/{id}` | admin user | `{name?, reuse_days?, assign_answered?, insight_cards?, credentials?}` → `PhoneConnection` |
-| POST | `/v1/phone/connections/{id}/test` | admin user | checks credentials and webhook, registers the webhook again when it is gone or disabled → `PhoneConnection` |
-| DELETE | `/v1/phone/connections/{id}` | admin user | removes opendesk's webhook at the provider, then the connection → 204. Calls already on tickets stay |
+| POST | `/v1/phone/connections/{id}/test` | admin user | checks credentials and webhook, registers the webhook again when it is gone or disabled → `PhoneConnection`. A manual webhook is `receiving` once an event came in at its URL, else `webhook_missing` |
+| POST | `/v1/phone/connections/{id}/rotate-webhook` | admin user | manual webhooks only (else 422): a new secret, so a new `webhook_url`; the old one is refused at once, `last_event_at` is cleared and the health is `webhook_missing` until an event comes in at the new one → `PhoneConnection` |
+| DELETE | `/v1/phone/connections/{id}` | admin user | removes opendesk's webhook at the provider (a manual one is the admin's to remove), then the connection → 204. Calls already on tickets stay |
 | GET | `/v1/phone/lines` | admin, `settings:read` | → `{data: PhoneLine[]}`: the provider's numbers (asked at most every 10 minutes per connection, and again after new credentials) and the lines calls came in on, for `call_line` conditions |
 | POST | `/v1/phone/hooks/{provider}/{connectionId}` | provider | the provider's webhook (Security) |
+| POST | `/v1/phone/hooks/{provider}/{connectionId}/{secret}` | provider | a manual webhook, verified by its secret (Security) |
 
 "Admin user" routes need a person signed in as an admin: connecting a phone system hands
 it a way into tickets, so API keys get `403`. One connection per provider per workspace.
@@ -51,7 +56,7 @@ it a way into tickets, so API keys get `403`. One connection per provider per wo
 Events, to admins only (`events.Event.Admins`): `phone_connection.created` / `.updated`
 `{phone_connection}` (also on every new health state), `phone_connection.deleted`
 `{phone_connection_id}`. Audit:
-`phone.connected`, `phone.updated`, `phone.credentials_rotated`, `phone.disconnected`.
+`phone.connected`, `phone.updated`, `phone.credentials_rotated`, `phone.webhook_rotated`, `phone.disconnected`.
 
 ## Provider adapter boundary
 
@@ -61,21 +66,44 @@ its provider's protocol only, never imports a helpdesk package and never reads a
 
 ```go
 type Adapter interface {
-    Describe() Descriptor
-    Validate(ctx, *http.Client, credentials) (Account, error)
+    Describe() Descriptor // {Key, Name, Fields, ManualWebhook, InsightCards}
+    Validate(ctx, *http.Client, credentials) (Account, error) // {ID, Name}
     RegisterWebhook(ctx, *http.Client, credentials, url string) (Webhook, error) // {ID, Secret}
     WebhookActive(ctx, *http.Client, credentials, id string) (bool, error)
     DeleteWebhook(ctx, *http.Client, credentials, id string) error
     Verify(body []byte, secret string) error
     Parse(body []byte) (Event, error) // ErrIgnored for events of no use
-    Transcript(ctx, *http.Client, credentials, callID string) (string, error)
+    Content(ctx, *http.Client, credentials, kind, callID string) (string, error)
     Lines(ctx, *http.Client, credentials) ([]Line, error)
     PushCard(ctx, *http.Client, credentials, callID string, Card) error
 }
 ```
 
+What a provider can do is data in its `Descriptor`, and an adapter answers
+`ErrUnsupported` for what its provider doesn't:
+
+- `ManualWebhook`: the provider has no API for webhooks, so an admin adds the connection's
+  `webhook_url` in the provider by hand. The engine makes the webhook's secret (32 random
+  bytes, base64url) when it connects, seals it in `webhook_secret_enc` and puts it in the
+  URL's last segment; it verifies events by that segment and never calls `RegisterWebhook`,
+  `WebhookActive`, `DeleteWebhook` or `Verify`. Health is `action_required` /
+  `webhook_missing` until a verified event comes in at the URL (`last_event_at`), which
+  makes it `healthy` / `receiving` at once (`phone_connection.updated`). New credentials of
+  another account (another `Account.ID`) get a new secret, so the old account's events are
+  refused, and wait for an event at the new URL again.
+- `InsightCards`: the provider shows a card on a ringing call. Without it no card is
+  queued and the app hides the setting.
+
+`Validate` returns the account's name and, when the provider's API needs it in paths, its
+id: the engine seals it with the credentials (as `account_id`), for the adapter's later
+requests. Credentials the provider accepts but no connection can use (Voys: a partner's
+token) are `AccountRefused`, whose detail is the 422's. `Content` fetches the text a
+transcript event announced, and a summary event's when the event carries none (an unsigned
+provider's): the engine never stores AI text from an unsigned body.
+
 `Event` is normalized (`kind` call, summary or transcript; the provider's call id; `Final`
-for the event after which the call no longer changes) and carries a `Call` snapshot:
+for the event after which the call no longer changes; `Continues`, the id of a call a
+transfer joined to this one) and carries a `Call` snapshot:
 direction, stage (ringing, answered, ended), the number, the line, the times, the missed
 reason in the provider's words, whether there is a recording or voicemail, links, tags,
 comments, the agent (name, email) and the provider's own name for the caller. Adding a
@@ -103,6 +131,13 @@ never goes back, a time once known stays (the start is the earliest seen), the o
 computed from the merged state (voicemail, else answered when someone answered, else
 missed, once the call ended), tags and comments are the latest event's. The same events in
 any order leave the same call.
+
+A transfer can join two provider calls that go on under one of their ids (Voys). Its event
+names the other (`Continues`): the call documented under that id takes the id that goes on,
+under both calls' locks (ticket first, as every event), unless a call is already documented
+under it. Its later events then reach the same call, entry and ticket. An event that knows
+no direction (Voys' recording event) only updates a call already seen; one about an unknown
+call is retried like an AI event.
 
 ### Contacts
 
@@ -187,7 +222,7 @@ trigger takes them; another trigger with one is refused):
 | --- | --- | --- |
 | `call_outcome` | equals, not_equals | answered, missed, voicemail |
 | `call_direction` | equals, not_equals | inbound, outbound |
-| `call_missed_reason` | equals, not_equals | the provider's reason, `[a-z0-9_]` (Aircall: `out_of_opening_hours`, `short_abandoned`, `abandoned_in_ivr`, `abandoned_in_classic`, `no_available_agent`, `agents_did_not_answer`) |
+| `call_missed_reason` | equals, not_equals | the provider's reason, `[a-z0-9_]` (Aircall: `out_of_opening_hours`, `short_abandoned`, `abandoned_in_ivr`, `abandoned_in_classic`, `no_available_agent`, `agents_did_not_answer`; Voys: `no_answer`, `busy`, `cancelled`, `abandon`, `failed`) |
 | `call_time` | equals, not_equals | business_hours, outside_business_hours: the call's start against the business hours of the ticket's team, else the workspace's; hours that are off are never outside |
 | `call_line` | equals, not_equals, contains, not_contains | equals and not_equals: the line's id (`PhoneLine.id`, which stays when the line is renamed); contains and not_contains: words of its name |
 | `call_tag` | equals, not_equals, contains, not_contains | the call's tags, like `tag` |
@@ -195,11 +230,12 @@ trigger takes them; another trigger with one is refused):
 Every other condition and every action works as on other triggers, so "a missed inbound
 call outside business hours reopens the ticket, adds a note and raises its priority" is an
 automation, not code. Tags and comments added after the call ended update its entry but
-don't run the automations again.
+don't run the automations again. A `run_procedure` action waits up to 15 minutes for the call's
+transcript when it has a recording (`contracts/ai.md` "Automations").
 
 ### Insight cards
 
-With `insight_cards`, a ringing inbound call shows the caller's name (linked to their
+With `insight_cards`, on a provider that has them (Aircall), a ringing inbound call shows the caller's name (linked to their
 contact), the ticket the call went on and their three latest other tickets in the
 provider's app (Aircall: one card per call). Anyone in the provider's app reads it, so it
 names no ticket of a private team and no spam, merged or deleted one. The card is sent by
@@ -209,7 +245,7 @@ the `phone.insight_card` job and dropped when it could not go out within three m
 
 With a connection, phone numbers on contacts and in the ticket sidebar are `tel:` links
 (a `00` prefix becomes `+`). The operating system hands them to the default phone app:
-Aircall Workspace, once it is set as the handler for phone links.
+Aircall Workspace or the Voys app, once it is set as the handler for phone links.
 
 ## Aircall
 
@@ -254,24 +290,76 @@ Docs: [API reference](https://developers.aircall.io/api-references),
   job until `X-AircallApi-Reset`. opendesk calls the API on connect, test, disconnect, the
   lines list, transcript retrieval and one card per ringing inbound call.
 
+## Voys
+
+Docs: [API specs](https://openapi.voys.dev) (`voipgrid/user`, `voipgrid/callerid_numbers`,
+`transcription_storage`), [call notifications](https://help.voys.nl/gespreksnotificaties),
+[Voys Intelligence](https://help.voys.nl/voys-intelligence).
+
+- Credentials: a user's API token (`Authorization: Bearer`), from Freedom's personal
+  settings. `GET https://api.voys.nl/api/v2/users/auth-context` checks it: a customer's user
+  has a `client_uuid`, which is the account's id (`account_id`); a partner's user has none
+  and is refused with a 422 that says so. The account is named after the customer
+  (`GET /api/v2/user/{uuid}/details`, `client.name`), else "Voys". Transcripts and summaries
+  need the user to be an admin with access to call recordings, and Voys Intelligence.
+- Webhook: a call notification an admin adds in Freedom (Integratie, Gespreksnotificaties,
+  Toevoegen, service Custom, the connection's `webhook_url`, with the summary and
+  transcription events ticked). Voys has no API for them and signs nothing: the URL's secret
+  is the verification (`ManualWebhook`). opendesk answers 200 at once, also to events it
+  ignores; Voys' retries are not documented.
+- Events (`version: "v2"`, one POST per step): `created` and `ringing` (which repeats as
+  phones start ringing) are ringing; `in-progress` is answered, by the colleague in
+  `destination.target` (inbound; their first `user_emails` maps to the member) or `caller`
+  (outbound); `warm-transfer`, `cold-transfer` (and `transfer`) are answered too and carry
+  `merged_id`, the call they joined, which they continue (`Continues`); a warm transfer's
+  target is who took the call over. `ended` is final, with `reason`: `completed`, else the
+  missed reason (`no-answer` becomes `no_answer`). The customer's number is `caller.number`
+  inbound and `destination.number` outbound; the line is the company number on the other
+  side, in E.164 (its id and its name on calls). A number withheld (`anonymous`, empty) has
+  no contact. A call between colleagues (Voys marks them outbound) is ignored: its other side
+  is an extension (up to six digits, no country) or a user of the account. The event's time
+  is its `timestamp`, which the week's limit reads. Voys gives no duration: the entry's talk
+  time is from its answer to its end.
+- After `ended`, with Voys Intelligence: `{call_id, call_transcription}`, then
+  `{call_id, summary}` (a call's last event). Both only announce: the inbound job fetches
+  `GET https://api.eu-production.holodeck.voys.nl/transcription-storage/clients/{client_uuid}/calls/{call_id}/transcriptions`
+  (text) and `.../summaries` (`{summary}`) with the connection's token, never the body's
+  text. `{call_id, recording_url}` sets `recording`: the URL is an API URL that needs the
+  token, so it is not kept, and the entry has no player or page to open (`asset_url` stays
+  empty).
+- Lines: `GET /api/v2/clients/{client_uuid}/callerid_numbers` with
+  `Accept: application/json;version=2` (`{number, description}`), ten pages at most.
+- Rate limit: Voys answers 429 without a reset; the job snoozes a minute (or its `Retry-After`
+  up to two minutes). opendesk calls the API on connect, test, a credentials change,
+  the lines list, and two fetches per call with Voys Intelligence.
+- No insight cards: Voys shows none from other apps.
+
 ## Security and operations
 
-- Credentials and the webhook token are AES-GCM sealed with `d.Box`
-  (`phone_connections.credentials_enc`, `.webhook_secret_enc`, in `internal/sealed`).
+- Credentials (with the account id) and the webhook token or secret are AES-GCM sealed with
+  `d.Box` (`phone_connections.credentials_enc`, `.webhook_secret_enc`, in `internal/sealed`).
   Responses, events, errors and logs never include them; adapter errors name the
   operation and the status only.
 - The webhook is found by its opaque connection id, body-capped at 1 MiB and verified
-  before parsing. Its URL reaches the connection, so only admins read it (`webhook_url`,
+  before parsing: with the secret the provider puts in the body (Aircall), or, for a manual
+  webhook, the URL's last segment, compared in constant time with the sealed secret. A
+  secret segment on a provider that registers its webhook is a 404. Request logs show
+  `/v1/phone/hooks/<provider>/<id>/…`, never the secret (`httpx.LogPath`), and the bundled
+  Caddy keeps those paths out of its access log. Its URL reaches the connection, so only admins read it (`webhook_url`,
   `phone_connection.*` events). A request that names no connection or fails verification
   counts against its address (30 a minute, then that address gets `429` before any work);
-  a verified event counts against its connection (600 a minute). The two are apart, so
+  a request with a secret segment is always checked first and gets the `429` only once it
+  fails, because a manual webhook left behind after a rotation or a disconnect keeps posting
+  from the provider's addresses, which other workspaces' webhooks share: their verified events
+  are never refused for its failures. A verified event counts against its connection (600 a minute). The two are apart, so
   forged requests never use up the provider's own allowance, and ids that name no
   connection add no limiter keys. Nothing in a payload
   decides the workspace, the ticket or anyone's access: the connection does. The stored
   event and its job are written in one transaction, and the event id (a hash of the body)
   makes a provider's retry a no-op. Applied events' ids are kept a week, so an event whose
-  own time (Aircall's `timestamp`) is more than a week old is acknowledged and dropped: a
-  replay of it could no longer be recognized.
+  own time (Aircall's and Voys' `timestamp`) is more than a week old is acknowledged and
+  dropped: a replay of it could no longer be recognized. Voys' AI events carry no time; their
+  text is fetched from Voys, so a replay only fetches it again.
 - Provider API clients have a 15-second timeout and do not follow redirects. Their base
   URL is an adapter constant, never user input.
 - Logs carry ids, event names and errors, never numbers, names or call content.
@@ -280,4 +368,6 @@ Docs: [API reference](https://developers.aircall.io/api-references),
 ## Not yet
 
 Aircall SMS and WhatsApp, two-way contact sync, an OAuth app (Aircall Marketplace) instead of
-API keys, Aircall's real-time transcription, other providers.
+API keys, Aircall's real-time transcription. For Voys: insight cards (Voys has none),
+playable recordings (Voys' recording URL needs the API token), contact sync with its contact
+book, and registering the call notification for the admin (Voys has no API for it).

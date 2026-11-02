@@ -4,6 +4,7 @@
 
 import { setTransport } from "@/lib/api/client";
 import { setConversationLayout } from "@/lib/conversationLayout";
+import { setTicketPropertiesPlace } from "@/lib/ticketPropertiesPlace";
 import { setSocketFactory } from "@/lib/realtime/transport";
 import { db } from "./db";
 import { paused, publish, socketFactory, sockets } from "./gateway";
@@ -23,6 +24,7 @@ import { registerCollab } from "./handlers/collab";
 import { registerWorkspaces } from "./handlers/workspaces";
 import { registerDrafts, stageDraft } from "./handlers/drafts";
 import { registerKnowledge } from "./handlers/knowledge";
+import { registerProcedures } from "./handlers/procedures";
 import { registerImports } from "./handlers/imports";
 import { registerIntegrations } from "./handlers/integrations";
 import { registerTicketPanels } from "./handlers/ticketPanels";
@@ -84,6 +86,9 @@ export function installMock(): void {
   // ?mock_layout=conversation (or =full): the timeline's layout preference, as Settings → Profile sets it.
   const layout = params.get("mock_layout");
   if (layout === "conversation" || layout === "full") setConversationLayout(layout === "conversation");
+  // ?mock_properties=bar (or =column): where an open ticket's properties sit, as Settings → Profile sets it.
+  const properties = params.get("mock_properties");
+  if (properties === "bar" || properties === "column") setTicketPropertiesPlace(properties);
   registerAuth();
   registerWorkspace();
   registerTickets();
@@ -101,6 +106,7 @@ export function installMock(): void {
   registerDrafts();
   registerMcp();
   registerKnowledge();
+  registerProcedures();
   registerIntegrations();
   registerTicketPanels();
   registerImports();

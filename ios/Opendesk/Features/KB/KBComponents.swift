@@ -236,15 +236,24 @@ struct KBCollectionStrip: View {
 
 // MARK: - Status filter
 
-/// All, published or drafts: a segmented control with counts and a sliding pill.
-struct KBStatusPicker: View {
-    @Binding var selection: KBStatusFilter
-    let counts: [KBStatusFilter: Int]
+/// A status filter the picker shows: articles' and the changelog's.
+protocol KBFilterOption: Hashable, Identifiable, CaseIterable {
+    var title: String { get }
+}
+
+extension KBStatusFilter: KBFilterOption {}
+extension ChangelogFilter: KBFilterOption {}
+
+/// All, published or drafts (and scheduled, for the changelog): a segmented
+/// control with counts and a sliding pill.
+struct KBStatusPicker<Filter: KBFilterOption>: View {
+    @Binding var selection: Filter
+    let counts: [Filter: Int]
     @Namespace private var pill
 
     var body: some View {
         HStack(spacing: 2) {
-            ForEach(KBStatusFilter.allCases) { filter in
+            ForEach(Array(Filter.allCases)) { filter in
                 let on = selection == filter
                 Button { selection = filter } label: {
                     HStack(spacing: 5) {

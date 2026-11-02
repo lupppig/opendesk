@@ -1,6 +1,7 @@
 package phone
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"io"
@@ -36,20 +37,29 @@ const (
 )
 
 // webhook receives a provider's events. The connection is found by its opaque id and
-// the event is verified with the webhook's own secret before anything is read from it;
-// nothing in the payload decides which workspace or ticket it reaches. A verified event
+// the event is verified with the webhook's own secret before anything is read from it:
+// in the body as the provider signs it, or, for a webhook an admin added by hand
+// (Descriptor.ManualWebhook), as the URL's last segment. Nothing in the payload decides
+// which workspace or ticket it reaches. A verified event
 // is stored (normalized) and queued in one transaction, then the provider gets its 200
 // at once: Aircall waits five seconds and disables a webhook that keeps failing.
 func (s *Service) webhook(w http.ResponseWriter, r *http.Request) {
 	// Limits are keyed by address and by known connection only, so requests naming random
 	// ids add no keys of their own.
 	bad := "phone-hook-bad:" + httpx.ClientIP(s.d.Cfg.TrustProxy, s.d.Cfg.ProxyHops)(r)
-	if s.d.Limiter.Over(bad, badHooksPerMinute, time.Minute) {
+	// A webhook an admin added by hand (its secret in the path) keeps posting from the
+	// provider's shared addresses after a rotation or a disconnect, until the admin removes
+	// it there: its address's failures never hold back another connection's verified events,
+	// so such a request is always checked, and refused with 429 only once it fails.
+	pathSecret := chi.URLParam(r, "secret")
+	if pathSecret == "" && s.d.Limiter.Over(bad, badHooksPerMinute, time.Minute) {
 		w.WriteHeader(http.StatusTooManyRequests)
 		return
 	}
 	refuse := func(status int) {
-		s.d.Limiter.Allow(bad, badHooksPerMinute, time.Minute)
+		if !s.d.Limiter.Allow(bad, badHooksPerMinute, time.Minute) {
+			status = http.StatusTooManyRequests
+		}
 		w.WriteHeader(status)
 	}
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
@@ -68,6 +78,11 @@ func (s *Service) webhook(w http.ResponseWriter, r *http.Request) {
 		refuse(http.StatusNotFound)
 		return
 	}
+	manual := a.Describe().ManualWebhook
+	if pathSecret != "" && !manual {
+		refuse(http.StatusNotFound)
+		return
+	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxWebhookBody))
 	if err != nil {
 		refuse(http.StatusRequestEntityTooLarge)
@@ -79,7 +94,7 @@ func (s *Service) webhook(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	if a.Verify(body, string(secret)) != nil {
+	if manual && subtle.ConstantTimeCompare([]byte(pathSecret), secret) != 1 || !manual && a.Verify(body, string(secret)) != nil {
 		refuse(http.StatusUnauthorized)
 		return
 	}
@@ -126,6 +141,14 @@ func (s *Service) persist(r *http.Request, c PhoneConnection, ev provider.Event)
 		}
 		if _, err := tx.Exec(ctx, `UPDATE phone_connections SET last_event_at = now() WHERE id = $1`, c.ID); err != nil {
 			return err
+		}
+		// A webhook an admin added by hand works once its first event came in.
+		if c.HealthStatus == "action_required" && s.describe(c.Provider).ManualWebhook {
+			now := time.Now().UTC()
+			c.LastEventAt = &now
+			if _, err := s.storeHealth(ctx, tx, c, "healthy", HealthReceiving); err != nil {
+				return err
+			}
 		}
 		_, err = s.d.Jobs.InsertTx(ctx, tx, jobs.PhoneInboundArgs{WorkspaceID: c.WorkspaceID, ConnectionID: c.ID, ExternalEventID: ev.ID},
 			&river.InsertOpts{MaxAttempts: 10})

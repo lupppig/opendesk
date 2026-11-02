@@ -217,6 +217,7 @@ function blocksFor(p: TicketPanel, t: { number: number; subject: string }): Pane
   return [
     {
       type: "card",
+      id: `so-${so}`,
       title: `Sales order ${ref}`,
       url: `https://erp.example.com/odoo/sales/${so}`,
       subtitle: "Web shop · ships from Milan, Italy",
@@ -242,6 +243,7 @@ function blocksFor(p: TicketPanel, t: { number: number; subject: string }): Pane
     {
       // An older order, sent folded: the agent opens it when it matters.
       type: "card",
+      id: `so-${so - 7}`,
       title: `Sales order S${String(so - 7).padStart(5, "0")}`,
       url: `https://erp.example.com/odoo/sales/${so - 7}`,
       subtitle: "Web shop · delivered",

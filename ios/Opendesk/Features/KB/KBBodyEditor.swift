@@ -3,10 +3,13 @@ import SwiftUI
 /// The article body: markdown with a formatting bar (heading, bold, italic,
 /// lists, link, code, quote) and a preview, or the HTML itself when the
 /// article holds something the text form can't show.
-struct KBBodyEditor: View {
-    @Binding var form: KBArticleForm
+struct KBBodyEditor<Form: KBBodyForm>: View {
+    @Binding var form: Form
     @Binding var preview: Bool
     var focused: FocusState<Bool>.Binding
+    /// What the body belongs to, for the HTML notice ("article", "update", "page").
+    var noun = "article"
+    var prompt = "Write the article. Start a line with ## for a heading, - for a list."
     let onSwitchFailed: () -> Void
 
     @State private var selection: TextSelection?
@@ -33,7 +36,7 @@ struct KBBodyEditor: View {
                 .transition(.opacity)
             } else if form.raw {
                 VStack(alignment: .leading, spacing: 10) {
-                    Notice(text: "This article has formatting the text editor can't show, like a table or an image, so you're editing its HTML. Nothing is lost.", tone: .blue, symbol: "chevron.left.forwardslash.chevron.right")
+                    Notice(text: "This \(noun) has formatting the text editor can't show, like a table or an image, so you're editing its HTML. Nothing is lost.", tone: .blue, symbol: "chevron.left.forwardslash.chevron.right")
                     editor(text: $form.html, mono: true, prompt: "<p>Write HTML here</p>")
                 }
                 .padding(.horizontal, 12)
@@ -42,7 +45,7 @@ struct KBBodyEditor: View {
             } else {
                 KBFormatBar { apply($0) }
                 Hairline()
-                editor(text: $form.markdown, mono: false, prompt: "Write the article. Start a line with ## for a heading, - for a list.")
+                editor(text: $form.markdown, mono: false, prompt: prompt)
                     .padding(.horizontal, 12)
                     .transition(.opacity)
             }

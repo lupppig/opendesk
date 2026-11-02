@@ -250,15 +250,19 @@ struct MailAssignSheet: View {
 
 // MARK: - Move and labels
 
-/// Move the conversation to a folder, or put labels on it and take them off.
+/// Move the conversation to another inbox tab or a folder, or put labels on it and take them off.
+/// A tab move can also send the sender's future mail there ("Always"), for an account the
+/// person manages that sorts in opendesk.
 struct MailFolderSheet: View {
     enum Mode { case move, labels }
 
     let store: MailThreadStore
     let mode: Mode
+    var onCategory: ((MailCategory, Bool) -> Void)?
     let apply: (MailAction, String?) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var on: Set<String> = []
+    @State private var always = false
 
     private var mail: MailStore { .shared }
     private var accountID: String { store.detail?.account.id ?? "" }
@@ -268,6 +272,21 @@ struct MailFolderSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     if mode == .move {
+                        if onCategory != nil, !categories.isEmpty {
+                            SectionLabel("Categories")
+                            Panel { categoryList }
+                            if let sender {
+                                Toggle(isOn: $always) {
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text("Always for this sender").font(ODFont.sans(14.5, weight: .medium)).foregroundStyle(Theme.fg)
+                                        Text("Send future mail from \(sender) there too").font(ODFont.sans(12.5)).foregroundStyle(Theme.fg3).lineLimit(2)
+                                    }
+                                }
+                                .tint(Theme.inverse)
+                                .padding(.horizontal, 4)
+                            }
+                            SectionLabel("Mail")
+                        }
                         Panel { list(systemFolders) }
                         let custom = mail.customFolders(of: accountID).filter { !$0.isLabel || isGoogle }
                         if !custom.isEmpty {
@@ -299,6 +318,44 @@ struct MailFolderSheet: View {
     }
 
     private var isGoogle: Bool { store.detail?.account.provider == .google }
+
+    /// The account's tabs, the conversation's own left out.
+    private var categories: [MailCategory] {
+        guard let thread = store.thread else { return [] }
+        let current = mail.categoryKey(of: thread)
+        return mail.categories(of: accountID).filter { $0.key != current }
+    }
+
+    private var sender: String? {
+        guard mail.offersSenderRule(accountID), let thread = store.thread else { return nil }
+        return mail.ruleSender(thread)
+    }
+
+    private var categoryList: some View {
+        ForEach(Array(categories.enumerated()), id: \.element.id) { index, category in
+            if index > 0 { Hairline(inset: 46) }
+            Button {
+                Haptics.selection()
+                onCategory?(category, always)
+                dismiss()
+            } label: {
+                HStack(spacing: 12) {
+                    Circle().fill(category.tone.solid).frame(width: 9, height: 9).frame(width: 20)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(category.name).font(ODFont.sans(15)).foregroundStyle(Theme.fg).lineLimit(1)
+                        if !category.description.isEmpty {
+                            Text(category.description).font(ODFont.sans(12)).foregroundStyle(Theme.fg3).lineLimit(1)
+                        }
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 14)
+                .frame(minHeight: 46)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(RowPressStyle())
+        }
+    }
 
     private var systemFolders: [MailFolder] {
         let roles: [MailFolderRole] = isGoogle ? [.inbox, .spam, .trash] : [.inbox, .archive, .spam, .trash]

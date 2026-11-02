@@ -6,6 +6,8 @@ struct TicketDetailsSheet: View {
     @Bindable var c: TicketController
     @Environment(AppEnvironment.self) private var env
     @Environment(\.dismiss) private var dismiss
+    @State private var editingAlias = false
+    @State private var aliasDraft = ""
 
     private var store: TicketStore { c.store }
 
@@ -18,6 +20,7 @@ struct TicketDetailsSheet: View {
                         properties(ticket)
                         fields(ticket)
                         contact(ticket)
+                        TicketPanelsSection(store: store)
                         timers(ticket)
                         sides
                         links
@@ -68,7 +71,7 @@ struct TicketDetailsSheet: View {
             Panel {
                 row("Status", sheet: .status) {
                     StatusIcon(status: ticket.status, size: 13)
-                    Text(ticket.status.title)
+                    Text(env.statusDisplay.title(ticket.status))
                 }
                 Hairline(inset: 14)
                 row("Priority", sheet: .priority) {
@@ -98,7 +101,83 @@ struct TicketDetailsSheet: View {
                 }
                 Hairline(inset: 14)
                 labels(ticket)
+                if !ticket.requiredSkills.isEmpty {
+                    Hairline(inset: 14)
+                    skills(ticket)
+                }
+                Hairline(inset: 14)
+                reference(ticket)
             }
+        }
+    }
+
+    /// The skills an agent needs to be routed this ticket, from skill-based routing.
+    private func skills(_ ticket: Ticket) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text("Required skills").font(ODFont.sans(14.5)).foregroundStyle(Theme.fg2).frame(height: 22)
+            Spacer(minLength: 8)
+            FlowLayout(spacing: 5) {
+                ForEach(ticket.requiredSkills) { skill in
+                    Text(skill.name)
+                        .font(ODFont.sans(12, weight: .medium))
+                        .foregroundStyle(Tone.violet.text)
+                        .lineLimit(1)
+                        .padding(.horizontal, 7)
+                        .frame(height: 21)
+                        .background(Tone.violet.soft, in: RoundedRectangle(cornerRadius: Theme.Radius.pill, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.pill, style: .continuous).strokeBorder(Tone.violet.line, lineWidth: 1))
+                }
+            }
+            .frame(maxWidth: 220, alignment: .trailing)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// The ticket's optional reference (`alias`), found by search like its number.
+    private func reference(_ ticket: Ticket) -> some View {
+        HStack(spacing: 10) {
+            Text("Reference").font(ODFont.sans(14.5)).foregroundStyle(Theme.fg2)
+            Spacer(minLength: 8)
+            if let alias = ticket.alias {
+                Text(alias).font(ODFont.mono(13.5)).foregroundStyle(Theme.fg).lineLimit(1).textSelection(.enabled)
+                Button {
+                    UIPasteboard.general.string = alias
+                    Haptics.success()
+                    env.toasts.show("Reference copied", kind: .success)
+                } label: {
+                    Image(systemName: "doc.on.doc").font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.fg3)
+                        .frame(width: 28, height: 28).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Copy reference")
+            } else {
+                Text("None").font(ODFont.sans(14.5, weight: .medium)).foregroundStyle(Theme.fg4)
+            }
+            if c.canWrite {
+                Button {
+                    aliasDraft = ticket.alias ?? ""
+                    editingAlias = true
+                } label: {
+                    Image(systemName: "pencil").font(.system(size: 12.5, weight: .medium)).foregroundStyle(Theme.fg3)
+                        .frame(width: 28, height: 28).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(ticket.alias == nil ? "Add reference" : "Edit reference")
+            }
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, 8)
+        .frame(minHeight: 46)
+        .alert("Reference", isPresented: $editingAlias) {
+            TextField("ORDER-42", text: $aliasDraft)
+                .textInputAutocapitalization(.characters)
+                .autocorrectionDisabled()
+            Button("Save reference") { c.setAlias(aliasDraft) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Add an optional reference customers or teammates can use to find this ticket. Use 2 to 40 letters, numbers or hyphens, including at least one letter. UUID forms are reserved for ticket IDs.")
         }
     }
 
@@ -231,7 +310,16 @@ struct TicketDetailsSheet: View {
                         }
                         if !full.phone.isEmpty {
                             Hairline(inset: 14)
-                            fact("phone", full.phone)
+                            // A number that can be dialled calls through the default calling app.
+                            if let tel = DirectoryActions.telURL(full.phone) {
+                                Button { DirectoryActions.open(tel) } label: {
+                                    fact("phone", full.phone, action: true)
+                                }
+                                .buttonStyle(RowPressStyle())
+                                .accessibilityLabel("Call \(full.phone)")
+                            } else {
+                                fact("phone", full.phone)
+                            }
                         }
                         if !full.tags.isEmpty {
                             Hairline(inset: 14)
@@ -262,15 +350,17 @@ struct TicketDetailsSheet: View {
         }
     }
 
-    private func fact(_ symbol: String, _ title: String, detail: String? = nil) -> some View {
+    private func fact(_ symbol: String, _ title: String, detail: String? = nil, action: Bool = false) -> some View {
         HStack(spacing: 10) {
             Image(systemName: symbol).font(.system(size: 12.5, weight: .medium)).foregroundStyle(Theme.fg3).frame(width: 18)
             Text(title).font(ODFont.sans(14)).foregroundStyle(detail == nil ? Theme.fg : Theme.fg2).lineLimit(1)
             Spacer(minLength: 8)
             if let detail { Text(detail).font(ODFont.sans(14, weight: .medium)).foregroundStyle(Theme.fg).lineLimit(1) }
+            if action { Image(systemName: "phone.arrow.up.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.fg4) }
         }
         .padding(.horizontal, 14)
         .frame(minHeight: 42)
+        .contentShape(Rectangle())
     }
 
     @ViewBuilder private func otherTickets(_ contact: Contact?) -> some View {

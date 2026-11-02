@@ -142,7 +142,7 @@ A `POST`, signed like webhook deliveries (`OD-Signature: t=<unix>,v1=<hex>`, the
 
 At most 64 KB of JSON with `"version": 2` and a list of `blocks`. Four kinds:
 
-- **card**: one record, such as an order, an invoice, a subscription or a deal. A `title` (with an optional `url`), a `subtitle`, `badges`, `links`, labelled `fields`, `lines` (with a `quantity`) and a `footer` for totals. With `"collapsed": true` it shows folded to its title, links, subtitle and badges until the agent opens it.
+- **card**: one record, such as an order, an invoice, a subscription or a deal. A `title` (with an optional `url`), a `subtitle`, `badges`, `links`, labelled `fields`, `lines` (with a `quantity`) and a `footer` for totals. Agents fold and open any card from the arrow in its header, or with a click on the header; `"collapsed": true` makes it start folded to its title, links, subtitle and badges. What an agent chooses stays while they work the ticket, through refreshes and newer answers. An optional `id` keeps a card known across answers when its title can change; without one, its title does.
 - **fields**: labelled values, `{ "label", "value", "url"? }`.
 - **list**: rows, `{ "title", "subtitle"?, "value"?, "badge"?, "url"?, "links"? }`.
 - **note**: one short sentence, `{ "text", "tone"? }`.
@@ -196,7 +196,7 @@ Tones are `neutral`, `info`, `success`, `warning` and `danger`. Everything shows
     "footer": [ { "label": "Total", "value": { "type": "money", "amount": "1150.00", "currency": "EUR" } } ] } ] }
 ```
 
-The newest order shows open; the older one shows its title, links and badge, and opens on a click.
+The newest order shows open; the older one shows its title, links and badge, and opens on a click. Either one folds or opens again from its arrow, and stays as the agent left it when the panel loads again.
 
 </Fold>
 

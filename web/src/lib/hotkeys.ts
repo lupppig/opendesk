@@ -16,6 +16,24 @@ export function isTypingTarget(t: EventTarget | null): boolean {
   return false;
 }
 
+/** What Enter and Space press or toggle when it has the focus: links, buttons, form controls and their ARIA roles. */
+const PRESSABLE = [
+  "a[href]",
+  "button",
+  "input",
+  "select",
+  "textarea",
+  "summary",
+  '[contenteditable]:not([contenteditable="false"])',
+  ...["button", "link", "checkbox", "radio", "switch", "tab", "menuitem", "menuitemcheckbox", "menuitemradio", "combobox"].map((r) => `[role="${r}"]`),
+].join(", ");
+
+/** Whether the event's target is, or is inside, a control that Enter and Space act on. */
+export function isPressTarget(t: EventTarget | null): boolean {
+  const el = t as Element | null;
+  return !!el?.closest?.(PRESSABLE);
+}
+
 function modalOpen() {
   return !!document.querySelector('[role="dialog"][aria-modal="true"], [role="alertdialog"], [data-radix-popper-content-wrapper]');
 }
@@ -34,7 +52,8 @@ export function keyName(e: KeyboardEvent): string {
 
 /**
  * Page-level single-key shortcuts. Ignored while typing or while a dialog or
- * popover is open, except bindings that use the mod key. "g i"-style
+ * popover is open, except bindings that use the mod key. Enter and Space are
+ * left to a focused link, button or other control, which they press. "g i"-style
  * sequences are supported.
  */
 export function useHotkeys(map: HotkeyMap, enabled = true) {
@@ -49,6 +68,7 @@ export function useHotkeys(map: HotkeyMap, enabled = true) {
       const name = keyName(e);
       const withMod = name.startsWith("mod+");
       if (!withMod && (isTypingTarget(e.target) || modalOpen())) return;
+      if ((name === "enter" || name === "space") && isPressTarget(e.target)) return;
       const seq = pending ? `${pending} ${name}` : null;
       const fn = (seq && ref.current[seq]) || ref.current[name];
       if (fn) {

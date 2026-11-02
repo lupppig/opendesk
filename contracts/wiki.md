@@ -169,3 +169,6 @@ The web app patches the tree in place on `created`, `updated` and `deleted`, and
 - **MCP** (`contracts/agent.md` "opendesk MCP server"): `search_wiki`, `get_wiki_page`
   (`wiki:read`), `create_wiki_page`, `update_wiki_page` (`wiki:write`; markdown bodies).
 - Never the widget agent, the email agent, suggested replies or anything a customer sees.
+- An admin writing an agent procedure may copy a page's text into its instructions once
+  (`contracts/agent.md` "Procedures"). The copy is the procedure's own text from then on: nothing stays
+  linked, and later edits of the page never reach the agent.

@@ -617,6 +617,17 @@ func (r *triggerRun) apply(ctx context.Context, a automation, f facts) ([]string
 				return nil, err
 			}
 			changed = append(changed, "messages")
+		case "run_procedure":
+			// Ollie runs the procedure in a job, never in this transaction: once per automation,
+			// ticket and the message or call this run is about (contracts/ai.md "Automations").
+			id, err := uuid.Parse(act.Value)
+			if err != nil {
+				continue
+			}
+			if _, err := r.d.Jobs.InsertTx(ctx, r.tx, jobs.AIProcedureRunArgs{WorkspaceID: r.wid, TicketID: r.tid, AutomationID: a.ID, ProcedureID: id,
+				MessageID: r.messageID, CallID: r.callID}, &river.InsertOpts{MaxAttempts: 3, UniqueOpts: river.UniqueOpts{ByArgs: true}}); err != nil {
+				return nil, fmt.Errorf("automation %s: run_procedure: %w", a.ID, err)
+			}
 		case "ai_triage":
 			// The hook skips (nil, nil) when AI is off, out of AI balance or unavailable; an
 			// error is a database failure of this transaction.

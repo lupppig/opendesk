@@ -1,0 +1,102 @@
+[
+  {
+    "call_id": "ua9-grq-prd-1793095200.1001",
+    "timestamp": "2026-10-27T10:00:00.972110+00:00",
+    "status": "created",
+    "version": "v2",
+    "direction": "inbound",
+    "caller": {
+      "number": "+32470123456",
+      "name": "Johan",
+      "account_number": null,
+      "user_numbers": [],
+      "user_emails": []
+    },
+    "destination": {
+      "number": "+31332022074"
+    }
+  },
+  {
+    "call_id": "ua9-grq-prd-1793095200.1001",
+    "timestamp": "2026-10-27T10:00:01.020742+00:00",
+    "status": "ringing",
+    "version": "v2",
+    "direction": "inbound",
+    "caller": {
+      "number": "+32470123456",
+      "name": "Johan",
+      "account_number": null,
+      "user_numbers": [],
+      "user_emails": []
+    },
+    "destination": {
+      "number": "+31332022074",
+      "targets": [
+        {
+          "number": "+31332022074",
+          "name": null,
+          "account_number": "201",
+          "user_numbers": [
+            "610"
+          ],
+          "user_emails": [
+            "jane.doe@lamptwist.example"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "call_id": "ua9-grq-prd-1793095200.1001",
+    "timestamp": "2026-10-27T10:00:09.992074+00:00",
+    "status": "in-progress",
+    "version": "v2",
+    "direction": "inbound",
+    "caller": {
+      "number": "+32470123456",
+      "name": "Johan",
+      "account_number": null,
+      "user_numbers": [],
+      "user_emails": []
+    },
+    "destination": {
+      "number": "+31332022074",
+      "target": {
+        "number": "+31332022074",
+        "name": null,
+        "account_number": "201",
+        "user_numbers": [
+          "610"
+        ],
+        "user_emails": [
+          "jane.doe@lamptwist.example"
+        ]
+      }
+    }
+  },
+  {
+    "call_id": "ua9-grq-prd-1793095200.1001",
+    "timestamp": "2026-10-27T10:03:19.875026+00:00",
+    "status": "ended",
+    "reason": "completed",
+    "version": "v2",
+    "direction": "inbound",
+    "caller": {
+      "number": "+32470123456",
+      "name": "Johan",
+      "account_number": null,
+      "user_numbers": [],
+      "user_emails": []
+    },
+    "destination": {
+      "number": "+31332022074",
+      "target": {
+        "number": "+31332022074",
+        "name": null,
+        "account_number": "201",
+        "user_numbers": [],
+        "user_emails": []
+      }
+    }
+  }
+]

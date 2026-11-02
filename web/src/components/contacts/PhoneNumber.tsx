@@ -1,6 +1,6 @@
 // A contact's phone number. With a phone system connected (contracts/phone.md) it is a
-// tel: link: the operating system hands it to the default phone app, which is Aircall
-// Workspace once it is set as the handler for phone links (Aircall's click-to-dial).
+// tel: link: the operating system hands it to the default phone app, such as Aircall
+// Workspace or the Voys app once it is set as the handler for phone links.
 
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -22,7 +22,8 @@ export function telHref(raw: string): string | null {
   return `tel:${plus ? "+" : ""}${digits}`;
 }
 
-const PROVIDER_NAMES: Record<string, string> = { aircall: "Aircall" };
+/** Phone providers by their key (contracts/phone.md). */
+export const PROVIDER_NAMES: Record<string, string> = { aircall: "Aircall", voys: "Voys" };
 
 export function PhoneNumber({ phone, className }: { phone: string; className?: string }) {
   const { t } = useTranslation("contacts");

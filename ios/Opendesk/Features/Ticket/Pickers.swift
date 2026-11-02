@@ -307,12 +307,15 @@ struct ChoiceRow<Leading: View>: View {
 struct StatusPicker: View {
     let current: TicketStatus
     let onPick: (TicketStatus) -> Void
+    @Environment(AppEnvironment.self) private var env
 
     var body: some View {
+        let display = env.statusDisplay
         ChoiceSheet(title: "Status", footnote: "Pending waits on the customer; their next message opens the ticket again.") {
-            ForEach(Array(TicketStatus.allCases.enumerated()), id: \.element) { index, status in
+            // The workspace's hidden statuses stay out, but the ticket's own is always there.
+            ForEach(Array(display.offered(current: current).enumerated()), id: \.element) { index, status in
                 if index > 0 { Hairline(inset: 48) }
-                ChoiceRow(title: status.title, hint: status.hint, selected: status == current, action: { onPick(status) }) {
+                ChoiceRow(title: display.title(status), hint: status.hint, selected: status == current, action: { onPick(status) }) {
                     StatusIcon(status: status, size: 16)
                 }
             }

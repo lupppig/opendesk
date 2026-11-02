@@ -256,6 +256,34 @@ func TestCleanCollapsed(t *testing.T) {
 	}
 }
 
+func TestCleanCardID(t *testing.T) {
+	s := &Service{guard: netsafe.Guard{}}
+	long := strings.Repeat("x", maxCardID)
+	b := s.cleanBlocks(decodeList(t, `[
+		{"type":"card","id":"  so-42 ","title":"Order #1042"},
+		{"type":"card","id":4471,"title":"Order #1041"},
+		{"type":"card","title":"Order #1040"},
+		{"type":"card","id":{"odoo":39},"title":"Order #1039"},
+		{"type":"card","id":"`+long+`","title":"Order #1038"},
+		{"type":"card","id":"`+long+`y","title":"Order #1037"},
+		{"type":"note","id":"n1","text":"Not a card."}
+	]`))
+	got := make([]string, len(b))
+	for i, x := range b {
+		got[i] = x.ID
+	}
+	// A string or a number; anything else, or one too long to keep whole, is no id: the card still shows.
+	if !reflect.DeepEqual(got, []string{"so-42", "4471", "", "", long, "", ""}) {
+		t.Fatalf("ids = %q", got)
+	}
+	if raw, _ := json.Marshal(b[0]); !strings.Contains(string(raw), `"id":"so-42"`) {
+		t.Fatalf("json = %s", raw)
+	}
+	if raw, _ := json.Marshal(b[2]); strings.Contains(string(raw), `"id"`) {
+		t.Fatalf("json = %s", raw)
+	}
+}
+
 func decodeList(t *testing.T, s string) []json.RawMessage {
 	t.Helper()
 	var out []json.RawMessage

@@ -16,6 +16,7 @@ enum Preferences {
         static func workspace(_ server: String) -> String { "workspace." + server }
         static func device(_ server: String) -> String { "push.device." + server }
         static func folder(_ server: String) -> String { "inbox.folder." + server }
+        static func sort(_ list: String) -> String { "inbox.sort." + list }
     }
 
     static var instance: Instance? {
@@ -55,6 +56,20 @@ enum Preferences {
 
     static func setLastFolder(_ id: String, for instance: Instance) {
         defaults.set(id, forKey: Key.folder(instance.storageKey))
+    }
+
+    /// The order a member last chose for a ticket list, per server, workspace, member and
+    /// list; nil for the default order, which is never kept.
+    static func listSort(_ list: String) -> TicketSort? {
+        defaults.string(forKey: Key.sort(list)).flatMap(TicketSort.init(saved:))
+    }
+
+    static func setListSort(_ sort: TicketSort, _ list: String) {
+        if sort.isDefault {
+            defaults.removeObject(forKey: Key.sort(list))
+        } else {
+            defaults.set(sort.saved, forKey: Key.sort(list))
+        }
     }
 
     static var appearance: String {

@@ -1,14 +1,15 @@
 import SwiftUI
 
 /// One conversation in the list: who, the subject and a line of it, when, and what is
-/// attached to it (labels, files, sharing, assignees, team comments). Unread rows are bold
-/// with a dot; a star sits under the time.
+/// attached to it (its inbox tab off the tabs, labels, files, sharing, assignees, team
+/// comments). Unread rows are bold with a dot; a star sits under the time.
 struct MailThreadRow: View {
     let thread: MailThread
     let own: Set<String>
     var account: MailAccount?
     var showAccount = false
     var labels: [MailFolder] = []
+    var category: MailCategory?
     var sentBox = false
     var pulse: Date?
     var onStar: (() -> Void)?
@@ -105,11 +106,14 @@ struct MailThreadRow: View {
     }
 
     private var hasMarks: Bool {
-        !labels.isEmpty || thread.shared || !thread.assignees.isEmpty || thread.commentCount > 0 || thread.toAddress != nil
+        !labels.isEmpty || thread.shared || !thread.assignees.isEmpty || thread.commentCount > 0 || thread.toAddress != nil || category != nil
     }
 
     private var marks: some View {
         HStack(spacing: 5) {
+            if let category {
+                MarkPill(symbol: "circle.fill", text: category.name, tone: category.tone)
+            }
             if let alias = thread.toAddress, let account, alias.lowercased() != account.email.lowercased() {
                 MarkPill(symbol: "at", text: alias)
             }
@@ -143,6 +147,7 @@ struct MailThreadRow: View {
         if thread.unread { parts.insert("Unread", at: 0) }
         if thread.starred { parts.append("Starred") }
         if thread.hasAttachments { parts.append("Has attachments") }
+        if let category { parts.append("In \(category.name)") }
         if thread.shared { parts.append("Shared") }
         if thread.commentCount > 0 { parts.append(Format.plural(thread.commentCount, "comment")) }
         return parts.joined(separator: ", ")

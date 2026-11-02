@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -102,6 +104,82 @@ func (s *Service) linkURL(raw string) (string, error) {
 	return u.String(), nil
 }
 
+// linkTicket links a ticket in tx to link (an existing link to the same URL is answered as
+// it is), with ticket_link.created and the linked activity.
+func (s *Service) linkTicket(ctx context.Context, tx pgx.Tx, wid, tid uuid.UUID, iid *uuid.UUID, prov, link, title, actor string, by *uuid.UUID) (Link, error) {
+	existing, err := scanLink(tx.QueryRow(ctx, linkSelect+` WHERE workspace_id = $1 AND ticket_id = $2 AND url = $3`, wid, tid, link))
+	if err == nil {
+		return existing, nil
+	} else if !db.IsNotFound(err) {
+		return Link{}, err
+	}
+	var n int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM ticket_links WHERE workspace_id = $1 AND ticket_id = $2`, wid, tid).Scan(&n); err != nil {
+		return Link{}, err
+	}
+	if n >= maxLinks {
+		return Link{}, httpx.Conflict("A ticket can have at most 50 links.")
+	}
+	if title == "" {
+		title = hostOf(link)
+	}
+	l, err := scanLink(tx.QueryRow(ctx, `INSERT INTO ticket_links (id, workspace_id, ticket_id, integration_id, provider, url, title,
+		created_by, actor_type) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+		RETURNING id, ticket_id, integration_id, provider, url, title, actor_type, created_by, created_at`,
+		ids.New(), wid, tid, iid, prov, link, title, by, actor))
+	if err != nil {
+		return Link{}, err
+	}
+	if err := s.publishTicket(ctx, tx, "ticket_link.created", wid, tid, map[string]any{"ticket_id": tid, "link": l}); err != nil {
+		return Link{}, err
+	}
+	_, err = domain.LogActivity(ctx, tx, wid, tid, actor, by, "linked",
+		map[string]any{"link_id": l.ID, "url": l.URL, "title": l.Title, "provider": l.Provider})
+	return l, err
+}
+
+// LinkTicketAsAI links something an integration's tool made to the ticket it was made for,
+// attributed to Ollie with no user (contracts/integrations.md "Ollie"); a procedure an
+// automation runs uses it.
+func (s *Service) LinkTicketAsAI(ctx context.Context, tx pgx.Tx, wid, tid, iid uuid.UUID, rawURL, title string) (Link, error) {
+	link, err := s.linkURL(rawURL)
+	if err != nil {
+		return Link{}, err
+	}
+	return s.linkTicket(ctx, tx, wid, tid, &iid, providerFor(link), link, clip(strings.Join(strings.Fields(title), " "), 300), "ai", nil)
+}
+
+var createVerb = regexp.MustCompile(`(?i)(^|[_\-.])(create|new|open|add|file|submit|report)`)
+
+// Creates says whether a tool name reads as making something new.
+func Creates(remote string) bool { return createVerb.MatchString(remote) }
+
+var urlPattern = regexp.MustCompile(`https://[^\s"'<>()\[\]{}]+`)
+
+// LinksOn are the https links in text on one of hosts (a provider's), first first, at most limit.
+func LinksOn(text string, hosts []string, limit int) []string {
+	if len(hosts) == 0 {
+		return nil
+	}
+	var out []string
+	for _, m := range urlPattern.FindAllString(text, 50) {
+		m = strings.TrimRight(m, ".,;:!?")
+		u, err := url.Parse(m)
+		if err != nil || u.User != nil {
+			continue
+		}
+		h := strings.ToLower(u.Hostname())
+		if !slices.ContainsFunc(hosts, func(host string) bool { return h == host || strings.HasSuffix(h, "."+host) }) || slices.Contains(out, m) {
+			continue
+		}
+		out = append(out, m)
+		if len(out) == limit {
+			break
+		}
+	}
+	return out
+}
+
 // providerFor names the integration a link belongs to by its host.
 func providerFor(rawURL string) string {
 	h := strings.ToLower(hostOf(rawURL))
@@ -191,34 +269,8 @@ func (s *Service) registerLinks(api huma.API) {
 				if err := visibleTicket(ctx, tx, p, tid); err != nil {
 					return err
 				}
-				existing, err := scanLink(tx.QueryRow(ctx, linkSelect+` WHERE workspace_id = $1 AND ticket_id = $2 AND url = $3`, p.WorkspaceID, tid, link))
-				if err == nil {
-					l = existing
-					return nil
-				} else if !db.IsNotFound(err) {
-					return err
-				}
-				var n int
-				if err := tx.QueryRow(ctx, `SELECT count(*) FROM ticket_links WHERE workspace_id = $1 AND ticket_id = $2`, p.WorkspaceID, tid).Scan(&n); err != nil {
-					return err
-				}
-				if n >= maxLinks {
-					return httpx.Conflict("A ticket can have at most 50 links.")
-				}
-				if title == "" {
-					title = hostOf(link)
-				}
-				if l, err = scanLink(tx.QueryRow(ctx, `INSERT INTO ticket_links (id, workspace_id, ticket_id, integration_id, provider, url, title,
-					created_by, actor_type) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-					RETURNING id, ticket_id, integration_id, provider, url, title, actor_type, created_by, created_at`,
-					ids.New(), p.WorkspaceID, tid, iid, prov, link, title, p.ActorUserID(), actorType(p))); err != nil {
-					return err
-				}
-				if err := s.publishTicket(ctx, tx, "ticket_link.created", p.WorkspaceID, tid, map[string]any{"ticket_id": tid, "link": l}); err != nil {
-					return err
-				}
-				_, err = domain.LogActivity(ctx, tx, p.WorkspaceID, tid, actorType(p), p.ActorUserID(), "linked",
-					map[string]any{"link_id": l.ID, "url": l.URL, "title": l.Title, "provider": l.Provider})
+				var err error
+				l, err = s.linkTicket(ctx, tx, p.WorkspaceID, tid, iid, prov, link, title, actorType(p), p.ActorUserID())
 				return err
 			})
 			if err != nil {

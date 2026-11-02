@@ -235,6 +235,7 @@
     "playground": "Espace de test de l’agent",
     "kb_draft": "Brouillons d’articles",
     "assistant": "Assistant",
+    "procedure": "Procédures exécutées par les automatisations",
     "other": "Autre"
   },
   "dialog": {

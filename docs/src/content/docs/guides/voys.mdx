@@ -1,0 +1,87 @@
+---
+title: Phone calls with Voys
+description: Connect Voys so every call lands on the caller's ticket, with who took it and its Voys Intelligence transcript and summary, and automations for missed calls.
+---
+
+import Steps from '../../../components/Steps.astro';
+import Step from '../../../components/Step.astro';
+import Callout from '../../../components/Callout.astro';
+
+Connect [Voys](https://www.voys.nl) and every call, inbound or outbound, is documented on the caller's ticket. The call shows in the ticket's timeline as one entry that follows it: ringing, answered by whom, how long it lasted and why it was missed. With Voys Intelligence, the call's transcript and summary follow, so your automations and Ollie can work with what was said.
+
+Connecting needs the admin role. Open **Settings**, **Phone**, in the **Channels** group.
+
+## Before you start
+
+- **An API token of an admin.** opendesk reads Voys with a user's API token. For transcripts and summaries, that user must be an admin with access to the call recordings in the calls list. A partner's token is refused: use a token of a user in your own Voys account.
+- **Voys Intelligence**, for transcripts and summaries. Without it, calls still land on tickets, without what was said.
+
+## Connect Voys
+
+Voys has no way for opendesk to set up its call notifications itself, so you add opendesk in Freedom by hand, once.
+
+<Steps>
+<Step title="Copy your API token">
+
+In [Voys Freedom](https://freedom.voys.nl/user/personal_settings/), open your personal settings and copy your **API token**.
+
+</Step>
+<Step title="Paste it in opendesk">
+
+In **Settings**, **Phone**, click **Voys**, paste the token and click **Connect**. opendesk checks the token, names the connection after your Voys account and shows the connection's **webhook address**, with a copy button.
+
+</Step>
+<Step title="Add opendesk as a call notification">
+
+In Freedom, open **Integratie**, then **Gespreksnotificaties**, and click **Toevoegen**:
+
+1. enter a **Beschrijving** such as `opendesk`, and choose **Custom** as the service;
+2. paste the webhook address as the **Web hook URL**;
+3. tick the **summary** and **transcription** events (they need Voys Intelligence);
+4. click **Opslaan**.
+
+</Step>
+<Step title="Make a test call">
+
+Until the first call comes in, the connection says **Waiting for the first call**. Call one of your Voys numbers: a ticket for your number appears with the call on it, and the connection says **Receiving calls**.
+
+</Step>
+</Steps>
+
+<Callout type="warning" title="The webhook address is a password">
+
+The address ends with a secret that tells opendesk the calls come from your Voys account, as Voys does not sign its notifications. Only admins see it. If it got out, click the link button next to the connection to make a new address, and paste the new one in Freedom: the old one stops working at once. If you put your own reverse proxy in front of a self-hosted opendesk, keep its access log from recording `/v1/phone/hooks/` paths.
+
+</Callout>
+
+Replace the token with the key button next to the connection. A token of another Voys account gets a new webhook address, so the old account's notifications stop being taken in: add the new address in that account's Freedom. Disconnecting stops documenting new calls; remove the call notification in Freedom as well.
+
+## Where a call goes
+
+Calls find their caller and their ticket as with every phone system, described in [Phone calls with Aircall](/guides/aircall/#where-a-call-goes): the caller's open ticket, else their recently solved one, else a new ticket on the **Phone** channel. A number opendesk has never seen becomes a new contact, named after the caller's name in Voys when it sends one.
+
+Calls between colleagues (to an extension, or to another user of your Voys account) reach no ticket. A call a colleague transfers stays one call on one ticket: after a transfer, the entry shows the colleague who took it over.
+
+## In the ticket
+
+Each call is one entry in the timeline, with who called whom, the teammate who took it (matched by the email of their Voys user), when it was answered and ended, the Voys number (line) it came in on, and why it was missed. Recordings stay in Voys: the entry says a call was recorded, and you play it in Freedom. The transcript and summary come from Voys once Voys Intelligence has made them, a little after the call.
+
+## Missed calls
+
+When a call ends, the automations on **A call ends** run, as described in [Phone calls with Aircall](/guides/aircall/#missed-calls-an-automation). The **Missed call reason** of a Voys call is one of:
+
+| Reason | When |
+| --- | --- |
+| **Not answered** | Nobody answered |
+| **Line busy** | The one called was busy, or not reachable |
+| **Hung up before an answer** | The caller hung up before anyone answered |
+| **Hung up in the queue** | The caller hung up while waiting in a queue |
+| **Call failed** | An error kept the call from going through |
+
+**Call line** is a Voys number, shown with its description in Freedom.
+
+## Good to know
+
+- Calls appear within seconds: Voys sends each step of a call as it happens.
+- Voys shows no opendesk card in its own apps, and opendesk doesn't add contacts to Voys.
+- Phone numbers on contacts and in the ticket sidebar are phone links: set the Voys app as your computer's app for phone links (`tel:`) to call with it.

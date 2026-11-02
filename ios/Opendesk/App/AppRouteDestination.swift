@@ -11,6 +11,8 @@ struct AppRouteDestination: View {
         case let .company(id): CompanyDetailView(id: id)
         case let .mailThread(id): MailThreadView(id: id)
         case let .article(id): ArticleView(id: id)
+        case let .changelogEntry(id): ChangelogEntryView(id: id)
+        case let .wikiPage(id): WikiPageView(id: id)
         case .search: SearchView()
         }
     }
@@ -27,6 +29,7 @@ struct AreaRootView: View {
         case .contacts: ContactsListView()
         case .companies: CompaniesListView()
         case .kb: KBListView()
+        case .wiki: WikiListView()
         case .reports: ReportsView()
         }
     }

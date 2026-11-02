@@ -45,14 +45,15 @@ const (
 	expectNoHandoff   = "no_handoff"
 	expectUsesTool    = "uses_tool"
 	expectCites       = "cites_knowledge"
+	expectUsesProc    = "uses_procedure"
 )
 
 var toolKeyRe = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
 
 // AgentExpectation is one thing a test expects of the agent's answer.
 type AgentExpectation struct {
-	Kind  string `json:"kind" enum:"mentions,not_mentions,handoff,no_handoff,uses_tool,cites_knowledge"`
-	Value string `json:"value,omitempty" maxLength:"1000" doc:"mentions / not_mentions: the content; uses_tool: the tool as <server_slug>__<tool>; empty otherwise"`
+	Kind  string `json:"kind" enum:"mentions,not_mentions,handoff,no_handoff,uses_tool,cites_knowledge,uses_procedure"`
+	Value string `json:"value,omitempty" maxLength:"1000" doc:"mentions / not_mentions: the content; uses_tool: the tool as <server_slug>__<tool>; uses_procedure: the procedure's id; empty otherwise"`
 }
 
 // AgentTest is a saved test conversation (contracts/agent.md "Tests").
@@ -91,6 +92,7 @@ type AgentTestResult struct {
 	AnswerHTML string            `json:"answer_html"`
 	Handoff    bool              `json:"handoff"`
 	Tools      []string          `json:"tools" doc:"Display names of the tools the agent ran"`
+	Procedures []ProcedureRef    `json:"procedures" doc:"The procedures the agent read"`
 	Sources    []CitedSource     `json:"sources" doc:"The passages the answer cited"`
 	Action     *PlaygroundAction `json:"action" doc:"A tool call that needs confirmation; never run in tests"`
 	Checks     []AgentTestCheck  `json:"checks"`
@@ -295,6 +297,12 @@ func cleanExpectations(in []AgentExpectation) ([]AgentExpectation, error) {
 			if !toolKeyRe.MatchString(v) {
 				return nil, httpx.Validation("uses_tool needs the tool as <server_slug>__<tool>")
 			}
+		case expectUsesProc:
+			id, ok := ids.Parse(v)
+			if !ok {
+				return nil, httpx.Validation("uses_procedure needs the procedure's id")
+			}
+			v = id.String()
 		case expectHandoff, expectNoHandoff, expectCites:
 			v = ""
 		default:
@@ -440,7 +448,7 @@ func publishTest(ctx context.Context, tx pgx.Tx, wid uuid.UUID, typ string, t Ag
 // resultCols reads a result x of run xr, with prev.status the test's status in the run
 // before (the joins are resultJoins).
 const resultCols = `x.run_id, x.test_id, x.status, x.answer_html, x.handoff, x.tools, x.sources, x.action, x.checks, x.error,
-	x.micro_usd, x.finished_at, (xr.settings IS NOT NULL), prev.status`
+	x.micro_usd, x.finished_at, (xr.settings IS NOT NULL), prev.status, x.procedures`
 
 const prevJoin = `LEFT JOIN LATERAL (SELECT y.status FROM ai_agent_test_results y JOIN ai_agent_test_runs yr ON yr.id = y.run_id
 		WHERE y.workspace_id = x.workspace_id AND y.test_id = x.test_id AND y.status IN ('passed', 'failed', 'error')
@@ -453,6 +461,7 @@ type resultScan struct {
 	handoff, draft         *bool
 	tools                  []string
 	sources, action, check []byte
+	procs                  []byte
 	errText, prev          *string
 	usd                    *int64
 	finished               *time.Time
@@ -460,7 +469,7 @@ type resultScan struct {
 
 func (r *resultScan) dest() []any {
 	return []any{&r.runID, &r.testID, &r.status, &r.answer, &r.handoff, &r.tools, &r.sources, &r.action, &r.check, &r.errText,
-		&r.usd, &r.finished, &r.draft, &r.prev}
+		&r.usd, &r.finished, &r.draft, &r.prev, &r.procs}
 }
 
 func (r *resultScan) result() *AgentTestResult {
@@ -468,7 +477,7 @@ func (r *resultScan) result() *AgentTestResult {
 		return nil
 	}
 	out := &AgentTestResult{RunID: *r.runID, TestID: *r.testID, Status: deref(r.status), AnswerHTML: deref(r.answer), Tools: r.tools,
-		Sources: []CitedSource{}, Checks: []AgentTestCheck{}, Error: r.errText, PreviousStatus: r.prev, FinishedAt: r.finished}
+		Sources: []CitedSource{}, Checks: []AgentTestCheck{}, Procedures: []ProcedureRef{}, Error: r.errText, PreviousStatus: r.prev, FinishedAt: r.finished}
 	if r.handoff != nil {
 		out.Handoff = *r.handoff
 	}
@@ -486,6 +495,9 @@ func (r *resultScan) result() *AgentTestResult {
 	}
 	if len(r.check) > 0 {
 		_ = json.Unmarshal(r.check, &out.Checks)
+	}
+	if len(r.procs) > 0 {
+		_ = json.Unmarshal(r.procs, &out.Procedures)
 	}
 	if len(r.action) > 0 && string(r.action) != "null" {
 		var a PlaygroundAction

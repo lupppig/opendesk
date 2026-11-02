@@ -132,6 +132,9 @@ Tools turned off in settings are neither offered nor run. `disabled_tools`, `ask
   and whose result has a link on the provider's hosts, is linked back to the ticket
   (`POST /v1/tickets/{id}/links`, attributed `ai` for the user). The step's `refs` carry
   `{kind: "external", id: <url>}`.
+- A procedure an automation runs (`contracts/ai.md` "Automations") calls reads, and writes on
+  `auto_tools` only (`CallAuto`); a create-style write's link on the provider's hosts is linked to its
+  ticket the same way, `actor_type: "ai"` with no user.
 
 ## Events
 
@@ -309,8 +312,9 @@ and answers `sections`, shown as they always were. Both are at most 64 KB.
 ```ts
 interface Answer { version?: 2; blocks: Block[]; cache_seconds?: number /* 0 to 600; 0: not kept */ }
 type Block =
-  | { type: "card"; title: string; url?: string; subtitle?: string; badges?: Badge[]; links?: Link[];
-      collapsed?: boolean /* shown folded to its header */; fields?: Field[]; lines?: Line[]; footer?: Field[] }
+  | { type: "card"; id?: string | number /* the record across answers */; title: string; url?: string; subtitle?: string;
+      badges?: Badge[]; links?: Link[]; collapsed?: boolean /* starts folded to its header */; fields?: Field[];
+      lines?: Line[]; footer?: Field[] }
   | { type: "fields"; title?: string; items: Field[] }
   | { type: "list"; title?: string; items: { title: string; url?: string; subtitle?: string; value?: Value; badge?: Badge; links?: Link[] }[] }
   | { type: "note"; text: string; tone?: Tone };
@@ -340,10 +344,18 @@ type Value = string | number | boolean
   tipped by its `label` and opens a new tab. Its `icon` is drawn by the app: a generic mark or the
   product's shipped logo; without one, or with a name this version does not know, the button shows
   the label's first letter. Apps never load a picture or favicon from the link's site.
-- `collapsed: true` on a card shows it folded to its header (title, links, subtitle, badges) with a
-  button to open the rest, so a customer with many orders reads at a glance: send the newest or the
-  late order open and older ones folded. Opening lasts for that view; nothing is stored. Anything
-  but `true` is open, and a card with nothing under its header has nothing to open.
+- Every card with something under its header folds and opens: an arrow in its header (a button
+  named by the card's title, with `aria-expanded`), or a click on the header outside its links and
+  buttons. `collapsed: true` makes a card start folded to its header (title, links, subtitle,
+  badges), so a customer with many orders reads at a glance: send the newest or the late order open
+  and older ones folded. Anything but `true` starts open, and a card with nothing under its header
+  has nothing to fold.
+- Once the agent folds or opens a card, it stays that way for that ticket and panel while the app
+  runs: a refresh, a re-fetch or a newer answer does not undo it, while a card they did not touch
+  follows each answer's `collapsed`. Apps know a card by its `id` (a string or a number, up to 80
+  characters; longer is dropped, never cut), or by its title without one, so send an `id` when a
+  card's title can change between answers (in another `locale`, with a status in it). The choice is
+  kept in memory, never stored: after a reload the answer's `collapsed` applies again.
 - The app formats dates in the agent's locale and timezone (a day as it is, never shifted) and, with
   `relative`, adds "in 3 days" or "5 days ago"; money in the agent's locale; a badge's tone is the
   app's own colour (info blue, success green, warning amber, danger red).
@@ -358,8 +370,8 @@ type Value = string | number | boolean
   development instance) is dropped; links open in a new tab and are never fetched.
 - The server cleans the answer once: `TicketPanelData.blocks` has the shape above with every value an
   object (`{type: "text", text}` for a string, number or boolean, written as given), dates as
-  `YYYY-MM-DD` or an RFC 3339 time in UTC, amounts as decimal strings, currencies in capitals and
-  every tone set. Clients only render it.
+  `YYYY-MM-DD` or an RFC 3339 time in UTC, amounts as decimal strings, currencies in capitals,
+  a card's `id` as a string and every tone set. Clients only render it.
 - `cache_seconds` keeps the answer that long for the panel, ticket, contact, references and `locale`
   (default 60; above 600 is 600), so a reader never gets a copy written in another language. A failure is kept 15 s. A new reference in the ticket asks again.
 - Version 1: `{ sections: [{ title, items: [{ label, value, url? }] }] }`. 10 sections of 30 items;
@@ -370,13 +382,13 @@ type Value = string | number | boolean
 
 ```json
 { "version": 2, "cache_seconds": 120, "blocks": [
-  { "type": "card", "title": "Sales order S00042", "url": "https://erp.example/so/42",
+  { "type": "card", "id": "so-42", "title": "Sales order S00042", "url": "https://erp.example/so/42",
     "badges": [ { "text": "Supplier late", "tone": "warning" } ],
     "links": [ { "label": "Open in the shop", "url": "https://admin.shopify.com/store/lumen/orders/5042", "icon": "shopify" } ],
     "fields": [ { "label": "Supplier date", "value": { "type": "date", "value": "2026-11-12", "relative": true } } ],
     "lines": [ { "quantity": 2, "title": "Arco floor lamp", "value": { "type": "money", "amount": "1890.00", "currency": "EUR" } } ],
     "footer": [ { "label": "Total", "value": { "type": "money", "amount": "3780.00", "currency": "EUR" } } ] },
-  { "type": "card", "title": "Sales order S00035", "collapsed": true, "badges": [ { "text": "Delivered", "tone": "success" } ],
+  { "type": "card", "id": "so-35", "title": "Sales order S00035", "collapsed": true, "badges": [ { "text": "Delivered", "tone": "success" } ],
     "footer": [ { "label": "Total", "value": { "type": "money", "amount": "1150.00", "currency": "EUR" } } ] },
   { "type": "note", "text": "No open invoice." } ] }
 ```

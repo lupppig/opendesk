@@ -258,7 +258,13 @@ struct ReportsView: View {
             .reportReveal(shown, 8)
         }
 
-        if !figures.overview.byAgent.isEmpty {
+        if !store.agentsUnavailable {
+            ReportAgentWorkCard(report: store.agents, error: store.agentsError, isAdmin: env.session.isAdmin, shown: shown) {
+                store.reloadAgents()
+            }
+            .id("agents")
+            .reportReveal(shown, 8)
+        } else if !figures.overview.byAgent.isEmpty {
             ReportCard(title: "Agents", caption: "Solved and median first reply") {
                 ReportAgentTable(rows: figures.overview.byAgent, shown: shown)
             }

@@ -30,7 +30,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useId, useState, type ReactNode } from "react";
+import { useId, useState, type MouseEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { AppMark } from "@/components/appmark";
 import { Badge } from "@/components/ui/badge";
@@ -57,6 +57,7 @@ import { cn } from "@/lib/cn";
 import { countryName, fullDate, money, number, panelDate, relDay, shortDate } from "@/lib/format";
 import { ease } from "@/lib/motion";
 import { DEFAULT_SHOPIFY_FIELDS, MAX_ORDERS_SHOWN, panelShows, shownData } from "@/lib/panelFields";
+import { blockKeys, foldScope, useCardFold } from "@/lib/panelFolds";
 import { q, qk } from "@/lib/queries";
 
 const CLOSED_KEY = "od-ticket-panels-closed";
@@ -167,7 +168,11 @@ function PanelSectionView({ ticketId, panel, open, onToggle }: { ticketId: strin
             className="overflow-hidden"
           >
             <div className="px-4 pb-3.5" data-ph-mask>
-              {isLoading || !data ? <PanelSkeleton /> : <PanelBody data={data} fields={shows.fields} ordersShown={shows.ordersShown} onRetry={() => void refresh()} />}
+              {isLoading || !data ? (
+                <PanelSkeleton />
+              ) : (
+                <PanelBody data={data} fields={shows.fields} ordersShown={shows.ordersShown} onRetry={() => void refresh()} foldScope={foldScope(ticketId, panel.id)} />
+              )}
             </div>
           </motion.div>
         )}
@@ -193,17 +198,20 @@ function Quiet({ children }: { children: ReactNode }) {
 /**
  * What a panel answered. A Shopify answer shows the panel's `fields` and `ordersShown` only (an
  * answer from before they changed may carry more); settings previews a choice with the same view.
+ * `foldScope` (lib/panelFolds) keeps the cards the agent folded or opened as they left them.
  */
 export function PanelBody({
   data,
   onRetry,
   fields = DEFAULT_SHOPIFY_FIELDS,
   ordersShown = MAX_ORDERS_SHOWN,
+  foldScope,
 }: {
   data: TicketPanelData;
   onRetry?: () => void;
   fields?: readonly ShopifyField[];
   ordersShown?: number;
+  foldScope?: string;
 }) {
   const { t } = useTranslation("inbox");
   switch (data.state) {
@@ -224,7 +232,7 @@ export function PanelBody({
       );
   }
   if (data.kind === "shopify") return <Commerce data={shownData(data, fields, ordersShown)} />;
-  return data.blocks ? <Blocks blocks={data.blocks} /> : <Sections sections={data.sections ?? []} />;
+  return data.blocks ? <Blocks blocks={data.blocks} foldScope={foldScope} /> : <Sections sections={data.sections ?? []} />;
 }
 
 /** "Partly refunded" for partially_refunded, the word Shopify uses otherwise. */
@@ -470,20 +478,22 @@ export function PanelValueView({ value }: { value: PanelValue }) {
   }
 }
 
-function Blocks({ blocks }: { blocks: PanelBlock[] }) {
+function Blocks({ blocks, foldScope }: { blocks: PanelBlock[]; foldScope?: string }) {
+  // A card keeps its identity when an answer adds, drops or moves cards around it.
+  const keys = blockKeys(blocks);
   return (
     <div className="flex flex-col gap-2.5">
       {blocks.map((b, i) => (
-        <BlockView key={i} block={b} />
+        <BlockView key={keys[i]} block={b} foldScope={foldScope} foldKey={keys[i]} />
       ))}
     </div>
   );
 }
 
-function BlockView({ block }: { block: PanelBlock }) {
+function BlockView({ block, foldScope, foldKey }: { block: PanelBlock; foldScope?: string; foldKey: string }) {
   switch (block.type) {
     case "card":
-      return <CardBlock block={block} />;
+      return <CardBlock block={block} foldScope={foldScope} foldKey={foldKey} />;
     case "fields":
       return (
         <div className="flex flex-col gap-1">
@@ -522,59 +532,74 @@ function FieldList({ fields, className }: { fields: PanelField[]; className?: st
   );
 }
 
-function CardBlock({ block }: { block: Extract<PanelBlock, { type: "card" }> }) {
+/**
+ * A card folds to its header (title, links, subtitle, badges) and opens again from its arrow or a
+ * click on the header. It starts as the panel asks (`collapsed`), then stays as the agent leaves it.
+ */
+function CardBlock({ block, foldScope, foldKey }: { block: Extract<PanelBlock, { type: "card" }>; foldScope?: string; foldKey: string }) {
   const { t } = useTranslation("inbox");
   const badges = block.badges ?? [];
   const links = block.links ?? [];
   const fields = block.fields ?? [];
   const lines = block.lines ?? [];
   const footer = block.footer ?? [];
-  // A folded card shows its header (title, links, subtitle, badges) until opened, for this view only.
-  const [open, setOpen] = useState(!block.collapsed);
+  const [open, toggle] = useCardFold(foldScope, foldKey, !block.collapsed);
   const bodyId = useId();
-  const foldable = !!block.collapsed && fields.length + lines.length + footer.length > 0;
+  // A card with nothing under its header has nothing to fold.
+  const foldable = fields.length + lines.length + footer.length > 0;
   const shown = open || !foldable;
+  const onHeader = (e: MouseEvent<HTMLDivElement>) => {
+    // The header's links and buttons do their own thing (the arrow toggles by itself), and
+    // selecting text in it, an order number to copy, is not a click.
+    if (!foldable || (e.target as Element).closest("a, button") || window.getSelection()?.toString()) return;
+    toggle();
+  };
   return (
     <article className="rounded-md border border-line-soft px-2.5 py-2" aria-label={block.title}>
-      <div className="flex min-w-0 items-center gap-1.5">
-        <h4 className="min-w-0 flex-1 text-[12px] font-medium text-fg">
-          {block.url ? (
-            <a
-              href={block.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={t("panels.openLink", { name: block.title })}
-              className="group inline-flex min-w-0 max-w-full items-center gap-0.5 outline-none hover:underline focus-visible:underline"
+      <div onClick={onHeader} className={cn(foldable && "group/head cursor-pointer")}>
+        <div className="flex min-w-0 items-center gap-1.5">
+          <h4 className="min-w-0 flex-1 text-[12px] font-medium text-fg">
+            {block.url ? (
+              <a
+                href={block.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={t("panels.openLink", { name: block.title })}
+                className="group inline-flex min-w-0 max-w-full items-center gap-0.5 outline-none hover:underline focus-visible:underline"
+              >
+                <span className="truncate">{block.title}</span>
+                <ArrowUpRight className="size-3 shrink-0 text-fg-4 group-hover:text-fg" aria-hidden />
+              </a>
+            ) : (
+              <span className="block truncate">{block.title}</span>
+            )}
+          </h4>
+          {links.length > 0 && <LinkButtons links={links} />}
+          {foldable && (
+            <button
+              type="button"
+              onClick={toggle}
+              // Enter is the arrow's own here: the inbox's Enter shortcut (open the focused ticket)
+              // would otherwise take it and cancel the button's click.
+              onKeyDown={(e) => e.key === "Enter" && e.stopPropagation()}
+              aria-expanded={open}
+              aria-controls={bodyId}
+              aria-label={block.title}
+              className="flex size-5 shrink-0 items-center justify-center rounded-md text-fg-4 outline-none group-hover/head:text-fg hover:bg-hover focus-visible:shadow-[0_0_0_2px_var(--focus)]"
             >
-              <span className="truncate">{block.title}</span>
-              <ArrowUpRight className="size-3 shrink-0 text-fg-4 group-hover:text-fg" aria-hidden />
-            </a>
-          ) : (
-            <span className="block truncate">{block.title}</span>
+              <ChevronRight className={cn("size-3.5 transition-transform duration-150 motion-reduce:transition-none", open && "rotate-90")} aria-hidden />
+            </button>
           )}
-        </h4>
-        {links.length > 0 && <LinkButtons links={links} />}
-        {foldable && (
-          <button
-            type="button"
-            onClick={() => setOpen((o) => !o)}
-            aria-expanded={open}
-            aria-controls={bodyId}
-            aria-label={open ? t("panels.collapse", { name: block.title }) : t("panels.expand", { name: block.title })}
-            className="flex size-5 shrink-0 items-center justify-center rounded-md text-fg-4 outline-none hover:bg-hover hover:text-fg focus-visible:shadow-[0_0_0_2px_var(--focus)]"
-          >
-            <ChevronRight className={cn("size-3.5 transition-transform duration-150 motion-reduce:transition-none", open && "rotate-90")} aria-hidden />
-          </button>
+        </div>
+        {block.subtitle && <p className="truncate text-[11.5px] text-fg-4">{block.subtitle}</p>}
+        {badges.length > 0 && (
+          <div className="mt-1 flex flex-wrap gap-1">
+            {badges.map((b, i) => (
+              <ToneBadge key={i} badge={b} />
+            ))}
+          </div>
         )}
       </div>
-      {block.subtitle && <p className="truncate text-[11.5px] text-fg-4">{block.subtitle}</p>}
-      {badges.length > 0 && (
-        <div className="mt-1 flex flex-wrap gap-1">
-          {badges.map((b, i) => (
-            <ToneBadge key={i} badge={b} />
-          ))}
-        </div>
-      )}
       {shown && (
         <div id={bodyId}>
           {fields.length > 0 && <FieldList fields={fields} className="mt-1.5" />}

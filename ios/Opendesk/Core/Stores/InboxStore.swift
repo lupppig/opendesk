@@ -10,8 +10,13 @@ final class InboxStore {
     var filters = InboxFilters() {
         didSet { if filters != oldValue { reload() } }
     }
+    /// The list's order, remembered per list (`Preferences.listSort`) so it comes back as the member left it.
     var sort: TicketSort = .latest {
-        didSet { if sort != oldValue { reload() } }
+        didSet {
+            guard sort != oldValue else { return }
+            if let list = sortList { Preferences.setListSort(sort, list) }
+            reload()
+        }
     }
     private(set) var search = ""
     private(set) var tickets: [Ticket] = []
@@ -41,6 +46,7 @@ final class InboxStore {
         loadedOnce = false
         error = nil
         mailboxes = []
+        summary = nil
         if let raw = Preferences.lastFolder(for: api.instance), let saved = InboxScope(key: raw) {
             scope = saved
         } else {
@@ -49,8 +55,17 @@ final class InboxStore {
         if let debug = AppInfo.debugValue("OPENDESK_DEBUG_FOLDER"), let folder = Folder(rawValue: debug) {
             scope = .folder(folder)
         }
+        sort = rememberedSort
         reload()
     }
+
+    /// Where this list's order is kept: the server, workspace, member and list.
+    private var sortList: String? {
+        guard let instance, let me, let workspace = Preferences.workspaceID(for: instance) else { return nil }
+        return [instance.storageKey, workspace, me, scope.listKey].joined(separator: "|")
+    }
+
+    private var rememberedSort: TicketSort { sortList.flatMap(Preferences.listSort) ?? .latest }
 
     func loadMailboxes() async {
         guard let api, let page: Page<InboxMailbox> = try? await api.get("v1/mailboxes") else { return }
@@ -63,6 +78,7 @@ final class InboxStore {
         tickets = []
         nextCursor = nil
         loadedOnce = false
+        summary = nil
     }
 
     func setScope(_ next: InboxScope) {
@@ -76,7 +92,7 @@ final class InboxStore {
         loadedOnce = false
         if !sameTeam {
             filters = InboxFilters()
-            sort = .latest
+            sort = rememberedSort
         }
         reload()
     }
@@ -100,6 +116,15 @@ final class InboxStore {
     }
 
     private var query: [URLQueryItem] {
+        var items = filterQuery
+        items += sort.query
+        items.append(URLQueryItem(name: "limit", value: "50"))
+        return items
+    }
+
+    /// The list's filters alone (scope, filters, search), without order or paging: what
+    /// `GET /v1/tickets/summary` counts and a bulk change over every match targets.
+    private var filterQuery: [URLQueryItem] {
         var items: [URLQueryItem] = []
         var filters = filters
         switch scope {
@@ -109,11 +134,10 @@ final class InboxStore {
             items += tab.query(team: id)
             // A team inbox is already one team (or the caller's teams).
             filters.teams = []
+            filters.teamsNot = []
         }
         items += filters.query
-        items += sort.query
         if !search.isEmpty { items.append(URLQueryItem(name: "q", value: search)) }
-        items.append(URLQueryItem(name: "limit", value: "50"))
         return items
     }
 
@@ -128,6 +152,7 @@ final class InboxStore {
         let current = generation
         loading = true
         defer { if current == generation { loading = false } }
+        Task { await loadSummary(generation: current) }
         do {
             let page: Page<Ticket> = try await api.get("v1/tickets", query: query)
             guard current == generation else { return }
@@ -140,6 +165,58 @@ final class InboxStore {
             self.error = error.userMessage
             loadedOnce = true
         }
+    }
+
+    // MARK: Summary
+
+    /// The whole list counted by the server (`GET /v1/tickets/summary`), nil until it answers
+    /// and for a search, which the server does not count.
+    private(set) var summary: TicketListSummary?
+    /// The filters `summary` counted, so a count of another list is never shown.
+    @ObservationIgnored private var summaryQuery: [URLQueryItem] = []
+    @ObservationIgnored private var summaryTask: Task<Void, Never>?
+    @ObservationIgnored private var summaryDirty = false
+
+    private func loadSummary(generation current: Int) async {
+        guard let api else { return }
+        guard search.isEmpty else {
+            summary = nil
+            return
+        }
+        let asked = filterQuery
+        let answer: TicketListSummary? = try? await api.get("v1/tickets/summary", query: asked)
+        guard current == generation, asked == filterQuery else { return }
+        summary = answer
+        summaryQuery = asked
+    }
+
+    /// Recounts after changes, every two seconds at most; a count already running finishes
+    /// and the next one starts after it, so the numbers settle on a read after the last change.
+    private func scheduleSummary() {
+        guard search.isEmpty else { return }
+        summaryDirty = true
+        guard summaryTask == nil else { return }
+        summaryTask = Task { [weak self] in
+            while true {
+                try? await Task.sleep(for: .seconds(2))
+                guard let self else { return }
+                self.summaryDirty = false
+                await self.loadSummary(generation: self.generation)
+                guard self.summaryDirty else {
+                    self.summaryTask = nil
+                    return
+                }
+            }
+        }
+    }
+
+    /// What the summary strip shows: the server's count of the whole list when it has one,
+    /// else the loaded rows', partial while more pages remain.
+    var stripCounts: InboxSummary {
+        if let summary, summary.complete, summaryQuery == filterQuery { return InboxSummary(summary) }
+        var loaded = InboxSummary(tickets)
+        loaded.partial = nextCursor != nil
+        return loaded
     }
 
     func loadMore() async {
@@ -208,6 +285,48 @@ final class InboxStore {
         }
     }
 
+    /// `POST /v1/tickets/bulk` with `{query}`: the change on every ticket of this list, loaded
+    /// or not, that the caller can see. Answers how many changed; the list loads again.
+    func bulkMatching(_ change: TicketPatch) async throws -> Int {
+        guard let api else { throw APIError.signedOut }
+        let result: InboxBulkResult = try await api.post("v1/tickets/bulk", body: InboxBulkQueryBody(query: bulkQuery, patch: change, delete: nil))
+        await refresh()
+        return result.updated
+    }
+
+    /// Deletes every ticket of this list for everyone. Answers how many went.
+    func bulkDeleteMatching() async throws -> Int {
+        guard let api else { throw APIError.signedOut }
+        let result: InboxBulkResult = try await api.post("v1/tickets/bulk", body: InboxBulkQueryBody(query: bulkQuery, patch: nil, delete: true))
+        await refresh()
+        return result.deleted
+    }
+
+    /// The list's filters as the bulk body's `query` (the list filters as JSON: lists as arrays).
+    private var bulkQuery: [String: JSONValue] {
+        var out: [String: JSONValue] = [:]
+        var fields: [JSONValue] = []
+        let arrays: Set<String> = ["status", "priority", "severity", "channel_not"]
+        for item in filterQuery {
+            let value = item.value ?? ""
+            if item.name.hasPrefix("field.") {
+                // field.<key>[<op>]
+                let rest = item.name.dropFirst(6)
+                let key = rest.split(separator: "[", maxSplits: 1).first.map(String.init) ?? String(rest)
+                let op = rest.split(separator: "[", maxSplits: 1).dropFirst().first.map { String($0.dropLast()) } ?? "eq"
+                fields.append(.object(["key": .string(key), "op": .string(op), "value": .string(value)]))
+            } else if arrays.contains(item.name) {
+                out[item.name] = .array(value.split(separator: ",").map { .string(String($0)) })
+            } else if item.name == "untagged" {
+                out[item.name] = .bool(value == "true")
+            } else {
+                out[item.name] = .string(value)
+            }
+        }
+        if !fields.isEmpty { out["fields"] = .array(fields) }
+        return out
+    }
+
     /// Puts a fresh copy where it belongs: updated in place, inserted, or dropped when it left this list.
     func place(_ ticket: Ticket) {
         let belongs = belongsHere(ticket)
@@ -237,6 +356,7 @@ final class InboxStore {
             let inTeam = id == InboxScope.myTeams ? ticket.teamID.map(myTeamIDs.contains) ?? false : ticket.teamID == id
             var filters = filters
             filters.teams = []
+            filters.teamsNot = []
             return inTeam && tab.contains(ticket) && filters.matches(ticket, myTeams: myTeamIDs)
         case .view:
             return nil
@@ -275,6 +395,7 @@ final class InboxStore {
         case let .envelope(envelope):
             switch envelope.type {
             case "ticket.created", "ticket.updated":
+                scheduleSummary()
                 guard let ticket = envelope.member("ticket", as: Ticket.self) else { return }
                 if case .view = scope, !tickets.contains(where: { $0.id == ticket.id }) {
                     scheduleQuietReload()
@@ -282,6 +403,7 @@ final class InboxStore {
                     place(ticket)
                 }
             case "ticket.deleted", "ticket.hidden":
+                scheduleSummary()
                 if let id = envelope.string("ticket_id") { remove(id) }
             case "tag.merged", "tag.updated", "tag.deleted":
                 scheduleQuietReload()
@@ -317,5 +439,61 @@ struct InboxBulkBody: Encodable, Sendable {
         try c.encode(ids, forKey: .ids)
         try c.encodeIfPresent(patch, forKey: .patch)
         try c.encodeIfPresent(delete, forKey: .delete)
+    }
+}
+
+/// Body of `POST /v1/tickets/bulk` over every ticket of a list: `{query, patch}` or `{query, delete: true}`.
+struct InboxBulkQueryBody: Encodable, Sendable {
+    var query: [String: JSONValue]
+    var patch: TicketPatch?
+    var delete: Bool?
+
+    enum CodingKeys: String, CodingKey { case query, patch, delete }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(query, forKey: .query)
+        try c.encodeIfPresent(patch, forKey: .patch)
+        try c.encodeIfPresent(delete, forKey: .delete)
+    }
+}
+
+/// What a bulk change over a query answers: how many tickets changed or went.
+struct InboxBulkResult: Decodable, Sendable {
+    var updated: Int
+    var deleted: Int
+
+    enum CodingKeys: String, CodingKey { case updated, deleted }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        updated = c.lenient(Int.self, forKey: .updated) ?? 0
+        deleted = c.lenient(Int.self, forKey: .deleted) ?? 0
+    }
+}
+
+/// A whole ticket list, every page of it (`GET /v1/tickets/summary`). `complete` is false,
+/// with every count 0, when the server did not count it (too many tickets, or a search).
+struct TicketListSummary: Decodable, Hashable, Sendable {
+    var complete: Bool
+    var total: Int
+    var awaiting: Int
+    var urgent: Int
+    var overdue: Int
+    var dueSoon: Int
+
+    enum CodingKeys: String, CodingKey {
+        case complete, total, awaiting, urgent, overdue
+        case dueSoon = "due_soon"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        complete = c.lenient(Bool.self, forKey: .complete) ?? false
+        total = c.lenient(Int.self, forKey: .total) ?? 0
+        awaiting = c.lenient(Int.self, forKey: .awaiting) ?? 0
+        urgent = c.lenient(Int.self, forKey: .urgent) ?? 0
+        overdue = c.lenient(Int.self, forKey: .overdue) ?? 0
+        dueSoon = c.lenient(Int.self, forKey: .dueSoon) ?? 0
     }
 }

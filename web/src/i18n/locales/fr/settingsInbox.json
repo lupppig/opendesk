@@ -366,6 +366,7 @@
       "actionValue": "Chaque action doit avoir une valeur.",
       "phrases": "Une liste compte de 1 à 100 expressions, une par ligne, de 500 caractères au plus chacune.",
       "mergeTrigger": "La fusion dans le ticket ouvert du contact ne s’exécute qu’à la création d’un ticket.",
+      "procedureTrigger": "Ollie ne peut pas exécuter de procédure quand un ticket est mis à jour. Choisissez un autre déclencheur.",
       "callTrigger": "Les conditions d'appel demandent le déclencheur Un appel se termine."
     },
     "chooseSeverity": "Choisir une gravité",
@@ -818,7 +819,12 @@
       "abandoned_in_ivr": "Raccroché dans le menu",
       "abandoned_in_classic": "Raccroché pendant l'attente",
       "no_available_agent": "Aucun collègue disponible",
-      "agents_did_not_answer": "Personne n'a répondu"
+      "agents_did_not_answer": "Personne n'a répondu",
+      "busy": "Ligne occupée",
+      "no_answer": "Sans réponse",
+      "failed": "Échec de l'appel",
+      "cancelled": "Raccroché avant la réponse",
+      "abandon": "Raccroché dans la file d'attente"
     }
   }
 }

@@ -21,7 +21,8 @@ final class MailThreadStore {
     @ObservationIgnored private weak var realtime: RealtimeService?
     @ObservationIgnored private var listener: UUID?
     @ObservationIgnored private var quietTask: Task<Void, Never>?
-    @ObservationIgnored private var markedRead = false
+    /// The messages shown so far this visit; nil until the first load was read.
+    @ObservationIgnored private var seenMessages: Set<String>?
 
     /// A comment not posted yet waits for its conversation while you read another.
     private static var unsent: [String: String] = [:]
@@ -46,6 +47,12 @@ final class MailThreadStore {
 
     var thread: MailThread? { detail?.thread }
     var canAct: Bool { detail?.canAct ?? false }
+    /// The account as the person sees it, when they see it (not for a conversation shared on its own).
+    var account: MailAccount? { detail.flatMap { mail.account($0.account.id) } }
+    /// Done and Needs action apply: its account is shared with handling on.
+    var handles: Bool { account?.handles ?? false }
+    /// Reply all comes first: the account answers everyone by default, for whoever answers from it.
+    var replyAllFirst: Bool { account?.replyAll ?? detail?.account.replyAll ?? false }
 
     /// Messages that are not drafts, oldest first.
     var messages: [MailMessage] { detail?.messages.filter { !$0.draft } ?? [] }
@@ -65,6 +72,7 @@ final class MailThreadStore {
             error = nil
             notFound = false
             mail.update(value.thread)
+            await readDelivered()
         } catch let failure as APIError where failure.status == 404 {
             notFound = true
         } catch {
@@ -73,21 +81,26 @@ final class MailThreadStore {
         }
     }
 
-    /// Marks it read once when it opens, as the web does (`mark_read_on_open`).
-    func markReadOnOpen() async {
-        guard !markedRead, let detail, detail.canAct, detail.thread.unread, mail.prefs.markReadOnOpen else { return }
-        markedRead = true
+    /// Shows it read when it opens and again for each message that arrives while it is on screen,
+    /// as the web does (`mark_read_on_open`). A conversation marked unread here stays unread until
+    /// new mail comes in.
+    private func readDelivered() async {
+        guard let detail, detail.canAct, mail.prefs.markReadOnOpen else { return }
+        let ids = Set(detail.messages.filter { !$0.draft }.map(\.id))
+        let delivered = seenMessages.map { !ids.subtracting($0).isEmpty } ?? true
+        seenMessages = ids
+        guard delivered, detail.thread.unread else { return }
         try? await act(.read)
     }
 
     // MARK: Actions
 
-    func act(_ action: MailAction, folderID: String? = nil) async throws {
+    func act(_ action: MailAction, folderID: String? = nil, category: String? = nil) async throws {
         guard let detail else { return }
         let before = detail.thread
-        self.detail?.thread = mail.applied(action, folderID: folderID, to: before)
+        self.detail?.thread = mail.applied(action, folderID: folderID, category: category, to: before)
         do {
-            let threads = try await mail.act([threadID], action, folderID: folderID, known: [before])
+            let threads = try await mail.act([threadID], action, folderID: folderID, category: category, known: [before])
             if let fresh = threads.first(where: { $0.id == threadID }) { self.detail?.thread = fresh }
         } catch {
             self.detail?.thread = before
@@ -188,6 +201,12 @@ final class MailThreadStore {
         guard let account = mail.account(detail.account.id) else { return false }
         if account.owner?.id == member.id { return true }
         return !account.isPrivate && reaches(account.sharedWith)
+    }
+
+    /// Asks the account to sync now (its settings and addresses too).
+    func syncAccount() async throws {
+        guard let id = detail?.account.id else { return }
+        let _: EmptyBody = try await api.post("v1/collab/accounts/\(id)/sync")
     }
 
     // MARK: Reads

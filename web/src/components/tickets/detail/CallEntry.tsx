@@ -5,6 +5,7 @@
 import { ChevronRight, ExternalLink, PhoneIncoming, PhoneMissed, PhoneOutgoing, Play, Voicemail } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { PROVIDER_NAMES } from "@/components/contacts/PhoneNumber";
 import { Badge, TagChip } from "@/components/ui/badge";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { Activity, CallData } from "@/lib/api/types";
@@ -13,7 +14,19 @@ import { fullDate, relShort } from "@/lib/format";
 import { tone, type Tone } from "@/lib/tones";
 
 /** Missed reasons with their own words; another provider's reason reads as it came. */
-const REASONS = ["out_of_opening_hours", "short_abandoned", "abandoned_in_ivr", "abandoned_in_classic", "no_available_agent", "agents_did_not_answer"] as const;
+const REASONS = [
+  "out_of_opening_hours",
+  "short_abandoned",
+  "abandoned_in_ivr",
+  "abandoned_in_classic",
+  "no_available_agent",
+  "agents_did_not_answer",
+  "no_answer",
+  "busy",
+  "cancelled",
+  "abandon",
+  "failed",
+] as const;
 type Reason = (typeof REASONS)[number];
 const knownReason = (r: string): r is Reason => (REASONS as readonly string[]).includes(r);
 
@@ -139,7 +152,7 @@ export function CallEntry({ a }: { a: Activity }) {
                 {open && (
                   <a href={open} target="_blank" rel="noopener noreferrer" className={linkCls}>
                     <ExternalLink className="size-3" aria-hidden />
-                    {t("call.openIn", { provider: d.provider === "aircall" ? "Aircall" : d.provider })}
+                    {t("call.openIn", { provider: PROVIDER_NAMES[d.provider ?? ""] ?? d.provider })}
                   </a>
                 )}
               </div>

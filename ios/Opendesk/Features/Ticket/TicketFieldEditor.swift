@@ -284,6 +284,7 @@ struct RequiredFieldsSheet: View {
     let initial: [String: JSONValue]
     let members: [Member]
     let onSolve: ([String: JSONValue?]) async -> Bool
+    @Environment(AppEnvironment.self) private var env
     @Environment(\.dismiss) private var dismiss
     @State private var values: [String: JSONValue?] = [:]
     @State private var saving = false
@@ -319,7 +320,7 @@ struct RequiredFieldsSheet: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .background(Theme.chrome.ignoresSafeArea())
-            .navigationTitle("Before solving")
+            .navigationTitle("Fill in to \(env.statusDisplay.finishTitle.lowercased())")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
@@ -332,7 +333,7 @@ struct RequiredFieldsSheet: View {
                             if ok { dismiss() }
                         }
                     } label: {
-                        if saving { ProgressView() } else { Text("Solve").fontWeight(.semibold) }
+                        if saving { ProgressView() } else { Text(env.statusDisplay.finishTitle).fontWeight(.semibold) }
                     }
                     .disabled(!missing.isEmpty || saving)
                 }

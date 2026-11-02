@@ -43,10 +43,16 @@ struct TicketComposerView: View {
     @State private var showPhotos = false
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var showFiles = false
+    @State private var previewing = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(AppEnvironment.self) private var env
 
     private var expanded: Bool { focused.wrappedValue || composer.hasContent || composer.mode == .side || !composer.attachments.isEmpty }
     private var ollieBusy: Bool { store.drafting || store.rewriting }
+    private var senders: ReplySenders { ReplySenders(env: env, store: store, composer: composer) }
+    private var display: StatusDisplay { env.statusDisplay }
+    /// A reply that goes out as an email: it carries a signature and can be previewed.
+    private var emailReply: Bool { composer.mode == .reply && ticket.channel == .email }
 
     var body: some View {
         VStack(spacing: 8) {
@@ -82,6 +88,26 @@ struct TicketComposerView: View {
         }
         .fileImporter(isPresented: $showFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             if case let .success(urls) = result { actions.files(urls) }
+        }
+        .task(id: expanded) {
+            // The signature under a reply and the `{{ }}` suggestions.
+            if expanded { await store.loadVariables() }
+        }
+        .task(id: senders.on) {
+            if senders.on { await store.loadMailAccounts() }
+        }
+        .sheet(isPresented: $previewing) {
+            ReplyPreviewSheet(
+                store: store, ticket: ticket, html: composer.html(members: members),
+                from: senders.sender?.line ?? store.replyAddress.map { $0.displayName.isEmpty ? $0.email : "\($0.displayName) <\($0.email)>" } ?? "",
+                to: ticket.contact?.email ?? ticket.contactName,
+                cc: TicketComposerStore.addresses(composer.cc), bcc: TicketComposerStore.addresses(composer.bcc),
+                files: composer.attachments.map(\.filename),
+                personalSignature: senders.sender?.signatureHTML,
+                canSend: composer.canSend
+            ) { actions.send(nil) }
+            .presentationDetents([.large])
+            .presentationCornerRadius(Theme.Radius.sheet)
         }
     }
 
@@ -168,6 +194,9 @@ struct TicketComposerView: View {
             }
             .padding(.horizontal, expanded ? 0 : 4)
             .padding(.vertical, expanded ? 2 : 2)
+            if expanded, emailReply {
+                ReplySignature(html: senders.signatureHTML)
+            }
             if expanded {
                 toolbar
                     .padding(.horizontal, 6)
@@ -220,6 +249,19 @@ struct TicketComposerView: View {
                 .accessibilityAddTraits(on ? .isSelected : [])
             }
             Spacer(minLength: 4)
+            if emailReply {
+                Button {
+                    Haptics.tap()
+                    previewing = true
+                } label: {
+                    Image(systemName: "eye").font(.system(size: 12.5, weight: .medium))
+                        .foregroundStyle(composer.trimmed.isEmpty ? Theme.fg4 : Theme.fg3)
+                        .frame(width: 30, height: 28).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(composer.trimmed.isEmpty)
+                .accessibilityLabel(composer.trimmed.isEmpty ? "Write a reply to preview it" : "Preview the email")
+            }
             if composer.mode == .reply, ticket.channel == .email {
                 Button {
                     Haptics.tap()
@@ -257,11 +299,8 @@ struct TicketComposerView: View {
                         RecipientLine(label: "Cc") { AddressField(text: $composer.cc, prompt: "Add people") }
                         RecipientLine(label: "Bcc") { AddressField(text: $composer.bcc, prompt: "Add people") }
                     }
-                    if let from = store.replyAddress {
-                        RecipientLine(label: "From") {
-                            Text(from.displayName.isEmpty ? from.email : "\(from.displayName) <\(from.email)>")
-                                .font(ODFont.sans(13)).foregroundStyle(Theme.fg2).lineLimit(1)
-                        }
+                    if store.replyAddress != nil || !senders.all.isEmpty {
+                        ReplyFromLine(senders: senders, address: store.replyAddress)
                     }
                 } else {
                     HStack(spacing: 6) {
@@ -432,35 +471,61 @@ struct TicketComposerView: View {
             .buttonStyle(TapScaleStyle())
             .disabled(!enabled)
         } else {
-            Menu {
-                Section(composer.mode == .note ? "Add the note and" : "Send and") {
-                    ForEach([TicketStatus.pending, .onHold, .solved]) { status in
-                        Button { actions.send(status) } label: {
-                            Label("Mark \(status.title.lowercased())", systemImage: symbol(for: status))
+            let note = composer.mode == .note
+            HStack(spacing: 6) {
+                // Send and finish on a segment of its own, when the workspace turns it on.
+                if display.finishButton, ticket.status != display.finish {
+                    Button { actions.send(display.finish) } label: {
+                        ViewThatFits(in: .horizontal) {
+                            Text(display.sendAndFinish(note: note))
+                                .font(ODFont.sans(13.5, weight: .semibold))
+                                .lineLimit(1)
+                                .fixedSize()
+                                .padding(.horizontal, 12)
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 13, weight: .bold))
+                                .frame(width: 34)
                         }
-                        .disabled(status == ticket.status)
+                        .foregroundStyle(Theme.fg)
+                        .frame(height: 34)
+                        .background(Theme.surface, in: Capsule())
+                        .overlay(Capsule().strokeBorder(Theme.lineStrong, lineWidth: 1))
+                        .opacity(enabled ? 1 : 0.45)
                     }
+                    .buttonStyle(TapScaleStyle())
+                    .disabled(!enabled)
+                    .accessibilityLabel(display.sendAndFinish(note: note))
                 }
-            } label: {
-                HStack(spacing: 0) {
-                    Text(title)
-                        .font(ODFont.sans(14, weight: .semibold))
-                        .padding(.leading, 14)
-                        .padding(.trailing, 10)
-                    Rectangle().fill(Theme.inverseFg.opacity(0.25)).frame(width: 1, height: 18)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 10, weight: .bold))
-                        .frame(width: 28)
+                Menu {
+                    Section(note ? "Add the note and" : "Send and") {
+                        ForEach([TicketStatus.pending, .onHold, .solved].filter { !display.hidden($0) }) { status in
+                            Button { actions.send(status) } label: {
+                                Label(status == display.finish ? display.finishTitle : "Mark \(display.title(status).lowercased())", systemImage: symbol(for: status))
+                            }
+                            .disabled(status == ticket.status)
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 0) {
+                        Text(title)
+                            .font(ODFont.sans(14, weight: .semibold))
+                            .padding(.leading, 14)
+                            .padding(.trailing, 10)
+                        Rectangle().fill(Theme.inverseFg.opacity(0.25)).frame(width: 1, height: 18)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 10, weight: .bold))
+                            .frame(width: 28)
+                    }
+                    .foregroundStyle(Theme.inverseFg)
+                    .frame(height: 34)
+                    .background(Theme.inverse.opacity(enabled ? 1 : 0.3), in: Capsule())
+                } primaryAction: {
+                    actions.send(nil)
                 }
-                .foregroundStyle(Theme.inverseFg)
-                .frame(height: 34)
-                .background(Theme.inverse.opacity(enabled ? 1 : 0.3), in: Capsule())
-            } primaryAction: {
-                actions.send(nil)
+                .disabled(!enabled)
+                .accessibilityLabel(title)
+                .accessibilityHint("Touch and hold to send and change the status")
             }
-            .disabled(!enabled)
-            .accessibilityLabel(title)
-            .accessibilityHint("Touch and hold to send and change the status")
         }
     }
 

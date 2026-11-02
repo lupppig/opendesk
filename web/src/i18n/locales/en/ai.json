@@ -14,7 +14,8 @@
     "playground": "Test the agent in the playground",
     "kb_draft": "Draft a help article",
     "assistant": "Assistant messages",
-    "assistant_peer": "Ollie asking a teammate's Ollie"
+    "assistant_peer": "Ollie asking a teammate's Ollie",
+    "procedure": "Run a procedure from an automation"
   },
   "sentiment": {
     "positive": "Positive",
@@ -33,6 +34,12 @@
     "choose_sentiment": "Choose a sentiment",
     "ai_triage": "Run AI triage",
     "ai_triage_hint": "Sets labels, priority, sentiment and language from the conversation.",
+    "run_procedure": "Ollie runs a procedure",
+    "run_procedure_hint": "Ollie works the ticket by it: internal notes, labels, priority and connected tools set to run without asking. It never replies to the customer.",
+    "choose_procedure": "Choose a procedure",
+    "procedure_off": "Off",
+    "manage_procedures": "Manage procedures",
+    "new_procedure": "Write a procedure",
     "per_run": "about {{cost}} per run",
     "ai_decide": "Ask Ollie a yes/no question",
     "ai_decide_question": "Question",

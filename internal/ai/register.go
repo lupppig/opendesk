@@ -71,6 +71,7 @@ func RegisterWorkers(d *deps.Deps, w *river.Workers) {
 	river.AddWorker(w, &EmailAnswerWorker{S: s})
 	river.AddWorker(w, &MaintainWorker{S: s})
 	river.AddWorker(w, &AgentTestRunWorker{S: s})
+	river.AddWorker(w, &ProcedureRunWorker{S: s})
 }
 
 // Periodic returns this area's scheduled jobs.

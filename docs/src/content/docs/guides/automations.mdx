@@ -45,7 +45,7 @@ Under **When**, pick the trigger.
 | **The customer replies** | The customer sends a new message on a ticket. |
 | **An agent replies** | An agent sends a reply. |
 | **A ticket is updated** | A ticket's fields change, such as its status, priority or team. |
-| **A call ends** | A phone call on the ticket ended, with conditions on the call's outcome, direction, time, line and labels. See [Phone calls with Aircall](/guides/aircall/#missed-calls-an-automation). |
+| **A call ends** | A phone call on the ticket ended, with conditions on the call's outcome, direction, time, line and labels. See [Phone calls with Aircall](/guides/aircall/#missed-calls-an-automation) and [with Voys](/guides/voys/#missed-calls). |
 
 </Step>
 <Step title="Add conditions">
@@ -114,6 +114,7 @@ Text fields compare with **contains**, **doesn't contain**, **contains any of**,
 | **Delete ticket** | Deletes the ticket, as **Delete ticket** in its menu does. Nothing else runs on it: not the automation's other steps, the automations after it, auto-assignment or notifications. For mail you never want to keep, such as form notifications. |
 | **Merge into the contact's open ticket** | On **A ticket is created** only. Merges the new ticket into the same contact's latest open, pending or on hold ticket, within a number of days and, as an option, with the same subject. See [Merge follow-ups](#merge-follow-ups). |
 | **Run AI triage** | Runs [triage](/guides/triage-and-assignment/#triage-by-ollie) on the ticket: one AI call, charged to the AI balance on Cloud. |
+| **Ollie runs a procedure** | Ollie works the ticket by one of your [procedures](/guides/procedures/), a moment later: internal notes, labels, a higher priority or severity, and [connected tools](/guides/integrations/) set to run without asking. It never replies to the customer. Not on **A ticket is updated**. See [Have Ollie create a Linear issue](/guides/linear-issues-from-tickets/). |
 
 <Fold>
 

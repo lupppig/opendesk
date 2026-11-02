@@ -38,6 +38,8 @@ struct DemoAccountWorkspace: Sendable {
     var profiles: [String: MemberProfile] = [:]
     var types: [Channels] = []
     var unsubscribedAt: Date?
+    /// Teams whose notifications the user turned off.
+    var quietTeams: Set<String> = []
     var replyTeams: [String: String] = [:]
     var viewTeams: [String: String] = [:]
 
@@ -52,6 +54,7 @@ struct DemoAccountWorkspace: Sendable {
             extras.profiles[DemoPerson.priya.id] = MemberProfile(title: "Customer success", phone: "", pronouns: "she/her", signatureHTML: "")
             if let view = ws.views.first(where: { $0.name == "Billing queue" }) { extras.viewTeams[view.id] = DemoSeed.billing }
             if let reply = ws.savedReplies.first(where: { $0.title.localizedCaseInsensitiveContains("refund") }) { extras.replyTeams[reply.id] = DemoSeed.billing }
+            if let quiet = ws.teams.first(where: { $0.name == "Partnerships" }) { extras.quietTeams = [quiet.id] }
         }
         let admin = ws.role.isAdmin
         extras.types = [
@@ -227,7 +230,8 @@ extension DemoBackend {
             let shared = call.body["shared"]?.bool ?? false
             if shared, !ws.role.isAdmin { throw Failure(status: 403, code: "forbidden", detail: "Only admins share views.") }
             let filters = call.body["filters"].flatMap { try? APICoding.decoder.decode(TicketFilters.self, from: encode($0)) } ?? TicketFilters()
-            let saved = SavedView(id: made(), name: call.string("name") ?? "View", shared: shared, filters: filters, position: (ws.views.compactMap(\.position).max() ?? -1) + 1)
+            var saved = SavedView(id: made(), name: call.string("name") ?? "View", shared: shared, filters: filters, position: call.body["position"]?.int ?? (ws.views.compactMap(\.position).max() ?? -1) + 1)
+            try viewLook(call.body, to: &saved, in: ws)
             ws.views.append(saved)
             if let team = call.string("team_id"), !team.isEmpty { ws.accountExtras.viewTeams[saved.id] = team }
             let json = view(json: saved, in: ws)
@@ -240,6 +244,9 @@ extension DemoBackend {
             if let shared = call.body["shared"]?.bool { ws.views[index].shared = shared }
             if let position = call.body["position"]?.int { ws.views[index].position = position }
             if let filters = call.body["filters"], let decoded = try? APICoding.decoder.decode(TicketFilters.self, from: encode(filters)) { ws.views[index].filters = decoded }
+            var looked = ws.views[index]
+            try viewLook(call.body, to: &looked, in: ws)
+            ws.views[index] = looked
             if let team = call.string("team_id") { ws.accountExtras.viewTeams[id] = team.isEmpty ? nil : team }
             let json = view(json: ws.views[index], in: ws)
             publish("view.updated", ["view": json], in: &ws)
@@ -321,7 +328,15 @@ extension DemoBackend {
             ]),
             "unsubscribed_at": ws.accountExtras.unsubscribedAt.map { .string(DemoSeed.stamp($0)) } ?? .null,
             "types": .array(types),
+            "teams": .array(myTeams(ws).map { team in
+                .object(["id": .string(team.id), "name": .string(team.name), "notify": .bool(!ws.accountExtras.quietTeams.contains(team.id))])
+            }),
         ])
+    }
+
+    /// The teams the user works in, by name.
+    private func myTeams(_ ws: DemoWorkspace) -> [Team] {
+        ws.teams.filter { $0.memberIDs?.contains(world.user.id) ?? false }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
     private func updatePreferences(_ body: JSONValue, workspace index: Int) throws {
@@ -353,6 +368,11 @@ extension DemoBackend {
             if let on = change["push"]?.bool { world.workspaces[index].accountExtras.types[row].push = on }
             if let on = change["desktop"]?.bool { world.workspaces[index].accountExtras.types[row].desktop = on }
         }
+        let mine = Set(myTeams(world.workspaces[index]).map(\.id))
+        for change in body["teams"]?.array ?? [] {
+            guard let id = change["id"]?.string, mine.contains(id), let on = change["notify"]?.bool else { continue }
+            if on { world.workspaces[index].accountExtras.quietTeams.remove(id) } else { world.workspaces[index].accountExtras.quietTeams.insert(id) }
+        }
     }
 
     private func reply(json reply: SavedReply, in ws: DemoWorkspace) -> JSONValue {
@@ -365,7 +385,31 @@ extension DemoBackend {
     private func view(json view: SavedView, in ws: DemoWorkspace) -> JSONValue {
         var object = DemoSeed.json(view).object ?? [:]
         object["team_id"] = ws.accountExtras.viewTeams[view.id].map(JSONValue.string) ?? .null
+        object["section"] = view.section.map(JSONValue.string) ?? .null
+        object["icon"] = view.icon.map { DemoSeed.json($0) } ?? .null
         return .object(object)
+    }
+
+    /// A view's `section` and `icon` from a create or patch: left out keeps them, null clears them.
+    private func viewLook(_ body: JSONValue, to view: inout SavedView, in ws: DemoWorkspace) throws {
+        if let raw = body["section"] {
+            let name = (raw.string ?? "").split(whereSeparator: \.isWhitespace).joined(separator: " ")
+            if name.count > 60 || name.contains("<") || name.contains(">") {
+                throw Failure(status: 422, code: "validation_failed", detail: "Section names run to 60 characters, without < or >.")
+            }
+            // A section another view already names keeps that view's spelling.
+            let existing = ws.views.compactMap(\.section).first { $0.lowercased() == name.lowercased() }
+            view.section = name.isEmpty ? nil : existing ?? name
+        }
+        if let raw = body["icon"] {
+            if raw == .null {
+                view.icon = nil
+            } else if let icon = try? APICoding.decoder.decode(ViewIcon.self, from: encode(raw)) {
+                view.icon = ViewIcon(kind: icon.kind, value: icon.value, color: icon.color)
+            } else {
+                throw Failure(status: 422, code: "validation_failed", detail: "That icon can't be used.")
+            }
+        }
     }
 
     private func cleanShortcut(_ raw: String?, except id: String?, in ws: DemoWorkspace) throws -> String? {

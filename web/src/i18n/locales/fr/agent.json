@@ -456,6 +456,66 @@
     "emailInvalid": "Saisissez une adresse e-mail valide",
     "verified": "Identité vérifiée",
     "verifiedHint": "Comme si votre site avait authentifié le visiteur. Débloque les outils réservés aux visiteurs vérifiés.",
-    "note": "Chaque réponse coûte environ {{cost}} avec le modèle de l’agent et est comptabilisée comme consommation de l’espace de test. Les conversations plus longues et les modèles plus chers coûtent davantage."
+    "note": "Chaque réponse coûte environ {{cost}} avec le modèle de l’agent et est comptabilisée comme consommation de l’espace de test. Les conversations plus longues et les modèles plus chers coûtent davantage.",
+    "followed": "A suivi {{names}}"
+  },
+  "procedures": {
+    "title": "Procédures",
+    "description": "Les étapes qu’Ollie suit pour un type de conversation. Ollie ne lit une procédure que si une conversation correspond à sa ligne « À utiliser quand ».",
+    "what": "les procédures de l’agent",
+    "new": "Nouvelle procédure",
+    "listCount": "{{n}} sur {{max}}",
+    "limit": "Un espace de travail peut avoir jusqu’à 50 procédures.",
+    "everyBot": "Tous les bots",
+    "automationOnly": "Automatisations uniquement",
+    "channels": {
+      "chat": "Chat",
+      "email": "E-mail"
+    },
+    "toggle": "Utiliser {{name}}",
+    "actions": "Actions pour {{name}}",
+    "edit": "Modifier",
+    "delete": "Supprimer",
+    "deleteTitle": "Supprimer cette procédure ?",
+    "deleteBody": "Ollie ne suivra plus « {{name}} », et les tests qui l’attendent échoueront.",
+    "updatedBy": "{{when}} par {{name}}",
+    "created": "Procédure créée",
+    "saved": "Procédure enregistrée",
+    "saveError": "Impossible d’enregistrer la procédure.",
+    "updateError": "Impossible de mettre à jour la procédure.",
+    "deleteError": "Impossible de supprimer la procédure.",
+    "empty": {
+      "title": "Aucune procédure pour le moment",
+      "description": "Rédigez les étapes qu’Ollie doit suivre pour un type de conversation, comme les demandes de remboursement ou les signalements de bug.",
+      "tipWhen": "Ollie ne lit une procédure que si une conversation y correspond",
+      "tipWiki": "Reprenez les étapes d’une page du wiki"
+    },
+    "editor": {
+      "newTitle": "Nouvelle procédure",
+      "name": "Nom",
+      "namePlaceholder": "Demandes de remboursement",
+      "nameInvalid": "Donnez-lui un nom de 80 caractères maximum.",
+      "when": "À utiliser quand",
+      "whenHint": "Comment Ollie reconnaît une conversation concernée. Tant qu’il n’a pas choisi la procédure, il ne voit que cette ligne.",
+      "whenPlaceholder": "Le client demande un remboursement ou dit avoir été débité deux fois",
+      "whenInvalid": "Décrivez-la en 3 à 300 caractères.",
+      "instructions": "Instructions",
+      "instructionsHint": "Markdown. Ce qu’il faut demander, vérifier et dire, et quand passer le relais.",
+      "instructionsPlaceholder": "1. Demander le numéro de commande.\n2. Rechercher la commande.\n3. Passer le relais pour les remboursements de plus de 200 $.",
+      "instructionsInvalid": "Saisissez entre 1 et 8 000 caractères.",
+      "copyWiki": "Copier depuis une page du wiki",
+      "copyWikiSearch": "Rechercher dans le wiki",
+      "copyWikiEmpty": "Aucune page ne correspond",
+      "copied": "Copié depuis « {{title}} »",
+      "copyNote": "Le texte est copié une seule fois. Rien ne reste lié à la page.",
+      "copyError": "Impossible de copier la page.",
+      "untitled": "Sans titre",
+      "channels": "Canaux",
+      "channelsHint": "Là où Ollie peut la choisir de lui-même. Sans canal, seules les automatisations l’exécutent.",
+      "bots": "Bots",
+      "botsHint": "Seulement les conversations auxquelles ces bots répondent. Laissez vide pour tous les bots.",
+      "enabled": "Activée",
+      "create": "Créer la procédure"
+    }
   }
 }

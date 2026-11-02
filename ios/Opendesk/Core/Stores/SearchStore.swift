@@ -28,13 +28,18 @@ struct SearchArticle: Codable, Hashable, Sendable, Identifiable {
     var isDraft: Bool { status == "draft" }
 }
 
-/// `GET /v1/search` and `GET /v1/ai/search`: tickets, contacts and articles.
+/// `GET /v1/search` and `GET /v1/ai/search`: tickets, contacts, articles and wiki pages
+/// (search by meaning has no wiki pages).
 struct SearchHits: Decodable, Sendable {
     var tickets: [Ticket] = []
     var contacts: [Contact] = []
     var articles: [SearchArticle] = []
+    var wikiPages: [WikiSearchHit] = []
 
-    enum CodingKeys: String, CodingKey { case tickets, contacts, articles }
+    enum CodingKeys: String, CodingKey {
+        case tickets, contacts, articles
+        case wikiPages = "wiki_pages"
+    }
 
     init() {}
 
@@ -43,9 +48,10 @@ struct SearchHits: Decodable, Sendable {
         tickets = c.lenient([Ticket].self, forKey: .tickets) ?? []
         contacts = c.lenient([Contact].self, forKey: .contacts) ?? []
         articles = c.lenient([SearchArticle].self, forKey: .articles) ?? []
+        wikiPages = c.lenient([WikiSearchHit].self, forKey: .wikiPages) ?? []
     }
 
-    var isEmpty: Bool { tickets.isEmpty && contacts.isEmpty && articles.isEmpty }
+    var isEmpty: Bool { tickets.isEmpty && contacts.isEmpty && articles.isEmpty && wikiPages.isEmpty }
 }
 
 /// Small settings of the inbox and search (recent searches, the chat alert sound), in the

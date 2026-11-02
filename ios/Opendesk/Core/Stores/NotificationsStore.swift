@@ -201,6 +201,13 @@ final class NotificationsStore {
         }
     }
 
+    /// Whether a team's new tickets, and replies nobody has picked up, reach the caller (this workspace).
+    func setTeamNotify(_ team: String, on: Bool) async throws {
+        try await updatePreferences(NotificationPreferencesPatch(teams: [.init(id: team, notify: on)])) { prefs in
+            if let index = prefs.teams.firstIndex(where: { $0.id == team }) { prefs.teams[index].notify = on }
+        }
+    }
+
     /// `POST /v1/me/notification-preferences/test` (a few an hour).
     func sendTestEmail() async throws {
         guard let api else { return }

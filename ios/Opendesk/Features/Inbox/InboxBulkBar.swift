@@ -4,6 +4,8 @@ import SwiftUI
 struct InboxSelectHeader: View {
     let count: Int
     let allSelected: Bool
+    /// Every ticket of the list is chosen, loaded or not.
+    var allMatching = false
     let onClose: () -> Void
     let onAll: () -> Void
 
@@ -11,7 +13,7 @@ struct InboxSelectHeader: View {
         GlassEffectContainer(spacing: 10) {
             HStack(spacing: 10) {
                 GlassCircleButton(symbol: "xmark", label: "Done selecting", action: onClose)
-                Text(count == 0 ? "Select tickets" : "\(count) selected")
+                Text(allMatching ? "All matching" : count == 0 ? "Select tickets" : "\(count) selected")
                     .font(ODFont.sans(19, weight: .semibold))
                     .tracking(-0.4)
                     .foregroundStyle(Theme.fg)
@@ -42,10 +44,13 @@ struct InboxSelectHeader: View {
 
 /// The floating glass bar of bulk actions (the web's `BulkBar`): assign, status,
 /// priority, labels, and more (team, severity, spam, delete). Every change shows at
-/// once and is put back if the server refuses.
+/// once and is put back if the server refuses. With every matching ticket chosen, the
+/// change goes to the server by the list's filters and the list loads again.
 struct InboxBulkBar: View {
     @Environment(AppEnvironment.self) private var env
     let ids: [String]
+    /// Every ticket of the list, loaded or not (`POST /v1/tickets/bulk` with `query`).
+    var allMatching = false
     /// Called after a change went through, to leave select mode.
     let onDone: () -> Void
 
@@ -68,11 +73,12 @@ struct InboxBulkBar: View {
         HStack(spacing: 0) {
             action("Assign", symbol: "person.crop.circle") { sheet = .assign }
             Menu {
-                ForEach(TicketStatus.allCases) { status in
+                let display = env.statusDisplay
+                ForEach(display.offered()) { status in
                     Button {
-                        run(TicketPatch(status: status), done: "Marked \(things) \(status.title.lowercased())")
+                        run(TicketPatch(status: status), done: "Marked \(things) \(display.title(status).lowercased())")
                     } label: {
-                        Label(status.title, systemImage: symbol(status))
+                        Label(display.title(status), systemImage: symbol(status))
                     }
                 }
             } label: {
@@ -91,7 +97,9 @@ struct InboxBulkBar: View {
             .menuOrder(.fixed)
             action("Label", symbol: "tag") { sheet = .labels }
             Menu {
-                Button { sheet = .team } label: { Label("Move to team\u{2026}", systemImage: "person.3") }
+                if !allMatching {
+                    Button { sheet = .team } label: { Label("Move to team\u{2026}", systemImage: "person.3") }
+                }
                 Menu {
                     ForEach(Severity.allCases) { severity in
                         Button("\(severity.title)  \(severity.hint)") {
@@ -114,8 +122,8 @@ struct InboxBulkBar: View {
             }
             .menuOrder(.fixed)
         }
-        .disabled(ids.isEmpty)
-        .opacity(ids.isEmpty ? 0.45 : 1)
+        .disabled(ids.isEmpty && !allMatching)
+        .opacity(ids.isEmpty && !allMatching ? 0.45 : 1)
         .padding(.horizontal, 6)
         .frame(height: 60)
         .background(Theme.surface.opacity(0.55), in: Capsule())
@@ -147,15 +155,18 @@ struct InboxBulkBar: View {
             .presentationDetents([.medium, .large])
             .presentationCornerRadius(Theme.Radius.sheet)
         }
-        .confirmationDialog("Delete \(things)?", isPresented: $confirmDelete, titleVisibility: .visible) {
-            Button("Delete \(things)", role: .destructive) { delete() }
+        .confirmationDialog(allMatching ? "Delete all matching tickets?" : "Delete \(things)?", isPresented: $confirmDelete, titleVisibility: .visible) {
+            Button(allMatching ? "Delete all matching tickets" : "Delete \(things)", role: .destructive) { delete() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("\(n == 1 ? "This ticket" : "\(n) tickets") will be deleted for everyone in the workspace.")
+            Text(allMatching ? "Every ticket matching this list will be deleted for everyone in the workspace." : "\(n == 1 ? "This ticket" : "\(n) tickets") will be deleted for everyone in the workspace.")
         }
     }
 
-    private var things: String { Format.plural(n, "ticket") }
+    /// How a done message names the tickets: "3 tickets", or every matching one until the server says how many.
+    private static let allMatchingWords = "all matching tickets"
+
+    private var things: String { allMatching ? Self.allMatchingWords : Format.plural(n, "ticket") }
 
     private var allSpam: Bool { !tickets.isEmpty && tickets.allSatisfy(\.spam) }
 
@@ -203,6 +214,21 @@ struct InboxBulkBar: View {
 
     private func run(_ change: TicketPatch, tags: [TagRef] = [], done: String, undo: TicketPatch? = nil) {
         let ids = ids
+        if allMatching {
+            Task {
+                do {
+                    let updated = try await env.inbox.bulkMatching(change)
+                    Haptics.success()
+                    onDone()
+                    env.toasts.show(done.replacingOccurrences(of: Self.allMatchingWords, with: Format.plural(updated, "ticket")), kind: .success)
+                    env.directory.scheduleCounts()
+                } catch {
+                    Haptics.error()
+                    env.toasts.error(error)
+                }
+            }
+            return
+        }
         Task {
             do {
                 try await env.inbox.bulk(ids, change, tags: tags, members: env.directory.members, meRef: env.session.userRef)
@@ -237,12 +263,20 @@ struct InboxBulkBar: View {
     private func delete() {
         let ids = ids
         let things = things
+        let allMatching = allMatching
         Task {
             do {
-                try await env.inbox.bulkDelete(ids)
-                Haptics.success()
-                onDone()
-                env.toasts.show("Deleted \(things)", kind: .success)
+                if allMatching {
+                    let deleted = try await env.inbox.bulkDeleteMatching()
+                    Haptics.success()
+                    onDone()
+                    env.toasts.show("Deleted \(Format.plural(deleted, "ticket"))", kind: .success)
+                } else {
+                    try await env.inbox.bulkDelete(ids)
+                    Haptics.success()
+                    onDone()
+                    env.toasts.show("Deleted \(things)", kind: .success)
+                }
                 env.directory.scheduleCounts()
             } catch {
                 Haptics.error()

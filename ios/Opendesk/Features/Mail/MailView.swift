@@ -45,6 +45,7 @@ struct MailListView: View {
                 }
             }
             if hasAccounts, mail.search.isEmpty { MailTabs(mail: mail) }
+            if hasAccounts, mail.isTabbed { MailCategoryBar(mail: mail) }
             content
         }
         .background(Theme.chrome.ignoresSafeArea())
@@ -58,7 +59,7 @@ struct MailListView: View {
                 .presentationCornerRadius(Theme.Radius.sheet)
         }
         .sheet(isPresented: $showBoxes) {
-            MailBoxesSheet(mail: mail) { openSettings() }
+            MailBoxesSheet(mail: mail) { openSettings(account: $0) }
                 .presentationDetents([.medium, .large])
                 .presentationCornerRadius(Theme.Radius.sheet)
         }
@@ -85,7 +86,9 @@ struct MailListView: View {
             return Text(mail.loading ? "Searching" : Format.plural(mail.threads.count, "conversation") + (mail.nextCursor == nil ? "" : "+"))
         }
         var parts: [String] = []
-        if let account = mail.account(mail.scope.accountID) {
+        if let to = mail.scope.to, mail.scope.accountID != nil {
+            parts.append("To \(to)")
+        } else if let account = mail.account(mail.scope.accountID) {
             parts.append(account.email)
         } else if mail.accounts.count > 1, mail.scope.folderID == nil, !mail.scope.box.spansAccounts {
             parts.append(Format.plural(mail.accounts.count, "account"))
@@ -112,8 +115,7 @@ struct MailListView: View {
         } else if !mail.accountsLoaded || (!mail.loadedOnce && mail.loading) {
             ScrollView { SkeletonRows() }
                 .scrollDisabled(true)
-                .background(Theme.surface)
-                .clipShape(UnevenRoundedRectangle(topLeadingRadius: Theme.Radius.card, topTrailingRadius: Theme.Radius.card, style: .continuous))
+                .panelSurface()
                 .ignoresSafeArea(.container, edges: .bottom)
         } else if mail.accounts.isEmpty {
             EmptyState(
@@ -149,7 +151,7 @@ struct MailListView: View {
 
     private var list: some View {
         let own = mail.ownEmails
-        let spans = mail.spansAccounts || mail.scope.box.spansAccounts
+        let spans = mail.listSpansAccounts
         return List {
             notices
             ForEach(mail.threads) { thread in
@@ -162,6 +164,7 @@ struct MailListView: View {
                         account: mail.account(thread.accountID),
                         showAccount: spans,
                         labels: mail.labels(on: thread),
+                        category: mail.categoryPill(for: thread),
                         sentBox: sentBox,
                         pulse: mail.pulses[thread.id],
                         onStar: env.session.canWrite ? { act(thread, thread.starred ? .unstar : .star) } : nil
@@ -199,22 +202,39 @@ struct MailListView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .scrollDismissesKeyboard(.immediately)
-        .background(Theme.surface)
-        .clipShape(UnevenRoundedRectangle(topLeadingRadius: Theme.Radius.card, topTrailingRadius: Theme.Radius.card, style: .continuous))
+        .panelSurface()
         .ignoresSafeArea(.container, edges: .bottom)
-        .refreshable { await mail.refreshEverything() }
+        .refreshable { await mail.refreshEverything(syncing: true) }
         .motion(Motion.snappy, value: mail.threads.map(\.id))
     }
 
     @ViewBuilder
     private var notices: some View {
-        let reconnect = mail.accountsInView.filter { $0.reconnect || $0.status == "error" }
-        ForEach(reconnect) { account in
+        let trouble = mail.accountsInView.filter { $0.reconnect || $0.status == "error" }
+        ForEach(trouble) { account in
             noticeRow {
-                Button { openSettings() } label: {
-                    Notice(text: "\(account.email) needs to be connected again to keep syncing.", tone: .red, symbol: "exclamationmark.arrow.triangle.2.circlepath")
+                Button { openSettings(account: account.canManage ? account.id : nil) } label: {
+                    Notice(text: problem(account), tone: .red, symbol: account.reconnect ? "exclamationmark.arrow.triangle.2.circlepath" : "exclamationmark.triangle")
                 }
                 .buttonStyle(TapScaleStyle())
+            }
+        }
+        if let to = mail.scope.to, let id = mail.scope.accountID {
+            noticeRow {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Image(systemName: "at").font(.system(size: 12.5, weight: .semibold))
+                    Text("Written to \(to)").font(ODFont.sans(13)).lineLimit(1)
+                    Spacer(minLength: 6)
+                    Button("Any address") {
+                        Haptics.selection()
+                        mail.setAddress(nil, account: id)
+                    }
+                    .font(ODFont.sans(13, weight: .semibold))
+                    .foregroundStyle(Theme.fg)
+                    .buttonStyle(.plain)
+                }
+                .foregroundStyle(Theme.fg3)
+                .padding(.horizontal, 2)
             }
         }
         if mail.status?.storage?.full == true {
@@ -241,6 +261,15 @@ struct MailListView: View {
         }
     }
 
+    /// What is wrong with an account, a sentence of its own: the provider's message ends its own.
+    private func problem(_ account: MailAccount) -> String {
+        if account.reconnect { return "\(account.email) needs to be connected again to keep syncing." }
+        let reason = account.lastError.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !reason.isEmpty else { return "\(account.email) did not sync. See what went wrong in its settings." }
+        let sentence = reason.last.map { ".!?".contains($0) } == true ? reason : reason + "."
+        return "\(account.email): \(sentence)"
+    }
+
     private func noticeRow(@ViewBuilder _ content: () -> some View) -> some View {
         content()
             .listRowInsets(EdgeInsets(top: 10, leading: 14, bottom: 4, trailing: 14))
@@ -254,6 +283,8 @@ struct MailListView: View {
             EmptyState(symbol: "magnifyingglass", title: "No conversations match", message: "Check the spelling, or search for a name or an address.")
         } else if let folder = mail.folder(mail.scope.folderID) {
             EmptyState(symbol: folder.isLabel ? "tag" : "folder", title: "Nothing in \(folder.name)", message: "Conversations you file here show up in this list.")
+        } else if let key = mail.activeCategory, key != MailCategory.primary, let tab = mail.categoryTabs.first(where: { $0.id == key }) {
+            EmptyState(symbol: "tray", title: "Nothing in \(tab.category.name)", message: tab.category.description.isEmpty ? "Mail sorted into this tab shows up here." : tab.category.description)
         } else {
             switch mail.scope.box {
             case .inbox, .unread:
@@ -262,6 +293,8 @@ struct MailListView: View {
                 EmptyState(symbol: "person.2", title: "Nothing shared with you", message: "When a teammate shares a conversation or an account with you, it shows up here.")
             case .assigned:
                 EmptyState(symbol: "person.crop.circle.badge.checkmark", title: "Nothing assigned to you", message: "Conversations a teammate asks you to answer show up here.")
+            case .needsAction:
+                EmptyState(symbol: "checkmark.circle", title: "Nothing needs action", message: "New mail in a shared inbox that tracks handling waits here until someone marks it done.")
             case .starred:
                 EmptyState(symbol: "star", title: "No starred conversations", message: "Star a conversation to keep it close.")
             case .drafts:
@@ -285,6 +318,11 @@ struct MailListView: View {
     @ViewBuilder
     private func trailing(_ thread: MailThread) -> some View {
         switch box {
+        case .needsAction:
+            Button { act(thread, .done) } label: { Label("Mark as done", systemImage: "checkmark.circle") }
+                .tint(Tone.green.solid)
+            Button { act(thread, .archive) } label: { Label("Archive", systemImage: "archivebox") }
+                .tint(Tone.blue.solid)
         case .trash:
             Button { act(thread, .inbox) } label: { Label("Move to inbox", systemImage: "tray.and.arrow.down") }
                 .tint(Tone.blue.solid)
@@ -323,6 +361,21 @@ struct MailListView: View {
         Button { act(thread, thread.starred ? .unstar : .star) } label: {
             Label(thread.starred ? "Unstar" : "Star", systemImage: thread.starred ? "star.slash" : "star")
         }
+        if mail.account(thread.accountID)?.handles == true {
+            Button { act(thread, thread.needsAction ? .done : .needsAction) } label: {
+                Label(thread.needsAction ? "Mark as done" : "Mark as needing action", systemImage: thread.needsAction ? "checkmark.circle" : "circle.badge.exclamationmark")
+            }
+        }
+        let tabs = mail.categories(of: thread.accountID).filter { $0.key != mail.categoryKey(of: thread) }
+        if !tabs.isEmpty {
+            Menu {
+                ForEach(tabs) { category in
+                    Button(category.name) { categorize(thread, category) }
+                }
+            } label: {
+                Label("Move to category", systemImage: "square.stack.3d.up")
+            }
+        }
         Divider()
         if box == .archive || box == .trash || box == .spam {
             Button { act(thread, box == .spam ? .notSpam : .inbox) } label: { Label(box == .spam ? "Not spam" : "Move to inbox", systemImage: "tray.and.arrow.down") }
@@ -345,6 +398,22 @@ struct MailListView: View {
                 guard let done = action.done(1), let undo = action.undo else { return }
                 env.toasts.show(Toast(message: done, kind: .success, actionTitle: "Undo") {
                     Task { _ = try? await mail.act([thread.id], undo, known: [thread]) }
+                })
+            } catch {
+                env.toasts.error(error)
+            }
+        }
+    }
+
+    /// Moves a conversation to another inbox tab, with Undo back to where it was.
+    private func categorize(_ thread: MailThread, _ category: MailCategory) {
+        Haptics.tap()
+        let back = mail.categoryKey(of: thread)
+        Task {
+            do {
+                _ = try await mail.act([thread.id], .categorize, category: category.key, known: [thread])
+                env.toasts.show(Toast(message: "Conversation moved to \(category.name)", kind: .success, actionTitle: "Undo") {
+                    Task { _ = try? await mail.act([thread.id], .categorize, category: back, known: [thread]) }
                 })
             } catch {
                 env.toasts.error(error)
@@ -379,8 +448,9 @@ struct MailListView: View {
         composing = MailComposeRequest()
     }
 
-    private func openSettings() {
-        guard let url = env.session.instance.webURL(path: "/settings/mail-accounts") else { return }
+    /// Mail account settings on the web: one account's, else the list.
+    private func openSettings(account id: String? = nil) {
+        guard let url = env.session.instance.webURL(path: id.map { "/settings/mail-accounts/\($0)" } ?? "/settings/mail-accounts") else { return }
         webPage = MailWebPage(url: url)
     }
 
@@ -486,6 +556,60 @@ struct MailTabs: View {
         .buttonStyle(TapScaleStyle())
         .id(id)
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// The tabs of an inbox that is split, under the box tabs: Primary first, each with its colour
+/// and unread count. Primary is the plain inbox.
+struct MailCategoryBar: View {
+    let mail: MailStore
+
+    var body: some View {
+        let active = mail.activeCategory
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 2) {
+                    ForEach(mail.categoryTabs) { tab in
+                        let selected = tab.id == active
+                        Button {
+                            Haptics.selection()
+                            mail.setCategory(tab.id)
+                        } label: {
+                            HStack(spacing: 6) {
+                                Circle().fill(tab.category.tone.solid).frame(width: 7, height: 7)
+                                Text(tab.category.name)
+                                    .font(ODFont.sans(13, weight: selected ? .semibold : .medium))
+                                    .foregroundStyle(selected ? Theme.fg : Theme.fg3)
+                                    .lineLimit(1)
+                                if tab.unread > 0 {
+                                    Text(tab.unread > 999 ? "999+" : "\(tab.unread)")
+                                        .font(ODFont.mono(11))
+                                        .monospacedDigit()
+                                        .foregroundStyle(selected ? Theme.fg3 : tab.category.tone.text)
+                                        .contentTransition(.numericText())
+                                }
+                            }
+                            .padding(.horizontal, 10)
+                            .frame(height: 28)
+                            .background(selected ? Theme.active : .clear, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(TapScaleStyle())
+                        .id(tab.id)
+                        .accessibilityLabel(tab.unread > 0 ? "\(tab.category.name), \(tab.unread) unread" : tab.category.name)
+                        .accessibilityAddTraits(selected ? .isSelected : [])
+                    }
+                }
+                .padding(.horizontal, 12)
+            }
+            .onChange(of: active) { _, key in
+                guard let key else { return }
+                withAnimation(Motion.snappy) { proxy.scrollTo(key, anchor: .center) }
+            }
+        }
+        .padding(.bottom, 8)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Inbox categories")
     }
 }
 

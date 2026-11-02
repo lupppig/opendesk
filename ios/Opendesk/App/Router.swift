@@ -19,6 +19,10 @@ enum AppRoute: Hashable {
     case mailThread(String)
     /// A knowledge base article; `"new"` starts one.
     case article(String)
+    /// A changelog entry; `"new"` starts one.
+    case changelogEntry(String)
+    /// A wiki page.
+    case wikiPage(String)
     case search
 
     static func ticket(_ ticket: Ticket) -> AppRoute { .ticket(TicketRoute(id: ticket.id, seed: ticket)) }
@@ -26,7 +30,7 @@ enum AppRoute: Hashable {
 
 /// What the Inbox tab shows at its root, chosen from the menu.
 enum AppArea: String, CaseIterable, Identifiable, Sendable {
-    case tickets, mail, contacts, companies, kb, reports
+    case tickets, mail, contacts, companies, kb, wiki, reports
 
     var id: String { rawValue }
 
@@ -37,6 +41,7 @@ enum AppArea: String, CaseIterable, Identifiable, Sendable {
         case .contacts: "Contacts"
         case .companies: "Companies"
         case .kb: "Knowledge base"
+        case .wiki: "Wiki"
         case .reports: "Reports"
         }
     }
@@ -48,6 +53,7 @@ enum AppArea: String, CaseIterable, Identifiable, Sendable {
         case .contacts: "person.2"
         case .companies: "building.2"
         case .kb: "book.closed"
+        case .wiki: "book.pages"
         case .reports: "chart.bar.xaxis"
         }
     }
@@ -159,6 +165,11 @@ final class Router {
             show(.kb, id.map { [.article($0)] } ?? [])
         case .kb:
             show(.kb, [])
+        case let .changelog(id):
+            KBStore.shared.mode = .changelog
+            show(.kb, id.map { [.changelogEntry($0)] } ?? [])
+        case let .wiki(id):
+            show(.wiki, id.map { [.wikiPage($0)] } ?? [])
         case .reports:
             show(.reports, [])
         }
@@ -186,6 +197,9 @@ final class Router {
         if case let .ticket(route)? = top {
             return AssistantPageContext(page: "ticket", path: env.inbox.scope.webPath(ticketID: route.id), ticketID: route.id)
         }
+        if case let .wikiPage(id)? = top {
+            return AssistantPageContext(page: "wiki", path: "/wiki/\(id)", wikiPageID: id)
+        }
         switch (tab, area) {
         case (.inbox, .tickets):
             var context = AssistantPageContext(page: "inbox", path: env.inbox.scope.webPath())
@@ -199,6 +213,7 @@ final class Router {
             return context
         case (.inbox, .contacts), (.inbox, .companies): return AssistantPageContext(page: "contacts", path: "/" + area.rawValue)
         case (.inbox, .kb): return AssistantPageContext(page: "kb", path: "/kb")
+        case (.inbox, .wiki): return AssistantPageContext(page: "wiki", path: "/wiki")
         case (.inbox, .reports): return AssistantPageContext(page: "reports", path: "/reports")
         case (.inbox, .mail): return AssistantPageContext(page: "mail", path: "/mail")
         case (.account, _): return AssistantPageContext(page: "settings", path: "/settings/profile")

@@ -2,7 +2,7 @@ import SwiftUI
 
 /// What can be done to one message, from its menu.
 enum MessageAction {
-    case copy, translate, showOriginalText, loadOriginal, hideOriginal
+    case copy, translate, showOriginalText, loadOriginal, hideOriginal, viewSent
     case editNote, sendAsReply, retract, delete
     case retry, discard
     case open(Attachment)
@@ -36,8 +36,37 @@ struct MessagePermissions {
     }
 }
 
-/// One message in the thread: a white card for the conversation, a grey dashed one for
-/// internal notes, with the author, the body, files, delivery and a menu.
+/// Who a timeline message is from, as its frame tells it at a glance (web `messageAuthor`):
+/// the customer, the team (agents, Ollie and bots, automations, the API), an internal note
+/// the customer never sees, or a side conversation with someone outside the team.
+enum MessageFrameAuthor {
+    case customer, team, note, thread
+}
+
+extension Message {
+    var frameAuthor: MessageFrameAuthor {
+        // A side conversation's message is stored as a note, but it is email with a third party.
+        if threadID != nil { return .thread }
+        if isNote { return .note }
+        if !isInbound || author.type == "user" { return .team }
+        return .customer
+    }
+
+    /// Whether the message sits on the team's side in the conversation layout (web
+    /// `messageSide`): everything the team sends or keeps. What came in from outside is the
+    /// customer's side, a third party's answers in a side conversation included.
+    var onTeamSide: Bool {
+        switch frameAuthor {
+        case .team, .note: true
+        case .customer: false
+        case .thread: !isInbound || author.type == "user"
+        }
+    }
+}
+
+/// One message in the thread: a white card for the customer, a blue-tinted one for the
+/// team's replies and an amber dashed one for internal notes, with the author, the body,
+/// files, delivery and a menu.
 struct TicketMessageCell: View {
     let message: Message
     let permissions: MessagePermissions
@@ -52,16 +81,39 @@ struct TicketMessageCell: View {
     private var failed: Bool { message.deliveryStatus == "failed" || message.deliveryStatus == "bounced" }
     private var sending: Bool { message.isLocal && !failed }
 
+    /// Ollie's replies keep a violet edge, so the AI's words read as Ollie's.
     private var accent: Color? {
-        if message.isNote || message.isInbound { return nil }
-        return message.ai ? Tone.violet.solid : Theme.fg2
+        message.ai && !message.isNote && !message.isInbound ? Tone.violet.solid : nil
+    }
+
+    private var surface: Color {
+        switch message.frameAuthor {
+        case .note: Theme.note
+        case .team: Theme.reply
+        case .customer, .thread: Theme.surface
+        }
+    }
+
+    private var border: Color {
+        if failed { return Tone.red.line }
+        switch message.frameAuthor {
+        case .note: return Theme.noteLine
+        case .team: return Theme.replyLine
+        case .thread: return Tone.cyan.line
+        case .customer: return Theme.line
+        }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
             content
-            if message.hasQuoted || original != nil { quotedToggle }
+            // An email we sent keeps the copy that went out: it opens as its recipients got it.
+            if sentCopy {
+                sentButton
+            } else if message.hasQuoted || original != nil {
+                quotedToggle
+            }
             if !message.attachments.isEmpty {
                 TicketAttachmentList(attachments: message.attachments, baseURL: baseURL) { onAction(.open($0)) }
             }
@@ -71,16 +123,16 @@ struct TicketMessageCell: View {
         .padding(.top, 12)
         .padding(.bottom, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(message.isNote ? Theme.note : Theme.surface, in: shape)
+        .background(surface, in: shape)
         .overlay(alignment: .leading) {
             if let accent { Rectangle().fill(accent).frame(width: 3) }
         }
         .clipShape(shape)
         .overlay {
-            if message.isNote {
-                shape.strokeBorder(Theme.noteLine, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+            if message.frameAuthor == .note {
+                shape.strokeBorder(border, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
             } else {
-                shape.strokeBorder(failed ? Tone.red.line : Theme.line, lineWidth: 1)
+                shape.strokeBorder(border, lineWidth: 1)
             }
         }
         .opacity(sending ? 0.7 : 1)
@@ -109,7 +161,7 @@ struct TicketMessageCell: View {
                         .lineLimit(1)
                     if message.bot != nil { AITag() }
                     if message.isNote {
-                        TonePill(text: "Internal note", tone: .gray, height: 18) {
+                        TonePill(text: "Internal note", tone: .amber, height: 18) {
                             Image(systemName: "lock.fill").font(.system(size: 8.5))
                         }
                     }
@@ -212,6 +264,21 @@ struct TicketMessageCell: View {
         }
     }
 
+    private var sentCopy: Bool { !message.isInbound && message.hasQuoted && !message.isNote }
+
+    private var sentButton: some View {
+        Button {
+            Haptics.tap()
+            onAction(.viewSent)
+        } label: {
+            Label("View sent email", systemImage: "envelope")
+                .font(ODFont.sans(11.5, weight: .medium))
+                .foregroundStyle(Theme.fg3)
+                .frame(height: 22)
+        }
+        .buttonStyle(TapScaleStyle())
+    }
+
     private var quotedToggle: some View {
         Button {
             Haptics.tap()
@@ -265,7 +332,9 @@ struct TicketMessageCell: View {
                 Button { onAction(.showOriginalText) } label: { Label("Show original", systemImage: "text.quote") }
             }
         }
-        if message.hasQuoted, original == nil {
+        if sentCopy {
+            Button { onAction(.viewSent) } label: { Label("View sent email", systemImage: "envelope") }
+        } else if message.hasQuoted, original == nil {
             Button { onAction(.loadOriginal) } label: { Label("Show quoted text", systemImage: "text.append") }
         }
         if permissions.canEdit(message) {

@@ -360,6 +360,7 @@
       "actionValue": "Every action needs a value.",
       "phrases": "A phrase list takes 1 to 100 phrases, one per line, of up to 500 characters each.",
       "mergeTrigger": "Merge into the contact's open ticket runs only when a ticket is created.",
+      "procedureTrigger": "Ollie can't run a procedure when a ticket is updated. Pick another trigger.",
       "callTrigger": "Call conditions need the trigger A call ends."
     },
     "chooseSeverity": "Choose a severity",
@@ -806,7 +807,12 @@
       "abandoned_in_ivr": "Hung up in the menu",
       "abandoned_in_classic": "Hung up while waiting",
       "no_available_agent": "No teammate available",
-      "agents_did_not_answer": "Nobody answered"
+      "agents_did_not_answer": "Nobody answered",
+      "busy": "Line busy",
+      "no_answer": "Not answered",
+      "failed": "Call failed",
+      "cancelled": "Hung up before an answer",
+      "abandon": "Hung up in the queue"
     }
   }
 }

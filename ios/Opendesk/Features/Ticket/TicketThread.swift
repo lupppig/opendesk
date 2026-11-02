@@ -1,20 +1,41 @@
 import SwiftUI
 
-/// The conversation in order: day separators, message cards, and runs of activity lines.
+/// The ticket timeline as a conversation (Profile → Appearance), kept on this iPhone like
+/// the web keeps it per browser: off, every message takes the timeline's width; on, the
+/// customer's messages sit on the left and the team's replies and notes on the right.
+/// Only the margin moves: the reading order stays, and activity stays full width.
+enum ConversationLayout {
+    static let key = "od.ticket.conversationLayout"
+    /// The margin on the side a message is not on.
+    static let offset: CGFloat = 44
+}
+
+extension View {
+    /// Moves a timeline card to its side when the conversation layout is on.
+    func conversationSide(team: Bool, on: Bool) -> some View {
+        padding(.leading, on && team ? ConversationLayout.offset : 0)
+            .padding(.trailing, on && !team ? ConversationLayout.offset : 0)
+    }
+}
+
+/// The conversation in order: day separators, message cards, calls, and runs of activity lines.
 struct TicketThreadList<MessageView: View>: View {
     let items: [ThreadItem]
     let phrasing: ActivityPhrasing
     @ViewBuilder let message: (Message) -> MessageView
+    @AppStorage(ConversationLayout.key) private var conversation = false
 
     private enum Block: Identifiable {
         case day(Date)
         case message(Message)
+        case call(Activity)
         case activities([Activity])
 
         var id: String {
             switch self {
             case let .day(date): "d-\(Int(date.timeIntervalSince1970))"
             case let .message(message): "m-" + message.id
+            case let .call(activity): "c-" + activity.id
             case let .activities(list): "a-" + (list.first?.id ?? "")
             }
         }
@@ -40,6 +61,10 @@ struct TicketThreadList<MessageView: View>: View {
             case let .message(value):
                 flush()
                 out.append(.message(value))
+            case let .activity(value) where value.type == "call":
+                // A call is an entry of its own, kept current as the call moves on.
+                flush()
+                out.append(.call(value))
             case let .activity(value):
                 run.append(value)
             }
@@ -56,8 +81,11 @@ struct TicketThreadList<MessageView: View>: View {
                     TicketDaySeparator(date: date)
                 case let .message(value):
                     message(value)
+                        .conversationSide(team: value.onTeamSide, on: conversation)
                         .id("m-" + value.id)
                         .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .bottom)), removal: .opacity))
+                case let .call(activity):
+                    TicketCallEntry(activity: activity)
                 case let .activities(list):
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(list) { activity in
@@ -120,6 +148,7 @@ struct TypingDots: View {
 struct TicketLiveReplyCard: View {
     let live: LiveReply
     var bot: BotRef?
+    @AppStorage(ConversationLayout.key) private var conversation = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -160,6 +189,7 @@ struct TicketLiveReplyCard: View {
         .overlay(alignment: .leading) { Rectangle().fill(Tone.violet.solid).frame(width: 3) }
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous).strokeBorder(Tone.violet.line, lineWidth: 1))
+        .conversationSide(team: true, on: conversation)
         .accessibilityElement(children: .combine)
     }
 

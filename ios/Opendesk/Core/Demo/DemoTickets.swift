@@ -15,6 +15,7 @@ struct DemoTicketExtras: Sendable {
     var links: [String: [JSONValue]] = [:]
     var contacts: [String: JSONValue] = [:]
     var mailboxes: [JSONValue] = []
+    var detailsApplied = false
     var applied = false
 
     struct ThreadSeed: Sendable {
@@ -129,6 +130,7 @@ extension DemoBackend {
     /// The answer (nil inside for 204), or nil when the route isn't this area's.
     func ticketRoutes(_ call: Call, in ws: inout DemoWorkspace) throws -> Data?? {
         if !ws.ticketExtras.applied { applyTicketExtras(&ws) }
+        if let answer = try ticketDetailRoutes(call, in: &ws) { return answer }
         let actor = ActivityActor(type: "user", user: me)
 
         // Definitions and lookups another area may answer too: theirs wins.
@@ -433,6 +435,13 @@ extension DemoBackend {
         for (_, list) in ws.messages {
             guard let index = list.firstIndex(where: { $0.id == id }) else { continue }
             let message = list[index]
+            if message.direction == "outbound" {
+                // The copy that went out: the reply, the signature and the customer's last message quoted.
+                let signature = "<p>\(message.author.user?.name ?? "Maya Chen")<br>Support, Margin</p>"
+                guard let asked = list[..<index].last(where: { $0.direction == "inbound" && $0.threadID == nil }) else { return message.bodyHTML + signature }
+                let when = asked.createdAt.formatted(date: .abbreviated, time: .shortened)
+                return message.bodyHTML + signature + "<blockquote><p>On \(when), \(asked.fromName) wrote:</p>\(asked.bodyHTML)</blockquote>"
+            }
             let earlier = list[..<index].last { $0.direction == "outbound" && !$0.isNote && $0.threadID == nil }
             guard let earlier else { return message.bodyHTML }
             let when = earlier.createdAt.formatted(date: .abbreviated, time: .shortened)

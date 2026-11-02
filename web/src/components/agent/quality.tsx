@@ -43,13 +43,18 @@ export function TestStatePill({ state, className }: { state: TestState; classNam
   );
 }
 
-export const KINDS: AgentExpectationKind[] = ["mentions", "not_mentions", "handoff", "no_handoff", "uses_tool", "cites_knowledge"];
-export const needsValue = (k: AgentExpectationKind) => k === "mentions" || k === "not_mentions" || k === "uses_tool";
+export const KINDS: AgentExpectationKind[] = ["mentions", "not_mentions", "handoff", "no_handoff", "uses_tool", "uses_procedure", "cites_knowledge"];
+/** Kinds whose value is picked from a list (a tool, a procedure) rather than typed. */
+export const isPicked = (k: AgentExpectationKind) => k === "uses_tool" || k === "uses_procedure";
+export const needsValue = (k: AgentExpectationKind) => k === "mentions" || k === "not_mentions" || isPicked(k);
+
+/** Names a picked value: a tool by its server and title, a procedure by its name. */
+export type ValueLabel = (kind: AgentExpectationKind, value: string) => string;
 
 /** "Mentions: refunds take 5 days", "Hands off". */
-export function expectationText(e: AgentExpectation, t: (k: `kind.${AgentExpectationKind}`) => string, toolName?: (key: string) => string): string {
+export function expectationText(e: AgentExpectation, t: (k: `kind.${AgentExpectationKind}`) => string, label?: ValueLabel): string {
   if (!needsValue(e.kind) || !e.value) return t(`kind.${e.kind}`);
-  const v = e.kind === "uses_tool" ? (toolName?.(e.value) ?? e.value) : e.value;
+  const v = isPicked(e.kind) ? (label?.(e.kind, e.value) ?? e.value) : e.value;
   return `${t(`kind.${e.kind}`)}: ${v}`;
 }
 
@@ -62,6 +67,22 @@ export function useToolOptions() {
     .flatMap((s) => s.tools.filter((x) => x.enabled).map((x) => ({ value: toolKey(s.slug, x.name), label: `${s.name} · ${x.title || x.name}` })));
   const name = (key: string) => options.find((o) => o.value === key)?.label ?? key.replace("__", " · ");
   return { options, name };
+}
+
+/** The workspace's procedures, by name. */
+export function useProcedureOptions() {
+  const admin = atLeast(useRole(), "admin");
+  const { data } = useQuery({ ...q.procedures(), enabled: admin });
+  const options = (data ?? []).map((p) => ({ value: p.id, label: p.name }));
+  const name = (id: string) => options.find((o) => o.value === id)?.label ?? id;
+  return { options, name };
+}
+
+/** Labels picked values from the workspace's tools and procedures. */
+export function useValueLabel(): ValueLabel {
+  const tools = useToolOptions();
+  const procedures = useProcedureOptions();
+  return (kind, value) => (kind === "uses_tool" ? tools.name(value) : kind === "uses_procedure" ? procedures.name(value) : value);
 }
 
 // ─── Test editor ────────────────────────────────────────────────────────────
@@ -77,6 +98,7 @@ export function TestEditor({ test, initial, onClose }: { test?: AgentTest | null
   const qc = useQueryClient();
   const reduce = useReducedMotion();
   const tools = useToolOptions();
+  const procedures = useProcedureOptions();
   const src = test ?? initial;
   const [name, setName] = useState(test?.name ?? initial?.name ?? "");
   const [rows, setRows] = useState<Row[]>(() =>
@@ -94,6 +116,7 @@ export function TestEditor({ test, initial, onClose }: { test?: AgentTest | null
   const rowError = (r: Row) => (!r.text.trim() ? t("editor.messageEmpty") : r.text.length > 4000 ? t("editor.messageLong") : null);
   const expError = (e: Exp) => {
     if (e.kind === "uses_tool") return e.value ? null : t("editor.pickTool");
+    if (e.kind === "uses_procedure") return e.value ? null : t("editor.pickProcedure");
     if (needsValue(e.kind)) return !e.value.trim() ? t("editor.valueEmpty") : e.value.length > EXPECTATION_MAX ? t("editor.valueLong") : null;
     return null;
   };
@@ -118,8 +141,8 @@ export function TestEditor({ test, initial, onClose }: { test?: AgentTest | null
   });
 
   const addExp = (kind: AgentExpectationKind) => {
-    const tool = kind === "uses_tool" && tools.options.length === 1 ? tools.options[0].value : "";
-    setExps((all) => [...all, { id: nid(), kind, value: tool }]);
+    const only = kind === "uses_tool" ? tools.options : kind === "uses_procedure" ? procedures.options : [];
+    setExps((all) => [...all, { id: nid(), kind, value: only.length === 1 ? only[0].value : "" }]);
   };
   const patchRow = (id: string, p: Partial<Row>) => setRows((all) => all.map((r) => (r.id === id ? { ...r, ...p } : r)));
   const patchExp = (id: string, p: Partial<Exp>) => setExps((all) => all.map((e) => (e.id === id ? { ...e, ...p } : e)));
@@ -242,7 +265,7 @@ export function TestEditor({ test, initial, onClose }: { test?: AgentTest | null
                       className="w-[190px] shrink-0"
                       value={e.kind}
                       aria-label={t("editor.kind")}
-                      onChange={(kind) => patchExp(e.id, { kind, value: kind === e.kind ? e.value : kind === "uses_tool" ? "" : needsValue(kind) && needsValue(e.kind) && e.kind !== "uses_tool" ? e.value : "" })}
+                      onChange={(kind) => patchExp(e.id, { kind, value: kind === e.kind ? e.value : isPicked(kind) ? "" : needsValue(kind) && needsValue(e.kind) && !isPicked(e.kind) ? e.value : "" })}
                       options={KINDS.map((k) => ({ value: k, label: t(`kind.${k}`) }))}
                     />
                     <div className="flex min-w-0 flex-1 flex-col gap-1">
@@ -251,6 +274,19 @@ export function TestEditor({ test, initial, onClose }: { test?: AgentTest | null
                           <Select<string> size="sm" value={e.value || undefined} placeholder={t("editor.pickTool")} aria-label={t("editor.tool")} onChange={(value) => patchExp(e.id, { value })} options={tools.options} />
                         ) : (
                           <span className="flex h-7 items-center text-[12px] text-fg-3">{t("editor.noTools")}</span>
+                        )
+                      ) : e.kind === "uses_procedure" ? (
+                        procedures.options.length ? (
+                          <Select<string>
+                            size="sm"
+                            value={e.value || undefined}
+                            placeholder={t("editor.pickProcedure")}
+                            aria-label={t("editor.procedure")}
+                            onChange={(value) => patchExp(e.id, { value })}
+                            options={procedures.options}
+                          />
+                        ) : (
+                          <span className="flex h-7 items-center text-[12px] text-fg-3">{t("editor.noProcedures")}</span>
                         )
                       ) : needsValue(e.kind) ? (
                         <TextInput
@@ -469,7 +505,7 @@ export function ImproveAnswerButton({ m }: { m: Message }) {
 }
 
 /** A labelled group of check verdicts under a result. */
-export function CheckList({ checks, toolName }: { checks: { kind: AgentExpectationKind; value: string; passed: boolean; reason: string }[]; toolName: (k: string) => string }) {
+export function CheckList({ checks, label }: { checks: { kind: AgentExpectationKind; value: string; passed: boolean; reason: string }[]; label: ValueLabel }) {
   const { t } = useTranslation("agentQuality");
   return (
     <ul className="flex flex-col gap-1.5">
@@ -479,7 +515,7 @@ export function CheckList({ checks, toolName }: { checks: { kind: AgentExpectati
             {c.passed ? <CircleCheck className="size-2.5" /> : <CircleX className="size-2.5" />}
           </span>
           <span className="min-w-0">
-            <span className="font-medium text-fg">{expectationText(c, t, toolName)}</span>
+            <span className="font-medium text-fg">{expectationText(c, t, label)}</span>
             {c.reason && <span className="block text-fg-3">{c.reason}</span>}
           </span>
         </li>

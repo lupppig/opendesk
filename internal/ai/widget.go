@@ -469,7 +469,7 @@ func (s *Service) postReply(ctx context.Context, in agentInput, trigger uuid.UUI
 				tools = []string{}
 			}
 			if _, err := domain.LogActivity(ctx, tx, wid, tid, "ai", nil, "ai_answered",
-				map[string]any{"message_id": m.ID.String(), "sources": toSources(cited), "tools": tools}); err != nil {
+				map[string]any{"message_id": m.ID.String(), "sources": toSources(cited), "tools": tools, "procedures": procedureRefs(res.Procedures)}); err != nil {
 				return err
 			}
 		}

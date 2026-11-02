@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Where Ollie's references lead (web `refs.ts`): tickets, contacts,
-/// articles and views open in the app behind the sheet, which closes first;
+/// articles, wiki pages and views open in the app behind the sheet, which closes first;
 /// automations open on the web; links from a connected product open only
 /// when they are https.
 @MainActor
@@ -18,6 +18,8 @@ struct AssistantLinks {
             go(.contact(ref.id))
         case "article":
             go(.article(ref.id))
+        case "wiki_page":
+            go(.wikiPage(ref.id))
         case "view":
             env.router.showOllie = false
             env.inbox.setScope(.view(ref.id))

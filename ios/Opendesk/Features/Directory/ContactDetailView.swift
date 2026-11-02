@@ -229,8 +229,8 @@ struct ContactDetailView: View {
             DirectoryQuickAction(title: "Email", symbol: "envelope", enabled: contact.email != nil) {
                 if let email = contact.email { DirectoryActions.open("mailto:" + email) }
             }
-            DirectoryQuickAction(title: "Call", symbol: "phone", enabled: !contact.phone.isEmpty) {
-                DirectoryActions.open(DirectoryActions.telURL(contact.phone))
+            DirectoryQuickAction(title: "Call", symbol: "phone", enabled: DirectoryActions.telURL(contact.phone) != nil) {
+                if let tel = DirectoryActions.telURL(contact.phone) { DirectoryActions.open(tel) }
             }
             DirectoryQuickAction(title: "Copy email", symbol: "doc.on.doc", enabled: contact.email != nil) {
                 if let email = contact.email { DirectoryActions.copy(email, what: "Email", toasts: env.toasts) }
@@ -271,7 +271,7 @@ struct ContactDetailView: View {
                 }
                 .contextMenu { if let email = contact.email { copyButton(email, what: "Email") } }
                 Hairline(inset: 46)
-                DirectoryInfoRow(label: "Phone", symbol: "phone", action: contact.phone.isEmpty ? nil : { DirectoryActions.open(DirectoryActions.telURL(contact.phone)) }) {
+                DirectoryInfoRow(label: "Phone", symbol: "phone", action: DirectoryActions.telURL(contact.phone).map { tel in { DirectoryActions.open(tel) } }) {
                     if contact.phone.isEmpty { DirectoryNone() } else {
                         Text(contact.phone).font(ODFont.sans(14.5)).monospacedDigit().foregroundStyle(Theme.fg).lineLimit(1)
                     }

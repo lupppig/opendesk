@@ -1,0 +1,68 @@
+---
+title: Procedures
+description: Give the AI agent step-by-step instructions for one kind of conversation, such as refunds or bug reports, which it picks by itself when a conversation matches.
+---
+
+import Steps from '../../../components/Steps.astro';
+import Step from '../../../components/Step.astro';
+import Callout from '../../../components/Callout.astro';
+
+A **procedure** tells the [AI agent](/guides/ai/#the-ai-agent-for-chat-and-email) how to handle one kind of conversation: what to ask, what to check and what to say. Each one has a short **Use this when** line and its own instructions. The agent reads the lines of every procedure that is on, and opens the instructions of the one that matches the conversation in front of it.
+
+Split your instructions into procedures instead of one long text. The agent only reads the steps it needs, each procedure can be switched off alone, and tests can check that the right one was used.
+
+## Write a procedure
+
+<Steps>
+<Step title="Open Settings, then Procedures">
+
+Procedures are under **AI agent** in the settings menu. Only admins see and change them.
+
+</Step>
+<Step title="Describe when it applies">
+
+Click **New procedure** and give it a name, such as "Refund requests". In **Use this when**, describe the conversations it is for in one sentence, the way you would explain it to a new teammate: "The customer asks for a refund or says they were charged twice". This line is all the agent sees until it picks the procedure, so make it specific.
+
+</Step>
+<Step title="Write the instructions">
+
+Write the steps in **Instructions**, in markdown. Name the facts to collect, the tools to use, what to promise and what never to promise, and when to hand off to a person.
+
+If the steps already live in your [wiki](/guides/wiki/), click **Copy from a wiki page** and pick the page. Its text is copied into the instructions once. Nothing stays linked: change the procedure here, and later edits of the wiki page do not reach the agent.
+
+</Step>
+<Step title="Choose where it applies">
+
+**Channels** picks where the agent may use it: **Chat**, **Email**, or both. **Bots** limits it to conversations answered by some of your [bots](/guides/bots/); leave it empty for every bot.
+
+</Step>
+</Steps>
+
+<Callout>
+
+Procedures shape what the agent says and does, never its fixed rules. It still answers only from your knowledge and tools, declines your blocked topics, and asks visitors to confirm before a tool changes something.
+
+</Callout>
+
+## Run one from an automation
+
+An automation's **Ollie runs a procedure** action has Ollie work a ticket by a procedure for your team, whatever its channels: leave internal notes, raise priority or severity, add labels, and use connected tools set to run without asking. It never replies to the customer. Turn off both channels for a procedure only automations should run. See [Have Ollie create a Linear issue](/guides/linear-issues-from-tickets/).
+
+## Check that it works
+
+- In **AI agent, Playground**, write a message the procedure is for. The answer lists the procedures the agent followed.
+- In **AI agent, Tests**, add the expectation **Follows a procedure** and pick it. Tests answer as a chat, so the procedure needs **Chat** on.
+- On a ticket, the agent's activity lists the procedures it followed for each answer.
+
+## Limits
+
+- Up to 50 procedures per workspace. The agent sees up to 30 that apply to a conversation, the most recently changed first.
+- A name is up to 80 characters, **Use this when** 3 to 300, and the instructions up to 8,000.
+- A bot that a procedure is limited to cannot be deleted until you remove it from the procedure.
+
+## Related
+
+- [AI features](/guides/ai/)
+- [Bots](/guides/bots/)
+- [Wiki](/guides/wiki/)
+- [Have Ollie create a Linear issue](/guides/linear-issues-from-tickets/)

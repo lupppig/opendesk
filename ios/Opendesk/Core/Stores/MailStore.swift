@@ -1,11 +1,24 @@
 import Foundation
 import Observation
 
-/// Where the mail list looks: a box (or one folder or label) across every account or in one.
+/// Where the mail list looks: a box (or one folder or label) across every account or in one,
+/// optionally only the mail written to one of the account's addresses (`to`, an alias), and for
+/// an inbox that is split, one of its tabs (`category`, Primary when nil).
 struct MailScope: Hashable, Sendable {
     var box: MailBox = .inbox
     var folderID: String?
     var accountID: String?
+    var to: String?
+    var category: String?
+}
+
+/// An inbox tab over the accounts in view: a category key with the first account's name and
+/// colour for it, and its unread conversations across them.
+struct MailCategoryTab: Hashable, Sendable, Identifiable {
+    var category: MailCategory
+    var unread: Int
+
+    var id: String { category.key }
 }
 
 /// Collab mail: accounts, folders, counts and the conversation list of one scope,
@@ -106,9 +119,16 @@ final class MailStore {
         guard let api else { return }
         do {
             let list: [MailAccount] = try await api.get("v1/collab/accounts")
+            let tab = activeCategory
+            let first = !accountsLoaded
             accounts = list
             accountsLoaded = true
-            if let id = scope.accountID, !list.contains(where: { $0.id == id }) { setScope(MailScope(box: scope.box)) }
+            if let id = scope.accountID, !list.contains(where: { $0.id == id }) {
+                setScope(MailScope(box: scope.box))
+            } else if !first, activeCategory != tab {
+                // The inbox was split, joined or changed its tabs: the list follows.
+                reload()
+            }
             await loadFolders()
         } catch {
             accountsLoaded = true
@@ -135,9 +155,15 @@ final class MailStore {
         if let value: MailCounts = try? await api.get("v1/collab/counts") { counts = value }
     }
 
-    /// Reloads accounts, status, folders, the list and counts (pull to refresh).
-    func refreshEverything() async {
+    /// Reloads accounts, status, folders, the list and counts (pull to refresh), and asks the
+    /// accounts in view to sync now, which reads their settings and addresses too.
+    func refreshEverything(syncing: Bool = false) async {
         guard let api else { return }
+        if syncing {
+            for account in accountsInView.prefix(6) {
+                Task { let _: EmptyBody? = try? await api.post("v1/collab/accounts/\(account.id)/sync") }
+            }
+        }
         if let value: CollabStatus = try? await api.get("v1/collab") {
             status = value
             onStatus?(value)
@@ -160,7 +186,8 @@ final class MailStore {
     }
 
     func setBox(_ box: MailBox) {
-        setScope(MailScope(box: box, folderID: nil, accountID: box.spansAccounts ? nil : scope.accountID))
+        let account = box.spansAccounts ? nil : scope.accountID
+        setScope(MailScope(box: box, folderID: nil, accountID: account, to: account == nil ? nil : scope.to))
     }
 
     func setAccount(_ id: String?) {
@@ -168,7 +195,20 @@ final class MailStore {
     }
 
     func setFolder(_ folder: MailFolder) {
-        setScope(MailScope(box: scope.box, folderID: folder.id, accountID: folder.accountID))
+        setScope(MailScope(box: scope.box, folderID: folder.id, accountID: folder.accountID, to: folder.accountID == scope.accountID ? scope.to : nil))
+    }
+
+    /// One inbox tab; Primary is the plain inbox.
+    func setCategory(_ key: String) {
+        guard isTabbed else { return }
+        setScope(MailScope(box: .inbox, folderID: nil, accountID: scope.accountID, to: scope.to, category: key == MailCategory.primary ? nil : key))
+    }
+
+    /// Only the mail written to one of an account's addresses (nil: any of them).
+    func setAddress(_ email: String?, account id: String) {
+        let box = scope.box.spansAccounts || scope.accountID != id ? MailBox.inbox : scope.box
+        let folder = scope.accountID == id ? scope.folderID : nil
+        setScope(MailScope(box: box, folderID: folder, accountID: id, to: email?.lowercased(), category: scope.accountID == id ? scope.category : nil))
     }
 
     func setSearch(_ text: String) {
@@ -193,6 +233,9 @@ final class MailStore {
         if let account = scope.accountID, scope.folderID != nil || !scope.box.spansAccounts {
             items.append(URLQueryItem(name: "account_id", value: account))
         }
+        if let to = scope.to, scope.accountID != nil { items.append(URLQueryItem(name: "to", value: to)) }
+        // A tab splits the inbox alone; a search spans every tab.
+        if let category = activeCategory { items.append(URLQueryItem(name: "category", value: category)) }
         if !search.isEmpty { items.append(URLQueryItem(name: "q", value: search)) }
         items.append(URLQueryItem(name: "limit", value: String(limit)))
         return items
@@ -294,6 +337,11 @@ final class MailStore {
 
     var spansAccounts: Bool { scope.accountID == nil && accounts.count > 1 }
 
+    /// Whether rows carry their account's dot: the list spans accounts, or reaches past them.
+    var listSpansAccounts: Bool {
+        spansAccounts || (scope.folderID == nil && scope.box.reachesBeyondAccounts && (scope.accountID == nil || scope.box.spansAccounts))
+    }
+
     /// The box or folder's name.
     var title: String {
         if let folder = folder(scope.folderID) { return folder.name }
@@ -301,17 +349,119 @@ final class MailStore {
         return scope.box.title
     }
 
-    /// Unread conversations for a box tab or row, nil when it shows no number.
+    /// Unread conversations for a box tab or row, nil when it shows no number. Assigned to me
+    /// and Needs action count what is still in an inbox, read or not.
     func unread(for box: MailBox) -> Int? {
         switch box {
         case .inbox:
-            if let id = scope.accountID { return counts.accounts[id] ?? account(id)?.unread }
+            if let id = scope.accountID {
+                if let to = scope.to { return counts.addresses[id]?[to] ?? 0 }
+                return counts.accounts[id] ?? account(id)?.unread
+            }
             return counts.boxes["inbox"]
-        case .unread, .shared, .assigned, .drafts:
+        case .assigned:
+            if let id = scope.accountID { return counts.assigned[id] ?? 0 }
+            return counts.boxes["assigned"]
+        case .unread, .shared, .drafts, .needsAction:
             return scope.accountID == nil || box.spansAccounts ? counts.boxes[box.rawValue] : nil
         default:
             return nil
         }
+    }
+
+    /// Unread conversations in an account's inbox written to one of its addresses.
+    func unread(address email: String, in accountID: String) -> Int {
+        counts.addresses[accountID]?[email.lowercased()] ?? 0
+    }
+
+    /// Needs action shows while something waits there (or it is the box on screen).
+    var offersNeedsAction: Bool {
+        (counts.boxes["needs_action"] ?? 0) > 0 || scope.box == .needsAction || accounts.contains(where: \.handles)
+    }
+
+    // MARK: Categories
+
+    /// The inbox shows tabs: no folder, no search, and an account in view is split.
+    var isTabbed: Bool { !categoryTabs.isEmpty }
+
+    /// The tabs of the inbox in view: the union of its accounts' categories by key, Primary
+    /// first. Accounts not split count under Primary. None outside the inbox or in a search.
+    var categoryTabs: [MailCategoryTab] {
+        guard scope.box == .inbox, scope.folderID == nil, search.isEmpty else { return [] }
+        let inView = accountsInView
+        let split = inView.filter { !$0.inboxCategories.isEmpty }
+        guard !split.isEmpty else { return [] }
+        var order: [String] = []
+        var tabs: [String: MailCategoryTab] = [:]
+        for account in split {
+            for category in account.inboxCategories {
+                let unread = scope.to == nil ? counts.categories[account.id]?[category.key] ?? 0 : 0
+                if tabs[category.key] == nil {
+                    order.append(category.key)
+                    tabs[category.key] = MailCategoryTab(category: category, unread: unread)
+                } else {
+                    tabs[category.key]?.unread += unread
+                }
+            }
+        }
+        if scope.to == nil, tabs[MailCategory.primary] != nil {
+            for account in inView where account.inboxCategories.isEmpty {
+                tabs[MailCategory.primary]?.unread += counts.accounts[account.id] ?? 0
+            }
+        }
+        let keys = order.filter { $0 == MailCategory.primary } + order.filter { $0 != MailCategory.primary }
+        return keys.compactMap { tabs[$0] }
+    }
+
+    /// The tab the list shows: the one picked, else Primary; nil when the inbox is not split.
+    var activeCategory: String? {
+        let tabs = categoryTabs
+        guard !tabs.isEmpty else { return nil }
+        if let key = scope.category, tabs.contains(where: { $0.id == key }) { return key }
+        return MailCategory.primary
+    }
+
+    /// The categories a conversation of this account may move to.
+    func categories(of accountID: String) -> [MailCategory] {
+        account(accountID)?.inboxCategories ?? []
+    }
+
+    /// The tab a conversation is in: its key while its account still has it, else Primary.
+    func categoryKey(of thread: MailThread) -> String {
+        guard let key = thread.category, categories(of: thread.accountID).contains(where: { $0.key == key }) else { return MailCategory.primary }
+        return key
+    }
+
+    /// A conversation's tab worth a pill, off the inbox's tabs: one other than Primary.
+    func categoryPill(for thread: MailThread) -> MailCategory? {
+        guard activeCategory == nil, let key = thread.category, key != MailCategory.primary else { return nil }
+        return categories(of: thread.accountID).first { $0.key == key }
+    }
+
+    /// Whether "Always for this sender" may follow a move: the account is the caller's to
+    /// manage and sorts in opendesk (Gmail keeps its own tabs).
+    func offersSenderRule(_ accountID: String) -> Bool {
+        guard let account = account(accountID) else { return false }
+        return account.canManage && account.categories?.syncsGmail != true
+    }
+
+    /// Sends a sender's mail to a tab from now on, and moves their other inbox conversations there.
+    func addCategoryRule(account accountID: String, sender: String, category: String) async throws {
+        guard let api else { throw APIError.signedOut }
+        struct Body: Encodable, Sendable {
+            let sender: String
+            let category: String
+        }
+        struct Rule: Decodable, Sendable { let id: String }
+        let _: Rule = try await api.post("v1/collab/accounts/\(accountID)/category-rules", body: Body(sender: sender, category: category))
+        scheduleQuiet()
+        scheduleCounts()
+    }
+
+    /// The sender a rule would name: the conversation's latest sender that is not one of ours.
+    func ruleSender(_ thread: MailThread) -> String? {
+        let own = ownEmails
+        return thread.participants.first { !$0.email.isEmpty && !own.contains($0.email.lowercased()) }?.email.lowercased()
     }
 
     func unread(folder: MailFolder) -> Int { counts.folders[folder.id] ?? folder.unread }
@@ -342,22 +492,23 @@ final class MailStore {
 
     /// Applies an action at once and sends it; puts the list back if the server refuses.
     @discardableResult
-    func act(_ ids: [String], _ action: MailAction, folderID: String? = nil, known: [MailThread] = []) async throws -> [MailThread] {
+    func act(_ ids: [String], _ action: MailAction, folderID: String? = nil, category: String? = nil, known: [MailThread] = []) async throws -> [MailThread] {
         guard let api else { throw APIError.signedOut }
         let before = threads
         let beforeCounts = counts
         for id in ids {
             guard let thread = threads.first(where: { $0.id == id }) ?? known.first(where: { $0.id == id }) else { continue }
-            place(applied(action, folderID: folderID, to: thread))
+            place(applied(action, folderID: folderID, category: category, to: thread))
         }
         struct Body: Encodable, Sendable {
             let thread_ids: [String]
             let action: String
             let folder_id: String?
+            let category: String?
         }
         struct Answer: Decodable, Sendable { let threads: [MailThread] }
         do {
-            let answer: Answer = try await api.post("v1/collab/threads/actions", body: Body(thread_ids: ids, action: action.rawValue, folder_id: folderID))
+            let answer: Answer = try await api.post("v1/collab/threads/actions", body: Body(thread_ids: ids, action: action.rawValue, folder_id: folderID, category: category))
             for thread in answer.threads { place(thread) }
             scheduleCounts()
             return answer.threads
@@ -369,7 +520,7 @@ final class MailStore {
     }
 
     /// What a conversation looks like after an action, before the server answers.
-    func applied(_ action: MailAction, folderID: String?, to thread: MailThread) -> MailThread {
+    func applied(_ action: MailAction, folderID: String?, category: String? = nil, to thread: MailThread) -> MailThread {
         var next = thread
         let account = thread.accountID
         func role(_ role: MailFolderRole) -> String? { folder(role: role, in: account)?.id }
@@ -409,6 +560,9 @@ final class MailStore {
             add(folderID)
         case .label: add(folderID)
         case .unlabel: next.folderIDs.removeAll { $0 == folderID }
+        case .done: next.needsAction = false
+        case .needsAction: next.needsAction = true
+        case .categorize: if let category { next.category = category }
         }
         return next
     }
@@ -430,7 +584,9 @@ final class MailStore {
         let roles = Set(thread.folderIDs.compactMap { folder($0)?.role })
         let trashOrSpam = roles.contains(.trash) || roles.contains(.spam)
         switch scope.box {
-        case .inbox: return roles.contains(.inbox)
+        case .inbox:
+            if let tab = activeCategory, categoryKey(of: thread) != tab { return false }
+            return roles.contains(.inbox)
         case .unread: return thread.unread && !trashOrSpam
         case .starred: return thread.starred && !roles.contains(.trash)
         case .sent: return roles.contains(.sent)
@@ -443,6 +599,7 @@ final class MailStore {
         case .all: return !trashOrSpam
         case .shared: return thread.shared && !trashOrSpam
         case .assigned: return thread.assignees.contains { $0.id == me } && !trashOrSpam
+        case .needsAction: return thread.needsAction && roles.contains(.inbox)
         }
     }
 
@@ -482,7 +639,7 @@ final class MailStore {
         }
     }
 
-    private func scheduleQuiet() {
+    func scheduleQuiet() {
         guard quietTask == nil else { return }
         quietTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(450))

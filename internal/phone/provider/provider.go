@@ -13,11 +13,18 @@ import (
 	"time"
 )
 
-// Descriptor describes a provider for the settings page.
+// Descriptor describes a provider for the settings page, and what it can do.
 type Descriptor struct {
 	Key    string  `json:"key"`
 	Name   string  `json:"name"`
 	Fields []Field `json:"fields"`
+	// ManualWebhook: the provider has no API for webhooks, so an admin adds the
+	// connection's webhook URL in the provider by hand. The URL then carries the webhook's
+	// secret, which the engine checks; the adapter's webhook methods and Verify answer
+	// ErrUnsupported.
+	ManualWebhook bool `json:"manual_webhook"`
+	// InsightCards: the provider shows a card on a ringing call (PushCard).
+	InsightCards bool `json:"insight_cards"`
 }
 
 // Field is one credential an admin pastes.
@@ -29,8 +36,14 @@ type Field struct {
 
 // Account is the provider account the credentials open.
 type Account struct {
+	// ID is the provider's id of the account, when its API needs it in paths: the engine
+	// seals it with the credentials, under AccountIDKey, for the adapter's later requests.
+	ID   string
 	Name string
 }
+
+// AccountIDKey is where the engine keeps Account.ID in a connection's credentials.
+const AccountIDKey = "account_id"
 
 // Webhook is the provider-side webhook opendesk registered: its id, to remove it, and the
 // secret its events carry, to verify them.
@@ -64,7 +77,11 @@ type Event struct {
 	CallID string `json:"call_id"`
 	// Final marks the event after which the call's data no longer changes (Aircall's
 	// call.ended); call_ended automations run on it, once.
-	Final      bool      `json:"final,omitempty"`
+	Final bool `json:"final,omitempty"`
+	// Continues is the provider's id of a call this event's call continues: a transfer
+	// joins two calls, which go on under one of their ids (CallID). The engine documents
+	// them as the one call it already has.
+	Continues  string    `json:"continues,omitempty"`
 	Call       *Call     `json:"call,omitempty"`
 	Summary    string    `json:"summary,omitempty"`
 	Transcript string    `json:"transcript,omitempty"`
@@ -151,6 +168,9 @@ var ErrIgnored = errors.New("phone event ignored")
 // ErrUnauthorized is Verify's answer for an event that does not carry the secret.
 var ErrUnauthorized = errors.New("phone event not verified")
 
+// ErrUnsupported is an adapter's answer for what its provider does not do (Descriptor).
+var ErrUnsupported = errors.New("not supported by this phone provider")
+
 // StatusError is a request the provider answered with an error status. It names the
 // operation and the status only, never credentials or the provider's answer.
 type StatusError struct {
@@ -160,10 +180,18 @@ type StatusError struct {
 
 func (e *StatusError) Error() string { return e.Op + ": status " + strconv.Itoa(e.Status) }
 
-// Refused reports whether err is the provider refusing the credentials (401 or 403).
+// AccountRefused is Validate's answer for credentials the provider accepts that open no
+// account a connection can use. Detail says why, for the admin; it names no credential.
+type AccountRefused struct{ Detail string }
+
+func (e *AccountRefused) Error() string { return e.Detail }
+
+// Refused reports whether err is the provider refusing the credentials (401 or 403), or
+// credentials of an account a connection can't use.
 func Refused(err error) bool {
 	var se *StatusError
-	return errors.As(err, &se) && (se.Status == http.StatusUnauthorized || se.Status == http.StatusForbidden)
+	var ar *AccountRefused
+	return errors.As(err, &ar) || errors.As(err, &se) && (se.Status == http.StatusUnauthorized || se.Status == http.StatusForbidden)
 }
 
 // RateLimited is returned by an adapter when the provider asked to wait.
@@ -186,8 +214,9 @@ type Adapter interface {
 	Verify(body []byte, secret string) error
 	// Parse normalizes a verified webhook body; ErrIgnored for events of no use.
 	Parse(body []byte) (Event, error)
-	// Transcript retrieves the content announced by a transcript event.
-	Transcript(ctx context.Context, client *http.Client, credentials map[string]string, callID string) (string, error)
+	// Content retrieves the text a summary or transcript event (kind) announced;
+	// ErrUnsupported for a kind whose events carry their text.
+	Content(ctx context.Context, client *http.Client, credentials map[string]string, kind, callID string) (string, error)
 	// Lines lists the account's numbers, for automation conditions.
 	Lines(ctx context.Context, client *http.Client, credentials map[string]string) ([]Line, error)
 	// PushCard shows a card on a live call in the provider's app.

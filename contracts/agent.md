@@ -5,10 +5,10 @@ answers visitors from the workspace's knowledge, uses the tools the workspace co
 servers), hands off to the team when it should, and is metered on real usage
 (`contracts/billing.md`). Mailboxes can opt in to the same agent for email ("Email" below).
 This file is the contract for the agent, its tools (MCP connections),
-knowledge sources, guardrails, playground and reports, and for opendesk's own MCP server.
+knowledge sources, procedures, guardrails, playground and reports, and for opendesk's own MCP server.
 
 Owners: the agent loop, guardrails, actions, ratings, playground and reports live in `internal/ai`
-(`widget*.go`, `agent*.go`); MCP connections in `internal/ai/mcp`; knowledge sources in
+(`widget*.go`, `agent*.go`), procedures in `internal/ai/procedures.go`; MCP connections in `internal/ai/mcp`; knowledge sources in
 `internal/ai/knowledge`; the opendesk MCP server in `internal/core/mcpserver`.
 
 ## Identity
@@ -45,18 +45,28 @@ Each reply is a tool-using model loop (at most 6 model turns per reply) with:
   `reply_language` and `instructions` and the workspace name. The persona shapes voice, never the
   rules, tools or blocked topics;
 - the visitor: name, whether the session is verified (`user_hash`), and the current page URL when the
-  widget reports it.
+  widget reports it;
+- the procedures it may pick ("Procedures" below): the enabled ones whose `channels` include the
+  conversation's channel (`chat` for the widget and the playground, `email` for the email agent) and
+  whose `bot_ids` are empty or include the bot it answers as, at most 30 (the most recently updated
+  first), in one `<procedures>` block with each one's id, name and `when`. Their instructions are read
+  with `use_procedure`.
 
 All of it is in data blocks. The agent answers only from that and from tool results: small talk,
 clarifying questions and grounded answers. It never invents prices, policies, order details or
 promises; it declines blocked topics politely; it offers a person when it cannot help.
 
-Built-in tools (always offered):
+Built-in tools:
 
 | tool | does |
 | --- | --- |
 | `search_knowledge` `{query}` | more passages from KB articles and knowledge sources (top 6) |
 | `handoff_to_human` `{reason}` | ends the agent's part: the reply text so far is posted (a short note that a person will follow up), then the conversation is handed off |
+| `use_procedure` `{id}` | the instructions of a procedure listed for this conversation (any other id is an error result); offered only when at least one is listed |
+
+The system prompt tells the agent to follow a procedure's instructions as it follows `<agent_guidance>`:
+admin-written guidance that never overrides the fixed rules, the tools' limits or the blocked topics.
+The instructions come back escaped in a `<procedure_instructions>` block, like every other block.
 
 Plus the workspace's enabled MCP tools (below), named `<server_slug>__<tool>` (at most 64
 characters, `[a-zA-Z0-9_-]`).
@@ -70,7 +80,8 @@ under the reply (no list when nothing was cited).
 The reply is a normal outbound chat message (`author.type = "system"`, `ai: true`, from name = the
 bot name), added under the ticket lock only if nothing changed while the model ran (a new visitor
 message, an assignee, a team reply, a handoff); otherwise it is discarded. Activity `ai_answered`
-(`actor_type = "ai"`, data `{message_id, sources, tools: [tool names called]}`) records each reply.
+(`actor_type = "ai"`, data `{message_id, sources, tools: [tool names called], procedures: [{id, name}]}`, the
+procedures it read) records each reply.
 
 Streaming: while generating, the job publishes live events (`contracts/realtime.md`, "Live events")
 to the visitor and to agents watching the ticket: `ai.reply.started`, `ai.reply.delta` chunks (raw
@@ -149,7 +160,9 @@ the team takes over) and sends one notification `ai_cap_reached` per month to ow
 
 It answers `text/event-stream`: `delta {text}`, `tool {name, status: "running" | "done" | "error",
 summary}`, `sources {sources: Source[]}`, then `done {text_html, sources, handoff: boolean, action:
-{tool, title, summary} | null, usd: number /* what the reply cost, in US dollars */}`, or `error` (problem JSON). Read-only MCP tools run
+{tool, title, summary} | null, procedures: {id, name}[] /* the procedures it read */, usd: number /* what the reply cost, in US dollars */}`, or `error` (problem JSON).
+The playground answers in the `chat` channel as its bot, with the saved procedures (drafts of
+procedures are not taken). Read-only MCP tools run
 for real (with the given visitor in `_meta`); any other tool is not run and comes back as `action`.
 Metered as feature `playground` (about $0.03 per reply on the default model, counted toward nothing else).
 Rate limited to 30 per user per minute.
@@ -308,6 +321,7 @@ interface AgentExpectation {
       | "handoff" | "no_handoff"   // the agent called handoff_to_human, or did not
       | "uses_tool"         // the agent ran (or, for a confirm tool, asked to run) the tool `value`: "<server_slug>__<tool>"
       | "cites_knowledge"   // the answer cites at least one passage
+      | "uses_procedure"    // the agent read the procedure `value` (its id) with use_procedure
   value?: string
 }
 interface AgentTestRun {
@@ -325,6 +339,7 @@ interface AgentTestResult {
   status: "pending" | "running" | "passed" | "failed" | "error"
   answer_html: string                      // the agent's answer, sanitized, citation markers removed
   handoff: boolean; tools: string[] /* display names of tools that ran */; sources: Source[] /* cited */
+  procedures: { id: string; name: string }[]   // the procedures the agent read
   action: { tool: string; title: string; summary: string } | null   // a tool call that needs confirmation (never run)
   checks: { kind: AgentExpectation["kind"]; value: string; passed: boolean; reason: string }[]   // one per expectation, in order
   error: string | null                     // the test could not be answered or graded (fixed message)
@@ -358,7 +373,8 @@ interface AgentTestResult {
   engine: the saved settings with the run's drafts on top, the test's visitor, no ticket;
   read-only tools run, any other tool comes back as `action` and never runs. Up to 3 tests at a
   time, 2 minutes each.
-- `handoff`, `no_handoff`, `uses_tool` and `cites_knowledge` are checked from what the agent did.
+- `handoff`, `no_handoff`, `uses_tool`, `uses_procedure` and `cites_knowledge` are checked from what the
+  agent did (tests answer in the `chat` channel, so a procedure must be on for chat to be listed).
   `mentions` and `not_mentions` of a test are graded together by one call to the workspace's fast
   model (short structured output; the conversation, answer and expectations are data blocks). An
   answer with no text fails `mentions` and passes `not_mentions` without a call. A test passes
@@ -498,6 +514,49 @@ interface McpTool {
 - Tool calls are metered only through the model turns around them. Each call of a visitor
   conversation is recorded in `ai_tool_calls` (tool display name, ok, duration; never arguments or
   results) for the report; playground calls are not recorded.
+
+## Procedures
+
+A procedure is the agent's instructions for one kind of conversation ("When and how to create an
+issue in Linear"): a short "use this when" line the agent recognises it by, and the instructions it
+follows, each switched on and off alone. Procedures are their own admin resource, not wiki pages:
+the editor can copy a wiki page's text into the instructions once (`contracts/wiki.md`), and nothing
+stays linked.
+
+```ts
+interface Procedure {
+  id: string
+  name: string                  // 1..80, control characters dropped, spaces folded
+  when: string                  // "Use this when…", 3..300 characters of plain text on one line
+  instructions: string          // markdown, 1..8,000 characters
+  enabled: boolean              // default true
+  channels: ("chat" | "email")[] // where the agent may pick it by its `when`, default both; [] = only when an automation runs it
+  bot_ids: string[]             // [] = every bot (default); else only conversations answered as one of these bots (contracts/bots.md)
+  created_at: string; updated_at: string
+  updated_by: UserRef | null
+}
+```
+
+| method | path | body → response |
+| --- | --- | --- |
+| GET | `/v1/ai/procedures` | → `{data: Procedure[]}` (oldest first) |
+| POST | `/v1/ai/procedures` | `{name, when, instructions, enabled?, channels?, bot_ids?}` → `201 Procedure` |
+| GET | `/v1/ai/procedures/{id}` | → `Procedure` |
+| PATCH | `/v1/ai/procedures/{id}` | any of the POST fields → `Procedure` |
+| DELETE | `/v1/ai/procedures/{id}` | → `204` |
+
+- Admin only, reads included (`settings:read` / `settings:write` for API keys); the routes work while
+  AI is off. At most 50 per workspace (`422 limit_reached`). `bot_ids` must be bots of the workspace
+  (`422`); a bot a procedure names cannot be deleted (`409 bot_in_use`, contracts/bots.md).
+- Audit `ai.procedure_created`, `ai.procedure_updated` (`{name, changes: [keys]}`), `ai.procedure_deleted`,
+  with the name, never the instructions. Events `ai_procedure.created` / `.updated` (`{procedure}`) and
+  `.deleted` (`{procedure_id}`) go to admins (`events.Event.Admins`).
+- The agent reads them as "What it knows" describes; `ai_answered`, the playground's `done` and test
+  results record the ones it read.
+- An automation's `run_procedure` action has Ollie run a procedure on a ticket for the team, whatever its
+  `channels` (`[]` makes a procedure for automations only): its own prompt and tools, internal notes,
+  ticket updates and connected tools set to run without asking, never a reply (`contracts/ai.md`
+  "Automations").
 
 ## Knowledge sources
 

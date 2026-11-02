@@ -1,4 +1,4 @@
-// Package phone connects cloud phone systems (Aircall first) to the helpdesk
+// Package phone connects cloud phone systems (Aircall, Voys) to the helpdesk
 // (contracts/phone.md). Every call is documented on the caller's ticket as one call entry
 // in its timeline, kept current as the call moves on, and its end runs the call_ended
 // automations. Provider adapters (internal/phone/provider) only translate protocols: the
@@ -21,6 +21,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/jobs"
 	"github.com/useopendesk/opendesk/internal/phone/provider"
 	"github.com/useopendesk/opendesk/internal/phone/provider/aircall"
+	"github.com/useopendesk/opendesk/internal/phone/provider/voys"
 )
 
 // Service is the phone engine of one set of dependencies.
@@ -51,7 +52,7 @@ func For(d *deps.Deps) *Service {
 	if got, ok := services.Load(d); ok {
 		return got.(*Service)
 	}
-	got, _ := services.LoadOrStore(d, New(d, aircall.Adapter{}))
+	got, _ := services.LoadOrStore(d, New(d, aircall.Adapter{}, voys.Adapter{}))
 	return got.(*Service)
 }
 
@@ -93,6 +94,14 @@ func (s *Service) descriptors() []provider.Descriptor {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
+}
+
+// describe is a provider's descriptor; one not compiled in can do nothing.
+func (s *Service) describe(key string) provider.Descriptor {
+	if a, ok := s.adapters[key]; ok {
+		return a.Describe()
+	}
+	return provider.Descriptor{Key: key}
 }
 
 // PhoneConnection is a workspace's connection to a phone provider (contracts/phone.md).

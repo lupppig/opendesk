@@ -1,0 +1,71 @@
+---
+title: Have Ollie create a Linear issue from a ticket
+description: When a ticket needs work outside the ticket, such as a bug fix or a feature, let Ollie open an issue in your Linear team and leave the link on the ticket, with no one asking.
+---
+
+import Steps from '../../../components/Steps.astro';
+import Step from '../../../components/Step.astro';
+import Callout from '../../../components/Callout.astro';
+
+Some tickets need work that can't be done in the ticket itself: a bug to fix, a feature to build. With an [integration](/guides/integrations/), a [procedure](/guides/procedures/) and an [automation](/guides/automations/), Ollie can spot those tickets, create an issue in the right Linear team with a title, description, priority and labels, and leave the link on the ticket as an internal note. The customer sees none of it.
+
+<Steps>
+<Step title="Connect Linear">
+
+In **Settings, Integrations**, connect **Linear** and sign in. Ollie acts through that connection, as whoever connected it.
+
+</Step>
+<Step title="Let it create issues without asking">
+
+Open the Linear connection and find its create issue tool. Set it to **Runs without asking**. An automation has no person to approve a change, so Ollie only uses writes that are set this way. Keep everything else as it is: reads, such as searching issues, always run.
+
+</Step>
+<Step title="Write the procedure">
+
+In **Settings, AI agent, Procedures**, click **New procedure**. Name it "Create a Linear issue" and turn off both **Chat** and **Email** under **Channels**, so only automations run it. For **Use this when**, write "The ticket needs work outside the ticket, such as a bug fix or a feature". Then write the steps in **Instructions**, for example:
+
+```md
+1. Only continue when the ticket describes a bug, or a feature the customer asks for.
+   For a question, a billing issue or anything the team answers in the ticket, do nothing.
+2. Search Linear for an open issue about the same problem. If one exists, don't create
+   another: add an internal note with its link instead.
+3. Create the issue in the **Platform** team:
+   - Title: a short summary of the problem, under 80 characters.
+   - Description: what the customer did, what they expected, what happened, and the
+     browser or device when they said so. End with the ticket number.
+   - Priority: Urgent when they can't use the product at all, High when a main feature
+     is broken, else Medium.
+   - Labels: Bug or Feature, and Customer reported.
+   - Link the customer: when Linear's tools let you add a customer or a customer
+     request, use the customer's name and company from the ticket.
+4. Add an internal note: "Linear issue created:" and the issue's link.
+```
+
+</Step>
+<Step title="Add the automation">
+
+In **Settings, Automations**, create an automation on **A ticket is created**. Add the condition **Ask Ollie a yes/no question** with "Does this ticket need work outside the ticket, such as a bug fix or a feature?" above 70%. As the action, choose **Ollie runs a procedure** and pick "Create a Linear issue". Make a copy on **The customer replies** if new details in a reply should also be checked.
+
+</Step>
+</Steps>
+
+## What happens
+
+1. A ticket comes in and the automation's question holds.
+2. Ollie reads the ticket, its thread and notes, and the procedure's steps, then searches Linear and creates the issue.
+3. The issue is linked in the ticket's **Linked** section, and Ollie leaves the internal note with its link.
+4. The timeline says "Ollie ran Create a Linear issue", or that there was nothing to do.
+
+The automation's other actions and the rest of your automations run as usual: Ollie works the ticket a moment later, on its own.
+
+<Callout>
+
+A procedure run never replies to the customer and never hands the ticket off. It can leave internal notes, raise priority or severity, add labels that exist, and use the tools you set to run without asking. It makes at most 5 changes and runs once per ticket and message, so a retried or repeated trigger doesn't create a second issue. On Cloud, each step of a run is charged to the AI balance like the assistant's.
+
+</Callout>
+
+## Related
+
+- [Procedures](/guides/procedures/)
+- [Automations](/guides/automations/)
+- [Integrations](/guides/integrations/)

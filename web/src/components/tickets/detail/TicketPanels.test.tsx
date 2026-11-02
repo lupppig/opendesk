@@ -1,4 +1,4 @@
-import { act } from "react";
+import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
@@ -9,6 +9,7 @@ import { api } from "@/lib/api/endpoints";
 import type { PanelBlock, PanelOrder, PanelValue, ShopifyField, TicketPanelData } from "@/lib/api/types";
 import { panelDate, relDay } from "@/lib/format";
 import { DEFAULT_SHOPIFY_FIELDS, normalizeFields, shownData } from "@/lib/panelFields";
+import { __resetFoldsForTests, foldScope } from "@/lib/panelFolds";
 import { PanelBody, shippingLine } from "./TicketPanels";
 
 const order = (patch: Partial<PanelOrder> = {}): PanelOrder => ({
@@ -160,7 +161,42 @@ const inDays = (n: number) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 
+const card = (title: string, patch: Partial<Extract<PanelBlock, { type: "card" }>> = {}): PanelBlock => ({
+  type: "card",
+  title,
+  subtitle: "Placed Oct 2",
+  badges: [{ text: "Delivered", tone: "success" }],
+  links: [{ label: "Open in the shop", url: "https://shop.example/o/1", icon: "store" }],
+  fields: [{ label: "Carrier", value: { type: "text", text: "DHL" } }],
+  lines: [{ quantity: 1, title: "Arco floor lamp" }],
+  footer: [{ label: "Total", value: { type: "money", amount: "1890", currency: "EUR" } }],
+  ...patch,
+});
+
+/** A card's fold arrow. */
+const arrow = (c: Element) => c.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
+
+/** A panel's body in the DOM, rendered again as new answers come. */
+async function mount(node: ReactNode) {
+  const host = document.createElement("div");
+  document.body.appendChild(host);
+  const root = createRoot(host);
+  const render = (n: ReactNode) => act(async () => root.render(<TooltipProvider>{n}</TooltipProvider>));
+  await render(node);
+  return {
+    render,
+    cards: () => [...host.querySelectorAll("article")],
+    click: (el: Element) => act(async () => void el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }))),
+    unmount: async () => {
+      await act(async () => root.unmount());
+      host.remove();
+    },
+  };
+}
+
 describe("URL ticket panel", () => {
+  afterEach(() => __resetFoldsForTests());
+
   it("shows a card: its link, badges, fields, lines and footer, dates and money in the reader's locale", () => {
     const html = renderToStaticMarkup(
       <PanelBody
@@ -296,55 +332,132 @@ describe("URL ticket panel", () => {
     expect(row?.querySelector("svg.lucide-file-text")).not.toBeNull();
   });
 
-  it("folds a collapsed card to its header until it is opened, and shows any other card open", async () => {
-    const card = (title: string, collapsed?: boolean): PanelBlock => ({
-      type: "card",
-      title,
-      collapsed,
-      subtitle: "Placed Oct 2",
-      badges: [{ text: "Delivered", tone: "success" }],
-      links: [{ label: "Open in the shop", url: "https://shop.example/o/1", icon: "store" }],
-      fields: [{ label: "Carrier", value: { type: "text", text: "DHL" } }],
-      lines: [{ quantity: 1, title: "Arco floor lamp" }],
-      footer: [{ label: "Total", value: { type: "money", amount: "1890", currency: "EUR" } }],
-    });
-    const host = document.createElement("div");
-    document.body.appendChild(host);
-    const root = createRoot(host);
-    await act(async () =>
-      root.render(
-        <TooltipProvider>
-          <PanelBody data={httpData([card("Order #1042", false), card("Order #1041", true), { type: "card", title: "Order #1040", collapsed: true, subtitle: "Header only" }])} />
-        </TooltipProvider>,
-      ),
+  it("folds and opens every card from its arrow or its header, starting as the panel asks", async () => {
+    const r = await mount(
+      <PanelBody
+        data={httpData([card("Order #1042", { url: "https://erp.example.com/so/42" }), card("Order #1041", { collapsed: true }), { type: "card", title: "Order #1040", collapsed: true, subtitle: "Header only" }])}
+      />,
     );
-    const [open, folded, bare] = [...host.querySelectorAll("article")];
-    // An open card has no fold button and shows everything.
-    expect(open.querySelector("button[aria-expanded]")).toBeNull();
-    expect(open.textContent).toContain("CarrierDHL");
-    // A folded card shows its title, links, subtitle and badges, and a button that says it is closed.
-    const toggle = folded.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
-    expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    expect(toggle.getAttribute("aria-label")).toBe("Show Order #1041");
+    const [open, folded, bare] = r.cards();
+    // An open card shows everything, with an arrow that says it is open and names the card.
+    const openArrow = arrow(open);
+    expect(openArrow.getAttribute("aria-expanded")).toBe("true");
+    expect(openArrow.getAttribute("aria-label")).toBe("Order #1042");
+    expect(open.querySelector("svg.lucide-chevron-right")?.getAttribute("class")).toContain("rotate-90");
+    expect(open.textContent).toContain("CarrierDHL1×Arco floor lampTotal€1,890.00");
+    expect(document.getElementById(openArrow.getAttribute("aria-controls")!)?.textContent).toContain("CarrierDHL");
+    // A folded card shows its title, links, subtitle and badges only.
+    expect(arrow(folded).getAttribute("aria-expanded")).toBe("false");
+    expect(folded.querySelector("svg.lucide-chevron-right")?.getAttribute("class")).not.toContain("rotate-90");
     expect(folded.textContent).toContain("Order #1041");
     expect(folded.textContent).toContain("Placed Oct 2");
     expect(folded.textContent).toContain("Delivered");
     expect(folded.querySelector('a[aria-label="Open in the shop"]')).not.toBeNull();
     expect(folded.textContent).not.toContain("DHL");
-    expect(folded.textContent).not.toContain("Arco floor lamp");
-    expect(folded.textContent).not.toContain("Total");
-    // Opening it shows the rest; closing it folds it again.
-    await act(async () => toggle.click());
-    expect(toggle.getAttribute("aria-expanded")).toBe("true");
-    expect(toggle.getAttribute("aria-label")).toBe("Hide Order #1041");
-    expect(document.getElementById(toggle.getAttribute("aria-controls")!)?.textContent).toContain("CarrierDHL1×Arco floor lampTotal€1,890.00");
-    await act(async () => toggle.click());
+    // The arrow folds the open card, and opens it again.
+    await r.click(openArrow);
+    expect(openArrow.getAttribute("aria-expanded")).toBe("false");
+    expect(open.textContent).not.toContain("Arco floor lamp");
+    await r.click(openArrow);
+    expect(open.textContent).toContain("Arco floor lamp");
+    // A click anywhere on the header does the same: the subtitle, a badge.
+    await r.click(folded.querySelector("p")!);
+    expect(arrow(folded).getAttribute("aria-expanded")).toBe("true");
+    expect(folded.textContent).toContain("CarrierDHL");
+    await r.click([...folded.querySelectorAll("span")].find((x) => x.textContent === "Delivered")!);
     expect(folded.textContent).not.toContain("DHL");
-    // A collapsed card with nothing under its header has nothing to open.
+    // The body is not the header: reading it never folds the card.
+    await r.click(open.querySelector("dd")!);
+    expect(open.textContent).toContain("Arco floor lamp");
+    // A card with nothing under its header has nothing to fold.
     expect(bare.querySelector("button")).toBeNull();
     expect(bare.textContent).toContain("Header only");
-    await act(async () => root.unmount());
-    host.remove();
+    await r.unmount();
+  });
+
+  it("leaves the header's links to open their page, without folding the card", async () => {
+    const r = await mount(<PanelBody data={httpData([card("Order #1042", { url: "https://erp.example.com/so/42" })])} />);
+    const [c] = r.cards();
+    const opened: string[] = [];
+    const keep = (e: Event) => {
+      opened.push((e.currentTarget as HTMLAnchorElement).href);
+      e.preventDefault(); // jsdom does not navigate; the click still bubbles to the card's header
+    };
+    for (const a of c.querySelectorAll("a")) a.addEventListener("click", keep);
+    await r.click(c.querySelector('a[href="https://erp.example.com/so/42"] span')!);
+    await r.click(c.querySelector('a[aria-label="Open in the shop"] svg')!);
+    expect(opened).toEqual(["https://erp.example.com/so/42", "https://shop.example/o/1"]);
+    expect(arrow(c).getAttribute("aria-expanded")).toBe("true");
+    expect(c.textContent).toContain("Arco floor lamp");
+    await r.unmount();
+  });
+
+  it("keeps the agent's choice when new data comes, the panel folds or the cards move, per ticket and panel", async () => {
+    const scope = foldScope("t1", "p2");
+    const answer = (...blocks: PanelBlock[]) => <PanelBody data={httpData(blocks)} foldScope={scope} />;
+    const r = await mount(answer(card("Order #1042"), card("Order #1041", { collapsed: true })));
+    let [newest, older] = r.cards();
+    await r.click(arrow(newest)); // the agent folds the open one
+    await r.click(arrow(older)); // and opens the folded one
+    const states = () => r.cards().map((c) => arrow(c).getAttribute("aria-expanded"));
+    // A re-fetch or a refresh answers the same cards again: nothing snaps back.
+    await r.render(answer(card("Order #1042"), card("Order #1041", { collapsed: true })));
+    expect(states()).toEqual(["false", "true"]);
+    // A new order on top, the others moved down and asked folded: each keeps the agent's choice, the new one opens as asked.
+    await r.render(answer(card("Order #1043"), card("Order #1042", { collapsed: true }), card("Order #1041", { collapsed: true })));
+    expect(states()).toEqual(["true", "false", "true"]);
+    // The panel folded and opened again, or loading between two answers, shows them as left.
+    await r.render(<p>Loading</p>);
+    await r.render(answer(card("Order #1042"), card("Order #1041", { collapsed: true })));
+    expect(states()).toEqual(["false", "true"]);
+    // Another ticket's panel starts as its own answer asks.
+    await r.render(<PanelBody data={httpData([card("Order #1042"), card("Order #1041", { collapsed: true })])} foldScope={foldScope("t2", "p2")} />);
+    expect(states()).toEqual(["true", "false"]);
+    [newest, older] = r.cards();
+    expect(newest.textContent).toContain("Arco floor lamp");
+    expect(older.textContent).not.toContain("Arco floor lamp");
+    await r.unmount();
+  });
+
+  it("follows a card by its id when the answer gives one, its title otherwise", async () => {
+    const scope = foldScope("t3", "p2");
+    const r = await mount(<PanelBody data={httpData([card("Sales order S00042", { id: "so-42" }), card("Order #1041"), card("Order #1041")])} foldScope={scope} />);
+    const [byId, first, twin] = r.cards();
+    await r.click(arrow(byId));
+    await r.click(arrow(twin));
+    // The title in another language, the same id: still folded. Two cards of one title keep one choice each.
+    await r.render(<PanelBody data={httpData([card("Bon de commande S00042", { id: "so-42" }), card("Order #1041"), card("Order #1041")])} foldScope={scope} />);
+    const after = r.cards();
+    expect(after.map((c) => arrow(c).getAttribute("aria-expanded"))).toEqual(["false", "true", "false"]);
+    expect(after[1]).toBe(first);
+    await r.unmount();
+  });
+
+  it("folds from the keyboard: the arrow is a button named by the card", async () => {
+    const r = await mount(<PanelBody data={httpData([card("Order #1041", { collapsed: true })])} />);
+    const [c] = r.cards();
+    const b = arrow(c);
+    expect(b.tagName).toBe("BUTTON");
+    expect(b.getAttribute("type")).toBe("button");
+    expect(b.getAttribute("aria-label")).toBe("Order #1041");
+    b.focus();
+    expect(document.activeElement).toBe(b);
+    // Enter and Space on a focused button are its click, and Enter stays the arrow's: a page
+    // shortcut on Enter (the inbox opens the focused ticket) never sees it, so it cannot cancel it.
+    const shortcut: string[] = [];
+    const onKey = (e: KeyboardEvent) => shortcut.push(e.key);
+    window.addEventListener("keydown", onKey);
+    try {
+      await act(async () => void b.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })));
+      await act(async () => void b.dispatchEvent(new KeyboardEvent("keydown", { key: "j", bubbles: true, cancelable: true })));
+    } finally {
+      window.removeEventListener("keydown", onKey);
+    }
+    expect(shortcut).toEqual(["j"]);
+    await r.click(b);
+    expect(b.getAttribute("aria-expanded")).toBe("true");
+    expect(c.textContent).toContain("CarrierDHL");
+    await r.unmount();
   });
 
   it("says how far a day is", () => {

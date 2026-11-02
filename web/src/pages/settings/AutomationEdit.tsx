@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate, useParams } from "@tanstack/react-router";
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { Plus, Trash2 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -90,7 +90,7 @@ function useActionItems(current: ActionType, trigger: AutomationTrigger) {
     .filter((a) => a !== "set_field" || hasTicketFields || current === "set_field")
     .filter((a) => actionFitsTrigger(a, trigger) || a === current)
     .map((a) => {
-      const n = aiActions.has(a) ? cost("triage") : null;
+      const n = aiActions.has(a) ? cost(a === "run_procedure" ? "procedure" : "triage") : null;
       return {
         value: a,
         label: actionLabel[a],
@@ -242,7 +242,8 @@ export default function AutomationEdit() {
   if (draft.conditions.some((c) => condInvalid(c) && !overPhrases(c))) problems.push(t("edit.problems.condition"));
   if (draft.conditions.some(overPhrases)) problems.push(t("edit.problems.phrases"));
   if (draft.actions.some((a) => actInvalid(a) && !offTrigger(a))) problems.push(t("edit.problems.actionValue"));
-  if (draft.actions.some(offTrigger)) problems.push(t("edit.problems.mergeTrigger"));
+  if (draft.actions.some((a) => offTrigger(a) && a.type !== "run_procedure")) problems.push(t("edit.problems.mergeTrigger"));
+  if (draft.actions.some((a) => offTrigger(a) && a.type === "run_procedure")) problems.push(t("edit.problems.procedureTrigger"));
   if (draft.trigger !== "call_ended" && draft.conditions.some((c) => callFields.has(c.field as ConditionField))) problems.push(t("edit.problems.callTrigger"));
 
   const rowMotion = {
@@ -554,6 +555,9 @@ function ActionRow({
     case "set_field":
       control = <SetFieldControl a={a} invalid={invalid} onChange={onChange} />;
       break;
+    case "run_procedure":
+      control = <ProcedureControl value={a.value} onChange={set} invalid={invalid} />;
+      break;
     case "ai_triage": {
       const n = cost("triage");
       control = (
@@ -602,6 +606,24 @@ function ActionRow({
 }
 
 /** merge_into_open_ticket: how recent the ticket it joins must be, and whether it needs the same subject. */
+/** run_procedure: one of the workspace's procedures (contracts/agent.md "Procedures"), with a way to write one. */
+function ProcedureControl({ value, onChange, invalid }: { value: string; onChange: (v: string) => void; invalid?: boolean }) {
+  const { t } = useTranslation("ai");
+  const { data } = useQuery(q.procedures());
+  const items = (data ?? []).map((p) => ({ value: p.id, label: p.name, hint: p.enabled ? undefined : t("automation.procedure_off") }));
+  return (
+    <div className="flex flex-col gap-1">
+      <SinglePick items={items} value={value} onChange={onChange} placeholder={t("automation.choose_procedure")} invalid={invalid} width={300} className="w-full" />
+      <span className="text-[11.5px] text-fg-4">
+        {t("automation.run_procedure_hint")}{" "}
+        <Link to="/settings/ai/procedures" className="text-fg-3 underline decoration-line-strong underline-offset-2 hover:text-fg">
+          {items.length ? t("automation.manage_procedures") : t("automation.new_procedure")}
+        </Link>
+      </span>
+    </div>
+  );
+}
+
 function MergeControl({ a, onChange }: { a: Action; onChange: (a: Action) => void }) {
   const { t } = useTranslation("settingsInbox");
   return (

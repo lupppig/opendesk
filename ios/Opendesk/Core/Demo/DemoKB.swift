@@ -11,6 +11,9 @@ import Foundation
 //   15 Export to PDF and Markdown      17 The iPhone app closes on launch 18 Create an API token
 //   19 Rate limits and 429 errors      20 Verify webhook signatures (draft)  21 What's new in June (draft, no collection)
 //
+// Margin's changelog has five updates: one scheduled, three live, one draft. The
+// wiki is in `DemoWiki.swift`; its routes and the changelog's are answered here too.
+//
 // Reports are a believable daily series (weekday rhythm, slow growth, noise
 // fixed per day) shaped by the team filter, with open work, channels and
 // severities taken from the workspace's own tickets.
@@ -23,12 +26,20 @@ struct DemoKB: Sendable {
     var collections: [KBCollection] = []
     var articles: [KBArticle] = []
     var helpCenter: String?
+    /// The changelog (ids `0197a0c0-0025-…`): live, scheduled and draft updates.
+    var changelog: [ChangelogEntry] = []
+    /// The team's internal wiki (`DemoWiki.swift`).
+    var wiki = DemoWiki()
 
     static func collectionID(_ n: Int) -> String { demoKBID(0x20, n) }
     static func articleID(_ n: Int) -> String { demoKBID(0x21, n) }
+    static func entryID(_ n: Int) -> String { demoKBID(0x25, n) }
 
     static func seed(_ ws: DemoWorkspace) -> DemoKB {
-        ws.id == DemoSeed.marginID ? margin() : ws.id == DemoSeed.lumenID ? lumen() : DemoKB()
+        var kb = ws.id == DemoSeed.marginID ? margin() : ws.id == DemoSeed.lumenID ? lumen() : DemoKB()
+        kb.changelog = ws.id == DemoSeed.marginID ? marginChangelog() : []
+        kb.wiki = DemoWiki.seed(ws)
+        return kb
     }
 
     private struct Spec {
@@ -337,6 +348,44 @@ struct DemoKB: Sendable {
         copy.articleCount = articles.filter { $0.collectionID == collection.id }.count
         return copy
     }
+
+    // MARK: Changelog
+
+    static func marginChangelog() -> [ChangelogEntry] {
+        func entry(_ n: Int, _ title: String, _ excerpt: String, _ body: String, _ categories: [String], status: KBStatus = .published, dated: Date?, by person: DemoPerson, edited: Double) -> ChangelogEntry {
+            let updated = DemoSeed.ago(edited * 1440)
+            return ChangelogEntry(
+                id: entryID(n), title: title, slug: KBSlug.make(title), excerpt: excerpt, bodyHTML: KBMarkdown.html(from: body),
+                categories: categories, status: status, publishedAt: dated, author: person.ref, createdAt: updated.addingTimeInterval(-86400), updatedAt: updated
+            )
+        }
+        return [
+            entry(1, "Offline mode for the iPhone app", "Keep writing without a connection; changes sync when you are back.", """
+            The iPhone app now keeps the notebooks you opened recently on the device.
+
+            - Write and edit without a connection.
+            - Changes merge paragraph by paragraph when you are back online.
+            - Pin a notebook to always keep it offline.
+            """, ["New"], dated: DemoSeed.ahead(5 * 1440), by: .priya, edited: 0.2),
+            entry(2, "Nested labels", "Put labels inside labels, and search a parent to include its children.", """
+            Labels can now live inside other labels, like *Clients* then *Acme*.
+
+            Searching a parent label includes everything under it.
+            """, ["New", "Improved"], dated: DemoSeed.ago(6 * 1440), by: .maya, edited: 6),
+            entry(3, "Faster search", "Search answers in under 200 ms for most workspaces, and reads text in images.", """
+            We rebuilt search from the ground up.
+
+            - Results in under **200 ms** for most workspaces.
+            - Words inside images and PDFs are found too.
+            """, ["Improved"], dated: DemoSeed.ago(19 * 1440), by: .jonas, edited: 19),
+            entry(4, "PDF exports keep custom fonts", "Exports now embed the fonts you picked instead of falling back to the default.", """
+            PDF exports embed custom fonts again. Exports made since May 12 can be made again from **Share**, then **Export**.
+            """, ["Fixed"], dated: DemoSeed.ago(27 * 1440), by: .sam, edited: 27),
+            entry(5, "A new export page", "Exports moved to Settings, then Data, with progress you can follow.", """
+            Exports have a page of their own under **Settings**, then **Data**. Big exports show their progress and email a link when ready.
+            """, ["Improved"], status: .draft, dated: nil, by: .maya, edited: 0.1),
+        ]
+    }
 }
 
 // MARK: - Routes
@@ -345,8 +394,109 @@ extension DemoBackend {
     func kbRoutes(_ call: Call, in ws: inout DemoWorkspace) throws -> Data?? {
         if call.match("GET", "brands") != nil { return .some(brands(ws)) }
         if call.match("GET", "reports/overview") != nil { return .some(encode(reportOverview(call.query, in: ws))) }
+        if call.match("GET", "reports/agents") != nil { return .some(encode(reportAgents(call.query, in: ws))) }
         if call.path.first == "kb" { return try kbCall(call, in: &ws) }
+        if call.path.first == "changelog" { return try changelogCall(call, in: &ws) }
+        if call.path.first == "wiki" { return try wikiRoutes(call, in: &ws) }
         return nil
+    }
+
+    // MARK: Changelog
+
+    private func changelogCall(_ call: Call, in ws: inout DemoWorkspace) throws -> Data?? {
+        if call.match("GET", "changelog/categories") != nil {
+            var counts: [String: (name: String, count: Int)] = [:]
+            for entry in ws.kb.changelog {
+                for name in entry.categories { counts[name.lowercased(), default: (name, 0)].count += 1 }
+            }
+            let list = counts.values.sorted { $0.count != $1.count ? $0.count > $1.count : $0.name < $1.name }
+                .map { JSONValue.object(["name": .string($0.name), "count": .number(Double($0.count))]) }
+            return .some(encode(JSONValue.array(list)))
+        }
+        if call.match("GET", "changelog/entries") != nil {
+            let at = now()
+            var list = ws.kb.changelog
+            switch call.query["status"] ?? "" {
+            case "draft": list = list.filter { $0.status == .draft }
+            case "published": list = list.filter { $0.state(now: at) == .published }
+            case "scheduled": list = list.filter { $0.state(now: at) == .scheduled }
+            default: break
+            }
+            if let category = call.query["category"], !category.isEmpty {
+                list = list.filter { $0.categories.contains { $0.caseInsensitiveCompare(category) == .orderedSame } }
+            }
+            if let q = call.query["q"]?.trimmingCharacters(in: .whitespaces), !q.isEmpty {
+                list = list.filter { $0.title.localizedCaseInsensitiveContains(q) || $0.excerpt.localizedCaseInsensitiveContains(q) || HTMLText.plain(from: $0.bodyHTML).localizedCaseInsensitiveContains(q) }
+            }
+            list.sort { $0.sortDate > $1.sortDate }
+            let limit = Int(call.query["limit"] ?? "") ?? 50
+            return .some(encode(ListBody(data: Array(list.prefix(max(1, min(limit, 100)))))))
+        }
+        if let id = call.match("GET", "changelog/entries/*")?.first {
+            guard let entry = ws.kb.changelog.first(where: { $0.id == id }) else { throw notFound("update") }
+            return .some(encode(entry))
+        }
+        if call.match("POST", "changelog/entries") != nil {
+            let title = (call.string("title") ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty else { throw Failure(status: 422, code: "invalid", detail: "Give the update a title.") }
+            let status = KBStatus(rawValue: call.string("status") ?? "") ?? .draft
+            let at = now()
+            let body = call.string("body_html") ?? ""
+            let excerpt = (call.string("excerpt") ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let dated = try? call.body["published_at"]?.decode(Date.self)
+            let slug = try changelogSlug(call.string("slug") ?? title, except: nil, given: call.string("slug") != nil, in: ws)
+            let entry = ChangelogEntry(
+                id: made(), title: title, slug: slug,
+                excerpt: excerpt.isEmpty ? String(HTMLText.plain(from: body).prefix(300)) : excerpt, bodyHTML: body,
+                categories: call.body["categories"]?.array?.compactMap(\.string) ?? [], status: status,
+                publishedAt: dated ?? (status == .published ? at : nil), author: me, createdAt: at, updatedAt: at
+            )
+            ws.kb.changelog.insert(entry, at: 0)
+            publish("changelog_entry.created", ["changelog_entry": DemoSeed.json(entry)], in: &ws)
+            return .some(encode(entry))
+        }
+        if let id = call.match("PATCH", "changelog/entries/*")?.first {
+            guard let index = ws.kb.changelog.firstIndex(where: { $0.id == id }) else { throw notFound("update") }
+            var entry = ws.kb.changelog[index]
+            if let title = call.string("title")?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty { entry.title = title }
+            if let slug = call.string("slug"), !slug.isEmpty { entry.slug = try changelogSlug(slug, except: id, given: true, in: ws) }
+            if let body = call.string("body_html") { entry.bodyHTML = body }
+            if let excerpt = call.string("excerpt") {
+                let trimmed = excerpt.trimmingCharacters(in: .whitespacesAndNewlines)
+                entry.excerpt = trimmed.isEmpty ? String(HTMLText.plain(from: entry.bodyHTML).prefix(300)) : trimmed
+            }
+            if let categories = call.body["categories"]?.array { entry.categories = categories.compactMap(\.string) }
+            if let value = call.body["published_at"] { entry.publishedAt = value.isNull ? nil : try? value.decode(Date.self) }
+            if let raw = call.string("status"), let status = KBStatus(rawValue: raw) {
+                if status == .published, entry.publishedAt == nil { entry.publishedAt = now() }
+                entry.status = status
+            }
+            entry.updatedAt = now()
+            ws.kb.changelog[index] = entry
+            publish("changelog_entry.updated", ["changelog_entry": DemoSeed.json(entry)], in: &ws)
+            return .some(encode(entry))
+        }
+        if let id = call.match("DELETE", "changelog/entries/*")?.first {
+            guard ws.kb.changelog.contains(where: { $0.id == id }) else { throw notFound("update") }
+            ws.kb.changelog.removeAll { $0.id == id }
+            publish("changelog_entry.deleted", ["changelog_entry_id": .string(id)], in: &ws)
+            return .some(nil)
+        }
+        return nil
+    }
+
+    /// The slug from the title unless given; one in use is `409 conflict` when given.
+    private func changelogSlug(_ text: String, except id: String?, given: Bool, in ws: DemoWorkspace) throws -> String {
+        let base = KBSlug.make(text).isEmpty ? "update" : KBSlug.make(text)
+        let taken = { (slug: String) in ws.kb.changelog.contains { $0.slug == slug && $0.id != id } }
+        if given, taken(base) { throw Failure(status: 409, code: "conflict", detail: "Another update already uses that address.") }
+        var slug = base
+        var n = 2
+        while taken(slug) {
+            slug = "\(base)-\(n)"
+            n += 1
+        }
+        return slug
     }
 
     private func brands(_ ws: DemoWorkspace) -> Data {

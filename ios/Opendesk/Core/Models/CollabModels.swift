@@ -77,6 +77,8 @@ struct MailIdentity: Codable, Hashable, Sendable, Identifiable {
     var canSend: Bool = true
     var fromName: String = ""
     var filledSignatureHTML: String?
+    /// Where answers go when set ("" none).
+    var replyTo: String = ""
 
     enum CodingKeys: String, CodingKey {
         case email, primary
@@ -87,6 +89,7 @@ struct MailIdentity: Codable, Hashable, Sendable, Identifiable {
         case canSend = "can_send"
         case fromName = "from_name"
         case filledSignatureHTML = "filled_signature_html"
+        case replyTo = "reply_to"
     }
 
     var id: String { email }
@@ -107,6 +110,7 @@ extension MailIdentity {
         canSend = c.lenient(Bool.self, forKey: .canSend) ?? true
         fromName = c.lenient(String.self, forKey: .fromName) ?? ""
         filledSignatureHTML = c.lenient(String.self, forKey: .filledSignatureHTML)
+        replyTo = (c.lenient(String.self, forKey: .replyTo) ?? "").lowercased()
     }
 }
 
@@ -149,9 +153,15 @@ struct MailAccount: Codable, Hashable, Sendable, Identifiable {
     var defaultFrom: String = ""
     var history: MailHistory?
     var oldestMessageAt: Date?
+    /// A shared account that tracks Needs action apart from read and unread ("Handling").
+    var handlingEnabled: Bool = false
+    /// Reply all comes first for everyone answering from it (when it adds anyone).
+    var replyAll: Bool = false
+    /// How its inbox is split into tabs ("Categories").
+    var categories: MailAccountCategories?
 
     enum CodingKeys: String, CodingKey {
-        case id, provider, email, name, color, owner, visibility, status, reconnect, unread, identities, history
+        case id, provider, email, name, color, owner, visibility, status, reconnect, unread, identities, history, categories
         case displayName = "display_name"
         case sharedWith = "shared_with"
         case signatureHTML = "signature_html"
@@ -160,16 +170,31 @@ struct MailAccount: Codable, Hashable, Sendable, Identifiable {
         case canManage = "can_manage"
         case defaultFrom = "default_from"
         case oldestMessageAt = "oldest_message_at"
+        case handlingEnabled = "handling_enabled"
+        case replyAll = "reply_all"
     }
 
     /// How the app names it: its name, else the address.
     var label: String { name.isEmpty ? email : name }
     var isPrivate: Bool { visibility != "shared" }
     var tone: Tone { MailTone.of(color) }
+    /// Done and Needs action apply to its conversations.
+    var handles: Bool { handlingEnabled && !isPrivate }
 
     /// Every address it sends from, its own included, lower case.
     var addresses: Set<String> {
         Set([email.lowercased()] + identities.map { $0.email.lowercased() })
+    }
+
+    /// Its addresses besides its own (the +N beside its name).
+    var aliases: [MailIdentity] {
+        identities.filter { !$0.primary && $0.email != email.lowercased() }
+    }
+
+    /// The tabs its inbox shows, Primary first; empty while it is not split.
+    var inboxCategories: [MailCategory] {
+        guard let categories, categories.enabled, categories.categories.count > 1 else { return [] }
+        return categories.categories
     }
 }
 
@@ -196,6 +221,61 @@ extension MailAccount {
         defaultFrom = c.lenient(String.self, forKey: .defaultFrom) ?? ""
         history = c.lenient(MailHistory.self, forKey: .history)
         oldestMessageAt = c.lenient(Date.self, forKey: .oldestMessageAt)
+        handlingEnabled = c.lenient(Bool.self, forKey: .handlingEnabled) ?? false
+        replyAll = c.lenient(Bool.self, forKey: .replyAll) ?? false
+        categories = c.lenient(MailAccountCategories.self, forKey: .categories)
+    }
+}
+
+/// One tab of an inbox that is split (contracts/collab.md "Categories").
+struct MailCategory: Codable, Hashable, Sendable, Identifiable {
+    var key: String
+    var name: String
+    var description: String = ""
+    var color: String = "gray"
+
+    var id: String { key }
+    var tone: Tone { MailTone.of(color) }
+    var isPrimary: Bool { key == Self.primary }
+
+    static let primary = "primary"
+}
+
+extension MailCategory {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        key = c.lenient(String.self, forKey: .key) ?? Self.primary
+        name = c.lenient(String.self, forKey: .name) ?? key
+        description = c.lenient(String.self, forKey: .description) ?? ""
+        color = c.lenient(String.self, forKey: .color) ?? "gray"
+    }
+}
+
+/// How an account's inbox is split, the part the app reads (`MailAccount.categories`).
+struct MailAccountCategories: Codable, Hashable, Sendable {
+    var enabled: Bool = false
+    var categories: [MailCategory] = []
+    /// `account`, `team`, `workspace` or `none`.
+    var source: String = "none"
+    /// The account's own choice: `follow`, `custom`, `off` or `gmail`.
+    var mode: String = "follow"
+    /// Who sorts in effect: `off`, `local` or `gmail` (Gmail's own tabs, both ways).
+    var engine: String = "local"
+    var locked: Bool = false
+
+    /// Gmail keeps the tabs: a move is written to Gmail, and sender rules are not used.
+    var syncsGmail: Bool { engine == "gmail" }
+}
+
+extension MailAccountCategories {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = c.lenient(Bool.self, forKey: .enabled) ?? false
+        categories = c.lenient([MailCategory].self, forKey: .categories) ?? []
+        source = c.lenient(String.self, forKey: .source) ?? "none"
+        mode = c.lenient(String.self, forKey: .mode) ?? "follow"
+        engine = c.lenient(String.self, forKey: .engine) ?? "local"
+        locked = c.lenient(Bool.self, forKey: .locked) ?? false
     }
 }
 
@@ -210,12 +290,14 @@ struct MailThreadAccount: Codable, Hashable, Sendable {
     var signatureHTML: String = ""
     var identities: [MailIdentity] = []
     var defaultFrom: String = ""
+    var replyAll: Bool = false
 
     enum CodingKeys: String, CodingKey {
         case id, email, name, color, provider, identities
         case displayName = "display_name"
         case signatureHTML = "signature_html"
         case defaultFrom = "default_from"
+        case replyAll = "reply_all"
     }
 
     var label: String { name.isEmpty ? email : name }
@@ -238,6 +320,7 @@ extension MailThreadAccount {
         signatureHTML = c.lenient(String.self, forKey: .signatureHTML) ?? ""
         identities = c.lenient([MailIdentity].self, forKey: .identities) ?? []
         defaultFrom = c.lenient(String.self, forKey: .defaultFrom) ?? ""
+        replyAll = c.lenient(Bool.self, forKey: .replyAll) ?? false
     }
 }
 
@@ -304,9 +387,13 @@ struct MailThread: Codable, Hashable, Sendable, Identifiable {
     var assignees: [UserRef] = []
     var commentCount: Int = 0
     var toAddress: String?
+    /// Waits for someone on a shared account with handling on ("Handling").
+    var needsAction: Bool = false
+    /// Its inbox tab's key; nil while its account's inbox is not split.
+    var category: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, subject, snippet, participants, unread, starred, shared, assignees
+        case id, subject, snippet, participants, unread, starred, shared, assignees, category
         case accountID = "account_id"
         case lastMessageAt = "last_message_at"
         case messageCount = "message_count"
@@ -314,6 +401,7 @@ struct MailThread: Codable, Hashable, Sendable, Identifiable {
         case folderIDs = "folder_ids"
         case commentCount = "comment_count"
         case toAddress = "to_address"
+        case needsAction = "needs_action"
     }
 
     var displaySubject: String { subject.isEmpty ? "(no subject)" : subject }
@@ -337,6 +425,8 @@ extension MailThread {
         assignees = c.lenient([UserRef].self, forKey: .assignees) ?? []
         commentCount = c.lenient(Int.self, forKey: .commentCount) ?? 0
         toAddress = c.lenient(String.self, forKey: .toAddress)
+        needsAction = c.lenient(Bool.self, forKey: .needsAction) ?? false
+        category = c.lenient(String.self, forKey: .category)
     }
 }
 
@@ -408,6 +498,8 @@ struct MailMessage: Codable, Hashable, Sendable, Identifiable {
     var draftID: String?
     var inReplyToID: String?
     var ownAddress: String?
+    /// A draft an AI key saved and no person has saved since: the key's name ("AI drafts").
+    var draftedByAI: String?
 
     enum CodingKeys: String, CodingKey {
         case id, from, to, cc, bcc, subject, snippet, unread, starred, draft, attachments
@@ -423,6 +515,7 @@ struct MailMessage: Codable, Hashable, Sendable, Identifiable {
         case draftID = "draft_id"
         case inReplyToID = "in_reply_to_id"
         case ownAddress = "own_address"
+        case draftedByAI = "drafted_by_ai"
     }
 
     /// Files that are not images drawn in the body.
@@ -455,6 +548,7 @@ extension MailMessage {
         draftID = c.lenient(String.self, forKey: .draftID)
         inReplyToID = c.lenient(String.self, forKey: .inReplyToID)
         ownAddress = c.lenient(String.self, forKey: .ownAddress)
+        draftedByAI = c.lenient(String.self, forKey: .draftedByAI).flatMap { $0.isEmpty ? nil : $0 }
     }
 }
 
@@ -500,11 +594,20 @@ struct MailThreadDetail: Codable, Hashable, Sendable {
     var comments: [MailComment] = []
     var shares: MailAudience = .nobody
     var canAct: Bool = false
+    /// The ticket it answered or was answered from, when the caller sees it ("Answering tickets").
+    var ticket: MailTicketLink?
 
     enum CodingKeys: String, CodingKey {
-        case thread, account, messages, comments, shares
+        case thread, account, messages, comments, shares, ticket
         case canAct = "can_act"
     }
+}
+
+/// A ticket a conversation is linked to.
+struct MailTicketLink: Codable, Hashable, Sendable {
+    var id: String
+    var number: Int
+    var subject: String = ""
 }
 
 extension MailThreadDetail {
@@ -516,6 +619,7 @@ extension MailThreadDetail {
         comments = c.lenient([MailComment].self, forKey: .comments) ?? []
         shares = c.lenient(MailAudience.self, forKey: .shares) ?? .nobody
         canAct = c.lenient(Bool.self, forKey: .canAct) ?? false
+        ticket = c.lenient(MailTicketLink.self, forKey: .ticket)
     }
 }
 
@@ -553,11 +657,15 @@ extension CollabStatus {
     }
 }
 
-/// `GET /v1/collab/counts`: unread conversations per box, account and folder.
+/// `GET /v1/collab/counts`: unread conversations per box, account and folder, Assigned to me
+/// per account, per address of an account with aliases, and per inbox tab of a split account.
 struct MailCounts: Codable, Hashable, Sendable {
     var boxes: [String: Int] = [:]
     var accounts: [String: Int] = [:]
     var folders: [String: Int] = [:]
+    var assigned: [String: Int] = [:]
+    var addresses: [String: [String: Int]] = [:]
+    var categories: [String: [String: Int]] = [:]
 }
 
 extension MailCounts {
@@ -566,6 +674,9 @@ extension MailCounts {
         boxes = c.lenient([String: Int].self, forKey: .boxes) ?? [:]
         accounts = c.lenient([String: Int].self, forKey: .accounts) ?? [:]
         folders = c.lenient([String: Int].self, forKey: .folders) ?? [:]
+        assigned = c.lenient([String: Int].self, forKey: .assigned) ?? [:]
+        addresses = c.lenient([String: [String: Int]].self, forKey: .addresses) ?? [:]
+        categories = c.lenient([String: [String: Int]].self, forKey: .categories) ?? [:]
     }
 }
 
@@ -682,6 +793,7 @@ extension MailMessageDetails {
 /// The boxes every scope has (`GET /v1/collab/threads?box=`).
 enum MailBox: String, CaseIterable, Identifiable, Sendable {
     case inbox, unread, starred, sent, drafts, archive, trash, spam, all, shared, assigned
+    case needsAction = "needs_action"
 
     var id: String { rawValue }
 
@@ -698,6 +810,7 @@ enum MailBox: String, CaseIterable, Identifiable, Sendable {
         case .all: "All mail"
         case .shared: "Shared with me"
         case .assigned: "Assigned to me"
+        case .needsAction: "Needs action"
         }
     }
 
@@ -714,6 +827,7 @@ enum MailBox: String, CaseIterable, Identifiable, Sendable {
         case .all: "square.stack"
         case .shared: "person.2"
         case .assigned: "person.crop.circle.badge.checkmark"
+        case .needsAction: "circle.badge.exclamationmark"
         }
     }
 
@@ -731,7 +845,11 @@ enum MailBox: String, CaseIterable, Identifiable, Sendable {
     }
 
     /// Boxes that span every account the person sees, whatever account is picked.
-    var spansAccounts: Bool { self == .shared || self == .assigned }
+    var spansAccounts: Bool { self == .shared || self == .needsAction }
+
+    /// Boxes that reach past the accounts the person sees: conversations shared with or
+    /// assigned to them on their own, and Needs action across the shared accounts.
+    var reachesBeyondAccounts: Bool { self == .shared || self == .assigned || self == .needsAction }
 }
 
 /// `POST /v1/collab/threads/actions` actions.
@@ -739,6 +857,11 @@ enum MailAction: String, Sendable {
     case read, unread, star, unstar, archive, inbox, trash, spam
     case notSpam = "not_spam"
     case move, label, unlabel
+    /// Local handling state of a shared account ("Handling"): nothing changes at the provider.
+    case done
+    case needsAction = "needs_action"
+    /// Moves it to another inbox tab (`category`).
+    case categorize
 
     /// Takes the conversation out of most boxes: the list offers Undo.
     var removes: Bool { [.archive, .trash, .spam, .move, .inbox, .notSpam].contains(self) }
@@ -750,6 +873,8 @@ enum MailAction: String, Sendable {
         case .unread: .read
         case .star: .unstar
         case .unstar: .star
+        case .done: .needsAction
+        case .needsAction: .done
         default: nil
         }
     }

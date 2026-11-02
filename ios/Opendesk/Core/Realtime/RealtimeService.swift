@@ -143,7 +143,7 @@ final class RealtimeService {
         let instance = api.instance
         let socket = PhoenixSocket { [api] in
             let token: RealtimeToken = try await api.post("v1/realtime/token")
-            return Self.socketURL(instance: instance, token: token)
+            return SocketEndpoint(url: Self.socketURL(instance: instance, token: token), token: token.token)
         }
         self.socket = socket
         pump = Task { [weak self] in
@@ -217,7 +217,7 @@ final class RealtimeService {
         }
         let gateway = base ?? instance.resolvedGatewayURL
         var components = URLComponents(url: gateway.appending(path: "websocket"), resolvingAgainstBaseURL: false)!
-        components.queryItems = [URLQueryItem(name: "token", value: token.token), URLQueryItem(name: "vsn", value: "2.0.0")]
+        components.queryItems = [URLQueryItem(name: "vsn", value: "2.0.0")]
         return components.url!
     }
 

@@ -98,6 +98,10 @@ func AuditLogs(ctx context.Context, q db.Querier, wid uuid.UUID, t time.Time, id
 	})
 }
 
+// readEventIDs is how many ids a notification.read event names; marking more read at once
+// (Mark all read) sends read_at alone.
+const readEventIDs = 200
+
 func (s *svc) registerPlatform(api huma.API) {
 	register(s, api, huma.Operation{OperationID: "list-audit-logs", Method: http.MethodGet, Path: "/v1/audit-logs",
 		Summary: "List the workspace audit log", Tags: []string{"Audit log"}},
@@ -206,10 +210,34 @@ func (s *svc) registerPlatform(api huma.API) {
 				return nil, httpx.Validation("Pass ids or all: true.")
 			}
 			err = s.tx(ctx, func(tx pgx.Tx) error {
-				tag, err := tx.Exec(ctx, `UPDATE notifications SET read_at = now()
-					WHERE workspace_id = $1 AND user_id = $2 AND read_at IS NULL AND ($3 OR id = ANY($4))`,
+				rows, err := tx.Query(ctx, `UPDATE notifications SET read_at = now()
+					WHERE workspace_id = $1 AND user_id = $2 AND read_at IS NULL AND ($3 OR id = ANY($4))
+					RETURNING id, read_at`,
 					p.WorkspaceID, p.UserID, in.Body.All, in.Body.IDs)
-				if err != nil || tag.RowsAffected() == 0 {
+				if err != nil {
+					return err
+				}
+				var ids []uuid.UUID
+				var readAt time.Time
+				for rows.Next() {
+					var id uuid.UUID
+					if err := rows.Scan(&id, &readAt); err != nil {
+						rows.Close()
+						return err
+					}
+					ids = append(ids, id)
+				}
+				if err := rows.Err(); err != nil || len(ids) == 0 {
+					return err
+				}
+				// The person's other windows and devices drop them from the bell and the
+				// badge: by id, or, past readEventIDs, everything created up to read_at.
+				data := map[string]any{"ids": ids, "read_at": readAt}
+				if len(ids) > readEventIDs {
+					data = map[string]any{"all": true, "read_at": readAt}
+				}
+				if _, err := events.Publish(ctx, tx, events.Event{WorkspaceID: p.WorkspaceID, Type: "notification.read",
+					Users: []uuid.UUID{p.UserID}, Data: data}); err != nil {
 					return err
 				}
 				// The phone's badge follows the unread count.

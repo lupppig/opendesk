@@ -2,7 +2,8 @@ import SwiftUI
 
 /// The knowledge base: what is published and how much it is read, the
 /// collections as a strip of cards, a status filter and the articles. New
-/// articles start blank or from Ollie's draft of a few tickets.
+/// articles start blank or from Ollie's draft of a few tickets. A switch above
+/// the list turns to the changelog: product updates the help center publishes.
 struct KBListView: View {
     @Environment(AppEnvironment.self) private var env
     @State private var query = ""
@@ -12,10 +13,21 @@ struct KBListView: View {
     @State private var deletingCollection: KBCollection?
     @State private var deletingArticle: KBArticle?
     @State private var listener: UUID?
+    @State private var changelogListener: UUID?
 
     private var store: KBStore { KBStore.shared }
+    private var changelog: ChangelogStore { ChangelogStore.shared }
 
     private var subtitle: Text? {
+        if store.mode == .changelog {
+            guard changelog.loadedOnce, !changelog.entries.isEmpty else { return nil }
+            var parts = ["\(changelog.count(.published)) live"]
+            let scheduled = changelog.count(.scheduled)
+            if scheduled > 0 { parts.append("\(scheduled) scheduled") }
+            let drafts = changelog.count(.draft)
+            if drafts > 0 { parts.append(Format.plural(drafts, "draft")) }
+            return Text(parts.joined(separator: " · "))
+        }
         guard store.loadedOnce, !store.everything.isEmpty else { return nil }
         var parts = ["\(store.publishedCount) published"]
         if store.draftCount > 0 { parts.append(Format.plural(store.draftCount, "draft")) }
@@ -30,27 +42,41 @@ struct KBListView: View {
                 title: "Knowledge base",
                 subtitle: subtitle,
                 query: $query,
-                searchPrompt: "Search articles",
+                searchPrompt: store.mode == .changelog ? "Search updates" : "Search articles",
                 searchFocused: $searchFocused,
                 menuLabel: "Folders and views",
                 onMenu: { showScopes = true }
             ) {
                 if env.session.canWrite {
-                    HeaderPrimaryButton(symbol: "plus", label: "New article") {
+                    HeaderPrimaryButton(symbol: "plus", label: store.mode == .changelog ? "New update" : "New article") {
                         Haptics.tap()
-                        env.router.push(.article("new"))
+                        env.router.push(store.mode == .changelog ? .changelogEntry("new") : .article("new"))
                     }
                 }
             }
-            content
+            modeSwitch
+            if store.mode == .changelog {
+                changelogContent
+            } else {
+                content
+            }
         }
         .background(Theme.chrome.ignoresSafeArea())
         .toolbarVisibility(.hidden, for: .navigationBar)
-        .onChange(of: query) { _, value in store.setSearch(value) }
+        .onChange(of: query) { _, value in
+            if store.mode == .changelog { changelog.setSearch(value) } else { store.setSearch(value) }
+        }
+        .onChange(of: store.mode) { _, _ in
+            query = ""
+            store.setSearch("")
+            changelog.setSearch("")
+        }
         .onAppear(perform: appear)
         .onDisappear {
             env.realtime.unsubscribe(listener)
+            env.realtime.unsubscribe(changelogListener)
             listener = nil
+            changelogListener = nil
         }
         .sheet(isPresented: $showScopes) {
             ScopeSheet()
@@ -91,13 +117,25 @@ struct KBListView: View {
 
     // MARK: Content
 
+    /// Articles or the changelog.
+    private var modeSwitch: some View {
+        KBSegment(options: KBMode.allCases.map(\.title), selection: Binding(
+            get: { KBMode.allCases.firstIndex(of: store.mode) ?? 0 },
+            set: { index in
+                Haptics.selection()
+                store.mode = KBMode.allCases[index]
+            }
+        ))
+        .padding(.horizontal, 16)
+        .padding(.bottom, 10)
+    }
+
     @ViewBuilder
     private var content: some View {
         if !store.loadedOnce && store.loading {
             ScrollView { SkeletonRows() }
                 .scrollDisabled(true)
-                .background(Theme.surface)
-                .clipShape(UnevenRoundedRectangle(topLeadingRadius: Theme.Radius.card, topTrailingRadius: Theme.Radius.card, style: .continuous))
+                .panelSurface()
         } else if let error = store.error, !store.loadedOnce {
             ErrorState(title: "Couldn't load the knowledge base", message: error) { store.reload() }
                 .frame(maxHeight: .infinity)
@@ -189,8 +227,7 @@ struct KBListView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
-            .background(Theme.surface)
-            .clipShape(UnevenRoundedRectangle(topLeadingRadius: Theme.Radius.card, topTrailingRadius: Theme.Radius.card, style: .continuous))
+            .panelSurface()
             .refreshable { await store.refresh() }
             .motion(Motion.snappy, value: store.articles.map(\.id))
         }
@@ -250,10 +287,15 @@ struct KBListView: View {
 
     private func appear() {
         store.attach(env)
+        changelog.attach(env)
         if listener == nil {
             listener = env.realtime.subscribe { update in KBStore.shared.handle(update) }
         }
+        if changelogListener == nil {
+            changelogListener = env.realtime.subscribe { update in ChangelogStore.shared.handle(update) }
+        }
         if store.loadedOnce { store.reload() }
+        if changelog.loadedOnce { changelog.reload() }
         #if DEBUG
         demo(env.router.demoAction)
         #endif
@@ -297,12 +339,122 @@ struct KBListView: View {
         }
     }
 
+    // MARK: Changelog
+
+    @ViewBuilder
+    private var changelogContent: some View {
+        if !changelog.loadedOnce && changelog.loading {
+            ScrollView { SkeletonRows() }
+                .scrollDisabled(true)
+                .panelSurface()
+        } else if let error = changelog.error, !changelog.loadedOnce {
+            ErrorState(title: "Updates couldn't load", message: error) { changelog.reload() }
+                .frame(maxHeight: .infinity)
+        } else {
+            changelogList(changelog.list())
+        }
+    }
+
+    private func changelogList(_ entries: [ChangelogEntry]) -> some View {
+        List {
+            if !changelog.categories.isEmpty {
+                ChangelogCategoryStrip(categories: changelog.categories, selected: changelog.category) { name in
+                    Haptics.selection()
+                    withAnimation(Motion.snappy) { changelog.category = name }
+                }
+                .listRowInsets(EdgeInsets(top: 14, leading: 0, bottom: 4, trailing: 0))
+                .listRowSeparator(.hidden)
+                .listRowBackground(Theme.surface)
+            }
+
+            KBStatusPicker(selection: Binding(get: { changelog.filter }, set: { value in
+                Haptics.selection()
+                withAnimation(Motion.snappy) { changelog.filter = value }
+            }), counts: changelogCounts)
+                .listRowInsets(EdgeInsets(top: changelog.categories.isEmpty ? 14 : 8, leading: 16, bottom: 6, trailing: 16))
+                .listRowSeparator(.hidden)
+                .listRowBackground(Theme.surface)
+
+            ForEach(entries) { entry in
+                Button {
+                    env.router.push(.changelogEntry(entry.id))
+                } label: {
+                    ChangelogRow(entry: entry)
+                }
+                .buttonStyle(RowPressStyle())
+                .listRowInsets(EdgeInsets())
+                .listRowSeparator(.hidden)
+                .listRowBackground(Theme.surface)
+                .contextMenu { changelogMenu(entry) }
+            }
+
+            if entries.isEmpty {
+                changelogEmpty
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Theme.surface)
+            }
+            Color.clear.frame(height: 90)
+                .listRowSeparator(.hidden)
+                .listRowBackground(Theme.surface)
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .panelSurface()
+        .refreshable { await changelog.refresh() }
+        .motion(Motion.snappy, value: entries.map(\.id))
+    }
+
+    private var changelogCounts: [ChangelogFilter: Int] {
+        var counts: [ChangelogFilter: Int] = [:]
+        for filter in ChangelogFilter.allCases { counts[filter] = changelog.count(filter) }
+        return counts
+    }
+
+    @ViewBuilder
+    private var changelogEmpty: some View {
+        if !changelog.search.isEmpty {
+            EmptyState(symbol: "magnifyingglass", title: "No updates match \u{201C}\(changelog.search)\u{201D}", message: "Search looks at titles, summaries and the update text.")
+        } else if changelog.entries.isEmpty {
+            EmptyState(
+                symbol: "megaphone",
+                title: "No updates yet",
+                message: "Tell customers what's new, improved and fixed. Updates show on your help center's changelog and in its feed.",
+                actionTitle: env.session.canWrite ? "New update" : nil
+            ) { env.router.push(.changelogEntry("new")) }
+        } else {
+            EmptyState(symbol: "line.3.horizontal.decrease", title: "Nothing here", message: "No updates match these filters.", actionTitle: "Show all updates") {
+                withAnimation(Motion.snappy) {
+                    changelog.filter = .all
+                    changelog.category = nil
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func changelogMenu(_ entry: ChangelogEntry) -> some View {
+        Button { env.router.push(.changelogEntry(entry.id)) } label: { Label("Open", systemImage: "doc.text") }
+        if let url = changelog.publicURL(for: entry, helpCenter: store.helpCenterURL) {
+            Link(destination: url) { Label("Open in help center", systemImage: "arrow.up.right.square") }
+            Button {
+                UIPasteboard.general.url = url
+                env.toasts.show("Link copied", kind: .success)
+            } label: { Label("Copy link", systemImage: "link") }
+        }
+    }
+
     #if DEBUG
-    /// QA states: `/demo/kb-new-collection`, `/demo/kb-rename-collection`, `/demo/kb-drafts`,
+    /// QA states: `/demo/kb-changelog`, `/demo/kb-changelog-scheduled`, `/demo/kb-articles`,
+    /// `/demo/kb-new-collection`, `/demo/kb-rename-collection`, `/demo/kb-drafts`,
     /// `/demo/kb-published`, `/demo/kb-all`, `/demo/kb-collection-<n>`, `/demo/kb-new-draft`.
     private func demo(_ action: String?) {
         guard let action, action.hasPrefix("kb-") else { return }
         switch action {
+        case "kb-changelog": store.mode = .changelog
+        case "kb-articles": store.mode = .articles
+        case "kb-changelog-scheduled":
+            store.mode = .changelog
+            changelog.filter = .scheduled
         case "kb-new-collection": editingCollection = KBCollectionDraft(collection: nil)
         case "kb-rename-collection": editingCollection = KBCollectionDraft(collection: store.collections.first)
         case "kb-delete-collection": deletingCollection = store.collections.last

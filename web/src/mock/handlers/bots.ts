@@ -9,6 +9,7 @@ import { HttpError, del, forbidden, get, invalid, notFound, patch, post, put, re
 import { isAdmin } from "../teams";
 import { hasControl, isRecord, nowIso, oneLine, uuid } from "../util";
 import { readUpload } from "./pictures";
+import { proceduresUsingBot } from "./procedures";
 
 const TONES = ["friendly", "professional", "playful", "concise", "warm", "custom"] as const;
 const LENGTHS = ["short", "medium", "detailed"] as const;
@@ -190,7 +191,7 @@ export function registerBots() {
     const b = find(ctx);
     if (b.is_default) throw new HttpError(409, "bot_is_default", "The default bot cannot be deleted. Make another bot the default first.");
     const usage = botOut(ctx.ws, b).usage;
-    const names = [...usage.widgets.map((w) => w.name), ...usage.mailboxes.map((m) => m.email)];
+    const names = [...usage.widgets.map((w) => w.name), ...usage.mailboxes.map((m) => m.email), ...proceduresUsingBot(ctx.ws, b.id).map((n) => `the ${n} procedure`)];
     if (names.length) {
       const shown = names.slice(0, 3).join(", ");
       const more = names.length > 3 ? ` and ${names.length - 3} more` : "";

@@ -45,6 +45,12 @@
 	request_header -CF-Connecting-IP
 	request_header -True-Client-IP
 
+	# A phone webhook an admin adds by hand carries its secret in the path
+	# (/v1/phone/hooks/<provider>/<id>/<secret>): opendesk logs the request
+	# without it, so Caddy leaves it out of its own log.
+	@phonehook path_regexp ^/v1/phone/hooks/[^/]+/[^/]+/
+	log_skip @phonehook
+
 	@socket path /socket /socket/*
 	handle @socket {
 		reverse_proxy realtime:4000 {

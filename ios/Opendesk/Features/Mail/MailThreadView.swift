@@ -72,6 +72,7 @@ struct MailThreadScreen: View {
     @State private var preview: URL?
     @State private var opening: String?
     @State private var scrollTarget: String?
+    @State private var webPage: MailWebPage?
 
     private var mail: MailStore { .shared }
 
@@ -105,7 +106,6 @@ struct MailThreadScreen: View {
             store.start(realtime: env.realtime)
             await store.load()
             openInitial()
-            await store.markReadOnOpen()
         }
         .onDisappear { store.stop() }
         .sheet(item: $sheet) { sheet in sheetView(sheet) }
@@ -116,6 +116,9 @@ struct MailThreadScreen: View {
             .presentationDetents([.large])
             .presentationCornerRadius(Theme.Radius.sheet)
             .interactiveDismissDisabled()
+        }
+        .sheet(item: $webPage) { page in
+            MailSafariView(url: page.url).ignoresSafeArea()
         }
         .quickLookPreview($preview)
         .confirmationDialog("Delete comment", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible, presenting: deleting) { comment in
@@ -149,15 +152,19 @@ struct MailThreadScreen: View {
                     detail: detail,
                     labels: labels(detail),
                     canAct: store.canAct,
+                    needsAction: store.handles && detail.thread.needsAction,
                     onLabels: { sheet = .labels },
                     onShare: { sheet = .share },
-                    onAssign: { sheet = .assign }
+                    onAssign: { sheet = .assign },
+                    onAlias: mail.account(detail.account.id) == nil ? nil : { showAlias(detail) },
+                    onTicket: { ticket in env.router.push(.ticket(TicketRoute(id: ticket.id))) }
                 )
                 .padding(.horizontal, 6)
                 .padding(.bottom, 4)
                 messageList(detail)
                 ForEach(store.drafts) { draft in
-                    MailDraftCard(draft: draft) { continueDraft(draft, detail: detail) }
+                    MailDraftCard(draft: draft, replying: reply != nil) { continueDraft(draft, detail: detail) }
+                        .disabled(!store.canAct)
                 }
                 if !detail.comments.isEmpty {
                     MailCommentsSection(
@@ -222,6 +229,7 @@ struct MailThreadScreen: View {
                     apiHost: env.session.instance.apiURL.host(),
                     opening: opening,
                     canAct: store.canAct,
+                    replyAllFirst: store.replyAllFirst,
                     onToggle: { toggle(message) },
                     onLoadImages: { allowImages.insert(message.id) },
                     onPerson: { sheet = .person($0) },
@@ -320,7 +328,14 @@ struct MailThreadScreen: View {
         }
     }
 
+    /// Continues a draft in the full composer; an open reply closes first, keeping its own draft,
+    /// so an AI draft can be taken up in its place.
     private func continueDraft(_ draft: MailMessage, detail: MailThreadDetail) {
+        guard store.canAct else { return }
+        if let open = reply {
+            Task { await open.close() }
+            withAnimation(Motion.snappy) { reply = nil }
+        }
         let original = store.messages.last { $0.id == draft.inReplyToID } ?? store.messages.last
         let composer = MailComposeStore(api: env.session.api, draft: draft, threadID: detail.thread.id, original: original, senders: MailStore.senders(of: detail.account), ownEmails: mail.ownEmails)
         composing = MailComposeHandle(store: composer)
@@ -364,6 +379,12 @@ struct MailThreadScreen: View {
         if store.canAct, let thread = store.thread {
             ToolbarSpacer(.fixed, placement: .topBarTrailing)
             ToolbarItemGroup(placement: .topBarTrailing) {
+                if store.handles {
+                    Button { perform(thread.needsAction ? .done : .needsAction) } label: {
+                        Image(systemName: thread.needsAction ? "checkmark.circle" : "checkmark.circle.fill")
+                    }
+                    .accessibilityLabel(thread.needsAction ? "Mark as done" : "Mark as needing action")
+                }
                 if inInbox {
                     Button { perform(.archive) } label: { Image(systemName: "archivebox") }
                         .accessibilityLabel("Archive")
@@ -390,6 +411,11 @@ struct MailThreadScreen: View {
             Button { perform(thread.starred ? .unstar : .star) } label: {
                 Label(thread.starred ? "Unstar" : "Star", systemImage: thread.starred ? "star.slash" : "star")
             }
+            if store.handles {
+                Button { perform(thread.needsAction ? .done : .needsAction) } label: {
+                    Label(thread.needsAction ? "Mark as done" : "Mark as needing action", systemImage: thread.needsAction ? "checkmark.circle" : "circle.badge.exclamationmark")
+                }
+            }
         }
         Section {
             Button { sheet = .move } label: { Label("Move to", systemImage: "folder") }
@@ -403,6 +429,12 @@ struct MailThreadScreen: View {
             }
         }
         Section {
+            Button { syncAccount() } label: { Label("Sync account now", systemImage: "arrow.clockwise") }
+            if store.account?.canManage == true {
+                Button { openAccountSettings() } label: { Label("Account settings", systemImage: "gearshape") }
+            }
+        }
+        Section {
             if inRole(.spam) {
                 Button { perform(.notSpam) } label: { Label("Not spam", systemImage: "checkmark.shield") }
             } else {
@@ -410,6 +442,59 @@ struct MailThreadScreen: View {
             }
             if !inRole(.trash) {
                 Button(role: .destructive) { perform(.trash) } label: { Label("Move to trash", systemImage: "trash") }
+            }
+        }
+    }
+
+    private func syncAccount() {
+        guard let account = store.detail?.account else { return }
+        Task {
+            do {
+                try await store.syncAccount()
+                env.toasts.show("Syncing \(account.label)", kind: .info)
+            } catch {
+                env.toasts.error(error)
+            }
+        }
+    }
+
+    private func openAccountSettings() {
+        guard let id = store.detail?.account.id, let url = env.session.instance.webURL(path: "/settings/mail-accounts/\(id)") else { return }
+        webPage = MailWebPage(url: url)
+    }
+
+    /// The list of the mail written to the alias this conversation was, back on the list.
+    private func showAlias(_ detail: MailThreadDetail) {
+        guard let alias = detail.thread.toAddress else { return }
+        Haptics.selection()
+        mail.setAddress(alias, account: detail.account.id)
+        dismiss()
+    }
+
+    /// Moves it to another inbox tab; Always also sends the sender's future mail there.
+    private func categorize(_ category: MailCategory, always: Bool) {
+        guard let thread = store.thread else { return }
+        Haptics.tap()
+        let id = store.threadID
+        let back = mail.categoryKey(of: thread)
+        let sender = mail.ruleSender(thread)
+        Task {
+            do {
+                try await store.act(.categorize, category: category.key)
+                if always, let sender {
+                    do {
+                        try await mail.addCategoryRule(account: thread.accountID, sender: sender, category: category.key)
+                        env.toasts.show("Mail from \(sender) now goes to \(category.name)", kind: .success)
+                    } catch {
+                        env.toasts.error(error)
+                    }
+                    return
+                }
+                env.toasts.show(Toast(message: "Conversation moved to \(category.name)", kind: .success, actionTitle: "Undo") {
+                    Task { _ = try? await mail.act([id], .categorize, category: back, known: [thread]) }
+                })
+            } catch {
+                env.toasts.error(error)
             }
         }
     }
@@ -461,7 +546,7 @@ struct MailThreadScreen: View {
                 .presentationDetents([.medium, .large])
                 .presentationCornerRadius(Theme.Radius.sheet)
         case .move:
-            MailFolderSheet(store: store, mode: .move) { action, folder in perform(action, folderID: folder) }
+            MailFolderSheet(store: store, mode: .move, onCategory: { category, always in categorize(category, always: always) }) { action, folder in perform(action, folderID: folder) }
                 .presentationDetents([.medium, .large])
                 .presentationCornerRadius(Theme.Radius.sheet)
         case .labels:
@@ -556,9 +641,13 @@ struct MailThreadHeader: View {
     let detail: MailThreadDetail
     let labels: [MailFolder]
     let canAct: Bool
+    var needsAction = false
     var onLabels: () -> Void
     var onShare: () -> Void
     var onAssign: () -> Void
+    /// Shows the mail written to the alias it came to; nil when its account is not the person's to browse.
+    var onAlias: (() -> Void)?
+    var onTicket: (MailTicketLink) -> Void = { _ in }
 
     private var mail: MailStore { .shared }
 
@@ -572,6 +661,21 @@ struct MailThreadHeader: View {
                 .textSelection(.enabled)
             FlowLayout(spacing: 6) {
                 accountChip
+                if let alias = detail.thread.toAddress, alias.lowercased() != detail.account.email.lowercased() {
+                    Button { onAlias?() } label: { MarkPill(symbol: "at", text: "To \(alias)", tone: .blue).frame(height: 24) }
+                        .buttonStyle(TapScaleStyle())
+                        .disabled(onAlias == nil)
+                        .accessibilityHint("Shows the mail written to this address")
+                }
+                if let ticket = detail.ticket {
+                    Button { onTicket(ticket) } label: { MarkPill(symbol: "ticket", text: "On ticket #\(ticket.number)").frame(height: 24) }
+                        .buttonStyle(TapScaleStyle())
+                        .accessibilityLabel("On ticket #\(ticket.number), \(ticket.subject)")
+                        .accessibilityHint("Opens the ticket")
+                }
+                if needsAction {
+                    MarkPill(symbol: "circle.badge.exclamationmark", text: "Needs action", tone: .amber).frame(height: 24)
+                }
                 ForEach(labels) { label in
                     Button(action: onLabels) { MailLabelChip(name: label.name, color: label.color, height: 24) }
                         .buttonStyle(TapScaleStyle())
@@ -666,6 +770,7 @@ struct MailMessageCard: View {
     var apiHost: String?
     var opening: String?
     var canAct: Bool
+    var replyAllFirst = false
     var onToggle: () -> Void
     var onLoadImages: () -> Void
     var onPerson: (MailAddress) -> Void
@@ -735,8 +840,9 @@ struct MailMessageCard: View {
             }
             if expanded, canAct {
                 Menu {
-                    Button { onReply(.reply) } label: { Label("Reply", systemImage: "arrowshape.turn.up.left") }
-                    Button { onReply(.replyAll) } label: { Label("Reply all", systemImage: "arrowshape.turn.up.left.2") }
+                    ForEach(replyAllFirst ? [MailComposeMode.replyAll, .reply] : [.reply, .replyAll], id: \.self) { mode in
+                        Button { onReply(mode) } label: { Label(mode.title, systemImage: mode.symbol) }
+                    }
                     Button { onReply(.forward) } label: { Label("Forward", systemImage: "arrowshape.turn.up.right") }
                     Divider()
                     Button(action: onDetails) { Label("Details", systemImage: "info.circle") }
@@ -849,34 +955,55 @@ struct MailFileTile: View {
     }
 }
 
-/// A draft saved at the provider, waiting in the conversation.
+/// A draft saved at the provider, waiting in the conversation: who it is to and how it starts.
+/// One an AI client saved says so ("AI draft by <key name>") until a person saves it, and while a
+/// reply is open it offers to be used in its place.
 struct MailDraftCard: View {
     let draft: MailMessage
+    var replying = false
     let action: () -> Void
+
+    private var tone: Tone { draft.draftedByAI == nil ? .red : .violet }
+
+    private var recipients: String {
+        let people = (draft.to + draft.cc).map { $0.name.isEmpty ? $0.email : $0.short }
+        return people.isEmpty ? "No recipients yet" : "To " + people.joined(separator: ", ")
+    }
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
-                Image(systemName: "doc.text")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Tone.red.text)
-                    .frame(width: 30, height: 30)
-                    .background(Tone.red.soft, in: Circle())
+                Group {
+                    if draft.draftedByAI != nil {
+                        Image(systemName: "sparkles")
+                    } else {
+                        Image(systemName: "doc.text")
+                    }
+                }
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(tone.text)
+                .frame(width: 30, height: 30)
+                .background(tone.soft, in: Circle())
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text("Draft").font(ODFont.sans(14, weight: .semibold)).foregroundStyle(Tone.red.text)
+                        Text(draft.draftedByAI.map { "AI draft by \($0)" } ?? "Draft")
+                            .font(ODFont.sans(14, weight: .semibold))
+                            .foregroundStyle(tone.text)
+                            .lineLimit(1)
                         Text(Format.relShort(draft.sentAt)).font(ODFont.sans(12)).foregroundStyle(Theme.fg3)
                     }
+                    Text(recipients).font(ODFont.sans(12.5)).foregroundStyle(Theme.fg2).lineLimit(1)
                     Text(draft.snippet.isEmpty ? "Empty draft" : draft.snippet).font(ODFont.sans(13)).foregroundStyle(Theme.fg3).lineLimit(1)
                 }
                 Spacer(minLength: 6)
-                Text("Continue").font(ODFont.sans(13, weight: .semibold)).foregroundStyle(Theme.fg)
+                Text(draft.draftedByAI != nil && replying ? "Use it" : "Continue").font(ODFont.sans(13, weight: .semibold)).foregroundStyle(Theme.fg)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
             .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous).strokeBorder(Tone.red.line, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous).strokeBorder(tone.line, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
         }
         .buttonStyle(TapScaleStyle())
+        .accessibilityHint(draft.draftedByAI == nil ? "Continues the draft" : "Opens the draft for you to check and send")
     }
 }

@@ -229,6 +229,7 @@
     "kb_draft": "Artikelentwürfe",
     "assistant": "Assistent",
     "assistant_peer": "Beim Ollie eines Teammitglieds nachfragen",
+    "procedure": "Von Automatisierungen ausgeführte Abläufe",
     "other": "Sonstiges"
   },
   "dialog": {

@@ -896,7 +896,7 @@
     },
     "empty": {
       "title": "Noch keine Telefonanlage",
-      "body": "Verbinde Aircall, und jeder Anruf wird im Ticket der anrufenden Person festgehalten.",
+      "body": "Verbinde Aircall oder Voys, und jeder Anruf wird im Ticket der anrufenden Person festgehalten.",
       "tipTimeline": "Anrufe im Verlauf des Tickets",
       "tipMissed": "Kein verpasster Anruf bleibt liegen",
       "tipAutomations": "Automatisierungen, wenn ein Anruf endet"
@@ -909,13 +909,15 @@
       "test": "Testen",
       "tested": "Die Verbindung funktioniert.",
       "testedAttention": "Die Verbindung braucht deine Aufmerksamkeit.",
-      "testError": "Die Verbindung konnte nicht getestet werden."
+      "testError": "Die Verbindung konnte nicht getestet werden.",
+      "waiting": "Wartet auf den ersten Anruf"
     },
     "healthCode": {
       "receiving": "Anrufe werden an opendesk gesendet.",
       "webhook_missing": "Die Telefonanlage sendet keine Anrufe an opendesk. Teste die Verbindung, um sie neu einzurichten.",
       "credentials_refused": "Die Telefonanlage hat die Zugangsdaten abgelehnt. Ersetze sie durch gültige.",
-      "provider_unreachable": "Die Telefonanlage ist nicht erreichbar. Versuche es gleich noch einmal."
+      "provider_unreachable": "Die Telefonanlage ist nicht erreichbar. Versuche es gleich noch einmal.",
+      "webhookManual": "Noch kein Anruf eingegangen. Trage die Webhook-Adresse unten in {{name}} ein und mache dann einen Testanruf."
     },
     "lastEvent": "Letztes Anrufereignis {{when}}",
     "noEventYet": "Noch kein Anruf. Anrufe erscheinen in Tickets, sobald sie klingeln.",
@@ -947,7 +949,7 @@
       "cards": "Anrufende in Aircall zeigen",
       "cardsHint": "Während ein Anruf klingelt, zeigt Aircall die anrufende Person, das Ticket des Anrufs und ihre letzten Tickets.",
       "dial": "Aus opendesk anrufen",
-      "dialHint": "Telefonnummern bei Kontakten und Tickets öffnen deine Telefon-App. Lege Aircall als Standard-App für Telefonlinks fest, um damit anzurufen."
+      "dialHint": "Telefonnummern bei Kontakten und Tickets öffnen deine Telefon-App. Lege {{name}} als Standard-App für Telefonlinks fest, um damit anzurufen."
     },
     "automations": {
       "title": "Automatisierungen",
@@ -970,7 +972,8 @@
       "description": "Eine Person mit Adminrechten kann eine Telefonanlage verbinden."
     },
     "provider": {
-      "aircall": "Cloud-Telefonanlage. Anrufe, Aufnahmen und KI-Zusammenfassungen landen in Tickets."
+      "aircall": "Cloud-Telefonanlage. Anrufe, Aufnahmen und KI-Zusammenfassungen landen in Tickets.",
+      "voys": "Niederländische Cloud-Telefonanlage. Anrufe, Transkripte und Zusammenfassungen von Voys Intelligence landen in Tickets."
     },
     "field": {
       "api_id": "API-ID",
@@ -982,7 +985,27 @@
       "cancel": "Abbrechen",
       "submit": "Verbinden",
       "connected": "{{name}} verbunden.",
-      "error": "{{name}} konnte nicht verbunden werden."
+      "error": "{{name}} konnte nicht verbunden werden.",
+      "voysSetup": "Öffne in Voys Freedom deine persönlichen Einstellungen und kopiere dein API-Token. Nutze das Token eines Admins mit Zugriff auf Gesprächsaufnahmen, damit Transkripte und Zusammenfassungen mitkommen. Danach trägst du die Webhook-Adresse von opendesk in Voys ein."
+    },
+    "webhookManual": "Webhook-Adresse, in {{name}} als Anrufbenachrichtigung einzutragen",
+    "disconnectBodyManual": "opendesk hält keine neuen Anrufe aus {{name}} mehr fest. Entferne auch die Anrufbenachrichtigung in {{name}}. Anrufe, die schon in Tickets stehen, bleiben.",
+    "hook": {
+      "title": "opendesk in {{name}} eintragen",
+      "description": "{{name}} sendet Anrufe an diese Adresse, sobald du sie als Anrufbenachrichtigung einträgst.",
+      "done": "Fertig",
+      "rotate": "Neue Adresse erstellen",
+      "rotateLabel": "Neue Webhook-Adresse für {{name}} erstellen",
+      "rotateTitle": "Neue Webhook-Adresse erstellen?",
+      "rotateBody": "Die aktuelle Adresse funktioniert sofort nicht mehr. Trage die neue in {{name}} ein, damit weiter Anrufe ankommen.",
+      "rotateError": "Die neue Webhook-Adresse konnte nicht erstellt werden."
+    },
+    "voys": {
+      "step1": "Öffne in Voys Freedom Integratie, dann Gespreksnotificaties, und klicke auf Toevoegen.",
+      "step2": "Gib eine Beschreibung wie opendesk ein und wähle Custom als Service.",
+      "step3": "Füge die Webhook-Adresse als Web hook URL ein.",
+      "step4": "Hake die Ereignisse für Zusammenfassungen und Transkripte an (sie brauchen Voys Intelligence) und klicke auf Opslaan.",
+      "step5": "Mache einen Testanruf: Die Verbindung zeigt Empfängt Anrufe, sobald er ankommt."
     }
   }
 }

@@ -568,6 +568,44 @@ off, the AI balance is used up or the provider fails, auto-triage and the `ai_tr
 skipped (logged) and the rest of the automation runs. The action calls the fast model inside
 the trigger's transaction.
 
+### Ollie runs a procedure
+
+Action `{type: "run_procedure", value: <procedure id>}` has Ollie work the ticket by one of the
+workspace's procedures (`contracts/agent.md` "Procedures"), whatever the procedure's `channels`. It is
+allowed on `ticket_created`, `customer_replied`, `agent_replied` and `call_ended`; on `ticket_updated` it is
+`422`, so Ollie's own changes never run it again. The id must be a procedure of the workspace (`422`).
+
+- The action only queues job `ai.procedure_run` in the trigger's transaction (unique by automation,
+  ticket and the run's message or call); the model is never called inside the trigger. The job records
+  the run in `ai_procedure_runs` under the same key, so a retried or replayed job never runs twice. A run
+  that stops on an error before writing anything gives its claim back, so the job's retry runs it.
+- At run time a procedure turned off or deleted is skipped (logged), as are AI off, a suspended
+  workspace, a spam ticket, more than 200 runs per workspace in the last hour, an AI balance too low and
+  a provider failure before anything was written: nothing is recorded on the ticket. The rest of the
+  automation runs either way.
+- From `call_ended`, while the ticket's call has a recording but no transcript yet, the job waits
+  (snoozes a minute at a time) for up to 15 minutes after it was queued, then runs with what there is.
+- The run works at workspace level, with no user and no customer: Ollie's own prompt (it works for the
+  team; nothing it writes reaches the customer; it follows the procedure and does nothing when the
+  procedure says it does not apply). It reads the ticket (subject, status, priority, severity, labels,
+  team, contact and company, fields), its latest 40 messages including internal notes (12,000
+  characters), the latest 3 calls with their summaries and transcripts (`contracts/phone.md`), and the
+  procedure's `when` and instructions, all in data blocks.
+- Tools: `search_knowledge` (KB articles of the ticket's brand and knowledge sources), `search_wiki` and
+  `get_wiki_page` (the team's wiki, `contracts/wiki.md` "AI"), `add_note` (an internal note in markdown,
+  sanitized like every note; `ai: true`, from Ollie, runs no automations), `update_ticket` (raises
+  priority or severity, never lowers them, and adds existing labels, exclusive groups kept; activities
+  carry `{via: "procedure", procedure_id, automation_id}`), and the workspace's connected tools
+  (`contracts/integrations.md`) that are reads, or writes on the integration's `auto_tools`. No other
+  write is offered: never a reply, a handoff or anything a customer sees. A create-style connected write
+  whose result links to the provider's hosts is linked to the ticket (`actor_type: "ai"`, no user).
+- At most 8 model turns and 5 writes (notes, ticket updates and connected writes together) per run.
+  Metered as feature `procedure` (`contracts/billing.md`), on the workspace's default model.
+- Activity `ai_procedure_ran` (`actor_type = "ai"`): `{procedure_id, name, automation_id, automation_name,
+  tools: [names called], writes: number, outcome: "done" | "nothing_to_do" | "failed"}`; `failed` when the
+  model or a tool stopped the run after it wrote something. Events about the ticket carry its
+  `TicketID`, so a private team's ticket stays visible only to those who may see it.
+
 ## Widget agent
 
 The conversational AI agent in the chat widget, its tools (company MCP servers), knowledge

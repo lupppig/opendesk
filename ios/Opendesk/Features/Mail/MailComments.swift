@@ -244,8 +244,7 @@ struct MailCommentBar: View {
 
     private var replyButtons: some View {
         HStack(spacing: 0) {
-            replyButton(.reply, "arrowshape.turn.up.left", "Reply")
-            if replyAllOffered { replyButton(.replyAll, "arrowshape.turn.up.left.2", "Reply all") }
+            ForEach(replyModes, id: \.self) { mode in replyButton(mode, mode.symbol, mode.title) }
             replyButton(.forward, "arrowshape.turn.up.right", "Forward")
         }
         .padding(.horizontal, 3)
@@ -263,6 +262,12 @@ struct MailCommentBar: View {
         }
         .buttonStyle(TapScaleStyle(scale: 0.88))
         .accessibilityLabel(label)
+    }
+
+    /// Reply and Reply all, Reply all first when the account answers everyone by default.
+    private var replyModes: [MailComposeMode] {
+        guard replyAllOffered else { return [.reply] }
+        return store.replyAllFirst ? [.replyAll, .reply] : [.reply, .replyAll]
     }
 
     /// Reply all only when the last message reaches more than one other person.

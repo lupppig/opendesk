@@ -488,9 +488,9 @@ func (s *Service) saveOutcome(ctx context.Context, wid, runID, testID uuid.UUID,
 	r := out.res
 	return s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
 		tag, err := tx.Exec(ctx, `UPDATE ai_agent_test_results SET status = $4, answer_html = $5, handoff = $6, tools = $7, sources = $8,
-			action = $9, checks = $10, error = $11, micro_usd = $12, finished_at = now()
+			action = $9, checks = $10, error = $11, micro_usd = $12, procedures = $13, finished_at = now()
 			WHERE workspace_id = $1 AND run_id = $2 AND test_id = $3 AND status IN ('pending', 'running')`,
-			wid, runID, testID, out.status, r.AnswerHTML, r.Handoff, r.Tools, r.Sources, r.Action, r.Checks, r.Error, int64(out.usd))
+			wid, runID, testID, out.status, r.AnswerHTML, r.Handoff, r.Tools, r.Sources, r.Action, r.Checks, r.Error, int64(out.usd), procedureRefs(r.Procedures))
 		if err != nil || tag.RowsAffected() == 0 {
 			return err
 		}
@@ -524,7 +524,7 @@ func (s *Service) saveOutcome(ctx context.Context, wid, runID, testID uuid.UUID,
 func (s *Service) answerTest(ctx context.Context, wid uuid.UUID, draft *AgentDraft, t pendingTest) testOutcome {
 	ctx, cancel := context.WithTimeout(ctx, agentRunTestTimeout)
 	defer cancel()
-	out := testOutcome{res: AgentTestResult{Tools: []string{}, Sources: []CitedSource{}, Checks: []AgentTestCheck{}}}
+	out := testOutcome{res: AgentTestResult{Tools: []string{}, Sources: []CitedSource{}, Checks: []AgentTestCheck{}, Procedures: []ProcedureRef{}}}
 	fail := func(err error) testOutcome {
 		msg := testErrorText(err)
 		if isNoBalance(err) {
@@ -547,6 +547,7 @@ func (s *Service) answerTest(ctx context.Context, wid uuid.UUID, draft *AgentDra
 	if res.ToolsUsed != nil {
 		out.res.Tools = res.ToolsUsed
 	}
+	out.res.Procedures = procedureRefs(res.Procedures)
 	if a := res.Action; a != nil {
 		out.res.Action = &PlaygroundAction{Tool: a.Tool.displayName(), Title: firstNonEmpty(a.Tool.Title, a.Tool.displayName()), Summary: a.Summary}
 	}
@@ -554,6 +555,12 @@ func (s *Service) answerTest(ctx context.Context, wid uuid.UUID, draft *AgentDra
 	var tools []AgentTool
 	if tb := s.agentToolbox(); tb != nil && hasExpectation(t.Expectations, expectUsesTool) {
 		tools, _ = tb.Tools(ctx, wid, in.visitor.Verified)
+	}
+	var procs []Procedure
+	if hasExpectation(t.Expectations, expectUsesProc) {
+		if procs, err = loadProcedures(ctx, s.d.DB.Pool, wid, nil); err != nil {
+			return fail(err)
+		}
 	}
 	var judged []int // indexes of expectations for the judge
 	for i, e := range t.Expectations {
@@ -577,6 +584,18 @@ func (s *Service) answerTest(ctx context.Context, wid uuid.UUID, draft *AgentDra
 				c.Passed, c.Reason = true, "Ollie used "+name+"."
 			default:
 				c.Reason = "Ollie did not use " + name + "."
+			}
+		case expectUsesProc:
+			k := slices.IndexFunc(procs, func(p Procedure) bool { return p.ID.String() == e.Value })
+			switch {
+			case k < 0:
+				c.Reason = "This procedure no longer exists."
+			case slices.ContainsFunc(res.Procedures, func(r ProcedureRef) bool { return r.ID.String() == e.Value }):
+				c.Passed, c.Reason = true, "Ollie followed "+procs[k].Name+"."
+			case !procs[k].Enabled:
+				c.Reason = procs[k].Name + " is turned off."
+			default:
+				c.Reason = "Ollie did not follow " + procs[k].Name + "."
 			}
 		default:
 			judged = append(judged, i)

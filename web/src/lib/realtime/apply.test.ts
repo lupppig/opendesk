@@ -1,7 +1,7 @@
 import { QueryClient, QueryObserver } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 import { inWorkspace } from "../api/client";
-import type { Activity, Member, Message, PhoneConnection, SupportChannelConnection, SupportChannelDestination, Thread, User, Workspace } from "../api/types";
+import type { Activity, Member, Message, Notification, PhoneConnection, SupportChannelConnection, SupportChannelDestination, Thread, User, Workspace } from "../api/types";
 import { qk } from "../queries";
 import { useSession } from "../session";
 import { env, ticket } from "../test/fixtures";
@@ -279,5 +279,31 @@ describe("third-party threads", () => {
     applyEnvelope(qc, env(3, { type: "message.created", data: { ticket_id: "t1", message: threadMsg } }), { me: "u1" });
     const ids = qc.getQueryData<Message[]>(qk.messages("t1"))?.map((m) => m.id);
     expect(ids).toEqual(["tmp-1", "m2"]);
+  });
+});
+
+describe("notification events", () => {
+  const note = (id: string, created_at: string, read_at: string | null = null): Notification =>
+    ({ id, type: "assigned", ticket: null, data: {}, read_at, created_at }) as Notification;
+  const mine = { me: "u1", viaUser: true };
+
+  it("marks notifications read elsewhere as read, by id or up to read_at", () => {
+    const qc = new QueryClient();
+    qc.setQueryData(qk.notifications, [note("n3", "2026-10-31T10:05:00Z"), note("n2", "2026-10-31T10:00:00Z"), note("n1", "2026-10-31T09:00:00Z")]);
+    applyEnvelope(qc, env(1, { type: "notification.read", data: { ids: ["n1"], read_at: "2026-10-31T10:01:00.123456Z" } }), mine);
+    expect(qc.getQueryData<Notification[]>(qk.notifications)?.map((n) => !!n.read_at)).toEqual([false, false, true]);
+
+    applyEnvelope(qc, env(2, { type: "notification.read", data: { all: true, read_at: "2026-10-31T10:01:00Z" } }), mine);
+    // Mark all read covers what existed then, never a notification that came after.
+    expect(qc.getQueryData<Notification[]>(qk.notifications)?.map((n) => !!n.read_at)).toEqual([false, true, true]);
+  });
+
+  it("drops deleted notifications, and ignores another person's events", () => {
+    const qc = new QueryClient();
+    qc.setQueryData(qk.notifications, [note("n2", "2026-10-31T10:00:00Z"), note("n1", "2026-10-31T09:00:00Z")]);
+    applyEnvelope(qc, env(1, { type: "notification.deleted", data: { ids: ["n1"] }, topics: ["private", "user:u2"] }), { me: "u1" });
+    expect(qc.getQueryData<Notification[]>(qk.notifications)).toHaveLength(2);
+    applyEnvelope(qc, env(2, { type: "notification.deleted", data: { ids: ["n1"] }, topics: ["private", "user:u1"] }), { me: "u1" });
+    expect(qc.getQueryData<Notification[]>(qk.notifications)?.map((n) => n.id)).toEqual(["n2"]);
   });
 });

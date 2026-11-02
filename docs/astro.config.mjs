@@ -124,6 +124,7 @@ export default defineConfig({
               ],
             },
             { label: 'Phone calls with Aircall', slug: 'guides/aircall' },
+            { label: 'Phone calls with Voys', slug: 'guides/voys' },
             { label: 'Brands and widgets', slug: 'guides/brands-and-widgets' },
             {
               label: 'Email templates',
@@ -152,6 +153,8 @@ export default defineConfig({
             { label: 'AI features', slug: 'guides/ai' },
             { label: 'Ollie, the assistant', slug: 'guides/ollie' },
             { label: 'Bots', slug: 'guides/bots' },
+            { label: 'Procedures', slug: 'guides/procedures' },
+            { label: 'Linear issues from tickets', slug: 'guides/linear-issues-from-tickets' },
             { label: 'Integrations', slug: 'guides/integrations' },
             { label: 'Cloud plans and billing', slug: 'guides/billing' },
             { label: 'Keyboard shortcuts', slug: 'guides/keyboard-shortcuts' },

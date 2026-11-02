@@ -57,6 +57,7 @@ type ModelList struct {
 func (s *Service) register(api huma.API) {
 	tags := []string{"AI"}
 	s.registerAgent(api)
+	s.registerProcedures(api)
 	s.registerSetup(api)
 	s.registerSuggested(api)
 	s.registerProvider(api)

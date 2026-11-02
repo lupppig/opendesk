@@ -468,7 +468,8 @@ func (h *handler) remove(ctx context.Context, p *auth.Principal, id uuid.UUID) e
 		}
 		var users []string
 		rows, err := tx.Query(ctx, `SELECT 'the ' || name || ' widget' FROM widgets WHERE workspace_id = $1 AND bot_id = $2
-			UNION ALL SELECT email FROM mailboxes WHERE workspace_id = $1 AND bot_id = $2`, wid, id)
+			UNION ALL SELECT email FROM mailboxes WHERE workspace_id = $1 AND bot_id = $2
+			UNION ALL SELECT 'the ' || name || ' procedure' FROM ai_procedures WHERE workspace_id = $1 AND $2 = ANY(bot_ids)`, wid, id)
 		if err != nil {
 			return err
 		}

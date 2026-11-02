@@ -163,3 +163,19 @@ func TestCredentialLimit(t *testing.T) {
 		t.Fatalf("guessing keys: %d", code)
 	}
 }
+
+func TestLogPathLeavesOutSecrets(t *testing.T) {
+	for in, want := range map[string]string{
+		"/csat/tok-123":                        "/csat/…",
+		"/v1/phone/hooks/voys/conn-1/s3cr3t":   "/v1/phone/hooks/voys/conn-1/…",
+		"/v1/phone/hooks/voys/conn-1/s3cr3t/x": "/v1/phone/hooks/voys/conn-1/…",
+		"/v1/phone/hooks/voys/conn-1/":         "/v1/phone/hooks/voys/conn-1/…",
+		"/v1/phone/hooks/aircall/conn-1":       "/v1/phone/hooks/aircall/conn-1",
+		"/v1/phone/connections/conn-1/test":    "/v1/phone/connections/conn-1/test",
+		"/v1/tickets/123":                      "/v1/tickets/123",
+	} {
+		if got := LogPath(in); got != want {
+			t.Errorf("LogPath(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

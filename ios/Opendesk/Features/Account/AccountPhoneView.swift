@@ -31,7 +31,7 @@ struct AccountPhoneView: View {
         let order: [NotificationKind] = [
             .assigned, .newTicket, .mentioned, .customerReplied, .threadReplied, .slaBreached, .aiHandoff,
             .collabAssigned, .collabMention, .teamJoined,
-            .aiCapReached, .aiKeyFailed, .aiBalanceLow, .aiBalanceOut, .autoRechargeFailed, .importFinished,
+            .aiCapReached, .aiKeyFailed, .aiBalanceLow, .aiBalanceOut, .autoRechargeFailed, .importFinished, .supportChannelUnhealthy,
         ]
         return order.filter { !$0.isAdminAlert || admin }
     }

@@ -42,7 +42,8 @@ import { useTicketViewers } from "../presence";
 import { useDeleteTicket, useUpdateTicket } from "../useTicketActions";
 import { Timeline } from "./Timeline";
 import { Composer, type ComposerHandle } from "./Composer";
-import { TicketProperties, type PropPicker } from "./TicketProperties";
+import { TicketProperties, TicketPropertiesBar, type PropPicker } from "./TicketProperties";
+import { useTicketPropertiesPlace } from "@/lib/ticketPropertiesPlace";
 import { MergeDialog } from "./MergeDialog";
 import { TicketTeamChips, useTeamsCtx } from "../teams";
 import { SnoozeMenu } from "./SnoozeMenu";
@@ -165,6 +166,8 @@ export default function TicketDetail({
   const rowRef = useRef<HTMLDivElement>(null);
   const panelBodyRef = useRef<HTMLDivElement>(null);
   const display = useDisplay();
+  // In the bar above the conversation, the properties are always in view: their pickers open there.
+  const bar = useTicketPropertiesPlace() === "bar";
   const { data: ticketFields } = useTicketFields();
   const reduced = useReducedMotion();
   const t = ticket.data;
@@ -248,8 +251,9 @@ export default function TicketDetail({
       { title: tr("detail.deleteTitle", { number: t.number }), confirmLabel: tr("detail.delete"), danger: true },
     );
   const assignMe = () => t && update.mutate({ id: t.id, patch: { assignee_id: me } });
-  // Property pickers live in the details panel; show it first when hidden.
+  // Property pickers live in the details panel, unless in the bar; show the panel first when hidden.
   const openPicker = (p: Exclude<PropPicker, null>) => {
+    if (bar) return setPicker(p);
     if (!panel) togglePanel();
     setTimeout(() => setPicker(p), panel ? 0 : 60);
   };
@@ -357,14 +361,7 @@ export default function TicketDetail({
               )}
               <TicketNumber n={t.number} className="shrink-0" />
               <SubjectEditor value={t.subject} disabled={!canEdit} onSave={(subject) => update.mutate({ id: t.id, patch: { subject } })} />
-              <span className="hidden shrink-0 items-center gap-1.5 md:flex">
-                <StatusPill status={t.status} label={display.status(t.status)} hue={display.statusTone(t.status)} />
-                <PriorityPill priority={t.priority} label={display.priority(t.priority)} hue={display.priorityTone(t.priority)} />
-                {t.severity && <HeaderSeverity t={t} />}
-                {slaState(t) && slaState(t)!.state !== "on_track" && <SlaPill ticket={t} />}
-                {t.spam && <Badge tone="red">{tr("detail.spam")}</Badge>}
-                <TicketTeamChips t={t} ctx={teamsCtx} className="ml-0.5" />
-              </span>
+              <HeaderPills t={t} bar={bar} />
             </>
           ) : (
             <Skeleton className="h-3 w-64" />
@@ -446,6 +443,17 @@ export default function TicketDetail({
         </Tooltip>
       </header>
 
+      {bar &&
+        (t ? (
+          <TicketPropertiesBar t={t} picker={picker} onPicker={setPicker} />
+        ) : (
+          <div className="flex h-[41px] shrink-0 items-center gap-2 border-b border-line px-3">
+            {[56, 64, 80, 72].map((w) => (
+              <Skeleton key={w} className="h-5 rounded-md" style={{ width: w }} />
+            ))}
+          </div>
+        ))}
+
       <div ref={rowRef} className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
           <Timeline
@@ -488,7 +496,7 @@ export default function TicketDetail({
             >
               <PanelBody ref={panelBodyRef} row={rowRef} width={panelWidth}>
                 {t ? (
-                  <TicketProperties t={t} picker={picker} onPicker={setPicker} onSideConversation={() => composer.current?.focus("thread")} />
+                  <TicketProperties t={t} picker={picker} onPicker={setPicker} bar={bar} onSideConversation={() => composer.current?.focus("thread")} />
                 ) : (
                   <div className="flex flex-col gap-3.5 p-4">
                     {[0, 1, 2, 3, 4].map((i) => (
@@ -538,6 +546,30 @@ function PanelBody({ ref, row, width, children }: { ref: RefObject<HTMLDivElemen
     >
       {children}
     </div>
+  );
+}
+
+/**
+ * What the header says about the ticket next to its subject. With the properties in the bar
+ * under it, status, priority, severity, team and brand are left to the bar's controls, so
+ * nothing shows twice; the SLA and spam, which the bar has not, stay.
+ */
+export function HeaderPills({ t, bar }: { t: Ticket; bar: boolean }) {
+  const { t: tr } = useTranslation("inbox");
+  const display = useDisplay();
+  const teamsCtx = useTeamsCtx();
+  const sla = slaState(t);
+  const late = !!sla && sla.state !== "on_track";
+  if (bar && !late && !t.spam) return null;
+  return (
+    <span className="hidden shrink-0 items-center gap-1.5 md:flex" data-header-pills>
+      {!bar && <StatusPill status={t.status} label={display.status(t.status)} hue={display.statusTone(t.status)} />}
+      {!bar && <PriorityPill priority={t.priority} label={display.priority(t.priority)} hue={display.priorityTone(t.priority)} />}
+      {!bar && t.severity && <HeaderSeverity t={t} />}
+      {late && <SlaPill ticket={t} />}
+      {t.spam && <Badge tone="red">{tr("detail.spam")}</Badge>}
+      {!bar && <TicketTeamChips t={t} ctx={teamsCtx} className="ml-0.5" />}
+    </span>
   );
 }
 

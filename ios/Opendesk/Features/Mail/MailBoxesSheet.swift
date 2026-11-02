@@ -1,22 +1,41 @@
 import SwiftUI
 
-/// Where the list looks: which account (all of them or one), which box, and the account's
-/// own folders and labels, each with its unread count.
+/// Where the list looks: which account (all of them or one), which of its addresses, which box,
+/// and the account's own folders and labels, each with its unread count. `onManage` opens mail
+/// account settings on the web: one account's when an id is given.
 struct MailBoxesSheet: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.dismiss) private var dismiss
     let mail: MailStore
-    var onManage: () -> Void
+    var onManage: (String?) -> Void
 
     private let primary: [MailBox] = [.inbox, .unread, .starred, .sent, .drafts]
     private let more: [MailBox] = [.archive, .all, .spam, .trash]
-    private let team: [MailBox] = [.shared, .assigned]
+
+    private var team: [MailBox] {
+        [.shared, .assigned] + (mail.offersNeedsAction ? [.needsAction] : [])
+    }
+
+    /// The one account in view when it answers from more than one address.
+    private var addressed: MailAccount? {
+        guard let account = mail.account(mail.scope.accountID), !account.aliases.isEmpty else { return nil }
+        return account
+    }
+
+    private var managed: MailAccount? {
+        guard let account = mail.account(mail.scope.accountID), account.canManage else { return nil }
+        return account
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     if mail.accounts.count > 1 { accountSwitcher }
+                    if let addressed {
+                        SectionLabel("Written to")
+                        Panel { addressRows(addressed) }
+                    }
                     Panel { rows(primary.filter(mail.offers)) }
                     SectionLabel("With your team")
                     Panel { rows(team) }
@@ -31,20 +50,12 @@ struct MailBoxesSheet: View {
                             }
                         }
                     }
-                    Button {
-                        dismiss()
-                        onManage()
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "gearshape").font(.system(size: 13, weight: .medium))
-                            Text("Mail accounts").font(ODFont.sans(14, weight: .medium))
-                            Image(systemName: "arrow.up.right").font(.system(size: 10.5, weight: .semibold)).foregroundStyle(Theme.fg4)
+                    VStack(spacing: 0) {
+                        if let managed {
+                            manageLink("Account settings", symbol: "slider.horizontal.3", account: managed.id)
                         }
-                        .foregroundStyle(Theme.fg2)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 40)
+                        manageLink("Mail accounts", symbol: "gearshape", account: nil)
                     }
-                    .buttonStyle(TapScaleStyle())
                 }
                 .padding(20)
             }
@@ -55,6 +66,23 @@ struct MailBoxesSheet: View {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
             }
         }
+    }
+
+    private func manageLink(_ title: String, symbol: String, account id: String?) -> some View {
+        Button {
+            dismiss()
+            onManage(id)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: symbol).font(.system(size: 13, weight: .medium))
+                Text(title).font(ODFont.sans(14, weight: .medium))
+                Image(systemName: "arrow.up.right").font(.system(size: 10.5, weight: .semibold)).foregroundStyle(Theme.fg4)
+            }
+            .foregroundStyle(Theme.fg2)
+            .frame(maxWidth: .infinity)
+            .frame(height: 40)
+        }
+        .buttonStyle(TapScaleStyle())
     }
 
     // MARK: Accounts
@@ -87,6 +115,15 @@ struct MailBoxesSheet: View {
                     if !account.isPrivate {
                         Image(systemName: "person.2.fill").font(.system(size: 9.5)).opacity(0.65)
                     }
+                    if !account.aliases.isEmpty {
+                        Text("+\(account.aliases.count)")
+                            .font(ODFont.mono(10.5))
+                            .foregroundStyle(selected ? Theme.inverseFg : Tone.blue.text)
+                            .padding(.horizontal, 5)
+                            .frame(height: 17)
+                            .background(selected ? Theme.inverseFg.opacity(0.16) : Tone.blue.soft, in: Capsule())
+                            .accessibilityLabel("\(account.aliases.count) more \(account.aliases.count == 1 ? "address" : "addresses")")
+                    }
                 } else {
                     Image(systemName: "tray.2").font(.system(size: 12.5, weight: .medium))
                     Text("All accounts").font(ODFont.sans(13.5, weight: .semibold))
@@ -102,6 +139,32 @@ struct MailBoxesSheet: View {
             .overlay(RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous).strokeBorder(selected ? .clear : Theme.line, lineWidth: 1))
         }
         .buttonStyle(TapScaleStyle())
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    // MARK: Addresses
+
+    /// Any address, then each address the account answers from, with what is unread to it.
+    @ViewBuilder
+    private func addressRows(_ account: MailAccount) -> some View {
+        let addresses = [account.email.lowercased()] + account.aliases.map { $0.email.lowercased() }
+        addressRow(nil, title: "Any address", symbol: "at", count: nil, account: account)
+        ForEach(addresses, id: \.self) { email in
+            Hairline(inset: 46)
+            addressRow(email, title: email, symbol: email == account.email.lowercased() ? "person.crop.circle" : "arrowshape.turn.up.right", count: mail.unread(address: email, in: account.id), account: account)
+        }
+    }
+
+    private func addressRow(_ email: String?, title: String, symbol: String, count: Int?, account: MailAccount) -> some View {
+        let selected = mail.scope.to == email
+        return Button {
+            Haptics.selection()
+            mail.setAddress(email, account: account.id)
+            dismiss()
+        } label: {
+            MailBoxLabel(title: title, symbol: symbol, count: count, selected: selected)
+        }
+        .buttonStyle(RowPressStyle())
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 

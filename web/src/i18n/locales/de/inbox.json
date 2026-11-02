@@ -324,6 +324,7 @@
     "teamCleared_other": "Team von {{count}} Tickets entfernt"
   },
   "props": {
+    "bar": "Ticket-Eigenschaften",
     "contact": "Kontakt",
     "changeContact": "Kontakt ändern",
     "searchContacts": "Kontakte suchen",
@@ -444,6 +445,9 @@
     "triagedAs": "<b>{{who}}</b> hat dies als <b>{{category}}</b> eingeordnet",
     "aiAnswered": "<b>{{who}}</b> hat aus der Wissensdatenbank geantwortet",
     "aiAnsweredEmail": "<b>{{who}}</b> hat per E-Mail geantwortet",
+    "procedureRan": "<b>{{who}}</b> hat <b>{{name}}</b> ausgeführt",
+    "procedureNothing": "<b>{{who}}</b> hat <b>{{name}}</b> ausgeführt: nichts zu tun",
+    "procedureFailed": "<b>{{who}}</b> konnte <b>{{name}}</b> nicht abschließen",
     "aiSuggested": "<b>{{who}}</b> hat eine Antwort vorgeschlagen",
     "aiSuggestedSent": "<b>{{who}}</b> hat die von {{ollie}} vorgeschlagene Antwort gesendet",
     "handoffCustomer": "Der Kunde wollte mit einer Person sprechen",
@@ -905,7 +909,12 @@
       "abandoned_in_ivr": "Im Menü aufgelegt",
       "abandoned_in_classic": "In der Warteschleife aufgelegt",
       "no_available_agent": "Niemand verfügbar",
-      "agents_did_not_answer": "Niemand hat abgenommen"
+      "agents_did_not_answer": "Niemand hat abgenommen",
+      "busy": "Besetzt",
+      "no_answer": "Nicht angenommen",
+      "failed": "Anruf fehlgeschlagen",
+      "cancelled": "Vor der Annahme aufgelegt",
+      "abandon": "In der Warteschlange aufgelegt"
     }
   },
   "panels": {

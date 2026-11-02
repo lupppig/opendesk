@@ -121,6 +121,11 @@ func loadPage(ctx context.Context, q db.Querier, wid, id uuid.UUID) (WikiPage, e
 	return p, err
 }
 
+// LoadPage reads a page of the workspace, for Ollie's team-side reads (contracts/wiki.md "AI").
+func LoadPage(ctx context.Context, q db.Querier, wid, id uuid.UUID) (WikiPage, error) {
+	return loadPage(ctx, q, wid, id)
+}
+
 // ancestors are the pages above id, the top-level one first.
 func ancestors(ctx context.Context, q db.Querier, wid, id uuid.UUID) ([]WikiRef, error) {
 	rows, err := q.Query(ctx, `WITH RECURSIVE up(id, parent_id, title, icon, depth) AS (

@@ -408,8 +408,21 @@ enum DirectoryActions {
         UIApplication.shared.open(url)
     }
 
-    static func telURL(_ phone: String) -> String {
-        "tel:" + phone.filter { $0.isNumber || $0 == "+" }
+    /// A dialable `tel:` link for a number as people write it, or nil (web `telHref`): a
+    /// trunk `(0)` is dropped and a `00` prefix becomes `+`. iOS hands it to the default
+    /// calling app, which can be the workspace's phone system (contracts/phone.md "Click to call").
+    static func telURL(_ phone: String) -> String? {
+        let raw = phone.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "(0)", with: "")
+        let allowed = CharacterSet(charactersIn: "0123456789 +().-/")
+        guard !raw.isEmpty, raw.unicodeScalars.allSatisfy(allowed.contains), !raw.dropFirst().contains("+") else { return nil }
+        var digits = raw.filter(\.isASCII).filter(\.isNumber)
+        var plus = raw.hasPrefix("+")
+        if !plus, digits.hasPrefix("00") {
+            digits.removeFirst(2)
+            plus = true
+        }
+        guard (3 ... 15).contains(digits.count) else { return nil }
+        return "tel:" + (plus ? "+" : "") + digits
     }
 
     /// The website of a domain as a link (`https://domain`).

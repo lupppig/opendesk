@@ -24,7 +24,10 @@ final class SessionStore {
     private(set) var instance: Instance = Preferences.instance ?? .cloud
     private(set) var authConfig: AuthConfig?
     private(set) var authConfigError: String?
-    private(set) var user: User?
+    private(set) var user: User? {
+        // Times of day follow the signed-in person's clock.
+        didSet { ClockSetting.shared.format = TimeFormat(user?.timeFormat) }
+    }
     private(set) var memberships: [Membership] = []
     private(set) var workspace: Membership?
 
@@ -321,6 +324,20 @@ final class SessionStore {
         struct Body: Encodable, Sendable { let name: String }
         let updated: User = try await api.patch("v1/me", body: Body(name: name), workspace: .none)
         user = updated
+    }
+
+    /// The clock times are shown in, account-wide (`PATCH /v1/me {time_format}`).
+    /// Shown at once; put back if the server refuses.
+    func setTimeFormat(_ format: TimeFormat) async throws {
+        struct Body: Encodable, Sendable { let time_format: String }
+        let previous = user
+        user?.timeFormat = format.rawValue
+        do {
+            user = try await api.patch("v1/me", body: Body(time_format: format.rawValue), workspace: .none)
+        } catch {
+            user = previous
+            throw error
+        }
     }
 
     func setAvailability(_ availability: Availability) async throws -> Member {

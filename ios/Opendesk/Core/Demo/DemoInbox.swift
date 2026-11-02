@@ -32,6 +32,7 @@ extension DemoBackend {
     func inboxRoutes(_ call: Call, in ws: inout DemoWorkspace) throws -> Data?? {
         let query = call.query
         if call.match("GET", "tickets/counts") != nil { return .some(encode(inboxCounts(ws))) }
+        if call.match("GET", "tickets/summary") != nil { return .some(encode(inboxSummary(ws, query))) }
         if call.match("GET", "tickets") != nil {
             let matching = inboxSorted(ws.tickets.filter { inboxMatches($0, query, in: ws) }, query)
             let offset = Int(query["cursor"] ?? "") ?? 0
@@ -45,10 +46,62 @@ extension DemoBackend {
         if call.match("GET", "ai/search") != nil { return .some(encode(inboxMeaningSearch(query["q"] ?? "", in: ws))) }
         if call.match("POST", "tickets") != nil { return .some(encode(try inboxCreate(call.body, in: &ws))) }
         if call.match("POST", "tickets/bulk") != nil {
+            if let filters = call.body["query"]?.object {
+                return .some(encode(try inboxBulkMatching(filters, call.body, in: &ws)))
+            }
             try inboxBulk(call.body, in: &ws)
             return .some(nil)
         }
         return nil
+    }
+
+    /// `GET /v1/tickets/summary`: the list's whole counts. A search is not counted.
+    private func inboxSummary(_ ws: DemoWorkspace, _ query: [String: String]) -> JSONValue {
+        if let q = query["q"], !q.trimmingCharacters(in: .whitespaces).isEmpty {
+            return .object(["complete": .bool(false), "total": .number(0), "awaiting": .number(0), "urgent": .number(0), "overdue": .number(0), "due_soon": .number(0)])
+        }
+        let counts = InboxSummary(ws.tickets.filter { inboxMatches($0, query, in: ws) }, now: now())
+        return .object([
+            "complete": .bool(true),
+            "total": .number(Double(counts.total)),
+            "awaiting": .number(Double(counts.awaiting)),
+            "urgent": .number(Double(counts.urgent)),
+            "overdue": .number(Double(counts.overdue)),
+            "due_soon": .number(Double(counts.dueSoon)),
+        ])
+    }
+
+    /// The bulk body's `query` (lists as arrays, `fields` as `[{key, op, value}]`) as list query parameters.
+    private func inboxQuery(_ filters: [String: JSONValue]) -> [String: String] {
+        var out: [String: String] = [:]
+        for (key, value) in filters {
+            switch value {
+            case let .array(items) where key == "fields":
+                for item in items {
+                    guard let name = item["key"]?.string else { continue }
+                    out["field.\(name)[\(item["op"]?.string ?? "eq")]"] = item["value"]?.string ?? ""
+                }
+            case let .array(items): out[key] = items.compactMap(\.string).joined(separator: ",")
+            case let .bool(on): if on { out[key] = "true" }
+            case let .string(text): out[key] = text
+            default: break
+            }
+        }
+        return out
+    }
+
+    /// `POST /v1/tickets/bulk` with `query`: the change on every ticket of the list, or deletion.
+    private func inboxBulkMatching(_ filters: [String: JSONValue], _ body: JSONValue, in ws: inout DemoWorkspace) throws -> JSONValue {
+        let query = inboxQuery(filters)
+        let snapshot = ws
+        let ids = ws.tickets.filter { inboxMatches($0, query, in: snapshot) }.map(\.id)
+        if body["delete"]?.bool == true {
+            try inboxBulk(.object(["ids": .array(ids.map { .string($0) }), "delete": .bool(true)]), in: &ws)
+            return .object(["updated": .number(0), "deleted": .number(Double(ids.count))])
+        }
+        guard !ids.isEmpty else { return .object(["updated": .number(0), "deleted": .number(0)]) }
+        try inboxBulk(.object(["ids": .array(ids.map { .string($0) }), "patch": body["patch"] ?? .object([:])]), in: &ws)
+        return .object(["updated": .number(Double(ids.count)), "deleted": .number(0)])
     }
 
     // MARK: List
@@ -172,7 +225,7 @@ extension DemoBackend {
 
     private func inboxSearch(_ raw: String, in ws: DemoWorkspace) -> JSONValue {
         let text = raw.trimmingCharacters(in: .whitespaces)
-        guard !text.isEmpty else { return .object(["tickets": .array([]), "contacts": .array([]), "articles": .array([])]) }
+        guard !text.isEmpty else { return .object(["tickets": .array([]), "contacts": .array([]), "articles": .array([]), "wiki_pages": .array([])]) }
         let tickets = ws.tickets.filter { !$0.spam && matches($0, ["q": text], in: ws) }
             .sorted { $0.lastMessageAt > $1.lastMessageAt }
         let contacts = inboxContacts(ws).filter { ($0.name + " " + ($0.email ?? "")).localizedCaseInsensitiveContains(text) }
@@ -181,6 +234,7 @@ extension DemoBackend {
             "tickets": DemoSeed.json(Array(tickets.prefix(5))),
             "contacts": DemoSeed.json(Array(contacts.prefix(5))),
             "articles": DemoSeed.json(Array(articles.prefix(5))),
+            "wiki_pages": DemoSeed.json(Array(wikiSearch(text, in: ws.kb.wiki).prefix(5))),
         ])
     }
 
@@ -269,13 +323,21 @@ extension DemoBackend {
         ticket.status = body["status"]?.string.flatMap(TicketStatus.init(rawValue:)) ?? .open
         ticket.teamID = body["team_id"]?.string.flatMap { id in ws.teams.first { $0.id == id }?.id }
         ticket.assignee = body["assignee_id"]?.string.flatMap { id in ws.members.first { $0.id == id }?.ref }
+        ticket.severity = body["severity"]?.string.flatMap(Severity.init(rawValue:))
+        if let names = body["tags"]?.array?.compactMap(\.string) {
+            var seen: [String] = []
+            for name in names where !seen.contains(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) { seen.append(name) }
+            ticket.tags = seen.map { tag(named: $0, in: &ws) }
+        }
+        if let fields = body["fields"]?.object { ticket.fields = fields.filter { $0.value != .null } }
         let html = body["body_html"]?.string ?? ""
         ticket.lastMessagePreview = DemoSeed.preview(html)
         ws.tickets.append(ticket)
         let index = ws.tickets.count - 1
         publish("ticket.created", ["ticket": DemoSeed.json(ticket)], in: &ws)
         let kind = MessageKind(rawValue: body["kind"]?.string ?? "reply") ?? .reply
-        _ = send(kind: kind, html: html, attachments: [], on: index, in: &ws)
+        let files = (body["attachment_ids"]?.array?.compactMap(\.string) ?? []).compactMap { uploads[$0] }
+        _ = send(kind: kind, html: html, attachments: files, on: index, in: &ws)
         return ws.tickets[index]
     }
 

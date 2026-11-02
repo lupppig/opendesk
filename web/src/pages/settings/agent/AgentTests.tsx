@@ -22,7 +22,7 @@ import { SettingsEmpty } from "@/components/settings2/SettingsEmpty";
 import { useListMutation } from "@/components/settings2/optimistic";
 import { AgentOffNotice } from "@/components/agent/bits";
 import { agentSettings, playgroundSettings, useAgentDraft } from "@/components/agent/settings";
-import { CheckList, expectationText, TestEditor, TestStatePill, useToolOptions } from "@/components/agent/quality";
+import { CheckList, expectationText, TestEditor, TestStatePill, useValueLabel, type ValueLabel } from "@/components/agent/quality";
 import { api } from "@/lib/api/endpoints";
 import type { AgentTest, AgentTestRun } from "@/lib/api/types";
 import { activeRun, MAX_TESTS, newlyFailing, passRate, runProgress, testState, type TestState } from "@/lib/agentTests";
@@ -51,7 +51,7 @@ export default function AgentTests() {
   const [filter, setFilter] = useState<Filter>("all");
   const [editing, setEditing] = useState<Editing>(null);
   const [openId, setOpenId] = useState<string | null>(null);
-  const tools = useToolOptions();
+  const label = useValueLabel();
 
   const list = useMemo(() => tests ?? [], [tests]);
   const run = activeRun(runs);
@@ -248,7 +248,7 @@ export default function AgentTests() {
                       runDisabled={busy || !ai.enabled}
                       onEdit={() => setEditing({ test: x })}
                       onDelete={() => askDelete(x)}
-                      toolName={tools.name}
+                      label={label}
                     />
                   </MotionRow>
                 ))}
@@ -308,7 +308,7 @@ function TestRow({
   runDisabled,
   onEdit,
   onDelete,
-  toolName,
+  label,
 }: {
   test: AgentTest;
   state: TestState;
@@ -318,7 +318,7 @@ function TestRow({
   runDisabled: boolean;
   onEdit: () => void;
   onDelete: () => void;
-  toolName: (k: string) => string;
+  label: ValueLabel;
 }) {
   const { t } = useTranslation("agentQuality");
   const reduce = useReducedMotion();
@@ -388,7 +388,7 @@ function TestRow({
             transition={springs.row}
             className="overflow-hidden"
           >
-            <TestDetail test={test} toolName={toolName} />
+            <TestDetail test={test} label={label} />
           </motion.div>
         )}
       </AnimatePresence>
@@ -396,7 +396,7 @@ function TestRow({
   );
 }
 
-function TestDetail({ test, toolName }: { test: AgentTest; toolName: (k: string) => string }) {
+function TestDetail({ test, label }: { test: AgentTest; label: ValueLabel }) {
   const { t } = useTranslation("agentQuality");
   const r = test.last_result;
   return (
@@ -422,7 +422,7 @@ function TestDetail({ test, toolName }: { test: AgentTest; toolName: (k: string)
         <ul className="flex flex-wrap gap-1.5">
           {test.expectations.map((e, i) => (
             <li key={i} className="inline-flex max-w-full items-center rounded-sm border border-line bg-surface px-2 py-0.5 text-[12px] text-fg-2">
-              <span className="truncate">{expectationText(e, t, toolName)}</span>
+              <span className="truncate">{expectationText(e, t, label)}</span>
             </li>
           ))}
         </ul>
@@ -456,6 +456,11 @@ function TestDetail({ test, toolName }: { test: AgentTest; toolName: (k: string)
                   {x}
                 </span>
               ))}
+              {(r.procedures ?? []).map((x) => (
+                <span key={x.id} className={cn("inline-flex h-5 max-w-[200px] items-center rounded-sm px-1.5", tone[AI_TONE].chip)}>
+                  <span className="truncate">{t("detail.procedure", { name: x.name })}</span>
+                </span>
+              ))}
               {r.action && <span className={cn("inline-flex h-5 items-center rounded-sm px-1.5", tone[AI_TONE].chip)}>{t("detail.action", { title: r.action.title })}</span>}
               {r.sources.map((s) => (
                 <span key={`${s.kind}-${s.id}`} className="inline-flex h-5 max-w-[200px] items-center rounded-sm border border-line bg-surface px-1.5">
@@ -463,7 +468,7 @@ function TestDetail({ test, toolName }: { test: AgentTest; toolName: (k: string)
                 </span>
               ))}
             </div>
-            {r.checks.length > 0 && <CheckList checks={r.checks} toolName={toolName} />}
+            {r.checks.length > 0 && <CheckList checks={r.checks} label={label} />}
           </>
         )}
       </div>

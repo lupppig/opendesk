@@ -34,6 +34,7 @@
     "handoff": "Passe le relais à l’équipe",
     "no_handoff": "Ne passe pas le relais",
     "uses_tool": "Utilise un outil",
+    "uses_procedure": "Suit une procédure",
     "cites_knowledge": "Cite la base de connaissances"
   },
   "kindHint": {
@@ -42,6 +43,7 @@
     "handoff": "Ollie transmet la conversation à une personne",
     "no_handoff": "Ollie répond sans transmettre la conversation",
     "uses_tool": "Ollie appelle cet outil",
+    "uses_procedure": "Ollie lit cette procédure",
     "cites_knowledge": "La réponse cite au moins une source"
   },
   "check": {
@@ -107,7 +109,8 @@
     "notRun": "Ce test n’a pas encore été exécuté.",
     "noAnswer": "Ollie n’a rédigé aucune réponse.",
     "handedOff": "Relais transmis",
-    "action": "Confirmation demandée : {{title}}"
+    "action": "Confirmation demandée : {{title}}",
+    "procedure": "A suivi {{name}}"
   },
   "editor": {
     "title": "Nouveau test",
@@ -139,6 +142,9 @@
     "tool": "Outil",
     "pickTool": "Choisir un outil",
     "noTools": "Connectez d’abord un outil sur la page Outils.",
+    "procedure": "Procédure",
+    "pickProcedure": "Choisir une procédure",
+    "noProcedures": "Rédigez d’abord une procédure sur la page Procédures.",
     "valueEmpty": "Décrivez ce qu’il faut vérifier.",
     "valueLong": "Restez sous 1 000 caractères.",
     "mentionsPlaceholder": "Les remboursements prennent de 5 à 10 jours ouvrés",

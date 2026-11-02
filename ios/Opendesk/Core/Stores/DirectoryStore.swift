@@ -43,7 +43,8 @@ final class DirectoryStore {
 
     func load() async {
         guard let api else { return }
-        async let members: Page<Member>? = try? api.get("v1/members", query: [URLQueryItem(name: "limit", value: "100")])
+        // Every member, page after page: assignee pickers and names need the whole team.
+        async let members: [Member]? = try? api.all("v1/members")
         async let teams: Page<Team>? = try? api.get("v1/teams", query: [URLQueryItem(name: "limit", value: "100")])
         async let tags: Page<Tag>? = try? api.get("v1/tags", query: [
             URLQueryItem(name: "archived", value: "false"), URLQueryItem(name: "applies_to", value: "tickets"), URLQueryItem(name: "limit", value: "100"),
@@ -55,7 +56,7 @@ final class DirectoryStore {
         async let collab: CollabAvailability? = try? api.get("v1/collab")
         async let counts: TicketCounts? = try? api.get("v1/tickets/counts")
 
-        if let page = await members { self.members = page.data }
+        if let all = await members { self.members = all }
         if let page = await teams { self.teams = page.data.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending } }
         if let page = await tags { self.tags = page.data.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending } }
         if let page = await views { self.views = page.data.sorted { ($0.position ?? 0) < ($1.position ?? 0) } }
@@ -72,16 +73,27 @@ final class DirectoryStore {
         if let value: TicketCounts = try? await api.get("v1/tickets/counts") { counts = value }
     }
 
-    /// Coalesces bursts (bulk edits) into one counts refetch.
+    /// Coalesces bursts (bulk edits, imports, auto-close) into one counts refetch every two
+    /// seconds at most, as the web does. A refetch still running finishes and the next one
+    /// starts after it, so the numbers settle on a read after the last event.
     func scheduleCounts() {
+        countsDirty = true
         guard countsTask == nil else { return }
         countsTask = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(400))
-            guard let self else { return }
-            self.countsTask = nil
-            await self.refreshCounts()
+            while true {
+                try? await Task.sleep(for: .seconds(2))
+                guard let self else { return }
+                self.countsDirty = false
+                await self.refreshCounts()
+                guard self.countsDirty else {
+                    self.countsTask = nil
+                    return
+                }
+            }
         }
     }
+
+    @ObservationIgnored private var countsDirty = false
 
     // MARK: Lookups
 
@@ -152,7 +164,10 @@ final class DirectoryStore {
             if let id = envelope.string("tag_id") { tags.removeAll { $0.id == id } }
             if let into = envelope.member("into", as: Tag.self) { upsert(&tags, into) }
         case "view.created", "view.updated":
-            if let view = envelope.member("view", as: SavedView.self) { upsert(&views, view) }
+            if let view = envelope.member("view", as: SavedView.self) {
+                upsert(&views, view)
+                views.sort { ($0.position ?? 0) < ($1.position ?? 0) }
+            }
             scheduleCounts()
         case "view.deleted":
             if let id = envelope.string("view_id") { views.removeAll { $0.id == id } }

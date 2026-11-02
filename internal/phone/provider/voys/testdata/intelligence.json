@@ -1,0 +1,14 @@
+[
+  {
+    "call_id": "ua9-grq-prd-1793095200.1001",
+    "recording_url": "https://api.voys.nl/api/v2/clients/b2a1430d-00fc-40c2-9882-93eab4df58fe/callrecordings/ua9-grq-prd-1793095200.1001/audio"
+  },
+  {
+    "call_id": "ua9-grq-prd-1793095200.1001",
+    "call_transcription": "Speaker 1: Text sent in the notification.\nSpeaker 2: It is not used."
+  },
+  {
+    "call_id": "ua9-grq-prd-1793095200.1001",
+    "summary": "A summary sent in the notification, which is not used."
+  }
+]

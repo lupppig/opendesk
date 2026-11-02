@@ -58,6 +58,30 @@ struct OutgoingMessage: Sendable, Hashable {
     var mailboxID: String?
     /// The caller's own note this reply is written from (it becomes a marker once sent).
     var fromNoteID: String?
+    /// Sent from one of the member's own Collab addresses (contracts/collab.md "Answering tickets").
+    var fromAccount: MessageFromAccount?
+}
+
+/// One of the member's own Collab addresses a ticket reply may go from.
+struct PersonalSender: Hashable, Sendable, Identifiable {
+    var account: MailAccount
+    var identity: MailIdentity
+
+    var id: String { account.id + "/" + identity.email.lowercased() }
+    var email: String { identity.email.lowercased() }
+    /// The From name the customer sees.
+    var name: String {
+        if !identity.fromName.isEmpty { return identity.fromName }
+        return identity.displayName.isEmpty ? account.displayName : identity.displayName
+    }
+    var line: String { name.isEmpty ? email : "\(name) <\(email)>" }
+    var signatureHTML: String { identity.primary ? (identity.filledSignatureHTML ?? account.signatureHTML) : identity.signature }
+    /// Where answers go when the address is chosen with "address": its own reply-to, else itself.
+    var ownReplyTo: String { identity.replyTo.isEmpty ? email : identity.replyTo }
+
+    func matches(_ from: MessageFromAccount) -> Bool {
+        from.accountID == account.id && from.email.lowercased() == email
+    }
 }
 
 /// The open ticket: its record, thread, side conversations, shared draft, the
@@ -86,6 +110,13 @@ final class TicketStore {
     private(set) var contactLoading = false
     private(set) var replyAddresses: [ReplyAddress] = []
     private(set) var variables: TicketVariables?
+    /// The member's Collab accounts, for answering from their own addresses.
+    private(set) var mailAccounts: [MailAccount] = []
+    /// The workspace's ticket panels (contracts/integrations.md "Ticket panels") and what each shows here.
+    private(set) var panels: [TicketPanel] = []
+    private(set) var panelData: [String: TicketPanelData] = [:]
+    private(set) var panelsLoading: Set<String> = []
+    private(set) var panelErrors: [String: String] = [:]
 
     // Per message
     private(set) var originals: [String: String] = [:]
@@ -227,6 +258,93 @@ final class TicketStore {
         variables = try? await api.get("v1/tickets/\(resolvedID)/variables")
     }
 
+    // MARK: Answering from one's own address
+
+    /// The member's Collab accounts, loaded once a reply could go from one of them.
+    func loadMailAccounts() async {
+        guard mailAccounts.isEmpty, let list: [MailAccount] = try? await api.get("v1/collab/accounts") else { return }
+        mailAccounts = list
+    }
+
+    /// The addresses the member may answer from under `address`'s rules (contracts/collab.md
+    /// "Answering tickets"): any account they see that needs no reconnecting, limited to
+    /// shared accounts or the address's own domains when its mailbox says so.
+    func personalSenders(under address: ReplyAddress?) -> [PersonalSender] {
+        let rule = address?.personalReplies?.accounts ?? "any"
+        let domains = address?.domains ?? []
+        return mailAccounts.filter { !$0.reconnect }.flatMap { account in
+            let own = account.identities.filter(\.canSend)
+            let identities = account.identities.isEmpty ? [MailIdentity(email: account.email.lowercased(), primary: true)] : own
+            return identities.map { PersonalSender(account: account, identity: $0) }
+        }
+        .filter { sender in
+            switch rule {
+            case "shared": !sender.account.isPrivate
+            case "domain": domains.contains(sender.email.split(separator: "@").last.map(String.init) ?? "")
+            default: true
+            }
+        }
+    }
+
+    /// Where the member's next reply starts: the address they last answered this ticket from.
+    func lastPersonalFrom(me: String?) -> MessageFromAccount? {
+        guard let me else { return nil }
+        let last = messages.last { $0.direction == "outbound" && $0.kind == .reply && $0.threadID == nil && $0.author.user?.id == me }
+        return last?.fromAccount
+    }
+
+    // MARK: Preview
+
+    /// The email a reply from a team address sends, as sending renders it.
+    func previewReply(html: String, mailboxID: String?) async throws -> TemplatePreview {
+        struct Body: Encodable, Sendable { let kind: String; let body_html: String; let ticket_id: String; let mailbox_id: String? }
+        return try await api.post("v1/templates/preview", body: Body(kind: "reply", body_html: html, ticket_id: resolvedID, mailbox_id: mailboxID))
+    }
+
+    // MARK: Panels
+
+    /// The workspace's panels, then what each shows for this ticket's customer, in the reader's language.
+    func loadPanels() async {
+        guard let page: Page<TicketPanel> = try? await api.get("v1/ticket-panels") else { return }
+        panels = page.data.filter(\.enabled).sorted { $0.position < $1.position }
+        await withTaskGroup(of: Void.self) { group in
+            for panel in panels where panelData[panel.id] == nil {
+                group.addTask { await self.loadPanel(panel.id) }
+            }
+        }
+    }
+
+    /// One panel's data; `refresh` asks the product again.
+    func loadPanel(_ id: String, refresh: Bool = false) async {
+        guard !panelsLoading.contains(id) else { return }
+        panelsLoading.insert(id)
+        defer { panelsLoading.remove(id) }
+        var query = [URLQueryItem(name: "locale", value: Self.readerLanguage)]
+        if refresh { query.append(URLQueryItem(name: "refresh", value: "true")) }
+        do {
+            let data: TicketPanelData = try await api.get("v1/tickets/\(resolvedID)/panels/\(id)", query: query)
+            panelData[id] = data
+            panelErrors[id] = nil
+        } catch let error as APIError where error.status == 404 {
+            panels.removeAll { $0.id == id }
+            panelData[id] = nil
+        } catch {
+            if !error.isCancellation { panelErrors[id] = error.userMessage }
+        }
+    }
+
+    private func upsert(_ panel: TicketPanel) {
+        guard panel.enabled else {
+            panels.removeAll { $0.id == panel.id }
+            panelData[panel.id] = nil
+            return
+        }
+        let changed = panels.first { $0.id == panel.id } != panel
+        if let index = panels.firstIndex(where: { $0.id == panel.id }) { panels[index] = panel } else { panels.append(panel) }
+        panels.sort { $0.position < $1.position }
+        if changed { Task { await loadPanel(panel.id) } }
+    }
+
     private func reloadMessagesSoon() {
         messagesReload?.cancel()
         messagesReload = Task { [weak self] in
@@ -286,6 +404,16 @@ final class TicketStore {
                   !activities.contains(where: { $0.id == activity.id })
             else { return }
             activities.append(activity)
+        case "activity.updated":
+            // A call entry follows its call (contracts/phone.md "Timeline").
+            guard let activity = envelope.member("activity", as: Activity.self),
+                  mine(envelope.string("ticket_id") ?? activity.ticketID)
+            else { return }
+            if let index = activities.firstIndex(where: { $0.id == activity.id }) {
+                activities[index] = activity
+            } else {
+                activities.append(activity)
+            }
         case "ai_suggested_reply.created", "ai_suggested_reply.updated":
             guard let suggestion = envelope.member("suggested_reply", as: SuggestedReply.self),
                   mine(envelope.string("ticket_id") ?? suggestion.ticketID)
@@ -307,6 +435,13 @@ final class TicketStore {
         case "ticket_link.deleted":
             guard mine(envelope.string("ticket_id")), let id = envelope.string("link_id") else { return }
             links.removeAll { $0.id == id }
+        case "ticket_panel.created", "ticket_panel.updated":
+            guard let panel = envelope.member("panel", as: TicketPanel.self) else { return }
+            upsert(panel)
+        case "ticket_panel.deleted":
+            guard let id = envelope.string("panel_id") else { return }
+            panels.removeAll { $0.id == id }
+            panelData[id] = nil
         default:
             break
         }
@@ -385,6 +520,10 @@ final class TicketStore {
         local.attachments = outgoing.attachments
         if outgoing.kind == .note { local.deliveryStatus = "none" }
         if outgoing.kind == .reply, ticket?.channel == .email, let email = ticket?.contact?.email { local.to = [email] }
+        if let from = outgoing.fromAccount {
+            local.fromAccount = from
+            local.fromEmail = from.email
+        }
         messages.append(local)
         self.outgoing[local.id] = outgoing
         if let fromNote = outgoing.fromNoteID { messages.removeAll { $0.id == fromNote } }
@@ -401,12 +540,16 @@ final class TicketStore {
             let status: TicketStatus?
             let mailbox_id: String?
             let from_note_id: String?
+            let from_account: MessageFromAccount?
         }
         let body = Body(
             kind: outgoing.kind, body_html: outgoing.html,
             cc: outgoing.cc.isEmpty ? nil : outgoing.cc, bcc: outgoing.bcc.isEmpty ? nil : outgoing.bcc,
             attachment_ids: outgoing.attachmentIDs.isEmpty ? nil : outgoing.attachmentIDs,
-            status: outgoing.status, mailbox_id: outgoing.mailboxID, from_note_id: outgoing.fromNoteID
+            status: outgoing.status,
+            // From one's own address the ticket keeps its reply address, so no mailbox is named.
+            mailbox_id: outgoing.fromAccount == nil ? outgoing.mailboxID : nil,
+            from_note_id: outgoing.fromNoteID, from_account: outgoing.fromAccount
         )
         do {
             let sent: Message = try await api.post("v1/tickets/\(resolvedID)/messages", body: body, idempotencyKey: localID)
@@ -515,6 +658,12 @@ final class TicketStore {
         guard originals[message.id] == nil else { return }
         let result: HTMLResult = try await api.get("v1/messages/\(message.id)/original")
         originals[message.id] = result.html
+    }
+
+    /// The copy of an email we sent, kept when it went out; its body when none was kept.
+    func sentEmail(_ message: Message) async throws -> String {
+        let result: HTMLResult = try await api.get("v1/messages/\(message.id)/original")
+        return result.html
     }
 
     func hideOriginal(_ message: Message) {

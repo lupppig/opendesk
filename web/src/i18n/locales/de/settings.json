@@ -260,6 +260,12 @@
       "label": "Gesprächsansicht",
       "hint": "Nachrichten des Kunden links, Antworten und Notizen deines Teams rechts, wie in einem Chat. Volle Breite auf schmalen Bildschirmen."
     },
+    "properties": {
+      "label": "Ticket-Eigenschaften",
+      "hint": "Status, Priorität, Zuständige Person, Team und Labels in der Detailspalte oder in einer Leiste über der Unterhaltung, direkt bearbeitbar. Mit der Leiste beginnt die Detailspalte mit dem Kunden und dem, was deine Apps über ihn wissen.",
+      "column": "In der Detailspalte",
+      "bar": "In einer Leiste über der Unterhaltung"
+    },
     "nextTicket": {
       "label": "Nach „{{action}}“ das nächste Ticket öffnen",
       "hint": "Auch nach dem Senden mit einem Status, der das Ticket aus der Liste nimmt. Das nächste Ticket der Liste oder Ansicht, aus der du kommst, öffnet sich, mit ihren Filtern und ihrer Sortierung; nach dem letzten bist du zurück in der Liste. Machst du das Senden rückgängig, kommst du zum Ticket zurück."

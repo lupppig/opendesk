@@ -375,8 +375,8 @@ func purgeMessage(ctx context.Context, tx pgx.Tx, d *deps.Deps, wid, tid, mid uu
 	if err := forgetSentCopies(ctx, tx, wid, tid, mid); err != nil {
 		return nil, err
 	}
-	if _, err := tx.Exec(ctx, `DELETE FROM notifications WHERE workspace_id = $1 AND ticket_id = $2 AND data->>'message_id' = $3`,
-		wid, tid, mid.String()); err != nil {
+	if err := hd.DeleteNotifications(ctx, tx, wid, `DELETE FROM notifications WHERE workspace_id = $1 AND ticket_id = $2 AND data->>'message_id' = $3
+		RETURNING id, user_id, read_at IS NULL`, wid, tid, mid.String()); err != nil {
 		return nil, err
 	}
 	// Ollie's reply to it, or the one it was sent as, may quote it.
@@ -429,8 +429,8 @@ func hideMessage(ctx context.Context, tx pgx.Tx, d *deps.Deps, wid, tid, mid uui
 	if _, err := tx.Exec(ctx, `UPDATE tickets SET updated_at = now() WHERE workspace_id = $1 AND id = $2`, wid, tid); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `DELETE FROM notifications WHERE workspace_id = $1 AND ticket_id = $2 AND type = $3 AND data->>'message_id' = $4`,
-		wid, tid, hd.NotifyMentioned, mid.String()); err != nil {
+	if err := hd.DeleteNotifications(ctx, tx, wid, `DELETE FROM notifications WHERE workspace_id = $1 AND ticket_id = $2 AND type = $3 AND data->>'message_id' = $4
+		RETURNING id, user_id, read_at IS NULL`, wid, tid, hd.NotifyMentioned, mid.String()); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE notifications SET data = data - 'preview'

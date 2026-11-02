@@ -33,7 +33,7 @@ var (
 	ConditionOps   = []string{"contains", "not_contains", "equals", "not_equals", "any", "none"}
 	// PhraseFields take the phrase ops any and none: a list of phrases, one per line.
 	PhraseFields = []string{"subject", "body", "from_email", "received_at", "tag"}
-	ActionTypes  = []string{"set_status", "set_priority", "set_severity", "assign_user", "assign_replier", "assign_team", "add_tag", "remove_tag", "send_reply", "add_note", "mark_spam", "delete_ticket", "merge_into_open_ticket", "ai_triage", "set_field", "set_reply_address"}
+	ActionTypes  = []string{"set_status", "set_priority", "set_severity", "assign_user", "assign_replier", "assign_team", "add_tag", "remove_tag", "send_reply", "add_note", "mark_spam", "delete_ticket", "merge_into_open_ticket", "ai_triage", "set_field", "set_reply_address", "run_procedure"}
 	// Sentiments are the values triage writes to custom.ai_sentiment (contracts/ai.md).
 	Sentiments = []string{"positive", "neutral", "negative", "frustrated"}
 )
@@ -63,7 +63,7 @@ type Condition struct {
 }
 
 type Action struct {
-	Type  string `json:"type" enum:"set_status,set_priority,set_severity,assign_user,assign_replier,assign_team,add_tag,remove_tag,send_reply,add_note,mark_spam,delete_ticket,merge_into_open_ticket,ai_triage,set_field,set_reply_address"`
+	Type  string `json:"type" enum:"set_status,set_priority,set_severity,assign_user,assign_replier,assign_team,add_tag,remove_tag,send_reply,add_note,mark_spam,delete_ticket,merge_into_open_ticket,ai_triage,set_field,set_reply_address,run_procedure"`
 	Value string `json:"value" maxLength:"20000"`
 	// Field is the ticket custom field key of set_field.
 	Field string `json:"field,omitempty" maxLength:"40"`
@@ -370,6 +370,16 @@ func ValidateActions(ctx context.Context, q db.Querier, wid uuid.UUID, as []Acti
 				return nil, err
 			}
 			a.Value = id.String()
+		case "run_procedure":
+			// Ollie runs one of the workspace's procedures on the ticket (contracts/ai.md "Automations").
+			id, err := ParseRef(a.Value, "run_procedure value")
+			if err != nil {
+				return nil, err
+			}
+			if err := CheckRef(ctx, q, wid, "ai_procedure", id); err != nil {
+				return nil, err
+			}
+			a.Value = id.String()
 		case "set_field":
 			a.Field = strings.TrimSpace(a.Field)
 			defs, err := domain.LoadFieldDefs(ctx, q, wid, domain.FieldEntityTicket)
@@ -421,10 +431,14 @@ func ValidateActions(ctx context.Context, q db.Querier, wid uuid.UUID, as []Acti
 }
 
 // ValidateActionTrigger checks that the actions can run on trigger: merge_into_open_ticket
-// joins a new ticket to an earlier one, so it runs only when a ticket is created.
+// joins a new ticket to an earlier one, so it runs only when a ticket is created, and
+// run_procedure never runs on ticket_updated, so Ollie's own changes cannot run it again.
 func ValidateActionTrigger(trigger string, as []Action) error {
 	if trigger != jobs.TriggerTicketCreated && slices.ContainsFunc(as, func(a Action) bool { return a.Type == "merge_into_open_ticket" }) {
 		return httpx.Validation("merge_into_open_ticket runs only on the ticket_created trigger")
+	}
+	if trigger == jobs.TriggerTicketUpdated && slices.ContainsFunc(as, func(a Action) bool { return a.Type == "run_procedure" }) {
+		return httpx.Validation("run_procedure runs on ticket_created, customer_replied, agent_replied and call_ended, not on ticket_updated")
 	}
 	return nil
 }

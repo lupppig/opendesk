@@ -296,10 +296,12 @@ struct AssistantPageContext: Codable, Hashable, Sendable {
     var ticketID: String?
     var folder: String?
     var viewID: String?
+    var wikiPageID: String?
 
     enum CodingKeys: String, CodingKey {
         case page, path, folder
         case ticketID = "ticket_id"
         case viewID = "view_id"
+        case wikiPageID = "wiki_page_id"
     }
 }

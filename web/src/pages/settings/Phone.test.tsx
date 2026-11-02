@@ -88,6 +88,28 @@ describe("Phone settings", () => {
     }
   });
 
+  it("shows a Voys connection waiting for its first call, with the Freedom steps", async () => {
+    const saved = db.workspaces[0].phone;
+    db.workspaces[0].phone = [];
+    try {
+      const made = await call("POST", "/v1/phone/connections", { provider: "voys", credentials: { api_token: "demo" } });
+      expect(made.status).toBe(201);
+      await mount();
+      await until(el, "Waiting for the first call");
+      const text = el.textContent ?? "";
+      expect(text).toContain("No call has come in yet. Add the webhook address below in Voys");
+      expect(text).toContain("Webhook address, to add in Voys as a call notification");
+      expect(text).toContain("open Integratie, then Gespreksnotificaties, and click Toevoegen");
+      expect(el.querySelectorAll('[data-testid="webhook-steps"] li')).toHaveLength(5);
+      expect(text).toContain(made.body.webhook_url);
+      // Voys shows no cards, and keeps no lasting page to open.
+      expect(text).not.toContain("Show the caller in Aircall");
+      expect(el.querySelector('[aria-label="Make a new webhook address for Margin"]')).not.toBeNull();
+    } finally {
+      db.workspaces[0].phone = saved;
+    }
+  });
+
   it("builds the missed call example for the call_ended trigger", () => {
     const a = missedCallAutomation("Missed call", "Call back.");
     expect(a.trigger).toBe("call_ended");
@@ -111,6 +133,26 @@ describe("mock phone API", () => {
       expect((await call("POST", "/v1/phone/connections", { provider: "aircall", credentials: { api_id: "demo", api_token: "x" } })).status).toBe(409);
       expect((await call("GET", "/v1/phone/lines")).body.data.length).toBeGreaterThan(0);
       expect((await call("DELETE", `/v1/phone/connections/${ok.body.id}`)).status).toBe(204);
+    } finally {
+      db.workspaces[0].phone = saved;
+    }
+  });
+
+  it("connects Voys by its token and gives it a new webhook address on request", async () => {
+    const saved = db.workspaces[0].phone;
+    db.workspaces[0].phone = [];
+    try {
+      expect((await call("POST", "/v1/phone/connections", { provider: "voys", credentials: { api_token: "nope" } })).status).toBe(422);
+      const ok = await call("POST", "/v1/phone/connections", { provider: "voys", credentials: { api_token: "demo" } });
+      expect(ok.status).toBe(201);
+      expect(ok.body).toMatchObject({ provider: "voys", health_status: "action_required", health_code: "webhook_missing", last_event_at: null, insight_cards: false });
+      expect(ok.body.webhook_url).toMatch(new RegExp(`/v1/phone/hooks/voys/${ok.body.id}/[A-Za-z0-9_-]{43}$`));
+      const rotated = await call("POST", `/v1/phone/connections/${ok.body.id}/rotate-webhook`);
+      expect(rotated.status).toBe(200);
+      expect(rotated.body.webhook_url).not.toBe(ok.body.webhook_url);
+      expect((await call("GET", "/v1/phone/lines")).body.data.map((l: { provider: string }) => l.provider)).toEqual(["voys"]);
+      const aircall = await call("POST", "/v1/phone/connections", { provider: "aircall", credentials: { api_id: "demo", api_token: "x" } });
+      expect((await call("POST", `/v1/phone/connections/${aircall.body.id}/rotate-webhook`)).status).toBe(422);
     } finally {
       db.workspaces[0].phone = saved;
     }

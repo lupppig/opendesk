@@ -32,6 +32,7 @@
     "handoff": "Übergibt an das Team",
     "no_handoff": "Übergibt nicht",
     "uses_tool": "Nutzt ein Tool",
+    "uses_procedure": "Folgt einem Ablauf",
     "cites_knowledge": "Zitiert die Wissensdatenbank"
   },
   "kindHint": {
@@ -40,6 +41,7 @@
     "handoff": "Ollie übergibt die Unterhaltung an eine Person",
     "no_handoff": "Ollie antwortet, ohne weiterzugeben",
     "uses_tool": "Ollie ruft dieses Tool auf",
+    "uses_procedure": "Ollie liest diesen Ablauf",
     "cites_knowledge": "Die Antwort zitiert mindestens eine Quelle"
   },
   "check": {
@@ -104,7 +106,8 @@
     "notRun": "Dieser Test wurde noch nicht ausgeführt.",
     "noAnswer": "Ollie hat keine Antwort geschrieben.",
     "handedOff": "Übergeben",
-    "action": "Um Bestätigung gebeten: {{title}}"
+    "action": "Um Bestätigung gebeten: {{title}}",
+    "procedure": "Ist {{name}} gefolgt"
   },
   "editor": {
     "title": "Neuer Test",
@@ -136,6 +139,9 @@
     "tool": "Tool",
     "pickTool": "Tool auswählen",
     "noTools": "Verbinde zuerst ein Tool auf der Seite Tools.",
+    "procedure": "Ablauf",
+    "pickProcedure": "Ablauf auswählen",
+    "noProcedures": "Schreib zuerst einen Ablauf auf der Seite Abläufe.",
     "valueEmpty": "Beschreib, worauf geachtet werden soll.",
     "valueLong": "Bleib unter 1.000 Zeichen.",
     "mentionsPlaceholder": "Erstattungen dauern 5 bis 10 Werktage",

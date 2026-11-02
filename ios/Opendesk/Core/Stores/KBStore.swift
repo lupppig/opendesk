@@ -23,6 +23,8 @@ final class KBStore {
 
     var collectionID: String? { didSet { if oldValue != collectionID { reload() } } }
     var status: KBStatusFilter = .all { didSet { if oldValue != status { reload() } } }
+    /// Articles or the changelog (contracts/api.md "Changelog"); kept across workspaces.
+    var mode: KBMode = .articles
     private(set) var search = ""
 
     @ObservationIgnored private var api: APIClient?

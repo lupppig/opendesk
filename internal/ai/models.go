@@ -282,6 +282,8 @@ var typicalTokens = map[string]tokenCount{
 	"playground":   {5000, 400},
 	"kb_draft":     {8000, 1500},
 	"assistant":    {6000, 400},
+	// One model turn of a procedure an automation runs: the ticket, its thread and the instructions in.
+	"procedure": {6000, 400},
 	// One answer of a teammate's Ollie: mail excerpts in, a short answer out.
 	"assistant_peer": {4000, 400},
 	// Sorting up to 10 new Collab conversations (decisions), and suggesting an inbox's categories.

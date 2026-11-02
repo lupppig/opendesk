@@ -344,6 +344,7 @@
       "actionValue": "Jede Aktion braucht einen Wert.",
       "phrases": "Eine Liste enthält 1 bis 100 Begriffe, einen pro Zeile, mit je höchstens 500 Zeichen.",
       "mergeTrigger": "Das Zusammenführen mit dem offenen Ticket des Kontakts läuft nur, wenn ein Ticket erstellt wird.",
+      "procedureTrigger": "Ollie kann keinen Ablauf ausführen, wenn ein Ticket aktualisiert wird. Wähle einen anderen Auslöser.",
       "callTrigger": "Anrufbedingungen brauchen den Auslöser Ein Anruf endet."
     },
     "chooseSeverity": "Schweregrad wählen",
@@ -790,7 +791,12 @@
       "abandoned_in_ivr": "Im Menü aufgelegt",
       "abandoned_in_classic": "In der Warteschleife aufgelegt",
       "no_available_agent": "Niemand verfügbar",
-      "agents_did_not_answer": "Niemand hat abgenommen"
+      "agents_did_not_answer": "Niemand hat abgenommen",
+      "busy": "Besetzt",
+      "no_answer": "Nicht angenommen",
+      "failed": "Anruf fehlgeschlagen",
+      "cancelled": "Vor der Annahme aufgelegt",
+      "abandon": "In der Warteschlange aufgelegt"
     }
   }
 }

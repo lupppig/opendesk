@@ -171,6 +171,100 @@ struct ReportOverview: Codable, Hashable, Sendable {
     var solveRate: Double? { created > 0 ? Double(solved) / Double(created) : nil }
 }
 
+// `GET /v1/reports/agents` (contracts/api.md "Agents report"): each member's work in the period.
+
+/// Whose rows and online time the caller gets: everyone's with online time (admins), their own
+/// row with its online time, every row without it (API keys), or the caller's rows with none
+/// because the workspace turned online time off (`settings.agent_online_time`).
+enum ReportOnlineTime: String, Codable, Hashable, Sendable {
+    case all
+    case own = "self"
+    case none
+    case off
+
+    init(from decoder: Decoder) throws {
+        self = (try? ReportOnlineTime(rawValue: decoder.singleValueContainer().decode(String.self))) ?? .none
+    }
+
+    /// The report has an online time column.
+    var shown: Bool { self == .all || self == .own }
+}
+
+struct ReportAgentWork: Codable, Hashable, Sendable, Identifiable {
+    var user: UserRef
+    /// Tickets assigned to them in the period, or created in it assigned to them.
+    var assigned: Int
+    /// Tickets solved in the period that are assigned to them.
+    var solved: Int
+    /// Public replies they sent in the period.
+    var replies: Int
+    /// Internal notes they wrote in the period.
+    var notes: Int
+    /// Their replies on the tickets they solved, per ticket.
+    var repliesPerSolved: Double?
+    var firstResponseP50: Double?
+    /// Median time from the last assignment to them until solved.
+    var handleP50: Double?
+    /// Time in the app with availability online; nil when the report has no online time.
+    var onlineMinutes: Double?
+
+    var id: String { user.id }
+
+    enum CodingKeys: String, CodingKey {
+        case user, assigned, solved, replies, notes
+        case repliesPerSolved = "replies_per_solved"
+        case firstResponseP50 = "first_response_p50_minutes"
+        case handleP50 = "handle_p50_minutes"
+        case onlineMinutes = "online_minutes"
+    }
+
+    init(user: UserRef, assigned: Int, solved: Int, replies: Int, notes: Int, repliesPerSolved: Double?, firstResponseP50: Double?, handleP50: Double?, onlineMinutes: Double?) {
+        self.user = user
+        self.assigned = assigned
+        self.solved = solved
+        self.replies = replies
+        self.notes = notes
+        self.repliesPerSolved = repliesPerSolved
+        self.firstResponseP50 = firstResponseP50
+        self.handleP50 = handleP50
+        self.onlineMinutes = onlineMinutes
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        user = try c.decode(UserRef.self, forKey: .user)
+        assigned = c.lenient(Int.self, forKey: .assigned) ?? 0
+        solved = c.lenient(Int.self, forKey: .solved) ?? 0
+        replies = c.lenient(Int.self, forKey: .replies) ?? 0
+        notes = c.lenient(Int.self, forKey: .notes) ?? 0
+        repliesPerSolved = c.lenient(Double.self, forKey: .repliesPerSolved)
+        firstResponseP50 = c.lenient(Double.self, forKey: .firstResponseP50)
+        handleP50 = c.lenient(Double.self, forKey: .handleP50)
+        onlineMinutes = c.lenient(Double.self, forKey: .onlineMinutes)
+    }
+}
+
+struct ReportAgents: Codable, Hashable, Sendable {
+    var data: [ReportAgentWork]
+    var onlineTime: ReportOnlineTime
+
+    enum CodingKeys: String, CodingKey {
+        case data
+        case onlineTime = "online_time"
+    }
+
+    init(data: [ReportAgentWork], onlineTime: ReportOnlineTime) {
+        self.data = data
+        self.onlineTime = onlineTime
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        data = c.lenient([ReportAgentWork].self, forKey: .data) ?? []
+        onlineTime = c.lenient(ReportOnlineTime.self, forKey: .onlineTime) ?? .none
+    }
+}
+
 /// The report's period: a preset ending today, or custom days. Days are calendar days in the
 /// device's time zone, sent as `yyyy-MM-dd`.
 struct ReportRange: Hashable, Sendable {

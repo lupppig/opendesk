@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"regexp"
-	"slices"
 	"sort"
 	"strings"
 
@@ -335,36 +333,15 @@ func capitalize(s string) string {
 	return strings.ToUpper(s[:1]) + s[1:]
 }
 
-var createVerb = regexp.MustCompile(`(?i)(^|[_\-.])(create|new|open|add|file|submit|report)`)
-
 // creates says whether a tool name reads as making something new.
-func creates(remote string) bool { return createVerb.MatchString(remote) }
-
-var urlPattern = regexp.MustCompile(`https://[^\s"'<>()\[\]{}]+`)
+func creates(remote string) bool { return integrations.Creates(remote) }
 
 // linkRefs are the links on the provider's hosts in a tool's output, first first.
 func linkRefs(text string, hosts []string, limit int) []Ref {
-	if len(hosts) == 0 {
-		return nil
-	}
 	var out []Ref
-	for _, m := range urlPattern.FindAllString(text, 50) {
-		m = strings.TrimRight(m, ".,;:!?")
-		u, err := url.Parse(m)
-		if err != nil || u.User != nil {
-			continue
-		}
-		h := strings.ToLower(u.Hostname())
-		if !slices.ContainsFunc(hosts, func(host string) bool { return h == host || strings.HasSuffix(h, "."+host) }) {
-			continue
-		}
-		if slices.ContainsFunc(out, func(r Ref) bool { return r.ID == m }) {
-			continue
-		}
+	for _, m := range integrations.LinksOn(text, hosts, limit) {
+		u, _ := url.Parse(m)
 		out = append(out, Ref{Kind: "external", ID: m, Label: clip(u.Host+u.Path, 80)})
-		if len(out) == limit {
-			break
-		}
 	}
 	return out
 }

@@ -260,6 +260,12 @@
       "label": "Disposition en conversation",
       "hint": "Les messages du client à gauche, les réponses et notes de votre équipe à droite, comme dans un chat. Pleine largeur sur un écran étroit."
     },
+    "properties": {
+      "label": "Propriétés du ticket",
+      "hint": "Statut, priorité, responsable, équipe et étiquettes dans la colonne des détails, ou dans une barre au-dessus de la conversation, modifiables sur place. Avec la barre, la colonne des détails commence par le client et ce que vos applications savent de lui.",
+      "column": "Dans la colonne des détails",
+      "bar": "Dans une barre au-dessus de la conversation"
+    },
     "nextTicket": {
       "label": "Après « {{action}} », ouvrir le ticket suivant",
       "hint": "Aussi après un envoi avec un statut qui retire le ticket de la liste. Le ticket suivant de la liste ou de la vue d’où vous venez s’ouvre, avec ses filtres et son tri ; après le dernier, vous revenez à la liste. Annuler l’envoi vous ramène au ticket."

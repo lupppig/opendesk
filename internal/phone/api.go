@@ -2,7 +2,10 @@ package phone
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
+	"errors"
 	"net/http"
 	"sort"
 	"strings"
@@ -38,11 +41,29 @@ var healthDetails = map[string]string{
 	HealthUnreachable: "Couldn't reach the provider. Try again in a moment.",
 }
 
+// manualDetails word the health of a connection whose webhook an admin adds in the
+// provider by hand (Descriptor.ManualWebhook), where they differ.
+var manualDetails = map[string]string{
+	HealthNoWebhook: "No call has come in yet. Add the webhook URL in the provider, then make a test call.",
+}
+
+// healthDetail is how a provider's connection words a health code.
+func (s *Service) healthDetail(providerKey, code string) string {
+	if d, ok := manualDetails[code]; ok && s.describe(providerKey).ManualWebhook {
+		return d
+	}
+	return healthDetails[code]
+}
+
 // PhoneProvider is a provider the instance can connect.
 type PhoneProvider struct {
 	Key    string               `json:"key"`
 	Name   string               `json:"name"`
 	Fields []PhoneProviderField `json:"fields"`
+	// ManualWebhook: an admin adds the connection's webhook URL in the provider by hand.
+	ManualWebhook bool `json:"manual_webhook"`
+	// InsightCards: a ringing call can show the caller in the provider's app.
+	InsightCards bool `json:"insight_cards"`
 }
 
 // PhoneProviderField is a credential the admin pastes.
@@ -81,7 +102,7 @@ func (s *Service) Register(api huma.API, r chi.Router) {
 			}{}
 			out.Body.Data = []PhoneProvider{}
 			for _, d := range s.descriptors() {
-				p := PhoneProvider{Key: d.Key, Name: d.Name, Fields: []PhoneProviderField{}}
+				p := PhoneProvider{Key: d.Key, Name: d.Name, Fields: []PhoneProviderField{}, ManualWebhook: d.ManualWebhook, InsightCards: d.InsightCards}
 				for _, f := range d.Fields {
 					p.Fields = append(p.Fields, PhoneProviderField{Name: f.Name, Label: f.Label, Secret: f.Secret})
 				}
@@ -123,15 +144,17 @@ func (s *Service) Register(api huma.API, r chi.Router) {
 			if !ok {
 				return nil, httpx.Validation("Unknown phone provider.")
 			}
-			creds := cleanCredentials(a.Describe(), in.Body.Credentials)
+			desc := a.Describe()
+			creds := cleanCredentials(desc, in.Body.Credentials)
 			if creds == nil {
 				return nil, httpx.Validation("Provide every required credential.")
 			}
 			account, err := a.Validate(ctx, s.http, creds)
 			if err != nil {
-				s.d.Log.Info("phone connect refused", "provider", a.Describe().Key, "err", err)
-				return nil, httpx.E(422, "phone_credentials_refused", "The provider refused these credentials.")
+				s.d.Log.Info("phone connect refused", "provider", desc.Key, "err", err)
+				return nil, credentialsRefused(err)
 			}
+			withAccount(creds, account)
 			sealed, err := s.d.Box.SealJSON(creds)
 			if err != nil {
 				return nil, httpx.Wrap(err)
@@ -142,12 +165,19 @@ func (s *Service) Register(api huma.API, r chi.Router) {
 			} else if name, err = displayname.Validate("Name", name, displayname.Workspace, false); err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			c := PhoneConnection{ID: ids.New(), WorkspaceID: p.WorkspaceID, Provider: a.Describe().Key, Name: name,
+			c := PhoneConnection{ID: ids.New(), WorkspaceID: p.WorkspaceID, Provider: desc.Key, Name: name,
 				AccountName: displayname.CleanOr(account.Name, displayname.Workspace, ""), Status: "connected", HealthStatus: "unknown",
-				ReuseDays: 7, InsightCards: true, CreatedAt: time.Now().UTC(), credentialsEnc: sealed}
+				ReuseDays: 7, InsightCards: desc.InsightCards, CreatedAt: time.Now().UTC(), credentialsEnc: sealed}
+			if desc.ManualWebhook {
+				if c.webhookSecretEnc, err = s.newWebhookSecret(); err != nil {
+					return nil, httpx.Wrap(err)
+				}
+			}
 			err = s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
-				if _, err := tx.Exec(ctx, `INSERT INTO phone_connections (id, workspace_id, provider, name, account_name, credentials_enc, created_by, created_at)
-					VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, c.ID, c.WorkspaceID, c.Provider, c.Name, c.AccountName, c.credentialsEnc, p.UserID, c.CreatedAt); err != nil {
+				if _, err := tx.Exec(ctx, `INSERT INTO phone_connections (id, workspace_id, provider, name, account_name, credentials_enc, created_by, created_at,
+					insight_cards, webhook_secret_enc)
+					VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, c.ID, c.WorkspaceID, c.Provider, c.Name, c.AccountName, c.credentialsEnc, p.UserID, c.CreatedAt,
+					c.InsightCards, c.webhookSecretEnc); err != nil {
 					return err
 				}
 				if _, err := events.Publish(ctx, tx, events.Event{WorkspaceID: p.WorkspaceID, Type: "phone_connection.created", Admins: true,
@@ -215,9 +245,11 @@ func (s *Service) Register(api huma.API, r chi.Router) {
 				if creds = cleanCredentials(a.Describe(), b.Credentials); creds == nil {
 					return nil, httpx.Validation("Provide every required credential.")
 				}
-				if _, err := a.Validate(ctx, s.http, creds); err != nil {
-					return nil, httpx.E(422, "phone_credentials_refused", "The provider refused these credentials.")
+				account, err := a.Validate(ctx, s.http, creds)
+				if err != nil {
+					return nil, credentialsRefused(err)
 				}
+				withAccount(creds, account)
 				if sealed, err = s.d.Box.SealJSON(creds); err != nil {
 					return nil, httpx.Wrap(err)
 				}
@@ -247,15 +279,24 @@ func (s *Service) Register(api huma.API, r chi.Router) {
 					if err != nil {
 						return err
 					}
-					if s.leaveOldAccount(ctx, a, cur, old, creds) {
+					if a.Describe().ManualWebhook {
+						// Another account's events need a URL of their own: the old account's
+						// notification stops being accepted, and the admin adds the new URL.
+						if old[provider.AccountIDKey] != creds[provider.AccountIDKey] {
+							if cur.webhookSecretEnc, err = s.newWebhookSecret(); err != nil {
+								return err
+							}
+							cur.LastEventAt = nil
+						}
+					} else if s.leaveOldAccount(ctx, a, cur, old, creds) {
 						cur.webhookID, cur.webhookSecretEnc = "", nil
 					}
 					cur.credentialsEnc = sealed
 				}
 				if _, err := tx.Exec(ctx, `UPDATE phone_connections SET name = $3, reuse_days = $4, assign_answered = $5, insight_cards = $6,
-					credentials_enc = $7, webhook_id = $8, webhook_secret_enc = $9, updated_at = now() WHERE workspace_id = $1 AND id = $2`,
+					credentials_enc = $7, webhook_id = $8, webhook_secret_enc = $9, last_event_at = $10, updated_at = now() WHERE workspace_id = $1 AND id = $2`,
 					p.WorkspaceID, cur.ID, cur.Name, cur.ReuseDays, cur.AssignAnswered, cur.InsightCards, cur.credentialsEnc,
-					cur.webhookID, cur.webhookSecretEnc); err != nil {
+					cur.webhookID, cur.webhookSecretEnc, cur.LastEventAt); err != nil {
 					return err
 				}
 				if _, err := events.Publish(ctx, tx, events.Event{WorkspaceID: p.WorkspaceID, Type: "phone_connection.updated", Admins: true,
@@ -284,7 +325,7 @@ func (s *Service) Register(api huma.API, r chi.Router) {
 		})
 
 	huma.Register(api, huma.Operation{OperationID: "test-phone-connection", Method: http.MethodPost, Path: "/v1/phone/connections/{id}/test", Tags: tags,
-		Summary: "Test and repair a phone connection", Description: "Checks the credentials and the provider's webhook, and registers the webhook again when the provider no longer has it."},
+		Summary: "Test and repair a phone connection", Description: "Checks the credentials and the provider's webhook, and registers the webhook again when the provider no longer has it. For a provider whose webhook an admin adds by hand, the webhook counts as working once an event came in at its URL."},
 		func(ctx context.Context, in *struct {
 			ID string `path:"id"`
 		}) (*struct{ Body PhoneConnectionView }, error) {
@@ -302,8 +343,51 @@ func (s *Service) Register(api huma.API, r chi.Router) {
 			return &struct{ Body PhoneConnectionView }{s.view(c, true)}, nil
 		})
 
+	huma.Register(api, huma.Operation{OperationID: "rotate-phone-webhook", Method: http.MethodPost, Path: "/v1/phone/connections/{id}/rotate-webhook", Tags: tags,
+		Summary: "Replace a phone connection's webhook URL", Description: "For a provider whose webhook an admin adds by hand: gives the connection a webhook URL with a new secret. The old URL stops working at once, so the new one replaces it in the provider."},
+		func(ctx context.Context, in *struct {
+			ID string `path:"id"`
+		}) (*struct{ Body PhoneConnectionView }, error) {
+			p, err := requireAdminUser(ctx)
+			if err != nil {
+				return nil, err
+			}
+			c, err := s.workspaceConnection(ctx, p.WorkspaceID, in.ID)
+			if err != nil {
+				return nil, err
+			}
+			if !s.describe(c.Provider).ManualWebhook {
+				return nil, httpx.Validation("opendesk registers this provider's webhook itself. Test the connection to repair it.")
+			}
+			secret, err := s.newWebhookSecret()
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			err = s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
+				if _, err := s.lockConnection(ctx, tx, p.WorkspaceID, c.ID); err != nil {
+					return err
+				}
+				// No event has come in at the new URL yet.
+				if _, err := tx.Exec(ctx, `UPDATE phone_connections SET webhook_secret_enc = $3, last_event_at = NULL, updated_at = now()
+					WHERE workspace_id = $1 AND id = $2`, p.WorkspaceID, c.ID, secret); err != nil {
+					return err
+				}
+				return audit.Log(ctx, tx, p, p.WorkspaceID, "phone.webhook_rotated", "phone_connection", &c.ID, map[string]any{"provider": c.Provider})
+			})
+			if db.IsNotFound(err) {
+				return nil, httpx.NotFound("Phone connection")
+			}
+			if err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			if c, err = s.reconcile(ctx, c.WorkspaceID, c.ID); err != nil {
+				return nil, httpx.Wrap(err)
+			}
+			return &struct{ Body PhoneConnectionView }{s.view(c, true)}, nil
+		})
+
 	huma.Register(api, huma.Operation{OperationID: "delete-phone-connection", Method: http.MethodDelete, Path: "/v1/phone/connections/{id}", Tags: tags,
-		Summary: "Disconnect a phone provider", Description: "Removes opendesk's webhook from the provider and the connection. Calls already on tickets stay.", DefaultStatus: http.StatusNoContent},
+		Summary: "Disconnect a phone provider", Description: "Removes opendesk's webhook from the provider (one an admin added by hand is theirs to remove) and the connection. Calls already on tickets stay.", DefaultStatus: http.StatusNoContent},
 		func(ctx context.Context, in *struct {
 			ID string `path:"id"`
 		}) (*struct{}, error) {
@@ -377,6 +461,8 @@ func (s *Service) Register(api huma.API, r chi.Router) {
 		})
 
 	r.Post("/v1/phone/hooks/{provider}/{id}", s.webhook)
+	// A webhook an admin adds by hand carries its secret in the path (Descriptor.ManualWebhook).
+	r.Post("/v1/phone/hooks/{provider}/{id}/{secret}", s.webhook)
 }
 
 // PhoneLine is a provider number calls come in on.
@@ -471,6 +557,33 @@ func requireAdminUser(ctx context.Context) (*auth.Principal, error) {
 	return p, nil
 }
 
+// credentialsRefused is the answer to credentials Validate refused: the provider's own
+// reason when it gave one the admin can act on.
+func credentialsRefused(err error) error {
+	var ar *provider.AccountRefused
+	if errors.As(err, &ar) {
+		return httpx.E(422, "phone_credentials_refused", ar.Detail)
+	}
+	return httpx.E(422, "phone_credentials_refused", "The provider refused these credentials.")
+}
+
+// withAccount keeps the account's id with the credentials, for the adapter's requests.
+func withAccount(creds map[string]string, a provider.Account) {
+	if a.ID != "" {
+		creds[provider.AccountIDKey] = a.ID
+	}
+}
+
+// newWebhookSecret is a sealed secret for a webhook URL an admin adds by hand: 32 random
+// bytes, base64url, so it is one path segment.
+func (s *Service) newWebhookSecret() ([]byte, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return nil, err
+	}
+	return s.d.Box.Seal([]byte(base64.RawURLEncoding.EncodeToString(b)))
+}
+
 func cleanCredentials(d provider.Descriptor, in map[string]string) map[string]string {
 	out := map[string]string{}
 	for _, f := range d.Fields {
@@ -483,8 +596,18 @@ func cleanCredentials(d provider.Descriptor, in map[string]string) map[string]st
 	return out
 }
 
+// webhookURL is where the provider sends the connection's events; one an admin adds by
+// hand ends with the webhook's secret, "" when it can't be read.
 func (s *Service) webhookURL(c PhoneConnection) string {
-	return strings.TrimRight(s.d.Cfg.APIURL, "/") + "/v1/phone/hooks/" + c.Provider + "/" + c.ID.String()
+	u := strings.TrimRight(s.d.Cfg.APIURL, "/") + "/v1/phone/hooks/" + c.Provider + "/" + c.ID.String()
+	if s.describe(c.Provider).ManualWebhook {
+		secret, err := s.d.Box.Open(c.webhookSecretEnc)
+		if err != nil || len(secret) == 0 {
+			return ""
+		}
+		u += "/" + string(secret)
+	}
+	return u
 }
 
 // seesWebhook reports whether p may read a connection's webhook URL: an admin, or an API
@@ -507,9 +630,11 @@ func (s *Service) view(c PhoneConnection, admin bool) PhoneConnectionView {
 		c.WebhookURL = s.webhookURL(c)
 	}
 	v := PhoneConnectionView{PhoneConnection: c}
-	for code, detail := range healthDetails {
-		if detail == c.HealthDetail {
-			v.HealthCode = code
+	for _, details := range []map[string]string{healthDetails, manualDetails} {
+		for code, detail := range details {
+			if detail == c.HealthDetail {
+				v.HealthCode = code
+			}
 		}
 	}
 	return v
@@ -603,6 +728,14 @@ func (s *Service) reconcileLocked(ctx context.Context, tx pgx.Tx, c PhoneConnect
 	if name := displayname.CleanOr(account.Name, displayname.Workspace, ""); name != "" {
 		c.AccountName = name
 	}
+	if a.Describe().ManualWebhook {
+		// There is no API to ask about the webhook: it works once an event came in at its
+		// URL (the webhook marks the connection receiving then).
+		if c.LastEventAt != nil {
+			return s.storeHealth(ctx, tx, c, "healthy", HealthReceiving)
+		}
+		return s.storeHealth(ctx, tx, c, "action_required", HealthNoWebhook)
+	}
 	if c.webhookID != "" {
 		active, err := a.WebhookActive(ctx, s.http, creds, c.webhookID)
 		if err != nil {
@@ -661,7 +794,7 @@ func (s *Service) leaveOldAccount(ctx context.Context, a provider.Adapter, c Pho
 
 func (s *Service) storeHealth(ctx context.Context, tx pgx.Tx, c PhoneConnection, status, code string) (PhoneConnection, error) {
 	now := time.Now().UTC()
-	c.HealthStatus, c.HealthDetail, c.HealthCheckedAt = status, healthDetails[code], &now
+	c.HealthStatus, c.HealthDetail, c.HealthCheckedAt = status, s.healthDetail(c.Provider, code), &now
 	c.Status, c.LastError = "connected", ""
 	if status == "error" {
 		c.Status = "error"

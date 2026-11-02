@@ -11,6 +11,7 @@ import (
 
 	"github.com/useopendesk/opendesk/internal/auth"
 	"github.com/useopendesk/opendesk/internal/domain"
+	"github.com/useopendesk/opendesk/internal/helpdesk/hd"
 	"github.com/useopendesk/opendesk/internal/helpdesk/hdtest"
 )
 
@@ -116,6 +117,26 @@ func TestDeleteNoteLeavesAMarker(t *testing.T) {
 		t.Fatalf("restored %+v", restored)
 	}
 	e.Do("POST", path+"/restore", ws.Admin.As(ws), nil).Want(t, 422)
+}
+
+// TestDeletedNoteTellsMentionedPeople: a mention a deleted note made leaves the bell and the
+// badge in the mentioned person's other windows and devices too.
+func TestDeletedNoteTellsMentionedPeople(t *testing.T) {
+	e, ws := newEnv(t)
+	tk := createTicket(t, e, ws, map[string]any{"channel": "api", "kind": "note"})
+	note := createInternalNote(t, e, ws, tk.ID.String())
+	if err := pgx.BeginFunc(e.Ctx, e.D.DB.Pool, func(tx pgx.Tx) error {
+		return hd.Notify(e.Ctx, tx, ws.ID, ws.Admin.ID, hd.NotifyMentioned, &tk.ID, map[string]any{"message_id": note.ID.String()})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var nid uuid.UUID
+	e.Scalar(`SELECT id FROM notifications WHERE ticket_id = $1 AND user_id = $2 AND type = 'mentioned'`, &nid, tk.ID, ws.Admin.ID)
+	e.Do("DELETE", "/v1/tickets/"+tk.ID.String()+"/messages/"+note.ID.String(), ws.Agent.As(ws), nil).Want(t, 204)
+	if n := countRows(t, e, `SELECT count(*) FROM events WHERE workspace_id = $1 AND type = 'notification.deleted'
+		AND user_ids = ARRAY[$2::uuid] AND data->'ids' = to_jsonb(ARRAY[$3::text])`, ws.ID, ws.Admin.ID, nid.String()); n != 1 {
+		t.Fatalf("notification.deleted events: %d", n)
+	}
 }
 
 func TestInternalNoteMutationPermissionsAndKinds(t *testing.T) {

@@ -278,6 +278,9 @@ export const qk = {
   get knowledge() {
     return w(["ai", "knowledge"] as const);
   },
+  get procedures() {
+    return w(["ai", "procedures"] as const);
+  },
   knowledgeDocs: (id: string) => w(["ai", "knowledge", "docs", id] as const),
   get agentTests() {
     return w(["ai", "agent", "tests"] as const);
@@ -515,6 +518,7 @@ export const q = {
   oauthRequest: (id: string) => queryOptions({ queryKey: qk.oauthRequest(id), queryFn: () => api.oauth.request(id), retry: false, staleTime: Infinity }),
   mcpServers: () => list(qk.mcpServers, () => api.ai.mcp.list()),
   knowledge: () => list(qk.knowledge, () => api.ai.knowledge.list()),
+  procedures: () => list(qk.procedures, () => api.ai.procedures.list()),
   agentTests: () => list(qk.agentTests, () => api.ai.agent.tests.list()),
   agentTestRuns: () => list(qk.agentTestRuns, () => api.ai.agent.runs.list()),
   agentTestRun: (id: string) => queryOptions({ queryKey: qk.agentTestRun(id), queryFn: () => api.ai.agent.runs.get(id) }),

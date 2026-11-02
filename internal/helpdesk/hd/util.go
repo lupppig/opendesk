@@ -39,7 +39,7 @@ func ParseRef(s, field string) (uuid.UUID, error) {
 var refTables = map[string]string{
 	"contact": "contacts", "company": "companies", "team": "teams", "mailbox": "mailboxes",
 	"tag": "tags", "kb_collection": "kb_collections", "sla_policy": "sla_policies",
-	"brand": "brands", "widget": "widgets",
+	"brand": "brands", "widget": "widgets", "ai_procedure": "ai_procedures",
 }
 
 // CheckRef confirms id is a row of kind in the workspace, answering 422 otherwise.

@@ -131,8 +131,9 @@ final class AccountStore {
         guard let api, let me = session?.user?.id else { return }
         profileLoading = true
         defer { profileLoading = false }
-        guard let page: Page<AccountMemberAnswer> = try? await api.get("v1/members", query: [URLQueryItem(name: "limit", value: "100")]) else { return }
-        profile = page.data.first(where: { $0.member.id == me })?.profile ?? .empty
+        // Every page: the signed-in member may sit past the first hundred.
+        guard let members: [AccountMemberAnswer] = try? await api.all("v1/members") else { return }
+        profile = members.first(where: { $0.member.id == me })?.profile ?? .empty
     }
 
     func saveProfile(_ next: MemberProfile) async throws {

@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // Blocks are an http panel's answer from version 2 on (contracts/integrations.md "The http
@@ -26,6 +27,7 @@ const (
 	maxNote        = 280
 	maxLinks       = 5 // a card's links, a list row's
 	maxLinkLabel   = 40
+	maxCardID      = 80
 	// maxCacheSeconds bounds how long an answer may ask to be kept.
 	maxCacheSeconds = 600
 )
@@ -38,12 +40,13 @@ const (
 // subscription, a deal), a list of labelled values, a list of rows or a short note.
 type PanelBlock struct {
 	Type      string       `json:"type" enum:"card,fields,list,note"`
+	ID        string       `json:"id,omitempty" doc:"card: the record's identity across answers (an order's number), which an agent's fold or unfold follows; the title without it"`
 	Title     string       `json:"title,omitempty" doc:"card: required; fields and list: optional"`
 	URL       string       `json:"url,omitempty" doc:"card: https only"`
 	Subtitle  string       `json:"subtitle,omitempty" doc:"card"`
 	Badges    []PanelBadge `json:"badges,omitempty" doc:"card: at most 4"`
 	Links     []PanelLink  `json:"links,omitempty" doc:"card: the same record in other tools, shown as small buttons beside the title, at most 5"`
-	Collapsed bool         `json:"collapsed,omitempty" doc:"card: shown folded to its title, links, subtitle and badges until the reader opens it"`
+	Collapsed bool         `json:"collapsed,omitempty" doc:"card: starts folded to its title, links, subtitle and badges; the reader folds and opens any card"`
 	Fields    []PanelItem  `json:"fields,omitempty" doc:"card: labelled values, at most 30"`
 	Lines     []PanelItem  `json:"lines,omitempty" doc:"card: rows such as an order's lines, at most 20"`
 	Footer    []PanelItem  `json:"footer,omitempty" doc:"card: labelled values under the lines, such as a total, at most 6"`
@@ -108,6 +111,24 @@ var linkIcons = map[string]bool{
 	"odoo": true,
 }
 
+// cleanID reads a card's id: a string, or a number as it is written (an ERP's record id). One
+// longer than maxCardID is left out rather than cut, so two ids never become one; without an id
+// the card is known by its title.
+func cleanID(raw json.RawMessage) string {
+	var id string
+	if json.Unmarshal(raw, &id) != nil {
+		var n json.Number
+		if json.Unmarshal(raw, &n) != nil {
+			return ""
+		}
+		id = n.String()
+	}
+	if id = cleanText(id, maxCardID+1); utf8.RuneCountInString(id) > maxCardID {
+		return ""
+	}
+	return id
+}
+
 func toneOf(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
 	if tones[s] {
@@ -120,6 +141,7 @@ func toneOf(s string) string {
 // read on its own, so one wrong part drops that part only.
 type blockIn struct {
 	Type      string            `json:"type"`
+	ID        json.RawMessage   `json:"id"`
 	Title     string            `json:"title"`
 	URL       string            `json:"url"`
 	Subtitle  string            `json:"subtitle"`
@@ -170,6 +192,7 @@ func (s *Service) cleanBlock(in blockIn) (PanelBlock, bool) {
 		if b.Title == "" {
 			return PanelBlock{}, false
 		}
+		b.ID = cleanID(in.ID)
 		b.URL, b.Subtitle = s.cleanLink(in.URL), cleanText(in.Subtitle, maxSubtitle)
 		for _, r := range in.Badges {
 			if len(b.Badges) == maxCardBadges {

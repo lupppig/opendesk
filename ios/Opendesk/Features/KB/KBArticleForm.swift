@@ -1,31 +1,19 @@
 import Foundation
 
-/// What the editor holds for one article. The body is markdown while the
-/// stored HTML converts without loss, otherwise the HTML itself (`raw`).
-struct KBArticleForm: Equatable {
-    var title = ""
-    var excerpt = ""
-    var slug = ""
-    var slugEdited = false
-    var collectionID: String?
-    var markdown = ""
-    var html = ""
-    var raw = false
+/// What `KBBodyEditor` edits: markdown while the stored HTML converts without
+/// loss, otherwise the HTML itself (`raw`). Articles, changelog entries and wiki
+/// pages share it.
+protocol KBBodyForm {
+    var markdown: String { get set }
+    var html: String { get set }
+    var raw: Bool { get set }
+}
 
-    static func from(_ article: KBArticle) -> KBArticleForm {
-        var form = KBArticleForm(title: article.title, excerpt: article.excerpt, slug: article.slug, slugEdited: true, collectionID: article.collectionID)
-        form.load(html: article.bodyHTML)
-        return form
-    }
-
+extension KBBodyForm {
     /// The body to store.
     var bodyHTML: String { raw ? html : KBMarkdown.html(from: markdown) }
 
-    var isEmpty: Bool {
-        title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && excerpt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && HTMLText.plain(from: bodyHTML).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
+    var bodyIsEmpty: Bool { HTMLText.plain(from: bodyHTML).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     /// Puts stored HTML in the editor: as markdown when lossless, else as HTML.
     mutating func load(html stored: String) {
@@ -54,6 +42,44 @@ struct KBArticleForm: Equatable {
         markdown = text
         raw = false
         return true
+    }
+}
+
+/// A body on its own, for forms that keep the rest elsewhere.
+struct KBBody: KBBodyForm, Equatable {
+    var markdown = ""
+    var html = ""
+    var raw = false
+
+    init() {}
+
+    init(html stored: String) {
+        load(html: stored)
+    }
+}
+
+/// What the editor holds for one article. The body is markdown while the
+/// stored HTML converts without loss, otherwise the HTML itself (`raw`).
+struct KBArticleForm: KBBodyForm, Equatable {
+    var title = ""
+    var excerpt = ""
+    var slug = ""
+    var slugEdited = false
+    var collectionID: String?
+    var markdown = ""
+    var html = ""
+    var raw = false
+
+    static func from(_ article: KBArticle) -> KBArticleForm {
+        var form = KBArticleForm(title: article.title, excerpt: article.excerpt, slug: article.slug, slugEdited: true, collectionID: article.collectionID)
+        form.load(html: article.bodyHTML)
+        return form
+    }
+
+    var isEmpty: Bool {
+        title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && excerpt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && bodyIsEmpty
     }
 
     /// The same article, as far as saving goes.

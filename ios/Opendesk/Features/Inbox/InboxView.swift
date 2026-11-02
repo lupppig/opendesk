@@ -66,6 +66,8 @@ struct InboxListView: View {
     @State private var assigning: Ticket?
     @State private var selecting = false
     @State private var selected: Set<String> = []
+    /// Every ticket of the list is chosen, loaded or not (a bulk change by `query`).
+    @State private var allMatching = false
 
     static let demoActions: Set<String> = ["new-ticket", "bulk", "filters", "filter-chips", "chat-alert", "search-words", "search-ollie", "scopes"]
 
@@ -75,7 +77,7 @@ struct InboxListView: View {
     private var title: String {
         switch inbox.scope {
         case let .folder(folder): folder.title
-        case let .view(id): directory.view(id)?.name ?? "View"
+        case let .view(id): directory.view(id)?.displayName ?? "View"
         case let .team(id, _): teamName(id)
         }
     }
@@ -87,7 +89,14 @@ struct InboxListView: View {
     private var subtitle: Text? {
         let tickets = inbox.tickets
         guard inbox.loadedOnce else { return nil }
-        let count = tickets.isEmpty ? nil : Format.plural(tickets.count, "ticket") + (inbox.nextCursor == nil ? "" : "+")
+        let counted = inbox.stripCounts
+        let count: String? = if tickets.isEmpty {
+            nil
+        } else if !counted.partial, counted.total >= tickets.count {
+            Format.plural(counted.total, "ticket")
+        } else {
+            Format.plural(tickets.count, "ticket") + (inbox.nextCursor == nil ? "" : "+")
+        }
         if inbox.scope.teamID != nil {
             return Text(["Team inbox", count].compactMap { $0 }.joined(separator: " · "))
         }
@@ -113,11 +122,14 @@ struct InboxListView: View {
             if selecting {
                 InboxSelectHeader(
                     count: selected.count,
-                    allSelected: !inbox.tickets.isEmpty && selected.count == inbox.tickets.count,
+                    allSelected: allMatching || !inbox.tickets.isEmpty && selected.count == inbox.tickets.count,
+                    allMatching: allMatching,
                     onClose: { endSelecting() },
                     onAll: {
                         withAnimation(Motion.snappy) {
-                            selected = selected.count == inbox.tickets.count ? [] : Set(inbox.tickets.map(\.id))
+                            let all = allMatching || selected.count == inbox.tickets.count
+                            allMatching = false
+                            selected = all ? [] : Set(inbox.tickets.map(\.id))
                         }
                     }
                 )
@@ -148,7 +160,7 @@ struct InboxListView: View {
         .background(Theme.chrome.ignoresSafeArea())
         .overlay(alignment: .bottom) {
             if selecting {
-                InboxBulkBar(ids: inbox.tickets.map(\.id).filter(selected.contains)) { endSelecting() }
+                InboxBulkBar(ids: inbox.tickets.map(\.id).filter(selected.contains), allMatching: allMatching) { endSelecting() }
                     .padding(.bottom, 8)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
@@ -162,6 +174,9 @@ struct InboxListView: View {
             selected.formIntersection(ids)
         }
         .onChange(of: inbox.scope) { _, _ in endSelecting() }
+        // Every matching ticket means this list's: another filter or search ends it.
+        .onChange(of: inbox.filters) { _, _ in allMatching = false }
+        .onChange(of: inbox.search) { _, _ in allMatching = false }
         .onChange(of: directory.teams, initial: true) { _, teams in
             guard let me = env.session.user?.id else { return }
             inbox.myTeamIDs = Set(teams.filter { $0.memberIDs?.contains(me) == true }.map(\.id))
@@ -223,8 +238,7 @@ struct InboxListView: View {
             }
             if inbox.loadedOnce, !inbox.tickets.isEmpty || urgentOnly || inbox.sort.key == .due {
                 InboxSummaryStrip(
-                    tickets: inbox.tickets,
-                    total: "",
+                    summary: inbox.stripCounts,
                     urgentOnly: urgentOnly,
                     byDue: inbox.sort.key == .due,
                     canSelect: env.session.canWrite && !selecting && !inbox.tickets.isEmpty,
@@ -240,8 +254,7 @@ struct InboxListView: View {
             InboxActiveFilters()
             list
         }
-        .background(Theme.surface)
-        .clipShape(UnevenRoundedRectangle(topLeadingRadius: Theme.Radius.card, topTrailingRadius: Theme.Radius.card, style: .continuous))
+        .panelSurface()
     }
 
     @ViewBuilder
@@ -254,6 +267,12 @@ struct InboxListView: View {
                 .frame(maxHeight: .infinity)
         } else {
             List {
+                if selecting, allMatching || inbox.nextCursor != nil && !inbox.tickets.isEmpty && selected.count == inbox.tickets.count {
+                    allMatchingRow
+                        .listRowInsets(EdgeInsets())
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Theme.surface)
+                }
                 if !inbox.search.isEmpty, !selecting {
                     searchEverywhereRow
                         .listRowInsets(EdgeInsets())
@@ -272,7 +291,7 @@ struct InboxListView: View {
                     row(ticket)
                         .listRowInsets(EdgeInsets())
                         .listRowSeparator(.hidden)
-                        .listRowBackground(selected.contains(ticket.id) ? Theme.hover : Theme.surface)
+                        .listRowBackground(selecting && (allMatching || selected.contains(ticket.id)) ? Theme.hover : Theme.surface)
                         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                             if env.session.canWrite, !selecting { trailingActions(ticket) }
                         }
@@ -310,12 +329,20 @@ struct InboxListView: View {
     }
 
     private func row(_ ticket: Ticket) -> some View {
-        let isSelected = selected.contains(ticket.id)
+        let isSelected = allMatching || selected.contains(ticket.id)
         return Button {
             if selecting {
                 Haptics.selection()
                 withAnimation(Motion.snappy) {
-                    if isSelected { selected.remove(ticket.id) } else { selected.insert(ticket.id) }
+                    if allMatching {
+                        // A row picked out of "every matching ticket" starts a selection of its own.
+                        allMatching = false
+                        selected = [ticket.id]
+                    } else if isSelected {
+                        selected.remove(ticket.id)
+                    } else {
+                        selected.insert(ticket.id)
+                    }
                 }
             } else {
                 env.router.openTicket(ticket)
@@ -425,6 +452,39 @@ struct InboxListView: View {
     private func endSelecting() {
         selecting = false
         selected = []
+        allMatching = false
+    }
+
+    /// Past the loaded rows: every ticket of this list, loaded or not, as the web's
+    /// "Select all matching tickets"; once chosen, a way back to the loaded ones.
+    private var allMatchingRow: some View {
+        let loaded = inbox.tickets.count
+        return HStack(spacing: 8) {
+            Text(allMatching ? "Every ticket matching this list is selected." : "All \(loaded) loaded tickets are selected.")
+                .font(ODFont.sans(13))
+                .foregroundStyle(Theme.fg2)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 4)
+            Button(allMatching ? "Clear" : "Select all matching") {
+                Haptics.selection()
+                withAnimation(Motion.snappy) {
+                    if allMatching {
+                        allMatching = false
+                        selected = []
+                    } else {
+                        allMatching = true
+                        selected = Set(inbox.tickets.map(\.id))
+                    }
+                }
+            }
+            .font(ODFont.sans(13, weight: .semibold))
+            .foregroundStyle(Theme.fg)
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Theme.sunken)
+        .overlay(alignment: .bottom) { Hairline() }
     }
 
     // MARK: Swipes
@@ -439,7 +499,7 @@ struct InboxListView: View {
         } else {
             Button {
                 Task { await solve(ticket) }
-            } label: { Label("Solve", systemImage: "checkmark") }
+            } label: { Label(env.statusDisplay.finishTitle, systemImage: "checkmark") }
                 .tint(Tone.green.solid)
         }
         Button {
@@ -493,7 +553,7 @@ struct InboxListView: View {
         do {
             _ = try await inbox.patch(ticket, TicketPatch(status: .solved), members: directory.members, meRef: env.session.userRef)
             Haptics.success()
-            env.toasts.show(Toast(message: "Solved #\(ticket.number)", kind: .success, actionTitle: "Undo") {
+            env.toasts.show(Toast(message: env.statusDisplay.finishToast(ticket.number), kind: .success, actionTitle: "Undo") {
                 Task { await apply(ticket, TicketPatch(status: previous), done: nil) }
             })
         } catch {

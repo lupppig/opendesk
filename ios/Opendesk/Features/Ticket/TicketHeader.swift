@@ -12,6 +12,7 @@ struct TicketTopBar<More: View>: View {
     let onSolve: () -> Void
     let onReopen: () -> Void
     @ViewBuilder var more: () -> More
+    @Environment(AppEnvironment.self) private var env
 
     var body: some View {
         GlassEffectContainer(spacing: 10) {
@@ -78,7 +79,8 @@ struct TicketTopBar<More: View>: View {
                         .glassEffect(.regular.interactive(), in: Circle())
                         .accessibilityLabel("Reopen")
                     } else {
-                        HeaderPrimaryButton(symbol: "checkmark", label: "Solve", action: onSolve)
+                        // Named after what finishing sets here: Solve, or Close where solved reads Closed.
+                        HeaderPrimaryButton(symbol: "checkmark", label: env.statusDisplay.finishTitle, action: onSolve)
                     }
                 }
             }
@@ -104,6 +106,7 @@ struct TicketSubjectBlock: View {
     let onOpen: (TicketSheet) -> Void
     @State private var draft = ""
     @FocusState private var focused: Bool
+    @Environment(AppEnvironment.self) private var env
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -167,7 +170,7 @@ struct TicketSubjectBlock: View {
         FlowLayout(spacing: 6) {
             PropertyChip(tone: ticket.status.tone, action: canWrite ? { onOpen(.status) } : nil) {
                 StatusIcon(status: ticket.status, size: 12)
-                Text(ticket.status.title)
+                Text(env.statusDisplay.title(ticket.status))
             }
             PropertyChip(tone: ticket.priority == .urgent || ticket.priority == .high ? ticket.priority.tone : nil, action: canWrite ? { onOpen(.priority) } : nil) {
                 PriorityIcon(priority: ticket.priority, size: 12)

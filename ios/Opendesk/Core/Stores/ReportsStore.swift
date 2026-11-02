@@ -15,6 +15,12 @@ final class ReportsStore {
     private(set) var loading = false
     private(set) var loadingOpen = false
     private(set) var error: String?
+    /// Each member's work in the period (`/v1/reports/agents`): the caller's own row alone
+    /// unless they are an admin.
+    private(set) var agents: ReportAgents?
+    private(set) var agentsError: String?
+    /// The server has no agents report (it is older); the overview's agents stand in.
+    private(set) var agentsUnavailable = false
 
     var range: ReportRange = .preset(.month) { didSet { if oldValue != range { reload() } } }
     var team: ReportTeamFilter = .all { didSet { if oldValue != team { reload() } } }
@@ -31,6 +37,9 @@ final class ReportsStore {
         previous = nil
         openTickets = []
         error = nil
+        agents = nil
+        agentsError = nil
+        agentsUnavailable = false
         reload()
     }
 
@@ -61,6 +70,7 @@ final class ReportsStore {
         async let current: ReportOverview = api.get("v1/reports/overview", query: query(range))
         async let before: ReportOverview? = try? api.get("v1/reports/overview", query: query(range.previous))
         async let open = loadOpen(api)
+        async let work: Void = loadAgents(api)
         do {
             let value = try await current
             guard !Task.isCancelled else { return }
@@ -77,6 +87,31 @@ final class ReportsStore {
         guard !Task.isCancelled else { return }
         openTickets = tickets
         openPartial = partial
+        await work
+    }
+
+    /// The agents report, narrowed like the overview.
+    private func loadAgents(_ api: APIClient) async {
+        do {
+            let value: ReportAgents = try await api.get("v1/reports/agents", query: query(range))
+            guard !Task.isCancelled else { return }
+            agents = value
+            agentsError = nil
+            agentsUnavailable = false
+        } catch let error as APIError where error.status == 404 {
+            guard !Task.isCancelled else { return }
+            agents = nil
+            agentsUnavailable = true
+        } catch {
+            guard !error.isCancellation, !Task.isCancelled else { return }
+            agentsError = error.userMessage
+        }
+    }
+
+    func reloadAgents() {
+        guard let api else { return }
+        agentsError = nil
+        Task { await loadAgents(api) }
     }
 
     /// Up to three pages of open work, narrowed like the report.

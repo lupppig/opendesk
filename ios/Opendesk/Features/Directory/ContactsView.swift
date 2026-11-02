@@ -123,8 +123,7 @@ struct ContactsListView: View {
         if !store.loadedOnce {
             ScrollView { SkeletonRows() }
                 .scrollDisabled(true)
-                .background(Theme.surface)
-                .clipShape(UnevenRoundedRectangle(topLeadingRadius: Theme.Radius.card, topTrailingRadius: Theme.Radius.card, style: .continuous))
+                .panelSurface()
         } else if let error = store.error, store.contacts.isEmpty {
             ErrorState(title: "Couldn't load contacts", message: error) { store.reload() }
                 .frame(maxHeight: .infinity)
@@ -168,8 +167,7 @@ struct ContactsListView: View {
             .listStyle(.plain)
             .listSectionIndexVisibility(store.sort == .name && store.contacts.count > 12 ? .visible : .hidden)
             .scrollContentBackground(.hidden)
-            .background(Theme.surface)
-            .clipShape(UnevenRoundedRectangle(topLeadingRadius: Theme.Radius.card, topTrailingRadius: Theme.Radius.card, style: .continuous))
+            .panelSurface()
             .refreshable { await store.refresh() }
             .motion(Motion.snappy, value: store.contacts.map(\.id))
             .motion(Motion.snappy, value: store.sort)
@@ -207,8 +205,8 @@ struct ContactsListView: View {
                 Button { DirectoryActions.open("mailto:" + email) } label: { Label("Send email", systemImage: "envelope") }
                 Button { DirectoryActions.copy(email, what: "Email", toasts: env.toasts) } label: { Label("Copy email", systemImage: "doc.on.doc") }
             }
-            if !contact.phone.isEmpty {
-                Button { DirectoryActions.open(DirectoryActions.telURL(contact.phone)) } label: { Label("Call", systemImage: "phone") }
+            if let tel = DirectoryActions.telURL(contact.phone) {
+                Button { DirectoryActions.open(tel) } label: { Label("Call", systemImage: "phone") }
             }
             if let company = contact.company {
                 Button { env.router.push(.company(company.id)) } label: { Label("Open \(company.name)", systemImage: "building.2") }

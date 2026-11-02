@@ -3,7 +3,7 @@
 // from the last visitor message: order lookups, a confirm-first cancel action,
 // handoffs, blocked topics, else the best KB articles and knowledge sources.
 
-import type { AgentReport, AgentSource, Bot, BotDraft, PlaygroundDone, PlaygroundMessage, PlaygroundToolEvent } from "@/lib/api/types";
+import type { AgentReport, AgentSource, Bot, BotDraft, PlaygroundDone, PlaygroundMessage, PlaygroundToolEvent, ProcedureRef } from "@/lib/api/types";
 import { botsOf, defaultBot } from "../bots";
 import { db, type WsData } from "../db";
 import { articleUrl } from "../teams";
@@ -14,6 +14,7 @@ import { assertAi, requireAiAdmin, score, terms } from "./ai";
 import { knowledgeDocs } from "./knowledge";
 import { mcpTool } from "./mcp";
 import { channelSplit } from "./emailAnswers";
+import { followedProcedures } from "./procedures";
 
 // ─── Report ────────────────────────────────────────────────────────────────
 
@@ -152,6 +153,8 @@ export type Plan = {
   text: string;
   handoff: boolean;
   action: PlaygroundDone["action"];
+  /** The procedures the answer followed. */
+  procedures: ProcedureRef[];
   /** A model call ran (handoffs on request don't call the model). */
   metered: boolean;
 };
@@ -225,7 +228,9 @@ const EMAIL = /[^\s@]+@[^\s@]+\.[^\s@]+/;
 const HUMAN = /\b(human|real person|a person|someone|representative|live agent|an agent|support agent|talk to (the )?team|mensch|persona|humain)\b/i;
 
 export function plan(ws: WsData, messages: PlaygroundMessage[], o: Overrides, visitor: Visitor): Plan {
-  return voiced(planned(ws, messages, o, visitor), trialBot(ws, o));
+  const bot = trialBot(ws, o);
+  const p = voiced(planned(ws, messages, o, visitor), bot);
+  return p.metered ? { ...p, procedures: followedProcedures(ws, messages[messages.length - 1].text, bot.id || null) } : p;
 }
 
 function planned(ws: WsData, messages: PlaygroundMessage[], o: Overrides, visitor: Visitor): Plan {
@@ -236,7 +241,7 @@ function planned(ws: WsData, messages: PlaygroundMessage[], o: Overrides, visito
   const bot = trialBot(ws, o);
   const concise = bot.personality.tone === "concise" || (o.tone ?? ws.ai.tone).toLowerCase().includes("concise");
   const blocked = [...(o.widget_blocked_topics ?? ws.ai.widget_blocked_topics ?? []), ...bot.personality.blocked_topics];
-  const base: Plan = { tools: [], sources: [], text: "", handoff: false, action: null, metered: true };
+  const base: Plan = { tools: [], sources: [], text: "", handoff: false, action: null, procedures: [], metered: true };
   const orderNo = /#\s?(\d{3,})/.exec(last)?.[1] ?? /\border\s+(?:number\s+)?(\d{3,})/i.exec(last)?.[1] ?? "4821";
   const shop = (name: string) => (mcpTool(ws, "shop", name) ? `shop__${name}` : null);
 
@@ -317,6 +322,7 @@ export function registerAgent() {
       sources: p.sources,
       handoff: p.handoff,
       action: p.action,
+      procedures: p.procedures,
       usd: p.metered ? spend(ctx.ws, "playground", db.meId, model) : 0,
     });
     if (!wantsStream(ctx)) return finish();

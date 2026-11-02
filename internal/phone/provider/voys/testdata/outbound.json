@@ -1,0 +1,54 @@
+[
+  {
+    "call_id": "ua4-ams-prd-1793095200.3001",
+    "timestamp": "2026-10-27T11:00:00.000000+00:00",
+    "status": "ringing",
+    "version": "v2",
+    "direction": "outbound",
+    "caller": {
+      "number": "+31332022074",
+      "name": "Jane Doe",
+      "account_number": "201",
+      "user_numbers": [
+        "610"
+      ],
+      "user_emails": [
+        "jane.doe@lamptwist.example"
+      ]
+    },
+    "destination": {
+      "number": "+32470999888",
+      "targets": [
+        {
+          "number": "+32470999888",
+          "name": null,
+          "account_number": null,
+          "user_numbers": [],
+          "user_emails": []
+        }
+      ]
+    }
+  },
+  {
+    "call_id": "ua4-ams-prd-1793095200.3001",
+    "timestamp": "2026-10-27T11:00:20.000000+00:00",
+    "status": "ended",
+    "reason": "busy",
+    "version": "v2",
+    "direction": "outbound",
+    "caller": {
+      "number": "+31332022074",
+      "name": "Jane Doe",
+      "account_number": "201",
+      "user_numbers": [
+        "610"
+      ],
+      "user_emails": [
+        "jane.doe@lamptwist.example"
+      ]
+    },
+    "destination": {
+      "number": "+32470999888"
+    }
+  }
+]

@@ -42,6 +42,14 @@ enum ComposerToken: Equatable, Sendable {
     case variable(String)
 }
 
+/// Where a reply goes out from: the address the member last answered the ticket from (else
+/// the ticket's), the ticket's reply address, or one of the member's own Collab addresses.
+enum ReplyFrom: Hashable, Sendable {
+    case automatic
+    case team
+    case personal(MessageFromAccount)
+}
+
 /// A composer's unsent state, kept per ticket for the life of the app.
 struct ComposerDraft: Sendable {
     var mode: ComposerMode = .reply
@@ -55,6 +63,7 @@ struct ComposerDraft: Sendable {
     var sideTo = ""
     var sideSubject = ""
     var includeHistory = false
+    var from: ReplyFrom = .automatic
 }
 
 /// A reply held for the undo window before it goes out.
@@ -72,6 +81,13 @@ struct HeldSend: Identifiable, Sendable {
 final class TicketComposerStore {
     /// Unsent drafts by ticket, so leaving a ticket keeps what was typed.
     private static var drafts: [String: ComposerDraft] = [:]
+    /// Files of a send taken back after its ticket was left, for the composer that opens it again.
+    private static var returnedFiles: [String: [PendingAttachment]] = [:]
+
+    /// Keeps `files` for the next composer of `ticketID`.
+    static func returnFiles(_ files: [PendingAttachment], to ticketID: String) {
+        returnedFiles[ticketID] = files.isEmpty ? nil : files
+    }
 
     let ticketID: String
     var mode: ComposerMode = .reply { didSet { save() } }
@@ -84,6 +100,7 @@ final class TicketComposerStore {
     var includeHistory = false { didSet { save() } }
     /// The open side conversation a `.side` message answers; nil starts a new one.
     var sideThreadID: String? { didSet { save() } }
+    var from: ReplyFrom = .automatic { didSet { save() } }
     private(set) var mentions: [String: String] = [:]
     /// The caller's own note this reply was started from.
     private(set) var fromNoteID: String?
@@ -96,11 +113,12 @@ final class TicketComposerStore {
     init(ticketID: String) {
         self.ticketID = ticketID
         if let draft = Self.drafts[ticketID] { restore(draft) }
+        if let files = Self.returnedFiles.removeValue(forKey: ticketID) { attachments = files }
     }
 
     var draft: ComposerDraft {
         ComposerDraft(mode: mode, text: text, cc: cc, bcc: bcc, showCopies: showCopies, mentions: mentions, fromNoteID: fromNoteID,
-                      sideThreadID: sideThreadID, sideTo: sideTo, sideSubject: sideSubject, includeHistory: includeHistory)
+                      sideThreadID: sideThreadID, sideTo: sideTo, sideSubject: sideSubject, includeHistory: includeHistory, from: from)
     }
 
     func restore(_ draft: ComposerDraft) {
@@ -116,6 +134,7 @@ final class TicketComposerStore {
         sideTo = draft.sideTo
         sideSubject = draft.sideSubject
         includeHistory = draft.includeHistory
+        from = draft.from
         restoring = false
         save()
     }
@@ -123,7 +142,7 @@ final class TicketComposerStore {
     private func save() {
         guard !restoring else { return }
         let value = draft
-        if value.text.isEmpty, value.mode == .reply, value.cc.isEmpty, value.bcc.isEmpty {
+        if value.text.isEmpty, value.mode == .reply, value.cc.isEmpty, value.bcc.isEmpty, value.from == .automatic {
             Self.drafts[ticketID] = nil
         } else {
             Self.drafts[ticketID] = value
@@ -154,6 +173,7 @@ final class TicketComposerStore {
         sideTo = ""
         sideSubject = ""
         includeHistory = false
+        from = .automatic
         if mode == .side { sideThreadID = nil }
         attachments = []
         restoring = false

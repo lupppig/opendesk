@@ -105,6 +105,11 @@ extension AccountStore {
         var audience: AccountTicketView.Audience = .personal
         var teamID: String?
         var filters = TicketFilters()
+        /// The sidebar heading, as typed; blank for none.
+        var section = ""
+        var icon: ViewIcon?
+        /// The view this one copies: the copy is placed right after it.
+        var copyOf: AccountTicketView?
 
         init() {}
 
@@ -113,10 +118,30 @@ extension AccountStore {
             audience = view.audience
             teamID = view.teamID
             filters = view.filters
+            section = view.section ?? ""
+            icon = view.icon
+        }
+
+        /// A copy of `view` as the editor opens it: every field but its id and place, named
+        /// "{name} (copy)", and only the person's own when they may not write it for the same people.
+        static func copy(of view: AccountTicketView, canWrite: Bool) -> ViewDraft {
+            var draft = ViewDraft(view)
+            draft.name = "\(view.name) (copy)"
+            draft.copyOf = view
+            if !canWrite {
+                draft.audience = .personal
+                draft.teamID = nil
+            }
+            return draft
+        }
+
+        /// Section names can't contain `<` or `>`, and run to 60 characters.
+        var sectionValid: Bool {
+            !section.contains("<") && !section.contains(">") && ViewSections.clean(section).count <= ViewSections.maxLength
         }
 
         var isValid: Bool {
-            !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (audience != .team || teamID != nil)
+            !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (audience != .team || teamID != nil) && sectionValid
         }
     }
 
@@ -139,23 +164,72 @@ extension AccountStore {
             let filters: TicketFilters
             let shared: Bool
             let team_id: String?
+            let section: String?
+            let icon: ViewIcon?
+            let position: Int?
         }
+        /// A patch writes `section` and `icon` whole: null clears them.
         struct Patch: Encodable, Sendable {
             let name: String
             let filters: TicketFilters
             let shared: Bool
             let team_id: String
+            let section: String?
+            let icon: ViewIcon?
+
+            enum CodingKeys: String, CodingKey { case name, filters, shared, team_id, section, icon }
+
+            func encode(to encoder: Encoder) throws {
+                var c = encoder.container(keyedBy: CodingKeys.self)
+                try c.encode(name, forKey: .name)
+                try c.encode(filters, forKey: .filters)
+                try c.encode(shared, forKey: .shared)
+                try c.encode(team_id, forKey: .team_id)
+                try c.encode(section, forKey: .section)
+                try c.encode(icon, forKey: .icon)
+            }
         }
         let name = draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let shared = draft.audience != .personal
+        // A team's view is the team's, not everyone's (`team_id` with `shared: true` is refused).
+        let shared = draft.audience == .shared
         let team = draft.audience == .team ? draft.teamID : nil
+        let typed = ViewSections.clean(draft.section)
+        let section = typed.isEmpty ? nil : ViewSections.match(typed, in: ViewSections.names(views))
         let saved: AccountTicketView
         if let existing {
-            saved = try await api.patch("v1/views/\(existing.id)", body: Patch(name: name, filters: draft.filters, shared: shared, team_id: team ?? ""))
+            saved = try await api.patch("v1/views/\(existing.id)", body: Patch(name: name, filters: draft.filters, shared: shared, team_id: team ?? "", section: section, icon: draft.icon))
+        } else if let source = draft.copyOf {
+            // The copy sits right after the original; the views after it move down one.
+            let position = source.position + 1
+            let sorted = views.sorted { $0.position < $1.position }
+            saved = try await api.post("v1/views", body: Body(name: name, filters: draft.filters, shared: shared, team_id: team, section: section, icon: draft.icon, position: position))
+            struct Move: Encodable, Sendable { let position: Int }
+            for move in Self.makeRoom(sorted, after: source.id, position: position, canMove: canEdit) {
+                let _: AccountTicketView? = try? await api.patch("v1/views/\(move.id)", body: Move(position: move.position))
+            }
+            views.append(saved)
+            await loadViews()
+            return
         } else {
-            saved = try await api.post("v1/views", body: Body(name: name, filters: draft.filters, shared: shared, team_id: team))
+            saved = try await api.post("v1/views", body: Body(name: name, filters: draft.filters, shared: shared, team_id: team, section: section, icon: draft.icon, position: nil))
         }
         if let index = views.firstIndex(where: { $0.id == saved.id }) { views[index] = saved } else { views.append(saved) }
+    }
+
+    /// The views to move down so a copy at `position` sits right after `sourceID`: those after
+    /// the original that would share or come before its place, each one further down, as far as
+    /// the person may move them (the web's `makeRoom`). `sorted` is in list order.
+    static func makeRoom(_ sorted: [AccountTicketView], after sourceID: String, position: Int, canMove: (AccountTicketView) -> Bool) -> [(id: String, position: Int)] {
+        guard let index = sorted.firstIndex(where: { $0.id == sourceID }) else { return [] }
+        var out: [(id: String, position: Int)] = []
+        var last = position
+        for view in sorted[(index + 1)...] {
+            if view.position > last { break }
+            guard canMove(view) else { continue }
+            last += 1
+            out.append((view.id, last))
+        }
+        return out
     }
 
     func deleteView(_ view: AccountTicketView) async throws {

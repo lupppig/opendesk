@@ -48,6 +48,7 @@ import {
   Workflow,
   Smile,
   LayoutPanelLeft,
+  ScrollText,
 } from "lucide-react";
 import { Fragment, type ReactNode } from "react";
 import { BrandMark } from "@/components/settings2/teams";
@@ -89,6 +90,7 @@ type NavPath =
   | "/settings/ai/behaviour"
   | "/settings/ai/bots"
   | "/settings/ai/knowledge"
+  | "/settings/ai/procedures"
   | "/settings/ai/tools"
   | "/settings/ai/playground"
   | "/settings/ai/tests"
@@ -154,6 +156,7 @@ const groups: { title: keyof typeof navigation.groups; items: { to: NavPath; lab
       { to: "/settings/ai/bots", label: "bots", icon: <Smile /> },
       { to: "/settings/ai/behaviour", label: "behaviour", icon: <SlidersHorizontal /> },
       { to: "/settings/ai/knowledge", label: "knowledge", icon: <BookOpen /> },
+      { to: "/settings/ai/procedures", label: "procedures", icon: <ScrollText /> },
       { to: "/settings/ai/tools", label: "tools", icon: <Wrench /> },
       { to: "/settings/ai/playground", label: "playground", icon: <FlaskConical /> },
       { to: "/settings/ai/tests", label: "tests", icon: <ClipboardCheck /> },

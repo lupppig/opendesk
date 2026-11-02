@@ -306,10 +306,44 @@ struct ReplyAddress: Codable, Hashable, Sendable, Identifiable {
     var name: String
     var email: String
     var displayName: String
+    var aliases: [String] = []
+    /// "system_off" when it has no way to send email yet.
+    var sending: String = ""
+    /// Replies on its tickets from members' own Collab addresses; nil follows the workspace.
+    var personalReplies: PersonalReplies?
+
+    /// A mailbox's rules for replies from members' own addresses (contracts/collab.md "Answering tickets").
+    struct PersonalReplies: Codable, Hashable, Sendable {
+        /// nil follows the workspace's `collab_ticket_replies`.
+        var enabled: Bool?
+        /// "address" or "mailbox"; nil follows the workspace's `collab_ticket_reply_to`.
+        var replyTo: String?
+        /// "any", "shared" (shared accounts only) or "domain" (addresses at its own domains).
+        var accounts: String
+
+        enum CodingKeys: String, CodingKey {
+            case enabled, accounts
+            case replyTo = "reply_to"
+        }
+
+        init(enabled: Bool? = nil, replyTo: String? = nil, accounts: String = "any") {
+            self.enabled = enabled
+            self.replyTo = replyTo
+            self.accounts = accounts
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            enabled = c.lenient(Bool.self, forKey: .enabled)
+            replyTo = c.lenient(String.self, forKey: .replyTo)
+            accounts = c.lenient(String.self, forKey: .accounts) ?? "any"
+        }
+    }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, email
+        case id, name, email, aliases, sending
         case displayName = "display_name"
+        case personalReplies = "personal_replies"
     }
 
     init(from decoder: Decoder) throws {
@@ -318,6 +352,9 @@ struct ReplyAddress: Codable, Hashable, Sendable, Identifiable {
         name = c.lenient(String.self, forKey: .name) ?? ""
         email = c.lenient(String.self, forKey: .email) ?? ""
         displayName = c.lenient(String.self, forKey: .displayName) ?? ""
+        aliases = c.lenient([String].self, forKey: .aliases) ?? []
+        sending = c.lenient(String.self, forKey: .sending) ?? ""
+        personalReplies = c.lenient(PersonalReplies.self, forKey: .personalReplies)
     }
 
     init(id: String, name: String, email: String, displayName: String) {
@@ -328,6 +365,38 @@ struct ReplyAddress: Codable, Hashable, Sendable, Identifiable {
     }
 
     var label: String { displayName.isEmpty ? (name.isEmpty ? email : name) : displayName }
+
+    /// The domains of its address and its aliases, lower case.
+    var domains: Set<String> {
+        Set(([email] + aliases).compactMap { $0.split(separator: "@").last.map { $0.lowercased() } })
+    }
+}
+
+/// `POST /v1/templates/preview` → the email as it would go out.
+struct TemplatePreview: Decodable, Sendable {
+    var subject: String
+    var html: String
+    var problems: [String]
+
+    enum CodingKeys: String, CodingKey { case subject, html, problems }
+
+    init(subject: String, html: String, problems: [String] = []) {
+        self.subject = subject
+        self.html = html
+        self.problems = problems
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        subject = c.lenient(String.self, forKey: .subject) ?? ""
+        html = c.lenient(String.self, forKey: .html) ?? ""
+        // Each problem is a short sentence, or an object with a message.
+        if let lines = c.lenient([String].self, forKey: .problems) {
+            problems = lines
+        } else {
+            problems = (c.lenient([JSONValue].self, forKey: .problems) ?? []).compactMap { $0["message"]?.string ?? $0["detail"]?.string }
+        }
+    }
 }
 
 /// `GET /v1/tickets/{id}/variables` → `{values, signature_html}`.

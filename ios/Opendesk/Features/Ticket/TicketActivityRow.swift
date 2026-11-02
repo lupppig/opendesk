@@ -60,13 +60,14 @@ struct ActivityPhrasing {
         case "linked", "unlinked": "link"
         case "contact_changed": "person.text.rectangle"
         case "thread_started", "thread_closed", "thread_reopened": "arrow.triangle.branch"
-        case "subject_changed": "textformat"
+        case "subject_changed", "alias_changed": "textformat"
         case "snoozed": "alarm"
         case "spam_marked", "spam": "xmark.octagon"
         case "ai_handoff": "hand.raised"
         case "reply_retracted": "lock"
         case "note_deleted", "message_deleted", "message_purged": "trash"
         case "message_restored": "arrow.uturn.backward"
+        case "call": "phone"
         default: "circle"
         }
     }
@@ -180,6 +181,8 @@ struct ActivityPhrasing {
             return line([(who, true), (" reopened the side conversation ", false), (data["subject"]?.string ?? "", true)])
         case "subject_changed":
             return line([(who, true), (" changed the subject", false)])
+        case "alias_changed":
+            return line([(who, true), (" changed the ticket reference", false)])
         case "snoozed":
             if let raw = data["until"]?.string, let date = try? Date.ISO8601FormatStyle().parse(raw) {
                 return line([(who, true), (" snoozed this until ", false), (Format.shortDate(date) + ", " + Format.clock(date), true)])
@@ -209,4 +212,296 @@ struct ActivityPhrasing {
 
 extension String {
     var capitalizedFirst: String { prefix(1).uppercased() + dropFirst() }
+}
+
+// MARK: - Calls
+
+/// A call on the ticket (contracts/phone.md "Timeline", `CallData`), read from its
+/// activity's data. Only https links from the provider are kept.
+struct TicketCall {
+    struct Comment: Identifiable {
+        var id: String
+        var text: String
+        var author: String
+    }
+
+    var provider: String
+    var outbound: Bool
+    var stage: String
+    var outcome: String
+    var missedReason: String
+    var number: String
+    var line: String
+    var callerName: String
+    var agentName: String
+    var startedAt: Date?
+    var answeredAt: Date?
+    var endedAt: Date?
+    var duration: Double
+    var recording: Bool
+    var voicemail: Bool
+    var assetURL: URL?
+    var recordingURL: URL?
+    var voicemailURL: URL?
+    var linksExpireAt: Date?
+    var tags: [String]
+    var comments: [Comment]
+    var summary: String
+    var transcript: String
+    var outsideHours: Bool
+
+    init(_ data: [String: JSONValue]) {
+        func text(_ key: String) -> String { data[key]?.string ?? "" }
+        func date(_ key: String) -> Date? { data[key]?.string.flatMap(Self.date) }
+        provider = text("provider")
+        outbound = text("direction") == "outbound"
+        stage = text("stage")
+        outcome = text("outcome")
+        missedReason = text("missed_reason")
+        number = text("number")
+        line = text("line")
+        callerName = text("caller_name")
+        agentName = data["agent"]?["name"]?.string.flatMap { $0.isEmpty ? nil : $0 } ?? text("agent_name")
+        startedAt = date("started_at")
+        answeredAt = date("answered_at")
+        endedAt = date("ended_at")
+        duration = data["duration"]?.double ?? 0
+        recording = data["recording"]?.bool ?? false
+        voicemail = data["voicemail"]?.bool ?? false
+        assetURL = Self.https(text("asset_url"))
+        recordingURL = Self.https(text("recording_url"))
+        voicemailURL = Self.https(text("voicemail_url"))
+        linksExpireAt = date("links_expire_at")
+        tags = data["tags"]?.array?.compactMap(\.string).filter { !$0.isEmpty } ?? []
+        comments = (data["comments"]?.array ?? []).enumerated().compactMap { index, value in
+            guard let body = value["text"]?.string, !body.isEmpty else { return nil }
+            return Comment(id: value["id"]?.string ?? "\(index)", text: body, author: value["author"]?.string ?? "")
+        }
+        summary = text("summary")
+        transcript = text("transcript")
+        outsideHours = data["outside_hours"]?.bool ?? false
+    }
+
+    var live: Bool { stage != "ended" }
+
+    var providerName: String { provider == "aircall" ? "Aircall" : provider.capitalizedFirst }
+
+    /// How long the customer and the team spoke: from the answer to the end, else the provider's duration.
+    var talkSeconds: Double {
+        guard outcome == "answered" else { return 0 }
+        if let answeredAt, let endedAt { return max(0, endedAt.timeIntervalSince(answeredAt)) }
+        return duration
+    }
+
+    /// The link that plays a recording or voicemail now: the direct one while it lasts, else the provider's page.
+    func playLink(_ direct: URL?, now: Date = AppClock.now) -> URL? {
+        if let direct, let linksExpireAt, linksExpireAt > now.addingTimeInterval(60) { return direct }
+        return assetURL
+    }
+
+    /// Why a call was missed, in plain words where we know the provider's reason.
+    var reasonText: String {
+        switch missedReason {
+        case "": ""
+        case "out_of_opening_hours": "Outside opening hours"
+        case "short_abandoned": "Hung up quickly"
+        case "abandoned_in_ivr": "Hung up in the menu"
+        case "abandoned_in_classic": "Hung up while waiting"
+        case "no_available_agent": "No teammate available"
+        case "agents_did_not_answer": "Nobody answered"
+        default: missedReason.replacingOccurrences(of: "_", with: " ").capitalizedFirst
+        }
+    }
+
+    /// Seconds as 3:05, or 1:02:05 past an hour.
+    static func clock(_ seconds: Double) -> String {
+        let total = max(0, Int(seconds.rounded()))
+        let hours = total / 3600, minutes = (total % 3600) / 60, rest = total % 60
+        return hours > 0 ? String(format: "%d:%02d:%02d", hours, minutes, rest) : String(format: "%d:%02d", minutes, rest)
+    }
+
+    private static func https(_ raw: String) -> URL? {
+        guard let url = URL(string: raw), url.scheme?.lowercased() == "https", url.host() != nil else { return nil }
+        return url
+    }
+
+    private static func date(_ raw: String) -> Date? {
+        (try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse(raw)) ?? (try? Date.ISO8601FormatStyle().parse(raw))
+    }
+}
+
+/// A call in the ticket's timeline: one entry per call, kept current as it rings, is
+/// answered and ends, then gets its recording, the team's comments and the provider's summary.
+struct TicketCallEntry: View {
+    let activity: Activity
+    @State private var transcript = false
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        let call = TicketCall(activity.data)
+        let look = look(call)
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: look.symbol)
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(look.tone.text)
+                    .frame(width: 26, height: 26)
+                    .background(look.tone.soft, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title(call))
+                        .font(ODFont.sans(13.5, weight: .medium))
+                        .foregroundStyle(Theme.fg)
+                        .fixedSize(horizontal: false, vertical: true)
+                    FlowLayout(spacing: 6) {
+                        TonePill(text: look.status, tone: look.tone, height: 19) {
+                            if call.live { PingDot(color: look.tone.solid, size: 5) }
+                        }
+                        if call.talkSeconds > 0 {
+                            Text(TicketCall.clock(call.talkSeconds))
+                                .font(ODFont.mono(11))
+                                .monospacedDigit()
+                                .foregroundStyle(Theme.fg3)
+                                .frame(height: 19)
+                        }
+                        if call.outsideHours {
+                            TonePill(text: "Outside business hours", tone: .amber, height: 19)
+                        }
+                    }
+                    if let meta = meta(call) {
+                        Text(meta)
+                            .font(ODFont.sans(12))
+                            .foregroundStyle(Theme.fg3)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Spacer(minLength: 4)
+                Text(Format.clock(call.startedAt ?? activity.createdAt))
+                    .font(ODFont.mono(10.5))
+                    .foregroundStyle(Theme.fg4)
+            }
+            .accessibilityElement(children: .combine)
+            links(call)
+            if !call.summary.isEmpty {
+                box(Text(Self.joined(("Summary  ", ODFont.sans(10.5, weight: .semibold), Theme.fg3), (call.summary, ODFont.sans(13), Theme.fg2))))
+            }
+            if !call.comments.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(call.comments) { comment in
+                        Text(Self.joined((comment.author.isEmpty ? "" : comment.author + ": ", ODFont.sans(13, weight: .medium), Theme.fg), (comment.text, ODFont.sans(13), Theme.fg2)))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            if !call.tags.isEmpty {
+                FlowLayout(spacing: 5) {
+                    ForEach(call.tags, id: \.self) { LabelChip(name: $0) }
+                }
+            }
+            if !call.transcript.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Button {
+                        Haptics.tap()
+                        withAnimation(Motion.snappy) { transcript.toggle() }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 9.5, weight: .bold))
+                                .rotationEffect(.degrees(transcript ? 90 : 0))
+                            Text(transcript ? "Hide transcript" : "Show transcript")
+                                .font(ODFont.sans(12, weight: .medium))
+                        }
+                        .foregroundStyle(Theme.fg3)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    if transcript {
+                        box(Text(call.transcript).font(ODFont.sans(13)).foregroundStyle(Theme.fg2))
+                            .transition(.opacity)
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.control + 2, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.control + 2, style: .continuous).strokeBorder(Theme.line, lineWidth: 1))
+    }
+
+    /// Pieces of text, each in its own font and colour, as one run.
+    private static func joined(_ parts: (String, Font, Color)...) -> AttributedString {
+        var out = AttributedString()
+        for (text, font, color) in parts where !text.isEmpty {
+            var piece = AttributedString(text)
+            piece.font = font
+            piece.foregroundColor = color
+            out.append(piece)
+        }
+        return out
+    }
+
+    private func box(_ text: Text) -> some View {
+        text
+            .lineSpacing(2)
+            .fixedSize(horizontal: false, vertical: true)
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(Theme.sunken, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func look(_ call: TicketCall) -> (symbol: String, tone: Tone, status: String) {
+        let arrow = call.outbound ? "phone.arrow.up.right" : "phone.arrow.down.left"
+        if call.live { return (arrow, .blue, call.stage == "answered" ? "In progress" : "Ringing") }
+        switch call.outcome {
+        case "voicemail": return ("recordingtape", .amber, "Voicemail")
+        case "missed": return ("phone.down", .red, call.outbound ? "No answer" : "Missed")
+        default: return (arrow, .green, "Answered")
+        }
+    }
+
+    private func title(_ call: TicketCall) -> String {
+        let caller = !call.callerName.isEmpty ? call.callerName : !call.number.isEmpty ? call.number : "a withheld number"
+        if call.outbound {
+            return call.agentName.isEmpty ? "Call to \(caller)" : "\(call.agentName) called \(caller)"
+        }
+        if call.outcome == "answered", !call.agentName.isEmpty { return "\(caller) called, \(call.agentName) answered" }
+        return "Call from \(caller)"
+    }
+
+    /// Why it was missed, the line, and the number when the title shows a name.
+    private func meta(_ call: TicketCall) -> String? {
+        var parts: [String] = []
+        if !call.reasonText.isEmpty { parts.append(call.reasonText) }
+        if !call.line.isEmpty { parts.append("Line \(call.line)") }
+        if !call.number.isEmpty, !call.callerName.isEmpty { parts.append(call.number) }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    @ViewBuilder private func links(_ call: TicketCall) -> some View {
+        let recording = call.recording ? call.playLink(call.recordingURL) : nil
+        let voicemail = call.voicemail ? call.playLink(call.voicemailURL) : nil
+        if recording != nil || voicemail != nil || call.assetURL != nil {
+            FlowLayout(spacing: 6) {
+                if let recording { link("Play recording", symbol: "play.fill", url: recording) }
+                if let voicemail { link("Play voicemail", symbol: "recordingtape", url: voicemail) }
+                // The provider's lasting page for the call's media is also where it opens there.
+                if let asset = call.assetURL { link("Open in \(call.providerName)", symbol: "arrow.up.right.square", url: asset) }
+            }
+        }
+    }
+
+    private func link(_ title: String, symbol: String, url: URL) -> some View {
+        Button {
+            Haptics.tap()
+            openURL(url)
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: symbol).font(.system(size: 10.5, weight: .semibold))
+                Text(title).font(ODFont.sans(12.5, weight: .medium))
+            }
+        }
+        .buttonStyle(ChipButtonStyle())
+    }
 }

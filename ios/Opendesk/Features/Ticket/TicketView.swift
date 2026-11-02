@@ -172,8 +172,8 @@ struct TicketScreen: View {
                         Button("Snooze", systemImage: "moon.zzz") { c.open(.snooze) }
                     }
                     Menu("Status", systemImage: "circle.dashed") {
-                        ForEach(TicketStatus.allCases.filter { $0 != ticket.status }, id: \.self) { status in
-                            Button(status.title) { status == .solved ? c.solve() : c.setStatus(status) }
+                        ForEach(env.statusDisplay.offered().filter { $0 != ticket.status }, id: \.self) { status in
+                            Button(env.statusDisplay.title(status)) { status == .solved ? c.solve() : c.setStatus(status) }
                         }
                     }
                 }
@@ -495,6 +495,8 @@ struct TicketSheetContent: View {
                     .presentationDetents([.medium, .large])
             case let .editNote(message):
                 EditNoteSheet(message: message) { await c.saveNote(message, text: $0) }
+            case let .sentEmail(message):
+                SentEmailSheet(store: c.store, message: message)
             }
         }
     }

@@ -16,6 +16,10 @@ enum DeepLink: Hashable, Sendable {
     case mail(String?)
     case article(String?)
     case kb
+    /// The knowledge base's changelog, optionally one entry (`/kb/changelog/<id>`).
+    case changelog(String?)
+    /// The wiki, optionally one page (`/wiki/<id>`).
+    case wiki(String?)
     case reports
 
     /// From a push or a link that names its server and workspace.
@@ -26,7 +30,7 @@ enum DeepLink: Hashable, Sendable {
     }
 
     /// An app path such as `/inbox/mine/<id>`, `/views/<view>/<id>`, `/inbox/open`, `/contacts/<id>`,
-    /// `/companies/<id>`, `/mail/<box>/<thread_id>`, `/kb/articles/<id>` or `/reports`.
+    /// `/companies/<id>`, `/mail/<box>/<thread_id>`, `/kb/articles/<id>`, `/kb/changelog/<id>`, `/wiki/<id>` or `/reports`.
     static func parse(path raw: String) -> DeepLink? {
         let path = raw.split(separator: "?", maxSplits: 1).first.map(String.init) ?? raw
         let segments = path.split(separator: "/").map { String($0).removingPercentEncoding ?? String($0) }.filter { !$0.isEmpty }
@@ -62,7 +66,10 @@ enum DeepLink: Hashable, Sendable {
             return .mail(segments.count > 2 ? segments.last : nil)
         case "kb":
             if segments.count >= 3, segments[1] == "articles" { return .article(segments[2]) }
+            if segments.count >= 2, segments[1] == "changelog" { return .changelog(segments.count >= 3 ? segments[2] : nil) }
             return .kb
+        case "wiki":
+            return .wiki(segments.count > 1 ? segments[1] : nil)
         case "reports":
             return .reports
         default:

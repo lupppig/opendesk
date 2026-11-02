@@ -14,7 +14,8 @@
     "playground": "Agent im Testbereich testen",
     "kb_draft": "Hilfeartikel entwerfen",
     "assistant": "Nachrichten an den Assistenten",
-    "assistant_peer": "Ollie fragt beim Ollie eines Teammitglieds nach"
+    "assistant_peer": "Ollie fragt beim Ollie eines Teammitglieds nach",
+    "procedure": "Einen Ablauf aus einer Automatisierung ausführen"
   },
   "sentiment": {
     "positive": "Positiv",
@@ -33,6 +34,12 @@
     "choose_sentiment": "Stimmung wählen",
     "ai_triage": "KI-Triage ausführen",
     "ai_triage_hint": "Setzt Labels, Priorität, Stimmung und Sprache anhand der Unterhaltung.",
+    "run_procedure": "Ollie führt einen Ablauf aus",
+    "run_procedure_hint": "Ollie bearbeitet das Ticket danach: interne Notizen, Labels, Priorität und verbundene Tools, die ohne Nachfrage laufen dürfen. Dem Kunden antwortet er nie.",
+    "choose_procedure": "Ablauf wählen",
+    "procedure_off": "Aus",
+    "manage_procedures": "Abläufe verwalten",
+    "new_procedure": "Ablauf schreiben",
     "per_run": "etwa {{cost}} pro Durchlauf",
     "ai_decide": "Ollie eine Ja/Nein-Frage stellen",
     "ai_decide_question": "Frage",

@@ -13,7 +13,8 @@
     "answer_email": "Répondre aux e-mails",
     "playground": "Tester l’agent dans l’espace de test",
     "kb_draft": "Rédiger un article d’aide",
-    "assistant": "Messages de l’assistant"
+    "assistant": "Messages de l’assistant",
+    "procedure": "Exécuter une procédure depuis une automatisation"
   },
   "sentiment": {
     "positive": "Positif",
@@ -32,6 +33,12 @@
     "choose_sentiment": "Choisir un sentiment",
     "ai_triage": "Lancer le tri par IA",
     "ai_triage_hint": "Définit les étiquettes, la priorité, le sentiment et la langue à partir de la conversation.",
+    "run_procedure": "Ollie exécute une procédure",
+    "run_procedure_hint": "Ollie traite le ticket en la suivant : notes internes, étiquettes, priorité et outils connectés autorisés à s’exécuter sans demander. Il ne répond jamais au client.",
+    "choose_procedure": "Choisir une procédure",
+    "procedure_off": "Désactivé",
+    "manage_procedures": "Gérer les procédures",
+    "new_procedure": "Rédiger une procédure",
     "per_run": "environ {{cost}} par exécution",
     "ai_decide": "Poser une question oui/non à Ollie",
     "ai_decide_question": "Question",

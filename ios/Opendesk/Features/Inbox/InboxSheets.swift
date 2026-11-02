@@ -56,9 +56,20 @@ struct ScopeSheet: View {
                     if !env.directory.views.isEmpty {
                         SectionLabel("Views")
                         Panel {
-                            ForEach(Array(env.directory.views.enumerated()), id: \.element.id) { index, view in
+                            ForEach(Array(ViewSections.group(env.directory.views).enumerated()), id: \.element.id) { index, entry in
                                 if index > 0 { Hairline(inset: 46) }
-                                row(scope: .view(view.id), title: view.name, symbol: view.shared == true ? "square.stack" : "person.crop.square", count: env.directory.counts?.views[view.id])
+                                switch entry {
+                                case let .view(view):
+                                    viewRow(view)
+                                case let .section(key, name, views):
+                                    sectionRow(key: key, name: name, views: views)
+                                    if !folded.contains(key) {
+                                        ForEach(views) { view in
+                                            Hairline(inset: 46)
+                                            viewRow(view, nested: true)
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -78,6 +89,7 @@ struct ScopeSheet: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
             }
+            .onAppear { folded = ViewSections.folded(key: foldedKey) }
         }
     }
 
@@ -85,6 +97,67 @@ struct ScopeSheet: View {
     private var myTeams: [Team] {
         guard let me = env.session.user?.id else { return [] }
         return env.directory.teams.filter { $0.memberIDs?.contains(me) == true }
+    }
+
+    /// The view sections folded here, per server, workspace and member.
+    @State private var folded: Set<String> = []
+
+    private var foldedKey: String {
+        "inbox.viewSections.folded." + env.session.api.instance.storageKey + "." + (env.session.workspace?.id ?? "") + "." + (env.session.user?.id ?? "")
+    }
+
+    private func viewRow(_ view: SavedView, nested: Bool = false) -> some View {
+        let scope = InboxScope.view(view.id)
+        let selected = env.router.area == .tickets && env.inbox.scope == scope
+        return Button {
+            pick(scope)
+        } label: {
+            label(title: view.displayName, count: env.directory.counts?.views[view.id], selected: selected) {
+                ViewIconMark(icon: view.icon, size: 15, tint: selected ? Theme.fg : Theme.fg3)
+            }
+            .padding(.leading, nested ? 14 : 0)
+        }
+        .buttonStyle(RowPressStyle())
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    /// A section's heading: folds its views away; folded, it carries their count.
+    private func sectionRow(key: String, name: String, views: [SavedView]) -> some View {
+        let isFolded = folded.contains(key)
+        let total = views.reduce(0) { $0 + (env.directory.counts?.views[$1.id] ?? 0) }
+        return Button {
+            Haptics.selection()
+            withAnimation(Motion.snappy) {
+                if isFolded { folded.remove(key) } else { folded.insert(key) }
+            }
+            ViewSections.setFolded(folded, key: foldedKey)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.fg3)
+                    .rotationEffect(.degrees(isFolded ? 0 : 90))
+                    .frame(width: 20)
+                Text(name)
+                    .font(ODFont.sans(13.5, weight: .semibold))
+                    .foregroundStyle(Theme.fg2)
+                    .lineLimit(1)
+                Spacer()
+                if isFolded, total > 0 {
+                    Text("\(total)")
+                        .font(ODFont.mono(12.5))
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.fg3)
+                }
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 40)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(RowPressStyle())
+        .accessibilityLabel(name)
+        .accessibilityValue(isFolded ? "Folded, \(Format.plural(views.count, "view"))" : "Open")
+        .accessibilityHint(isFolded ? "Shows its views" : "Hides its views")
     }
 
     private var areas: [AppArea] {
@@ -222,17 +295,22 @@ struct FilterSheet: View {
                             toggle(&env.inbox.filters.severities, InboxFilters.noSeverity)
                         } mark: { EmptyView() }
                     }
-                    section("Channel") {
+                    opSection("Channel", op: inbox.filters.channelOp, ops: [.is, .not], set: { env.inbox.filters.setChannelOp($0) }) {
                         ForEach(Channel.allCases) { channel in
-                            InboxFilterChip(title: channel.title, on: inbox.filters.channel == channel) {
-                                env.inbox.filters.channel = inbox.filters.channel == channel ? nil : channel
+                            let not = inbox.filters.channelOp == .not
+                            InboxFilterChip(title: channel.title, on: not ? inbox.filters.channelsNot.contains(channel) : inbox.filters.channel == channel, excluded: not) {
+                                if not {
+                                    toggle(&env.inbox.filters.channelsNot, channel)
+                                } else {
+                                    env.inbox.filters.channel = inbox.filters.channel == channel ? nil : channel
+                                }
                             } mark: {
                                 Image(systemName: channel.symbol).font(.system(size: 11)).foregroundStyle(Theme.fg3)
                             }
                         }
                     }
                     if inbox.scope.teamID == nil, !env.directory.teams.isEmpty {
-                        section("Team") {
+                        opSection("Team", op: inbox.filters.teamOp, ops: [.is, .not], set: { env.inbox.filters.setTeamOp($0) }) {
                             if !myTeams.isEmpty {
                                 teamChip(InboxScope.myTeams, "My teams")
                             }
@@ -240,11 +318,16 @@ struct FilterSheet: View {
                             teamChip(InboxFilters.noTeam, "No team")
                         }
                     }
-                    if inbox.mailboxes.count > 1 || inbox.filters.mailboxID != nil {
-                        section("Address") {
+                    if inbox.mailboxes.count > 1 || inbox.filters.mailboxID != nil || !inbox.filters.mailboxesNot.isEmpty {
+                        opSection("Address", op: inbox.filters.mailboxOp, ops: [.is, .not], set: { env.inbox.filters.setMailboxOp($0) }) {
                             ForEach(inbox.mailboxes) { mailbox in
-                                InboxFilterChip(title: mailbox.email, on: inbox.filters.mailboxID == mailbox.id) {
-                                    env.inbox.filters.mailboxID = inbox.filters.mailboxID == mailbox.id ? nil : mailbox.id
+                                let not = inbox.filters.mailboxOp == .not
+                                InboxFilterChip(title: mailbox.email, on: not ? inbox.filters.mailboxesNot.contains(mailbox.id) : inbox.filters.mailboxID == mailbox.id, excluded: not) {
+                                    if not {
+                                        toggle(&env.inbox.filters.mailboxesNot, mailbox.id)
+                                    } else {
+                                        env.inbox.filters.mailboxID = inbox.filters.mailboxID == mailbox.id ? nil : mailbox.id
+                                    }
                                 } mark: {
                                     Image(systemName: "at").font(.system(size: 11)).foregroundStyle(Theme.fg3)
                                 }
@@ -252,12 +335,19 @@ struct FilterSheet: View {
                         }
                     }
                     if !labels.isEmpty {
-                        section("Label") {
-                            ForEach(labels) { tag in
-                                InboxFilterChip(title: tag.name, on: inbox.filters.tag?.caseInsensitiveCompare(tag.name) == .orderedSame) {
-                                    env.inbox.filters.tag = inbox.filters.tag == tag.name ? nil : tag.name
-                                } mark: {
-                                    Circle().fill(Tone(label: tag.color).solid).frame(width: 7, height: 7)
+                        opSection("Label", op: inbox.filters.labelOp, ops: [.is, .not, .empty], set: { env.inbox.filters.setLabelOp($0) }) {
+                            if inbox.filters.labelOp == .empty {
+                                Text("Tickets without a label.")
+                                    .font(ODFont.sans(13.5))
+                                    .foregroundStyle(Theme.fg3)
+                                    .frame(height: 32)
+                            } else {
+                                ForEach(labels) { tag in
+                                    InboxFilterChip(title: tag.name, on: inbox.filters.hasTag(tag.name), excluded: inbox.filters.labelOp == .not) {
+                                        env.inbox.filters.toggleTag(tag.name)
+                                    } mark: {
+                                        Circle().fill(Tone(label: tag.color).solid).frame(width: 7, height: 7)
+                                    }
                                 }
                             }
                         }
@@ -348,8 +438,9 @@ struct FilterSheet: View {
     }
 
     private func teamChip(_ value: String, _ title: String) -> some View {
-        InboxFilterChip(title: title, on: inbox.filters.teams.contains(value)) {
-            toggle(&env.inbox.filters.teams, value)
+        let not = inbox.filters.teamOp == .not
+        return InboxFilterChip(title: title, on: (not ? inbox.filters.teamsNot : inbox.filters.teams).contains(value), excluded: not) {
+            if not { toggle(&env.inbox.filters.teamsNot, value) } else { toggle(&env.inbox.filters.teams, value) }
         } mark: {
             InboxTeamDot(id: value == InboxFilters.noTeam ? nil : value, name: title)
         }
@@ -359,6 +450,49 @@ struct FilterSheet: View {
         VStack(alignment: .leading, spacing: 8) {
             SectionLabel(title)
             FlowLayout(spacing: 7) { content() }
+        }
+    }
+
+    /// A section whose chips match one way or another: any of them, none of them, or (labels) none at all.
+    private func opSection<Content: View>(_ title: String, op: InboxFilterOp, ops: [InboxFilterOp], set: @escaping (InboxFilterOp) -> Void, @ViewBuilder content: @escaping () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center) {
+                SectionLabel(title)
+                Spacer(minLength: 8)
+                Menu {
+                    ForEach(ops) { option in
+                        Button {
+                            Haptics.selection()
+                            set(option)
+                        } label: {
+                            if option == op { Label(Self.opTitle(option, title), systemImage: "checkmark") } else { Text(Self.opTitle(option, title)) }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(Self.opTitle(op, title))
+                        Image(systemName: "chevron.up.chevron.down").font(.system(size: 9, weight: .semibold))
+                    }
+                    .font(ODFont.sans(12.5, weight: .medium))
+                    .foregroundStyle(op == .is ? Theme.fg3 : Tone.red.text)
+                    .padding(.horizontal, 8)
+                    .frame(height: 24)
+                    .background(op == .is ? Theme.hover : Tone.red.soft, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .contentShape(Rectangle())
+                }
+                .menuOrder(.fixed)
+                .accessibilityLabel("\(title) matches")
+                .accessibilityValue(Self.opTitle(op, title))
+            }
+            FlowLayout(spacing: 7) { content() }
+        }
+    }
+
+    private static func opTitle(_ op: InboxFilterOp, _ title: String) -> String {
+        switch op {
+        case .is: title == "Label" ? "Any of" : "Is"
+        case .not: title == "Label" ? "None of" : "Is not"
+        case .empty: "No label"
         }
     }
 
@@ -500,31 +634,39 @@ struct InboxFieldFilter: View {
     }()
 }
 
-/// A filter chip: a small mark, its title, ink when on.
+/// A filter chip: a small mark, its title, ink when on; struck through on red when it leaves tickets out.
 struct InboxFilterChip<Mark: View>: View {
     let title: String
     let on: Bool
+    var excluded = false
     let action: () -> Void
     @ViewBuilder var mark: () -> Mark
 
     var body: some View {
+        let out = on && excluded
         Button {
             Haptics.selection()
             action()
         } label: {
             HStack(spacing: 6) {
-                mark()
+                if out {
+                    Image(systemName: "minus.circle.fill").font(.system(size: 11))
+                } else {
+                    mark()
+                }
                 Text(title)
                     .font(ODFont.sans(13.5, weight: .medium))
+                    .strikethrough(out, color: Tone.red.text.opacity(0.6))
                     .lineLimit(1)
             }
-            .foregroundStyle(on ? Theme.inverseFg : Theme.fg)
+            .foregroundStyle(out ? Tone.red.text : on ? Theme.inverseFg : Theme.fg)
             .padding(.horizontal, 11)
             .frame(height: 32)
-            .background(on ? Theme.inverse : Theme.surface, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(on ? .clear : Theme.line, lineWidth: 1))
+            .background(out ? Tone.red.soft : on ? Theme.inverse : Theme.surface, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(out ? Tone.red.line : on ? .clear : Theme.line, lineWidth: 1))
         }
         .buttonStyle(TapScaleStyle())
+        .accessibilityLabel(out ? "Not \(title)" : title)
         .accessibilityAddTraits(on ? .isSelected : [])
     }
 }
@@ -669,6 +811,7 @@ struct SnoozeSheet: View {
                     Panel(padding: 14) {
                         DatePicker("Pick a date", selection: $custom, in: AppClock.now..., displayedComponents: [.date, .hourAndMinute])
                             .font(ODFont.sans(15))
+                            .environment(\.locale, Format.locale)
                         Button("Snooze until then") { pick(custom) }
                             .buttonStyle(InkButtonStyle(height: 40))
                             .padding(.top, 10)

@@ -14,7 +14,11 @@ import Foundation
 //   2  Canvasly invoice (a designed receipt)                          17 Nordics reseller agreement (partners@, assigned to Maya, @mention)
 //   3  Northlight contract renewal (shared with Jonas, comments)      18 Co-marketing webinar (to the partnerships@ alias)
 //   4  Product review invite (calendar, unread)                       25 Office lease (Jonas's account, shared with Maya)
-//   5  Ship Notes newsletter (remote images held)
+//   5  Ship Notes newsletter (remote images held, Newsletters tab)    19 Linkhub listing (Needs action)
+//
+// Maya's Gmail inbox is split into tabs (Primary, Updates, Newsletters, Promotions); 2, 11 and 13
+// are Updates. partners@ tracks handling and puts Reply all first: 17, 18 and 19 need action,
+// 17 has an AI draft by the "Partner desk agent" key, and 18 is linked to ticket #1079.
 
 /// Collab mail accounts, conversations, comments and drafts.
 struct DemoMail: Sendable {
@@ -32,6 +36,7 @@ struct DemoMail: Sendable {
     var messages: [String: [MailMessage]] = [:]
     var comments: [String: [MailComment]] = [:]
     var shares: [String: MailAudience] = [:]
+    var tickets: [String: MailTicketLink] = [:]
     var prefs = MailSidebarPrefs()
 
     static let gmail = id(.account, 1)
@@ -71,7 +76,13 @@ extension DemoMail {
                 owner: DemoPerson.maya.ref, visibility: "private", signatureHTML: Self.mayaSignature, status: "active",
                 lastSyncedAt: ago(1), canManage: true,
                 identities: [MailIdentity(identityID: nil, email: "maya@margin.app", displayName: "Maya Chen", signatureHTML: Self.mayaSignature, primary: true, isDefault: true, fromName: "Maya Chen")],
-                defaultFrom: "maya@margin.app", oldestMessageAt: ago(31 * 1440)
+                defaultFrom: "maya@margin.app", oldestMessageAt: ago(31 * 1440),
+                categories: MailAccountCategories(enabled: true, categories: [
+                    MailCategory(key: "primary", name: "Primary", description: "People and everything else", color: "gray"),
+                    MailCategory(key: "updates", name: "Updates", description: "Receipts, bills, confirmations and alerts", color: "blue"),
+                    MailCategory(key: "newsletters", name: "Newsletters", description: "Newsletters and mailing lists", color: "violet"),
+                    MailCategory(key: "promotions", name: "Promotions", description: "Deals, offers and marketing", color: "amber"),
+                ], source: "workspace", mode: "follow", engine: "local")
             ),
             MailAccount(
                 id: Self.partners, provider: .microsoft, email: "partners@margin.app", name: "Partners", displayName: "{agent} at Margin", color: "teal",
@@ -83,7 +94,8 @@ extension DemoMail {
                     MailIdentity(identityID: "alias-1", email: "partnerships@margin.app", displayName: "", signatureHTML: "", fromName: "Maya Chen at Margin",
                                  filledSignatureHTML: Self.partnersSignature.replacingOccurrences(of: "{agent}", with: "Maya Chen").replacingOccurrences(of: "partners@", with: "partnerships@")),
                 ],
-                defaultFrom: "partners@margin.app", history: MailHistory(status: "done", since: nil), oldestMessageAt: ago(400 * 1440)
+                defaultFrom: "partners@margin.app", history: MailHistory(status: "done", since: nil), oldestMessageAt: ago(400 * 1440),
+                handlingEnabled: true, replyAll: true
             ),
             MailAccount(
                 id: Self.jonasAccount, provider: .google, email: "jonas@margin.app", name: "Jonas", displayName: "Jonas Weber", color: "blue",
@@ -135,6 +147,9 @@ extension DemoMail {
         var assignees: [DemoPerson] = []
         var comments: [(DemoPerson, Double, String)] = []
         var toAddress: String?
+        var needsAction = false
+        var category: String?
+        var ticket: MailTicketLink?
     }
 
     fileprivate struct Msg {
@@ -147,6 +162,8 @@ extension DemoMail {
         var unread = false
         var sentBy: DemoPerson?
         var draft = false
+        /// The AI key that saved the draft.
+        var aiDraft: String?
     }
 
     private static func a(_ name: String, _ email: String) -> MailAddress { MailAddress(name: name, email: email) }
@@ -169,6 +186,7 @@ extension DemoMail {
         let leo = Self.a("Leo Fischer", "leo@brightwave.agency")
         let oliver = Self.a("Oliver Grant", "oliver@grantpartners.co.uk")
         let kerstin = Self.a("Kerstin Vogel", "k.vogel@spreeoffices.de")
+        let ingrid = Self.a("Ingrid Berg", "ingrid" + erik.email.drop { $0 != "@" })
         let sig = Self.mayaSignature
         let psig = Self.partnersSignature.replacingOccurrences(of: "{agent}", with: "Maya Chen")
 
@@ -180,7 +198,7 @@ extension DemoMail {
             ]),
             Spec(n: 2, account: Self.gmail, subject: "Your Canvasly receipt for June", boxes: [.inbox], labels: ["Receipts"], messages: [
                 Msg(from: Self.a("Canvasly", "billing@canvasly.com"), to: [me], ago: 190, html: Self.receiptHTML),
-            ]),
+            ], category: "updates"),
             Spec(n: 3, account: Self.gmail, subject: "Contract renewal with Northlight Print", boxes: [.inbox], labels: ["Vendors"], messages: [
                 Msg(from: greta, to: [me], ago: 4320, html: p("Hello Maya,", "Our agreement for the printed onboarding kits ends on 31 July. Ahead of the renewal I attached our updated price list for the next 12 months.", "Paper costs went up quite a bit this spring, so the per-kit price is now €4.20 for up to 2,000 kits a quarter. Above that the volume tier still applies.", "Kind regards,<br>Greta Holm<br>Northlight Print"), files: ["Northlight-pricing-2026.pdf"]),
                 Msg(from: me, to: [greta], ago: 4100, html: p("Hi Greta,", "Thanks for sending this ahead of time. Let me go through it with Jonas, who runs our operations, and come back to you this week.") + sig, sentBy: .maya),
@@ -194,8 +212,8 @@ extension DemoMail {
                 Msg(from: priya, to: [me, jonas, sam], ago: 75, html: Self.inviteHTML, files: ["invite.ics"], unread: true),
             ]),
             Spec(n: 5, account: Self.gmail, subject: "Ship Notes #142: the quiet power of written plans", boxes: [.inbox], labels: ["Newsletters"], messages: [
-                Msg(from: Self.a("Ship Notes", "hello@shipnotes.news"), to: [me], ago: 420, html: Self.newsletterHTML),
-            ]),
+                Msg(from: Self.a("Ship Notes", "hello@shipnotes.news"), to: [me], ago: 420, html: Self.newsletterHTML, unread: true),
+            ], category: "newsletters"),
             Spec(n: 6, account: Self.gmail, subject: "Re: Intro: Margin <> Fieldnote", boxes: [.inbox], messages: [
                 Msg(from: tom, to: [me, hana], ago: 2900, html: p("Maya, meet Hana. She leads partnerships at Fieldnote and I think there is a lot you two could do together, their users keep asking for a notes integration.", "Hana, meet Maya, founder of Margin. I'll let you take it from here!", "Tom")),
                 Msg(from: me, to: [hana], cc: [tom], ago: 2600, html: p("Thanks Tom (moving you to cc).", "Hana, lovely to meet you. Would a call next week work? I'm free Tuesday or Wednesday afternoon, Berlin time.") + sig, sentBy: .maya),
@@ -215,13 +233,13 @@ extension DemoMail {
             ]),
             Spec(n: 11, account: Self.gmail, subject: "Security alert: new sign-in on Mac", boxes: [.inbox], messages: [
                 Msg(from: Self.a("Google", "no-reply@accounts.google.com"), to: [me], ago: 5900, html: p("<b>New sign-in to your account</b>", "We noticed a new sign-in to maya@margin.app on a Mac. If this was you, you don't need to do anything. If not, we'll help you secure your account.", "Check activity at myaccount.google.com/notifications")),
-            ]),
+            ], category: "updates"),
             Spec(n: 12, account: Self.gmail, subject: "Hiring plan for H2", boxes: [.drafts], messages: [
                 Msg(from: me, to: [jonas], ago: 600, html: p("Jonas,", "Here is where I landed on H2: two more engineers in Lisbon, one designer, and a second support hire once we pass 400 Business workspaces.") + #"<div class="od-signature">"# + sig + "</div>", sentBy: .maya, draft: true),
             ]),
             Spec(n: 13, account: Self.gmail, subject: "Your Fjord Cloud invoice is ready", boxes: [.inbox], labels: ["Receipts"], messages: [
                 Msg(from: Self.a("Fjord Cloud", "billing@fjordcloud.eu"), to: [me], ago: 7200, html: p("Hello,", "Your invoice for May 2026 is ready: €1,284.60 for 6 servers and 2 TB of backups. It will be charged to the card ending 4421 on 20 June.", "Thank you for using Fjord Cloud."), files: ["invoice-2026-05.pdf"]),
-            ]),
+            ], category: "updates"),
             Spec(n: 14, account: Self.gmail, subject: "Podcast interview on 24 June", boxes: [.inbox], messages: [
                 Msg(from: nadia, to: [me], ago: 360, html: p("Hi Maya,", "We're so glad you said yes! The episode is about building calm software teams. We record over video on 24 June at 17:00 Berlin time, it takes about an hour.", "Could you send a short bio and a photo by Friday?", "Nadia, Building Calm"), unread: true),
             ]),
@@ -234,16 +252,18 @@ extension DemoMail {
             Spec(n: 17, account: Self.partners, subject: "Reseller agreement: Nordics draft", boxes: [.inbox], labels: ["Contract"], messages: [
                 Msg(from: erik, to: [partners], ago: 2950, html: p("Hello Margin team,", "Following our call, we would like to resell Margin to our customers in Sweden, Norway and Denmark. Could you send over your reseller terms?", "Best regards,<br>Erik Lindqvist<br>Nordcloud Partners")),
                 Msg(from: Self.a("Jonas Weber at Margin", "partners@margin.app"), to: [erik], ago: 2800, html: p("Hi Erik,", "Great to hear. Our standard terms are a 20% margin on yearly plans, with co-branded onboarding for teams above 50 seats. A draft agreement follows this week."), sentBy: .jonas),
-                Msg(from: erik, to: [partners], ago: 50, html: p("Hi again,", "Our legal team marked up the draft (attached). Two open points: the territory clause should include Finland, and we'd like a 30-day notice period instead of 90.", "Can we close this before the summer break?", "Erik"), files: ["Reseller-agreement-v2.docx"], unread: true),
+                Msg(from: erik, to: [partners], cc: [ingrid], ago: 50, html: p("Hi again,", "Our legal team marked up the draft (attached). Two open points: the territory clause should include Finland, and we'd like a 30-day notice period instead of 90.", "Can we close this before the summer break?", "Erik"), files: ["Reseller-agreement-v2.docx"], unread: true),
+                Msg(from: partners, to: [erik], cc: [ingrid], ago: 20, html: p("Hi Erik,", "Thanks for the quick turnaround. Adding Finland to the territory works for us. On notice, could we meet at 60 days?", "Happy to close this before the summer break.") + psig, draft: true, aiDraft: "Partner desk agent"),
             ], assignees: [.maya], comments: [
                 (.jonas, 45, #"<p><span data-type="mention" class="mention" data-id="\#(DemoPerson.maya.id)" data-label="Maya Chen">@Maya Chen</span> you know Erik best, can you take this one? Finland is fine by me.</p>"#),
-            ]),
+            ], needsAction: true),
             Spec(n: 18, account: Self.partners, subject: "Co-marketing webinar in September", boxes: [.inbox], labels: ["Follow up"], messages: [
                 Msg(from: paula, to: [Self.a("", "partnerships@margin.app")], ago: 240, html: p("Hi there,", "Lumacast would love to run a joint webinar with Margin in September: how product teams turn meeting notes into decisions. We'd host it and bring about 800 registrants.", "Would someone from your team join as a speaker?", "Paula Reyes<br>Partner marketing, Lumacast")),
-            ], toAddress: "partnerships@margin.app"),
+            ], toAddress: "partnerships@margin.app", needsAction: true,
+               ticket: MailTicketLink(id: DemoSeed.ticketID(1079), number: 1079, subject: "Co-marketing webinar in September")),
             Spec(n: 19, account: Self.partners, subject: "Linkhub app directory: listing approved", boxes: [.inbox], messages: [
                 Msg(from: Self.a("Linkhub Partners", "partners@linkhub.dev"), to: [partners], ago: 1500, html: p("Good news: Margin is now listed in the Linkhub app directory.", "Your listing is live at linkhub.dev/apps/margin. Partners with a demo video get about three times more installs, you can add one any time from the partner portal.")),
-            ]),
+            ], needsAction: true),
             Spec(n: 20, account: Self.partners, subject: "Referral payout for May", boxes: [.inbox], messages: [
                 Msg(from: Self.a("Fieldnote Payouts", "payouts@fieldnote.io"), to: [partners], ago: 2950, html: p("Hello Margin,", "Your referral payout for May is on its way: 14 referred workspaces, €2,380 in total. It reaches your account within 3 business days.") + #"<table style="border-collapse:collapse;font-size:14px"><tr><td style="padding:4px 16px 4px 0">Referred workspaces</td><td style="padding:4px 0"><b>14</b></td></tr><tr><td style="padding:4px 16px 4px 0">Payout</td><td style="padding:4px 0"><b>€2,380.00</b></td></tr></table>"#, files: ["payout-may-2026.csv"]),
             ]),
@@ -279,8 +299,11 @@ extension DemoMail {
             folderIDs.append(sent)
         }
         if spec.starred, let starred = folders.first(where: { $0.accountID == spec.account && $0.role == .starred })?.id { folderIDs.append(starred) }
+        let split = !(account?.inboxCategories.isEmpty ?? true)
         threads.append(MailThread(id: threadID, accountID: spec.account, subject: spec.subject, lastMessageAt: ago(0), folderIDs: folderIDs, shared: spec.shares != nil,
-                                  assignees: spec.assignees.map(\.ref), toAddress: spec.toAddress))
+                                  assignees: spec.assignees.map(\.ref), toAddress: spec.toAddress, needsAction: spec.needsAction,
+                                  category: split ? spec.category ?? MailCategory.primary : nil))
+        if let ticket = spec.ticket { tickets[threadID] = ticket }
         var list: [MailMessage] = []
         for (index, msg) in spec.messages.enumerated() {
             let id = Self.id(.message, spec.n * 10 + index)
@@ -292,7 +315,7 @@ extension DemoMail {
                 snippet: DemoSeed.preview(msg.html), bodyHTML: msg.html, bodyText: HTMLText.plain(from: msg.html), sentAt: ago(msg.ago),
                 unread: msg.unread, starred: spec.starred && index == spec.messages.count - 1, draft: msg.draft, folderIDs: folderIDs, attachments: files,
                 sentBy: msg.sentBy?.ref, draftID: msg.draft ? id : nil, inReplyToID: index > 0 ? Self.id(.message, spec.n * 10 + index - 1) : nil,
-                ownAddress: spec.toAddress ?? account?.email
+                ownAddress: spec.toAddress ?? account?.email, draftedByAI: msg.aiDraft
             ))
         }
         messages[threadID] = list
@@ -467,7 +490,21 @@ extension DemoMail {
         case .all: return !trashOrSpam
         case .shared: return !(shares[thread.id] ?? .nobody).isEmpty && !trashOrSpam
         case .assigned: return thread.assignees.contains { $0.id == Self.me } && !trashOrSpam
+        case .needsAction: return thread.needsAction && roles.contains(.inbox) && handles(thread)
         }
+    }
+
+    /// Its account tracks handling (Done and Needs action).
+    func handles(_ thread: MailThread) -> Bool {
+        accounts.first { $0.id == thread.accountID }?.handles ?? false
+    }
+
+    /// The inbox tab a conversation is in: its own key while its account has it, else Primary
+    /// (accounts not split count there too).
+    func categoryKey(_ thread: MailThread) -> String {
+        let keys = accounts.first { $0.id == thread.accountID }?.inboxCategories.map(\.key) ?? []
+        guard let key = thread.category, keys.contains(key) else { return MailCategory.primary }
+        return key
     }
 
     func search(_ thread: MailThread, _ text: String) -> Bool {
@@ -489,14 +526,14 @@ extension DemoMail {
         return MailThreadAccount(
             id: thread.accountID, email: account?.email ?? "", name: account?.name ?? "", displayName: account?.displayName ?? "",
             color: account?.color ?? "gray", provider: account?.provider ?? .imap, signatureHTML: account?.signatureHTML ?? "",
-            identities: account?.identities ?? [], defaultFrom: account?.defaultFrom ?? ""
+            identities: account?.identities ?? [], defaultFrom: account?.defaultFrom ?? "", replyAll: account?.replyAll ?? false
         )
     }
 
     func detail(_ index: Int) -> MailThreadDetail {
         let thread = threads[index]
         return MailThreadDetail(thread: thread, account: account(for: thread), messages: messages[thread.id] ?? [], comments: comments[thread.id] ?? [],
-                                shares: shares[thread.id] ?? .nobody, canAct: true)
+                                shares: shares[thread.id] ?? .nobody, canAct: true, ticket: tickets[thread.id])
     }
 
     func accountsOut() -> [MailAccount] {
@@ -533,9 +570,26 @@ extension DemoMail {
             "shared": inbox.filter { $0.unread && matches($0, box: .shared) }.count,
             "assigned": inbox.filter { $0.unread && matches($0, box: .assigned) }.count,
             "drafts": visible.filter { matches($0, box: .drafts) }.count,
+            "needs_action": visible.filter { matches($0, box: .needsAction) }.count,
         ]
         for account in visibleAccounts {
-            counts.accounts[account.id] = inbox.filter { $0.accountID == account.id && $0.unread }.count
+            let own = inbox.filter { $0.accountID == account.id }
+            counts.accounts[account.id] = own.filter(\.unread).count
+            counts.assigned[account.id] = own.filter { matches($0, box: .assigned) }.count
+            if !account.aliases.isEmpty {
+                var byAddress: [String: Int] = [:]
+                for email in account.addresses {
+                    byAddress[email] = own.filter { $0.unread && involves($0, email) }.count
+                }
+                counts.addresses[account.id] = byAddress
+            }
+            if !account.inboxCategories.isEmpty {
+                var byKey: [String: Int] = [:]
+                for category in account.inboxCategories {
+                    byKey[category.key] = own.filter { $0.unread && categoryKey($0) == category.key }.count
+                }
+                counts.categories[account.id] = byKey
+            }
         }
         for folder in folders {
             let unread = visible.filter { $0.folderIDs.contains(folder.id) && $0.unread }.count
@@ -607,6 +661,22 @@ extension DemoBackend {
             changed([], account: id, in: &ws)
             return encode(folder)
         }
+        if let id = call.match("POST", "collab/accounts/*/category-rules")?.first {
+            guard let account = ws.mail.accounts.first(where: { $0.id == id }), account.canManage else { throw notFound("account") }
+            let sender = (call.string("sender") ?? "").trimmingCharacters(in: .whitespaces).lowercased()
+            guard !sender.isEmpty, let key = call.string("category"), account.inboxCategories.contains(where: { $0.key == key }) else {
+                throw Failure(status: 422, code: "validation_failed", detail: "Pick a sender and one of the account's categories.")
+            }
+            var moved: [String] = []
+            for index in ws.mail.threads.indices where ws.mail.threads[index].accountID == id {
+                let from = ws.mail.messages[ws.mail.threads[index].id]?.first { !$0.draft }?.from.email.lowercased() ?? ""
+                guard from == sender || from.hasSuffix("@" + sender) else { continue }
+                ws.mail.threads[index].category = key
+                moved.append(ws.mail.threads[index].id)
+            }
+            changed(moved, account: id, folders: false, in: &ws)
+            return encode(JSONValue.object(["sender": .string(sender), "category": .string(key), "moved": .number(Double(moved.count))]))
+        }
         if let id = call.match("POST", "collab/accounts/*/sync")?.first {
             if let index = ws.mail.accountIndex(id) { ws.mail.accounts[index].lastSyncedAt = now() }
             return nil
@@ -650,6 +720,10 @@ extension DemoBackend {
             if let text = query["q"]?.trimmingCharacters(in: .whitespaces), !text.isEmpty { list = list.filter { ws.mail.search($0, text) } }
             if let with = query["with"], !with.isEmpty { list = list.filter { ws.mail.involves($0, with) } }
             if let to = query["to"], !to.isEmpty { list = list.filter { ws.mail.involves($0, to) } }
+            if let key = query["category"], !key.isEmpty, query["folder_id"] == nil, (query["box"] ?? "inbox") == "inbox", (query["q"] ?? "").isEmpty {
+                let mail = ws.mail
+                list = list.filter { mail.categoryKey($0) == key }
+            }
             list.sort { $0.lastMessageAt > $1.lastMessageAt }
             let offset = Int(query["cursor"] ?? "") ?? 0
             let limit = max(1, min(100, Int(query["limit"] ?? "") ?? 50))
@@ -661,7 +735,12 @@ extension DemoBackend {
             let ids = strings(call, "thread_ids")
             guard let action = MailAction(rawValue: call.string("action") ?? "") else { throw Failure(status: 422, code: "validation_failed", detail: "That action isn't one the demo knows.") }
             let indexes = try ids.map { try thread($0, in: ws) }
-            for index in indexes { apply(action, folderID: call.string("folder_id"), to: index, in: &ws) }
+            if action == .categorize {
+                guard let key = call.string("category"), indexes.allSatisfy({ index in
+                    ws.mail.accounts.first { $0.id == ws.mail.threads[index].accountID }?.inboxCategories.contains { $0.key == key } ?? false
+                }) else { throw Failure(status: 422, code: "validation_failed", detail: "That category isn't one of the account's.") }
+            }
+            for index in indexes { apply(action, folderID: call.string("folder_id"), category: call.string("category"), to: index, in: &ws) }
             let out = indexes.map { ws.mail.threads[$0] }
             changed(out.map(\.id), account: out.first?.accountID, in: &ws)
             return encode(JSONValue.object(["threads": DemoSeed.json(out)]))
@@ -751,10 +830,12 @@ extension DemoBackend {
             message.draftID = nil
             message.sentAt = now()
             message.sentBy = me
+            message.draftedByAI = nil
             ws.mail.messages[thread]![index] = message
             if let t = ws.mail.threadIndex(thread), let sent = ws.mail.folderID(ws.mail.threads[t].accountID, .sent), !ws.mail.threads[t].folderIDs.contains(sent) {
                 ws.mail.threads[t].folderIDs.append(sent)
             }
+            if let t = ws.mail.threadIndex(thread) { ws.mail.threads[t].needsAction = false }
             ws.mail.derive(thread)
             changed([thread], account: message.accountID, in: &ws)
             return encode(ws.mail.messages[thread]?.first { $0.id == message.id })
@@ -782,7 +863,7 @@ extension DemoBackend {
         return nil
     }
 
-    private func apply(_ action: MailAction, folderID: String?, to index: Int, in ws: inout DemoWorkspace) {
+    private func apply(_ action: MailAction, folderID: String?, category: String?, to index: Int, in ws: inout DemoWorkspace) {
         var thread = ws.mail.threads[index]
         let mail = ws.mail
         let id = thread.id
@@ -825,6 +906,9 @@ extension DemoBackend {
             add(folderID)
         case .label: add(folderID)
         case .unlabel: thread.folderIDs.removeAll { $0 == folderID }
+        case .done: thread.needsAction = false
+        case .needsAction: if mail.handles(thread) { thread.needsAction = true }
+        case .categorize: if let category { thread.category = category }
         }
         ws.mail.messages[id] = list
         ws.mail.threads[index] = thread
@@ -881,6 +965,8 @@ extension DemoBackend {
         if !draft, let index = ws.mail.threadIndex(thread), let sent = ws.mail.folderID(accountID, .sent), !ws.mail.threads[index].folderIDs.contains(sent) {
             ws.mail.threads[index].folderIDs.append(sent)
         }
+        // A reply answers what was waiting.
+        if !draft, let index = ws.mail.threadIndex(thread) { ws.mail.threads[index].needsAction = false }
         ws.mail.derive(thread)
         changed([thread], account: accountID, in: &ws)
         return ws.mail.messages[thread]?.first { $0.id == id } ?? message
@@ -911,6 +997,7 @@ extension DemoBackend {
             message.ownAddress = from
         }
         message.sentAt = now()
+        message.draftedByAI = nil
         ws.mail.messages[thread]?[index] = message
         if let t = ws.mail.threadIndex(thread), ws.mail.messages[thread]?.count == 1 { ws.mail.threads[t].subject = message.subject }
         ws.mail.derive(thread)

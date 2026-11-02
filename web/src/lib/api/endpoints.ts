@@ -439,6 +439,7 @@ export const api = {
     update: (id: string, b: { name?: string; reuse_days?: number; assign_answered?: boolean; insight_cards?: boolean; credentials?: Record<string, string> }) =>
       http.patch<T.PhoneConnection>(`/v1/phone/connections/${id}`, b),
     test: (id: string) => http.post<T.PhoneConnection>(`/v1/phone/connections/${id}/test`),
+    rotateWebhook: (id: string) => http.post<T.PhoneConnection>(`/v1/phone/connections/${id}/rotate-webhook`),
     disconnect: (id: string) => http.del(`/v1/phone/connections/${id}`),
     lines: () => http.get<{ data: T.PhoneLine[] }>("/v1/phone/lines"),
   },
@@ -776,6 +777,13 @@ export const api = {
         list: () => http.get<{ data: T.AgentReviewItem[] }>("/v1/ai/agent/review"),
         dismiss: (id: string) => http.post<void>(`/v1/ai/agent/review/${id}/dismiss`),
       },
+    },
+    /** The agent's procedures (contracts/agent.md "Procedures"). Admin. */
+    procedures: {
+      list: () => http.get<{ data: T.Procedure[] }>("/v1/ai/procedures"),
+      create: (b: T.ProcedureBody) => http.create<T.Procedure>("/v1/ai/procedures", b),
+      update: (id: string, b: Partial<T.ProcedureBody>) => http.patch<T.Procedure>(`/v1/ai/procedures/${id}`, b),
+      remove: (id: string) => http.del(`/v1/ai/procedures/${id}`),
     },
     mcp: {
       list: () => http.get<T.Page<T.McpServer>>("/v1/ai/mcp-servers"),

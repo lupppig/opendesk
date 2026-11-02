@@ -50,10 +50,23 @@ enum SocketSignal: Sendable {
     case message(PhoenixFrame)
 }
 
+/// Where a socket connects and the token it presents. The token rides in
+/// `Sec-WebSocket-Protocol` as the `phoenix` client's `authToken` does, never in the
+/// URL (contracts/realtime.md): `phoenix, base64url.bearer.phx.<unpadded base64>`.
+struct SocketEndpoint: Sendable {
+    let url: URL
+    let token: String
+
+    var protocols: [String] {
+        let encoded = Data(token.utf8).base64EncodedString().replacingOccurrences(of: "=", with: "")
+        return ["phoenix", "base64url.bearer.phx." + encoded]
+    }
+}
+
 /// A Phoenix Channels client over `URLSessionWebSocketTask`.
 /// Heartbeat every 25 s with an 8 s watchdog; reconnects with backoff
 /// [120, 350, 800, 1500, 3000, 5000, 10000] ms ±25% and rejoins every topic,
-/// asking for a fresh URL (a fresh realtime token) each time.
+/// asking for a fresh endpoint (a fresh realtime token) each time.
 actor PhoenixSocket {
     private struct Channel {
         var payload: JSONValue
@@ -61,7 +74,7 @@ actor PhoenixSocket {
         var joinedOnce = false
     }
 
-    private let urlProvider: @Sendable () async throws -> URL
+    private let endpointProvider: @Sendable () async throws -> SocketEndpoint
     private let continuation: AsyncStream<SocketSignal>.Continuation
     nonisolated let signals: AsyncStream<SocketSignal>
 
@@ -80,8 +93,8 @@ actor PhoenixSocket {
 
     private static let backoff: [Double] = [120, 350, 800, 1500, 3000, 5000, 10000]
 
-    init(urlProvider: @escaping @Sendable () async throws -> URL) {
-        self.urlProvider = urlProvider
+    init(endpointProvider: @escaping @Sendable () async throws -> SocketEndpoint) {
+        self.endpointProvider = endpointProvider
         (signals, continuation) = AsyncStream.makeStream(of: SocketSignal.self, bufferingPolicy: .unbounded)
     }
 
@@ -124,15 +137,15 @@ actor PhoenixSocket {
         generation += 1
         let current = generation
         continuation.yield(.connecting)
-        let url: URL
+        let endpoint: SocketEndpoint
         do {
-            url = try await urlProvider()
+            endpoint = try await endpointProvider()
         } catch {
             if current == generation { scheduleReconnect() }
             return
         }
         guard running, current == generation, task == nil else { return }
-        let task = session.webSocketTask(with: url)
+        let task = session.webSocketTask(with: endpoint.url, protocols: endpoint.protocols)
         task.maximumMessageSize = 1 << 22
         self.task = task
         opened = false

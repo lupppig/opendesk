@@ -39,6 +39,8 @@ type Service struct {
 	knowledge   KnowledgeRetriever
 	// toolbox lists and runs workspace tools (internal/ai/mcp); nil until installed.
 	toolbox AgentToolbox
+	// connected are the workspace's integrations as procedure runs use them; nil = internal/integrations.
+	connected connectedTools
 	// catalog caches the provider's model names and prices.
 	catalog catalog
 	// own caches the providers built from workspaces' own keys (byok.go).

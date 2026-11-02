@@ -449,6 +449,66 @@
     "emailInvalid": "Enter a valid email",
     "verified": "Verified identity",
     "verifiedHint": "As if your site signed the visitor in. Unlocks verified-only tools.",
-    "note": "Each reply costs about {{cost}} on the agent's model, counted as playground usage. Longer conversations and pricier models cost more."
+    "note": "Each reply costs about {{cost}} on the agent's model, counted as playground usage. Longer conversations and pricier models cost more.",
+    "followed": "Followed {{names}}"
+  },
+  "procedures": {
+    "title": "Procedures",
+    "description": "Steps Ollie follows for one kind of conversation. Ollie reads a procedure only when a conversation matches its Use this when line.",
+    "what": "the agent's procedures",
+    "new": "New procedure",
+    "listCount": "{{n}} of {{max}}",
+    "limit": "A workspace can have up to 50 procedures.",
+    "everyBot": "Every bot",
+    "automationOnly": "Automations only",
+    "channels": {
+      "chat": "Chat",
+      "email": "Email"
+    },
+    "toggle": "Use {{name}}",
+    "actions": "Actions for {{name}}",
+    "edit": "Edit",
+    "delete": "Delete",
+    "deleteTitle": "Delete this procedure?",
+    "deleteBody": "Ollie stops following {{name}}, and tests that expect it will fail.",
+    "updatedBy": "{{when}} by {{name}}",
+    "created": "Procedure created",
+    "saved": "Procedure saved",
+    "saveError": "Couldn't save the procedure.",
+    "updateError": "Couldn't update the procedure.",
+    "deleteError": "Couldn't delete the procedure.",
+    "empty": {
+      "title": "No procedures yet",
+      "description": "Write the steps Ollie should follow for one kind of conversation, such as refund requests or bug reports.",
+      "tipWhen": "Ollie reads one only when a conversation matches it",
+      "tipWiki": "Copy the steps from a wiki page"
+    },
+    "editor": {
+      "newTitle": "New procedure",
+      "name": "Name",
+      "namePlaceholder": "Refund requests",
+      "nameInvalid": "Give it a name of up to 80 characters.",
+      "when": "Use this when",
+      "whenHint": "How Ollie recognises a conversation this is for. Until it picks the procedure, this line is all it sees.",
+      "whenPlaceholder": "The customer asks for a refund or says they were charged twice",
+      "whenInvalid": "Describe it in 3 to 300 characters.",
+      "instructions": "Instructions",
+      "instructionsHint": "Markdown. What to ask, what to check, what to say, and when to hand off.",
+      "instructionsPlaceholder": "1. Ask for the order number.\n2. Look the order up.\n3. Hand off refunds over $200.",
+      "instructionsInvalid": "Write 1 to 8,000 characters.",
+      "copyWiki": "Copy from a wiki page",
+      "copyWikiSearch": "Search the wiki",
+      "copyWikiEmpty": "No pages match",
+      "copied": "Copied from {{title}}",
+      "copyNote": "The text is copied once. Nothing stays linked to the page.",
+      "copyError": "Couldn't copy the page.",
+      "untitled": "Untitled",
+      "channels": "Channels",
+      "channelsHint": "Where Ollie may pick it by itself. With neither, only automations run it.",
+      "bots": "Bots",
+      "botsHint": "Only conversations these bots answer. Leave it empty for every bot.",
+      "enabled": "On",
+      "create": "Create procedure"
+    }
   }
 }

@@ -1,13 +1,21 @@
+import PhotosUI
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Starts a ticket: email the customer from one of the team's addresses, or log what
-/// they said elsewhere as an internal note (the web's `NewTicketDialog`).
+/// they said elsewhere as an internal note (the web's `NewTicketDialog` and its full page):
+/// the customer's card and earlier tickets, saved replies and files, and the ticket's
+/// details (assignee, team, priority, severity, labels and fields) before it exists.
 struct NewTicketSheet: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.dismiss) private var dismiss
     @State private var store = NewTicketStore()
     @State private var picking: Picker?
+    @State private var editingField: CustomField?
     @State private var confirmDiscard = false
+    @State private var showPhotos = false
+    @State private var showFiles = false
+    @State private var photoItems: [PhotosPickerItem] = []
     @FocusState private var focus: Field?
 
     /// Opens the ticket once it exists.
@@ -16,7 +24,7 @@ struct NewTicketSheet: View {
     enum Field: Hashable { case to, subject, body }
 
     enum Picker: String, Identifiable {
-        case assignee, team
+        case assignee, team, labels, severity, savedReply
         var id: String { rawValue }
     }
 
@@ -53,29 +61,43 @@ struct NewTicketSheet: View {
                         .frame(height: 48)
                     }
 
-                    ZStack(alignment: .topLeading) {
-                        if store.body.isEmpty {
-                            Text(store.kind == .reply ? "Write your message" : "Describe the issue")
+                    if case let .contact(contact) = store.recipient {
+                        NewTicketCustomerCard(contact: contact, tickets: store.pastTickets, loading: store.pastLoading)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
+
+                    VStack(spacing: 0) {
+                        ZStack(alignment: .topLeading) {
+                            if store.body.isEmpty {
+                                Text(store.kind == .reply ? "Write your message" : "Describe the issue")
+                                    .font(ODFont.sans(15.5))
+                                    .foregroundStyle(Theme.fg4)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 12)
+                                    .allowsHitTesting(false)
+                            }
+                            TextEditor(text: $store.body)
                                 .font(ODFont.sans(15.5))
-                                .foregroundStyle(Theme.fg4)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 12)
-                                .allowsHitTesting(false)
+                                .foregroundStyle(Theme.fg)
+                                .scrollContentBackground(.hidden)
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 4)
+                                .frame(minHeight: 180)
+                                .focused($focus, equals: .body)
                         }
-                        TextEditor(text: $store.body)
-                            .font(ODFont.sans(15.5))
-                            .foregroundStyle(Theme.fg)
-                            .scrollContentBackground(.hidden)
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 4)
-                            .frame(minHeight: 180)
-                            .focused($focus, equals: .body)
+                        if !store.attachments.isEmpty {
+                            ComposerAttachmentStrip(attachments: $store.attachments)
+                                .padding(.horizontal, 10)
+                                .padding(.bottom, 6)
+                        }
+                        bodyTools
                     }
                     .background(store.kind == .note ? Tone.amber.soft : Theme.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous).strokeBorder(store.kind == .note ? Tone.amber.line : Theme.line, lineWidth: 1))
                     .motion(Motion.fade, value: store.kind)
 
                     options
+                    details
 
                     if store.kind == .note {
                         Text("Only your team sees this. The customer gets nothing until someone replies.")
@@ -127,10 +149,43 @@ struct NewTicketSheet: View {
                     AssigneePicker(current: store.assigneeID) { store.assigneeID = $0 }
                 case .team:
                     TeamPicker(current: store.teamID) { store.teamChoice = .some($0) }
+                case .labels:
+                    LabelPicker(current: store.tags.map { name in env.directory.tag(named: name)?.ref ?? TagRef(id: "new-" + name, name: name, color: nil, groupID: nil) }) { add, remove in
+                        let removed = Set(remove.map { $0.lowercased() })
+                        var next = store.tags.filter { !removed.contains($0.lowercased()) }
+                        for name in add where !next.contains(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) { next.append(name) }
+                        store.tags = next
+                    }
+                case .severity:
+                    SeverityPicker(current: store.severity) { store.severity = $0 }
+                case .savedReply:
+                    SavedReplyPicker(replies: env.directory.savedReplies) { reply in
+                        store.insert(reply)
+                        focus = .body
+                    }
                 }
             }
             .presentationDetents([.medium, .large])
             .presentationCornerRadius(Theme.Radius.sheet)
+        }
+        .sheet(item: $editingField) { field in
+            FieldEditorSheet(field: field, initial: store.fields[field.key], members: env.directory.members) { value in
+                if let value, !TicketFieldValue.isEmpty(value, type: field.type) { store.fields[field.key] = value } else { store.fields[field.key] = nil }
+            }
+            .presentationDetents([.medium, .large])
+            .presentationCornerRadius(Theme.Radius.sheet)
+        }
+        .photosPicker(isPresented: $showPhotos, selection: $photoItems, maxSelectionCount: 6, matching: .any(of: [.images, .screenshots]))
+        .onChange(of: photoItems) { _, items in
+            guard !items.isEmpty else { return }
+            addPhotos(items)
+            photoItems = []
+        }
+        .fileImporter(isPresented: $showFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
+            if case let .success(urls) = result { addFiles(urls) }
+        }
+        .onChange(of: store.recipient) { _, _ in
+            withAnimation(Motion.snappy) { store.loadPast() }
         }
         .onAppear {
             store.start(api: env.session.api, me: env.session.user?.id)
@@ -362,6 +417,135 @@ struct NewTicketSheet: View {
             .frame(width: 58, alignment: .leading)
     }
 
+    // MARK: Saved replies and files
+
+    private var bodyTools: some View {
+        HStack(spacing: 4) {
+            Menu {
+                Button { showPhotos = true } label: { Label("Photos", systemImage: "photo.on.rectangle") }
+                Button { showFiles = true } label: { Label("Files", systemImage: "folder") }
+            } label: {
+                toolIcon("paperclip")
+            }
+            .accessibilityLabel("Attach files")
+            if !env.directory.savedReplies.isEmpty {
+                Button {
+                    Haptics.tap()
+                    picking = .savedReply
+                } label: {
+                    toolIcon("text.bubble")
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Saved replies")
+            }
+            Spacer(minLength: 0)
+            if store.uploading {
+                ProgressView().controlSize(.mini)
+                    .padding(.trailing, 8)
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.bottom, 6)
+    }
+
+    private func toolIcon(_ symbol: String) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: 15, weight: .medium))
+            .foregroundStyle(Theme.fg3)
+            .frame(width: 36, height: 34)
+            .contentShape(Rectangle())
+    }
+
+    private func addPhotos(_ items: [PhotosPickerItem]) {
+        for (offset, item) in items.enumerated() {
+            let type = item.supportedContentTypes.first { $0.conforms(to: .image) } ?? .jpeg
+            let name = "Photo \(store.attachments.count + offset + 1).\(type.preferredFilenameExtension ?? "jpg")"
+            store.attachLater(filename: name, mimeType: type.preferredMIMEType ?? "image/jpeg") {
+                try? await item.loadTransferable(type: Data.self)
+            }
+        }
+    }
+
+    private func addFiles(_ urls: [URL]) {
+        for url in urls {
+            let access = url.startAccessingSecurityScopedResource()
+            defer { if access { url.stopAccessingSecurityScopedResource() } }
+            let data = try? Data(contentsOf: url)
+            let type = UTType(filenameExtension: url.pathExtension) ?? .data
+            let mime = type.preferredMIMEType ?? "application/octet-stream"
+            store.attach(data: data, filename: url.lastPathComponent, mimeType: mime, preview: mime.hasPrefix("image/") ? data.flatMap(NewTicketStore.thumbnail) : nil)
+        }
+    }
+
+    // MARK: Details
+
+    /// Severity, labels and the ticket's custom fields, set before the ticket exists.
+    private var details: some View {
+        let fields = env.directory.fields(for: "ticket")
+        return VStack(alignment: .leading, spacing: 8) {
+            SectionLabel("Details")
+            Panel {
+                detailRow("Severity", symbol: "exclamationmark.triangle") {
+                    picking = .severity
+                } value: {
+                    if let severity = store.severity {
+                        SeverityChip(severity: severity)
+                    } else {
+                        Text("None").foregroundStyle(Theme.fg4)
+                    }
+                }
+                Hairline(inset: 44)
+                detailRow("Labels", symbol: "tag") {
+                    picking = .labels
+                } value: {
+                    if store.tags.isEmpty {
+                        Text("None").foregroundStyle(Theme.fg4)
+                    } else {
+                        HStack(spacing: 4) {
+                            ForEach(store.tags.prefix(2), id: \.self) { name in
+                                LabelChip(name: name, color: env.directory.tag(named: name)?.color)
+                            }
+                            if store.tags.count > 2 {
+                                Text("+\(store.tags.count - 2)").font(ODFont.mono(11)).foregroundStyle(Theme.fg3)
+                            }
+                        }
+                    }
+                }
+                ForEach(fields) { field in
+                    Hairline(inset: 44)
+                    detailRow(field.name, symbol: TicketFieldValue.symbol(field.type)) {
+                        editingField = field
+                    } value: {
+                        if let text = TicketFieldValue.display(store.fields[field.key], field: field, members: env.directory.members) {
+                            Text(text).foregroundStyle(Theme.fg).lineLimit(1)
+                        } else {
+                            Text("Empty").foregroundStyle(Theme.fg4)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func detailRow<Value: View>(_ title: String, symbol: String, action: @escaping () -> Void, @ViewBuilder value: () -> Value) -> some View {
+        Button {
+            Haptics.tap()
+            action()
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: symbol).font(.system(size: 14)).foregroundStyle(Theme.fg3).frame(width: 20)
+                Text(title).font(ODFont.sans(15)).foregroundStyle(Theme.fg2).lineLimit(1)
+                Spacer(minLength: 8)
+                value().font(ODFont.sans(14.5))
+                Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.fg4)
+            }
+            .padding(.horizontal, 14)
+            .frame(minHeight: 46)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(RowPressStyle())
+    }
+
     private func create() async {
         guard let ticket = await store.create() else {
             Haptics.error()
@@ -373,5 +557,67 @@ struct NewTicketSheet: View {
         env.toasts.show("Ticket #\(ticket.number) created", kind: .success)
         dismiss()
         onCreated(ticket)
+    }
+}
+
+/// Who the new ticket goes to: their card, with their company and their earlier tickets.
+struct NewTicketCustomerCard: View {
+    let contact: Contact
+    let tickets: [Ticket]
+    let loading: Bool
+
+    var body: some View {
+        Panel {
+            HStack(spacing: 12) {
+                Avatar(name: contact.displayName, url: contact.avatarURL, seed: contact.id, size: 34)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(contact.displayName).font(ODFont.sans(15, weight: .semibold)).foregroundStyle(Theme.fg).lineLimit(1)
+                    let line = [contact.email, contact.company?.name].compactMap { $0 }.filter { !$0.isEmpty && $0 != contact.displayName }
+                    if !line.isEmpty {
+                        Text(line.joined(separator: " · ")).font(ODFont.sans(13)).foregroundStyle(Theme.fg3).lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 4)
+                if contact.ticketCount > 0 {
+                    Text(Format.plural(contact.ticketCount, "ticket")).font(ODFont.sans(12)).foregroundStyle(Theme.fg4)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
+            if loading && tickets.isEmpty {
+                Hairline(inset: 14)
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.mini)
+                    Text("Loading earlier tickets").font(ODFont.sans(13)).foregroundStyle(Theme.fg3)
+                }
+                .padding(.horizontal, 14)
+                .frame(height: 40)
+            } else if !tickets.isEmpty {
+                Hairline(inset: 14)
+                Text("Earlier tickets")
+                    .font(ODFont.sans(12, weight: .medium))
+                    .foregroundStyle(Theme.fg3)
+                    .padding(.horizontal, 14)
+                    .padding(.top, 9)
+                    .padding(.bottom, 2)
+                ForEach(tickets.prefix(5)) { ticket in
+                    HStack(spacing: 9) {
+                        StatusIcon(status: ticket.status, size: 13)
+                        Text(ticket.displaySubject).font(ODFont.sans(14)).foregroundStyle(Theme.fg).lineLimit(1)
+                        Spacer(minLength: 4)
+                        TicketNumber(number: ticket.number)
+                        Text(Format.relShort(ticket.lastMessageAt))
+                            .font(ODFont.mono(11))
+                            .monospacedDigit()
+                            .foregroundStyle(Theme.fg4)
+                    }
+                    .padding(.horizontal, 14)
+                    .frame(height: 34)
+                    .accessibilityElement(children: .combine)
+                }
+                Spacer().frame(height: 6)
+            }
+        }
+        .accessibilityElement(children: .contain)
     }
 }

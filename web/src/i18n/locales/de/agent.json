@@ -449,6 +449,66 @@
     "emailInvalid": "Gib eine gültige E-Mail ein",
     "verified": "Bestätigte Identität",
     "verifiedHint": "Als hätte deine Website den Besucher angemeldet. Schaltet Tools nur für bestätigte Besucher frei.",
-    "note": "Jede Antwort kostet etwa {{cost}} auf dem Modell des Agenten und zählt als Nutzung im Testbereich. Längere Unterhaltungen und teurere Modelle kosten mehr."
+    "note": "Jede Antwort kostet etwa {{cost}} auf dem Modell des Agenten und zählt als Nutzung im Testbereich. Längere Unterhaltungen und teurere Modelle kosten mehr.",
+    "followed": "Ist {{names}} gefolgt"
+  },
+  "procedures": {
+    "title": "Abläufe",
+    "description": "Schritte, denen Ollie bei einer bestimmten Art von Unterhaltung folgt. Ollie liest einen Ablauf nur, wenn eine Unterhaltung zu seiner Zeile „Verwenden, wenn“ passt.",
+    "what": "die Abläufe des Agenten",
+    "new": "Neuer Ablauf",
+    "listCount": "{{n}} von {{max}}",
+    "limit": "Ein Workspace kann bis zu 50 Abläufe haben.",
+    "everyBot": "Jeder Bot",
+    "automationOnly": "Nur Automatisierungen",
+    "channels": {
+      "chat": "Chat",
+      "email": "E-Mail"
+    },
+    "toggle": "{{name}} nutzen",
+    "actions": "Aktionen für {{name}}",
+    "edit": "Bearbeiten",
+    "delete": "Löschen",
+    "deleteTitle": "Diesen Ablauf löschen?",
+    "deleteBody": "Ollie folgt „{{name}}“ nicht mehr, und Tests, die ihn erwarten, schlagen fehl.",
+    "updatedBy": "{{when}} von {{name}}",
+    "created": "Ablauf erstellt",
+    "saved": "Ablauf gespeichert",
+    "saveError": "Ablauf konnte nicht gespeichert werden.",
+    "updateError": "Ablauf konnte nicht aktualisiert werden.",
+    "deleteError": "Ablauf konnte nicht gelöscht werden.",
+    "empty": {
+      "title": "Noch keine Abläufe",
+      "description": "Schreib die Schritte auf, denen Ollie bei einer bestimmten Art von Unterhaltung folgen soll, etwa bei Erstattungswünschen oder Fehlermeldungen.",
+      "tipWhen": "Ollie liest einen Ablauf nur, wenn eine Unterhaltung dazu passt",
+      "tipWiki": "Übernimm die Schritte aus einer Wiki-Seite"
+    },
+    "editor": {
+      "newTitle": "Neuer Ablauf",
+      "name": "Name",
+      "namePlaceholder": "Erstattungswünsche",
+      "nameInvalid": "Gib ihm einen Namen mit bis zu 80 Zeichen.",
+      "when": "Verwenden, wenn",
+      "whenHint": "Woran Ollie eine passende Unterhaltung erkennt. Bis er den Ablauf auswählt, sieht er nur diese Zeile.",
+      "whenPlaceholder": "Der Kunde möchte eine Erstattung oder sagt, dass ihm doppelt abgebucht wurde",
+      "whenInvalid": "Beschreib es in 3 bis 300 Zeichen.",
+      "instructions": "Anweisungen",
+      "instructionsHint": "Markdown. Was zu fragen, zu prüfen und zu sagen ist, und wann an das Team übergeben wird.",
+      "instructionsPlaceholder": "1. Frag nach der Bestellnummer.\n2. Schlag die Bestellung nach.\n3. Übergib Erstattungen über 200 $.",
+      "instructionsInvalid": "Schreib 1 bis 8.000 Zeichen.",
+      "copyWiki": "Aus einer Wiki-Seite übernehmen",
+      "copyWikiSearch": "Wiki durchsuchen",
+      "copyWikiEmpty": "Keine passenden Seiten",
+      "copied": "Aus „{{title}}“ übernommen",
+      "copyNote": "Der Text wird einmal kopiert. Danach bleibt nichts mit der Seite verknüpft.",
+      "copyError": "Seite konnte nicht übernommen werden.",
+      "untitled": "Ohne Titel",
+      "channels": "Kanäle",
+      "channelsHint": "Wo Ollie den Ablauf selbst auswählen darf. Ohne Kanal führen ihn nur Automatisierungen aus.",
+      "bots": "Bots",
+      "botsHint": "Nur Unterhaltungen, die diese Bots beantworten. Leer lassen für jeden Bot.",
+      "enabled": "An",
+      "create": "Ablauf erstellen"
+    }
   }
 }

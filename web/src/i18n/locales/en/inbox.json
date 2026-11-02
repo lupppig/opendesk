@@ -328,6 +328,7 @@
     "teamCleared_other": "Removed the team from {{count}} tickets"
   },
   "props": {
+    "bar": "Ticket properties",
     "contact": "Contact",
     "changeContact": "Change contact",
     "searchContacts": "Search contacts",
@@ -448,6 +449,9 @@
     "triagedAs": "<b>{{who}}</b> triaged this as <b>{{category}}</b>",
     "aiAnswered": "<b>{{who}}</b> answered from the knowledge base",
     "aiAnsweredEmail": "<b>{{who}}</b> answered by email",
+    "procedureRan": "<b>{{who}}</b> ran <b>{{name}}</b>",
+    "procedureNothing": "<b>{{who}}</b> ran <b>{{name}}</b>: nothing to do",
+    "procedureFailed": "<b>{{who}}</b> couldn't finish <b>{{name}}</b>",
     "aiSuggested": "<b>{{who}}</b> suggested a reply",
     "aiSuggestedSent": "<b>{{who}}</b> sent {{ollie}}'s suggested reply",
     "handoffCustomer": "The customer asked for a person",
@@ -909,7 +913,12 @@
       "abandoned_in_ivr": "Hung up in the menu",
       "abandoned_in_classic": "Hung up while waiting",
       "no_available_agent": "No teammate available",
-      "agents_did_not_answer": "Nobody answered"
+      "agents_did_not_answer": "Nobody answered",
+      "busy": "Line busy",
+      "no_answer": "Not answered",
+      "failed": "Call failed",
+      "cancelled": "Hung up before an answer",
+      "abandon": "Hung up in the queue"
     }
   },
   "panels": {

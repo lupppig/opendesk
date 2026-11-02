@@ -93,7 +93,7 @@ interface BotLook {
 | GET | `/v1/bots/{id}` | members | → `Bot` |
 | POST | `/v1/bots` | admin (`settings:write`) | `{name, role?, language?, look?, personality?}` → `201 Bot` (missing keys take the defaults: the Ollie look, a friendly personality); goes last |
 | PATCH | `/v1/bots/{id}` | admin | `{name?, role?, language?, look?, personality?}` → `Bot`. `look` is replaced whole; `personality` keys are merged |
-| DELETE | `/v1/bots/{id}` | admin | → `204`. `409 bot_is_default` for the default bot; `409 bot_in_use` while a widget or mailbox answers as it (the detail names them) |
+| DELETE | `/v1/bots/{id}` | admin | → `204`. `409 bot_is_default` for the default bot; `409 bot_in_use` while a widget or mailbox answers as it or a procedure names it in `bot_ids` (the detail names them) |
 | POST | `/v1/bots/{id}/duplicate` | admin | → `201 Bot`: "<name> copy" with the same look (an uploaded picture is not copied: `kind` falls back to `built`), personality, role and language, placed right after |
 | POST | `/v1/bots/{id}/default` | admin | → `Bot`: it becomes the default (widgets and mailboxes without a bot answer as it) |
 | POST | `/v1/bots/reorder` | admin | `{ids}`: every bot once → `{data: Bot[]}` |

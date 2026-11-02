@@ -924,7 +924,7 @@
     },
     "empty": {
       "title": "No phone system yet",
-      "body": "Connect Aircall and every call is documented on the caller's ticket.",
+      "body": "Connect Aircall or Voys and every call is documented on the caller's ticket.",
       "tipTimeline": "Calls in the ticket timeline",
       "tipMissed": "Missed calls never go unanswered",
       "tipAutomations": "Automations when a call ends"
@@ -937,13 +937,15 @@
       "test": "Test",
       "tested": "The connection works.",
       "testedAttention": "The connection needs attention.",
-      "testError": "Couldn't test the connection."
+      "testError": "Couldn't test the connection.",
+      "waiting": "Waiting for the first call"
     },
     "healthCode": {
       "receiving": "Calls are sent to opendesk.",
       "webhook_missing": "The phone system is not sending calls to opendesk. Test the connection to set it up again.",
       "credentials_refused": "The phone system refused the credentials. Replace them with working ones.",
-      "provider_unreachable": "Couldn't reach the phone system. Try again in a moment."
+      "provider_unreachable": "Couldn't reach the phone system. Try again in a moment.",
+      "webhookManual": "No call has come in yet. Add the webhook address below in {{name}}, then make a test call."
     },
     "lastEvent": "Last call event {{when}}",
     "noEventYet": "No call yet. Calls show up on tickets as soon as they ring.",
@@ -975,7 +977,7 @@
       "cards": "Show the caller in Aircall",
       "cardsHint": "While a call rings, Aircall shows the caller, the ticket the call goes on and their latest tickets.",
       "dial": "Call from opendesk",
-      "dialHint": "Phone numbers on contacts and tickets open your phone app. Set Aircall as the default app for phone links to call with it."
+      "dialHint": "Phone numbers on contacts and tickets open your phone app. Set {{name}} as the default app for phone links to call with it."
     },
     "automations": {
       "title": "Automations",
@@ -998,7 +1000,8 @@
       "description": "An admin can connect a phone system."
     },
     "provider": {
-      "aircall": "Cloud phone system. Calls, recordings and AI summaries land on tickets."
+      "aircall": "Cloud phone system. Calls, recordings and AI summaries land on tickets.",
+      "voys": "Dutch cloud phone system. Calls, Voys Intelligence transcripts and summaries land on tickets."
     },
     "field": {
       "api_id": "API ID",
@@ -1010,7 +1013,27 @@
       "cancel": "Cancel",
       "submit": "Connect",
       "connected": "{{name}} connected.",
-      "error": "Couldn't connect {{name}}."
+      "error": "Couldn't connect {{name}}.",
+      "voysSetup": "In Voys Freedom, open your personal settings and copy your API token. Use an admin's token with access to call recordings, so transcripts and summaries come along. Next, you add opendesk's webhook address in Voys."
+    },
+    "webhookManual": "Webhook address, to add in {{name}} as a call notification",
+    "disconnectBodyManual": "opendesk stops documenting new calls from {{name}}. Remove the call notification in {{name}} as well. Calls already on tickets stay.",
+    "hook": {
+      "title": "Add opendesk in {{name}}",
+      "description": "{{name}} sends calls to this address once you add it as a call notification.",
+      "done": "Done",
+      "rotate": "Make a new address",
+      "rotateLabel": "Make a new webhook address for {{name}}",
+      "rotateTitle": "Make a new webhook address?",
+      "rotateBody": "The current address stops working at once. Paste the new one in {{name}} to keep receiving calls.",
+      "rotateError": "Couldn't make a new webhook address."
+    },
+    "voys": {
+      "step1": "In Voys Freedom, open Integratie, then Gespreksnotificaties, and click Toevoegen.",
+      "step2": "Enter a description such as opendesk, and choose Custom as the service.",
+      "step3": "Paste the webhook address as the Web hook URL.",
+      "step4": "Tick the summary and transcription events (they need Voys Intelligence), then click Opslaan.",
+      "step5": "Make a test call: the connection says Receiving calls as soon as it comes in."
     }
   }
 }

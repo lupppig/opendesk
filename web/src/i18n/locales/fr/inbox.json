@@ -346,6 +346,7 @@
     "teamCleared_many": "Équipe retirée de {{count}} tickets"
   },
   "props": {
+    "bar": "Propriétés du ticket",
     "contact": "Contact",
     "changeContact": "Changer de contact",
     "searchContacts": "Rechercher des contacts",
@@ -466,6 +467,9 @@
     "triagedAs": "<b>{{who}}</b> a classé ce ticket dans <b>{{category}}</b>",
     "aiAnswered": "<b>{{who}}</b> a répondu à partir de la base de connaissances",
     "aiAnsweredEmail": "<b>{{who}}</b> a répondu par e-mail",
+    "procedureRan": "<b>{{who}}</b> a exécuté <b>{{name}}</b>",
+    "procedureNothing": "<b>{{who}}</b> a exécuté <b>{{name}}</b> : rien à faire",
+    "procedureFailed": "<b>{{who}}</b> n’a pas pu terminer <b>{{name}}</b>",
     "aiSuggested": "<b>{{who}}</b> a suggéré une réponse",
     "aiSuggestedSent": "<b>{{who}}</b> a envoyé la réponse suggérée par {{ollie}}",
     "handoffCustomer": "Le client a demandé à parler à une personne",
@@ -885,7 +889,12 @@
       "abandoned_in_ivr": "Raccroché dans le menu",
       "abandoned_in_classic": "Raccroché pendant l'attente",
       "no_available_agent": "Aucun collègue disponible",
-      "agents_did_not_answer": "Personne n'a répondu"
+      "agents_did_not_answer": "Personne n'a répondu",
+      "busy": "Ligne occupée",
+      "no_answer": "Sans réponse",
+      "failed": "Échec de l'appel",
+      "cancelled": "Raccroché avant la réponse",
+      "abandon": "Raccroché dans la file d'attente"
     }
   },
   "panels": {

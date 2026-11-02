@@ -59,11 +59,11 @@ struct InboxTeamTabs: View {
     }
 }
 
-/// What needs attention in this list (the web's `SummaryStrip`): urgent narrows the
-/// list, the SLA counts sort it by what's due first. Select sits at the end.
+/// What needs attention in this list (the web's `SummaryStrip`), over the whole list once
+/// the server has counted it: urgent narrows the list, the SLA counts sort it by what's
+/// due first. Select sits at the end.
 struct InboxSummaryStrip: View {
-    let tickets: [Ticket]
-    let total: String
+    let summary: InboxSummary
     let urgentOnly: Bool
     let byDue: Bool
     var canSelect = true
@@ -72,16 +72,18 @@ struct InboxSummaryStrip: View {
     let onSelect: () -> Void
 
     var body: some View {
-        let summary = InboxSummary(tickets)
         HStack(spacing: 2) {
             ScrollView(.horizontal) {
                 HStack(spacing: 2) {
-                    if !total.isEmpty {
-                        Text(total)
+                    if summary.partial {
+                        // The numbers count only the rows loaded so far.
+                        Text("First \(summary.total) shown")
                             .font(ODFont.sans(12.5))
                             .foregroundStyle(Theme.fg4)
                             .monospacedDigit()
+                            .padding(.leading, 2)
                             .padding(.trailing, 6)
+                            .accessibilityHint("These numbers count only the tickets loaded so far. Scroll down to load more.")
                     }
                     if summary.awaiting > 0 {
                         item(n: summary.awaiting, label: "awaiting reply", active: false, action: nil) {
@@ -164,14 +166,18 @@ struct InboxSummaryStrip: View {
     }
 }
 
-/// Counts over the loaded rows, as the web computes them.
+/// The strip's numbers: the server's over the whole list, or the loaded rows' as the web counts them.
 struct InboxSummary {
+    var total = 0
     var awaiting = 0
     var urgent = 0
     var overdue = 0
     var dueSoon = 0
+    /// The numbers count only the rows loaded so far, and more remain.
+    var partial = false
 
     init(_ tickets: [Ticket], now: Date = AppClock.now) {
+        total = tickets.count
         for ticket in tickets {
             if ticket.awaitingReply { awaiting += 1 }
             if ticket.priority == .urgent { urgent += 1 }
@@ -183,6 +189,14 @@ struct InboxSummary {
                 }
             }
         }
+    }
+
+    init(_ summary: TicketListSummary) {
+        total = summary.total
+        awaiting = summary.awaiting
+        urgent = summary.urgent
+        overdue = summary.overdue
+        dueSoon = summary.dueSoon
     }
 }
 
@@ -245,6 +259,11 @@ struct InboxActiveFilters: View {
         let remove: () -> Void
     }
 
+    /// The mark of a filter that leaves tickets out.
+    private static var notMark: some View {
+        Image(systemName: "minus.circle").font(.system(size: 10, weight: .medium)).foregroundStyle(Tone.red.text)
+    }
+
     private var chips: [Chip] {
         let inbox = env.inbox
         let filters = inbox.filters
@@ -262,18 +281,39 @@ struct InboxActiveFilters: View {
         if let channel = filters.channel {
             out.append(Chip(id: "c", title: channel.title, mark: AnyView(Image(systemName: channel.symbol).font(.system(size: 10)).foregroundStyle(Theme.fg3)), remove: update { $0.channel = nil }))
         }
+        for channel in Channel.allCases where filters.channelsNot.contains(channel) {
+            out.append(Chip(id: "c!." + channel.rawValue, title: "Not \(channel.title.lowercased())", mark: AnyView(Self.notMark), remove: update { $0.channelsNot.remove(channel) }))
+        }
         if inbox.scope.teamID == nil {
+            func teamTitle(_ value: String) -> String {
+                value == InboxScope.myTeams ? "My teams" : value == InboxFilters.noTeam ? "No team" : env.directory.team(value)?.name ?? "Team"
+            }
             for value in filters.teams.sorted() {
-                let title = value == InboxScope.myTeams ? "My teams" : value == InboxFilters.noTeam ? "No team" : env.directory.team(value)?.name ?? "Team"
+                let title = teamTitle(value)
                 out.append(Chip(id: "t." + value, title: title, mark: AnyView(InboxTeamDot(id: value == InboxFilters.noTeam ? nil : value, name: title)), remove: update { $0.teams.remove(value) }))
             }
+            for value in filters.teamsNot.sorted() {
+                let title = teamTitle(value)
+                let said = value == InboxScope.myTeams ? "Not my teams" : value == InboxFilters.noTeam ? "Has a team" : "Not \(title)"
+                out.append(Chip(id: "t!." + value, title: said, mark: AnyView(Self.notMark), remove: update { $0.teamsNot.remove(value) }))
+            }
         }
-        if let tag = filters.tag {
-            out.append(Chip(id: "l", title: tag, mark: AnyView(Circle().fill(Tone(label: env.directory.tag(named: tag)?.color).solid).frame(width: 7, height: 7)), remove: update { $0.tag = nil }))
+        for tag in filters.tags.sorted() {
+            out.append(Chip(id: "l." + tag.lowercased(), title: tag, mark: AnyView(Circle().fill(Tone(label: env.directory.tag(named: tag)?.color).solid).frame(width: 7, height: 7)), remove: update { $0.tags.remove(tag) }))
+        }
+        for tag in filters.tagsNot.sorted() {
+            out.append(Chip(id: "l!." + tag.lowercased(), title: "Without \(tag)", mark: AnyView(Self.notMark), remove: update { $0.tagsNot.remove(tag) }))
+        }
+        if filters.untagged {
+            out.append(Chip(id: "l0", title: "No label", mark: AnyView(Image(systemName: "tag.slash").font(.system(size: 10)).foregroundStyle(Theme.fg3)), remove: update { $0.untagged = false }))
         }
         if let id = filters.mailboxID {
             let title = inbox.mailboxes.first { $0.id == id }?.email ?? "Address"
             out.append(Chip(id: "m", title: title, mark: AnyView(Image(systemName: "at").font(.system(size: 10)).foregroundStyle(Theme.fg3)), remove: update { $0.mailboxID = nil }))
+        }
+        for id in filters.mailboxesNot.sorted() {
+            let title = inbox.mailboxes.first { $0.id == id }?.email ?? "an address"
+            out.append(Chip(id: "m!." + id, title: "Not \(title)", mark: AnyView(Self.notMark), remove: update { $0.mailboxesNot.remove(id) }))
         }
         if let address = filters.receivedAt {
             out.append(Chip(id: "r", title: address, mark: AnyView(Image(systemName: "at").font(.system(size: 10)).foregroundStyle(Theme.fg3)), remove: update { $0.receivedAt = nil }))

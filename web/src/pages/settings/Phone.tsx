@@ -3,7 +3,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { KeyRound, PhoneCall, PhoneMissed, RefreshCw, ScrollText, Trash2, Workflow } from "lucide-react";
+import { KeyRound, Link2, PhoneCall, PhoneMissed, RefreshCw, ScrollText, Trash2, Workflow } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AppMark } from "@/components/appmark";
@@ -28,10 +28,16 @@ import { atLeast, useRole } from "@/lib/session";
 const REUSE = [0, 1, 3, 7, 14, 30] as const;
 const FIELDS = ["api_id", "api_token"] as const;
 const knownField = (k: string): k is (typeof FIELDS)[number] => (FIELDS as readonly string[]).includes(k);
+const PROVIDERS = ["aircall", "voys"] as const;
+const knownProvider = (k: string): k is (typeof PROVIDERS)[number] => (PROVIDERS as readonly string[]).includes(k);
 
-function connectionState(c: PhoneConnection): { state: ItemState; key: "healthy" | "action_required" | "error" | "unknown" } {
+/** A connection whose webhook an admin adds in the provider by hand, before its first call came in. */
+const waiting = (c: PhoneConnection, p?: PhoneProvider) => !!p?.manual_webhook && c.health_code === "webhook_missing";
+
+function connectionState(c: PhoneConnection, p?: PhoneProvider): { state: ItemState; key: "healthy" | "action_required" | "error" | "unknown" | "waiting" } {
   if (c.status === "error" || c.health_status === "error") return { state: "failing", key: "error" };
   if (c.health_status === "healthy") return { state: "active", key: "healthy" };
+  if (waiting(c, p)) return { state: "pending", key: "waiting" };
   if (c.health_status === "action_required") return { state: "pending", key: "action_required" };
   return { state: "disabled", key: "unknown" };
 }
@@ -67,6 +73,8 @@ export default function Phone() {
   const { data: connections, isLoading } = useQuery(q.phoneConnections());
   const [connecting, setConnecting] = useState<PhoneProvider | null>(null);
   const [rotating, setRotating] = useState<PhoneConnection | null>(null);
+  const [newHook, setNewHook] = useState<PhoneConnection | null>(null);
+  const providerOf = (key: string) => providers?.find((p) => p.key === key);
 
   const test = useMutation({
     mutationFn: api.phone.test,
@@ -81,6 +89,14 @@ export default function Phone() {
     mutationFn: ({ id, ...b }: { id: string; reuse_days?: number; assign_answered?: boolean; insight_cards?: boolean }) => api.phone.update(id, b),
     onSuccess: (row) => upsertInList(qc, qk.phoneConnections, row),
     onError: (e) => toast.error(e, t("phone.saveError")),
+  });
+  const rotateWebhook = useMutation({
+    mutationFn: api.phone.rotateWebhook,
+    onSuccess: (row) => {
+      upsertInList(qc, qk.phoneConnections, row);
+      setNewHook(row);
+    },
+    onError: (e) => toast.error(e, t("phone.hook.rotateError")),
   });
   const disconnect = useMutation({
     mutationFn: api.phone.disconnect,
@@ -122,8 +138,13 @@ export default function Phone() {
           <div className="divide-y divide-line-soft">
             {connections.map((c) => {
               const provider = providers?.find((p) => p.key === c.provider);
-              const state = connectionState(c);
-              const detail = c.health_code ? t(`phone.healthCode.${c.health_code}`) : c.health_detail;
+              const providerName = provider?.name ?? c.provider;
+              const state = connectionState(c, provider);
+              const detail = waiting(c, provider)
+                ? t("phone.healthCode.webhookManual", { name: providerName })
+                : c.health_code
+                  ? t(`phone.healthCode.${c.health_code}`)
+                  : c.health_detail;
               return (
                 <div key={c.id} className="px-4 py-3.5" data-testid="phone-connection">
                   <div className="flex items-start gap-3">
@@ -140,8 +161,9 @@ export default function Phone() {
                       </p>
                       {admin && c.webhook_url && (
                         <div className="mt-2 max-w-[560px]">
-                          <p className="mb-1 text-[11.5px] text-fg-4">{t("phone.webhook")}</p>
+                          <p className="mb-1 text-[11.5px] text-fg-4">{provider?.manual_webhook ? t("phone.webhookManual", { name: providerName }) : t("phone.webhook")}</p>
                           <CopyField value={c.webhook_url} />
+                          {waiting(c, provider) && <WebhookSteps provider={c.provider} className="mt-2.5" />}
                         </div>
                       )}
                     </div>
@@ -151,17 +173,31 @@ export default function Phone() {
                           {t("phone.health.test")}
                         </Button>
                         <Button square icon={<KeyRound />} aria-label={t("phone.rotate.label", { name: c.name })} onClick={() => setRotating(c)} />
+                        {provider?.manual_webhook && (
+                          <Button
+                            square
+                            icon={<Link2 />}
+                            aria-label={t("phone.hook.rotateLabel", { name: c.name })}
+                            loading={rotateWebhook.isPending && rotateWebhook.variables === c.id}
+                            onClick={() =>
+                              confirm.show(t("phone.hook.rotateBody", { name: providerName }), () => rotateWebhook.mutateAsync(c.id), {
+                                title: t("phone.hook.rotateTitle"),
+                                confirmLabel: t("phone.hook.rotate"),
+                              })
+                            }
+                          />
+                        )}
                         <Button
                           variant="danger"
                           square
                           icon={<Trash2 />}
                           aria-label={t("phone.disconnectLabel", { name: c.name })}
                           onClick={() =>
-                            confirm.show(t("phone.disconnectBody", { name: c.name }), () => disconnect.mutateAsync(c.id), {
-                              title: t("phone.disconnectTitle"),
-                              confirmLabel: t("phone.disconnect"),
-                              danger: true,
-                            })
+                            confirm.show(
+                              provider?.manual_webhook ? t("phone.disconnectBodyManual", { name: providerName }) : t("phone.disconnectBody", { name: c.name }),
+                              () => disconnect.mutateAsync(c.id),
+                              { title: t("phone.disconnectTitle"), confirmLabel: t("phone.disconnect"), danger: true },
+                            )
                           }
                         />
                       </div>
@@ -195,15 +231,17 @@ export default function Phone() {
               onCheckedChange={(v) => update.mutate({ id: c.id, assign_answered: v })}
             />
           </Row>
-          <Row label={t("phone.placement.cards")} description={t("phone.placement.cardsHint")}>
-            <Switch
-              aria-label={t("phone.placement.cards")}
-              checked={c.insight_cards}
-              disabled={!admin}
-              onCheckedChange={(v) => update.mutate({ id: c.id, insight_cards: v })}
-            />
-          </Row>
-          <Row label={t("phone.placement.dial")} description={t("phone.placement.dialHint")} />
+          {providerOf(c.provider)?.insight_cards && (
+            <Row label={t("phone.placement.cards")} description={t("phone.placement.cardsHint")}>
+              <Switch
+                aria-label={t("phone.placement.cards")}
+                checked={c.insight_cards}
+                disabled={!admin}
+                onCheckedChange={(v) => update.mutate({ id: c.id, insight_cards: v })}
+              />
+            </Row>
+          )}
+          <Row label={t("phone.placement.dial")} description={t("phone.placement.dialHint", { name: providerOf(c.provider)?.name ?? c.provider })} />
         </Section>
       ))}
 
@@ -218,7 +256,7 @@ export default function Phone() {
           </Row>
           <Row label={t("phone.automations.docs")} description={t("phone.automations.docsHint")}>
             <a
-              href="https://docs.opendesk.sh/guides/aircall/"
+              href={`https://docs.opendesk.sh/guides/${connections[0]?.provider === "voys" ? "voys" : "aircall"}/`}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex h-7 items-center gap-1.5 rounded-md border border-line px-2.5 text-[12px] font-medium text-fg-2 hover:border-line-strong hover:text-fg"
@@ -247,7 +285,7 @@ export default function Phone() {
                     <AppMark app={p.key} name={p.name} size="sm" />
                     <span className="flex-1 text-[13px] font-medium">{p.name}</span>
                   </div>
-                  <p className="mt-1.5 text-[12px] leading-[18px] text-fg-3">{p.key === "aircall" ? t("phone.provider.aircall") : p.name}</p>
+                  <p className="mt-1.5 text-[12px] leading-[18px] text-fg-3">{knownProvider(p.key) ? t(`phone.provider.${p.key}`) : p.name}</p>
                 </button>
               ))}
           </div>
@@ -256,7 +294,49 @@ export default function Phone() {
 
       {connecting && <CredentialsDialog provider={connecting} onClose={() => setConnecting(null)} />}
       {rotating && <CredentialsDialog provider={providers?.find((p) => p.key === rotating.provider)} connection={rotating} onClose={() => setRotating(null)} />}
+      {newHook && <WebhookDialog connection={newHook} provider={providers?.find((p) => p.key === newHook.provider)} onClose={() => setNewHook(null)} />}
     </SettingsPage>
+  );
+}
+
+/** How to add the webhook in a provider that has no API for it (contracts/phone.md "Voys"). */
+function WebhookSteps({ provider, className }: { provider: string; className?: string }) {
+  const { t } = useTranslation("settingsChannels");
+  if (provider !== "voys") return null;
+  const steps = [t("phone.voys.step1"), t("phone.voys.step2"), t("phone.voys.step3"), t("phone.voys.step4"), t("phone.voys.step5")];
+  return (
+    <ol className={className} data-testid="webhook-steps">
+      {steps.map((step, i) => (
+        <li key={i} className="flex gap-2 py-0.5 text-[12px] leading-[18px] text-fg-2">
+          <span className="mono w-4 shrink-0 text-right text-fg-4">{i + 1}.</span>
+          <span>{step}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/** The webhook address to add in the provider by hand, with how to. */
+function WebhookDialog({ connection, provider, onClose }: { connection: PhoneConnection; provider?: PhoneProvider; onClose: () => void }) {
+  const { t } = useTranslation("settingsChannels");
+  const name = provider?.name ?? connection.provider;
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => !open && onClose()}
+      title={t("phone.hook.title", { name })}
+      description={t("phone.hook.description", { name })}
+      footer={
+        <Button variant="primary" onClick={onClose}>
+          {t("phone.hook.done")}
+        </Button>
+      }
+    >
+      <div className="flex flex-col gap-3">
+        {connection.webhook_url && <CopyField value={connection.webhook_url} />}
+        <WebhookSteps provider={connection.provider} />
+      </div>
+    </Dialog>
   );
 }
 
@@ -266,6 +346,8 @@ function CredentialsDialog({ provider, connection, onClose }: { provider?: Phone
   const qc = useQueryClient();
   const [credentials, setCredentials] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
+  // A webhook added by hand: its new address is the next step.
+  const [hook, setHook] = useState<PhoneConnection | null>(null);
   const name = provider?.name ?? connection?.provider ?? "";
   const save = useMutation({
     mutationFn: () =>
@@ -273,18 +355,20 @@ function CredentialsDialog({ provider, connection, onClose }: { provider?: Phone
     onSuccess: (row) => {
       upsertInList(qc, qk.phoneConnections, row);
       toast.success(connection ? t("phone.rotate.saved") : t("phone.connect.connected", { name }));
-      onClose();
+      if (provider?.manual_webhook && row.webhook_url && row.webhook_url !== connection?.webhook_url) setHook(row);
+      else onClose();
     },
     onError: (e) => setError(errorMessage(e, t("phone.connect.error", { name }))),
   });
   const fields = provider?.fields ?? [];
   const valid = fields.length > 0 && fields.every((f) => credentials[f.name]?.trim());
+  if (hook) return <WebhookDialog connection={hook} provider={provider} onClose={onClose} />;
   return (
     <Dialog
       open
       onOpenChange={(open) => !open && onClose()}
       title={connection ? t("phone.rotate.title", { name: connection.name }) : t("phone.connect.title", { name })}
-      description={provider?.key === "aircall" ? t("phone.connect.aircallSetup") : undefined}
+      description={provider?.key === "aircall" ? t("phone.connect.aircallSetup") : provider?.key === "voys" ? t("phone.connect.voysSetup") : undefined}
       footer={
         <>
           <Button onClick={onClose}>{t("phone.connect.cancel")}</Button>

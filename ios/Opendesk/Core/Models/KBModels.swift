@@ -264,3 +264,245 @@ enum KBSlug {
         return String(out.prefix(80)).trimmingCharacters(in: CharacterSet(charactersIn: "-"))
     }
 }
+
+/// Which list the knowledge base shows.
+enum KBMode: String, CaseIterable, Identifiable, Sendable {
+    case articles, changelog
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .articles: "Articles"
+        case .changelog: "Changelog"
+        }
+    }
+}
+
+// MARK: - Changelog
+
+/// A changelog entry (contracts/api.md `ChangelogEntry`): a product update the help center publishes.
+struct ChangelogEntry: Codable, Hashable, Sendable, Identifiable {
+    var id: String
+    var title: String
+    var slug: String
+    var excerpt: String
+    var bodyHTML: String
+    var categories: [String]
+    var status: KBStatus
+    /// The date it carries; a published entry dated later is scheduled.
+    var publishedAt: Date?
+    var author: UserRef?
+    var brandID: String?
+    var createdAt: Date
+    var updatedAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, slug, excerpt, categories, status, author
+        case bodyHTML = "body_html"
+        case publishedAt = "published_at"
+        case brandID = "brand_id"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+    }
+
+    init(id: String, title: String, slug: String, excerpt: String, bodyHTML: String, categories: [String], status: KBStatus, publishedAt: Date?, author: UserRef?, brandID: String? = nil, createdAt: Date, updatedAt: Date) {
+        self.id = id
+        self.title = title
+        self.slug = slug
+        self.excerpt = excerpt
+        self.bodyHTML = bodyHTML
+        self.categories = categories
+        self.status = status
+        self.publishedAt = publishedAt
+        self.author = author
+        self.brandID = brandID
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        title = c.lenient(String.self, forKey: .title) ?? ""
+        slug = c.lenient(String.self, forKey: .slug) ?? ""
+        excerpt = c.lenient(String.self, forKey: .excerpt) ?? ""
+        bodyHTML = c.lenient(String.self, forKey: .bodyHTML) ?? ""
+        categories = c.lenient([String].self, forKey: .categories) ?? []
+        status = c.lenient(KBStatus.self, forKey: .status) ?? .draft
+        publishedAt = c.lenient(Date.self, forKey: .publishedAt)
+        author = c.lenient(UserRef.self, forKey: .author)
+        brandID = c.lenient(String.self, forKey: .brandID)
+        updatedAt = c.lenient(Date.self, forKey: .updatedAt) ?? .now
+        createdAt = c.lenient(Date.self, forKey: .createdAt) ?? updatedAt
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(title, forKey: .title)
+        try c.encode(slug, forKey: .slug)
+        try c.encode(excerpt, forKey: .excerpt)
+        try c.encode(bodyHTML, forKey: .bodyHTML)
+        try c.encode(categories, forKey: .categories)
+        try c.encode(status, forKey: .status)
+        try c.encode(publishedAt, forKey: .publishedAt)
+        try c.encode(author, forKey: .author)
+        try c.encode(brandID, forKey: .brandID)
+        try c.encode(createdAt, forKey: .createdAt)
+        try c.encode(updatedAt, forKey: .updatedAt)
+    }
+
+    var displayTitle: String { title.isEmpty ? "Untitled" : title }
+
+    /// Draft, live, or published but waiting for its date.
+    func state(now: Date = AppClock.now) -> ChangelogState {
+        guard status == .published else { return .draft }
+        if let publishedAt, publishedAt > now { return .scheduled }
+        return .published
+    }
+
+    /// The date the list sorts by: the one it carries, else the last edit (drafts).
+    var sortDate: Date { publishedAt ?? updatedAt }
+}
+
+/// What a reader sees of an entry.
+enum ChangelogState: String, CaseIterable, Identifiable, Sendable {
+    case draft, published, scheduled
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .draft: "Draft"
+        case .published: "Published"
+        case .scheduled: "Scheduled"
+        }
+    }
+
+    var tone: Tone {
+        switch self {
+        case .draft: .amber
+        case .published: .green
+        case .scheduled: .blue
+        }
+    }
+}
+
+/// The status filter of the changelog list.
+enum ChangelogFilter: String, CaseIterable, Identifiable, Sendable {
+    case all, published, scheduled, draft
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .all: "All"
+        case .published: "Published"
+        case .scheduled: "Scheduled"
+        case .draft: "Drafts"
+        }
+    }
+
+    func matches(_ entry: ChangelogEntry, now: Date = AppClock.now) -> Bool {
+        switch self {
+        case .all: true
+        case .published: entry.state(now: now) == .published
+        case .scheduled: entry.state(now: now) == .scheduled
+        case .draft: entry.status == .draft
+        }
+    }
+}
+
+/// `GET /v1/changelog/categories`: the names the workspace's entries use, most used first.
+struct ChangelogCategory: Decodable, Hashable, Sendable, Identifiable {
+    var name: String
+    var count: Int
+    var id: String { name.lowercased() }
+
+    enum CodingKeys: String, CodingKey { case name, count }
+
+    init(name: String, count: Int) {
+        self.name = name
+        self.count = count
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = c.lenient(String.self, forKey: .name) ?? ""
+        count = c.lenient(Int.self, forKey: .count) ?? 0
+    }
+}
+
+/// Body of `POST /v1/changelog/entries` and its PATCH. The excerpt (derived from the
+/// body unless written) and the date (set when first published unless given) are
+/// sent only when they were changed; `datePatched` with a nil date dates it when it
+/// is next published.
+struct ChangelogEntryInput: Encodable, Sendable {
+    var title: String
+    var slug: String?
+    var bodyHTML: String
+    var categories: [String]
+    var status: KBStatus
+    var excerpt: String?
+    var publishedAt: Date?
+    var datePatched = false
+
+    enum CodingKeys: String, CodingKey {
+        case title, slug, categories, status, excerpt
+        case bodyHTML = "body_html"
+        case publishedAt = "published_at"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(title, forKey: .title)
+        if let slug, !slug.isEmpty { try c.encode(slug, forKey: .slug) }
+        try c.encode(bodyHTML, forKey: .bodyHTML)
+        try c.encode(categories, forKey: .categories)
+        try c.encode(status, forKey: .status)
+        if let excerpt { try c.encode(excerpt, forKey: .excerpt) }
+        if datePatched { try c.encode(publishedAt, forKey: .publishedAt) }
+    }
+}
+
+/// Changelog categories as the app applies them (web `components/kb/changelog.ts`):
+/// at most five, 32 characters each, compared without case.
+enum ChangelogCategories {
+    static let max = 5
+    static let maxLength = 32
+
+    /// A typed name with its whitespace collapsed; nil when nothing is left.
+    static func clean(_ name: String) -> String? {
+        let value = name.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return value.isEmpty ? nil : value
+    }
+
+    /// The list with the name added, or why it can't be.
+    static func add(_ name: String, to list: [String]) -> Result<[String], Problem> {
+        guard let value = clean(name) else { return .failure(.empty) }
+        if value.count > maxLength { return .failure(.tooLong) }
+        if list.contains(where: { $0.caseInsensitiveCompare(value) == .orderedSame }) { return .failure(.duplicate) }
+        if list.count >= max { return .failure(.full) }
+        return .success(list + [value])
+    }
+
+    enum Problem: Error {
+        case empty, tooLong, duplicate, full
+
+        var message: String {
+            switch self {
+            case .empty: "Type a name."
+            case .tooLong: "Keep it to \(ChangelogCategories.maxLength) characters."
+            case .duplicate: "That category is already here."
+            case .full: "Up to \(ChangelogCategories.max) categories."
+            }
+        }
+    }
+
+    /// A stable tone for a name (web `toneFor`), so a category looks the same everywhere.
+    static func tone(_ name: String) -> Tone {
+        let tones: [Tone] = [.blue, .indigo, .violet, .pink, .orange, .amber, .lime, .green, .teal, .cyan]
+        var hash: Int32 = 0
+        for unit in (name.isEmpty ? "?" : name).utf16 { hash = hash &* 31 &+ Int32(unit) }
+        let positive = hash == Int32.min ? Int(Int32.max) + 1 : Int(abs(hash))
+        return tones[positive % tones.count]
+    }
+}

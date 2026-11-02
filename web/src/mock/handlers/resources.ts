@@ -34,6 +34,7 @@ import { checkLimit } from "./billing";
 import { authRefusedCause, connectOptions, detect, imapOff, mockApiSyncOn, mockImapOn, mockOAuthEnabled, mockSystemSendOn, receivingOf, refusal, sendingOf, syncReceiving, systemSendOff } from "./mailhost";
 import { assign, crud } from "./crud";
 import { checkBotId } from "./bots";
+import { proceduresOf } from "./procedures";
 import { checkSendAs, normalizeAliases, writeAliasSettings } from "../aliases";
 
 function contactOut(ws: WsData, c: Contact): Contact {
@@ -273,7 +274,7 @@ export function registerResources() {
     create: (ctx, id) => {
       const trigger = (s(ctx, "trigger") as Automation["trigger"] | undefined) ?? "ticket_created";
       const acts = actions(ctx.body.actions, true);
-      checkActionTrigger(trigger, acts);
+      checkActionTrigger(ctx.ws, trigger, acts);
       return {
         id,
         name: required(ctx, "name").slice(0, 80),
@@ -287,7 +288,7 @@ export function registerResources() {
     },
     update: (ctx, row) => {
       const acts = "actions" in ctx.body ? actions(ctx.body.actions, true) : row.actions;
-      checkActionTrigger((s(ctx, "trigger") as Automation["trigger"] | undefined) ?? row.trigger, acts);
+      checkActionTrigger(ctx.ws, (s(ctx, "trigger") as Automation["trigger"] | undefined) ?? row.trigger, acts);
       assign(row, ctx.body, ["name", "trigger", "enabled", "position"]);
       if ("conditions" in ctx.body) row.conditions = conditions(ctx.body.conditions);
       row.actions = acts;
@@ -670,9 +671,14 @@ function mergeAction(value: string, sameSubject: unknown): Action {
   return { type: "merge_into_open_ticket", value: String(Number(v)), same_subject: sameSubject !== false };
 }
 
-/** A merge joins a new ticket to an earlier one: it runs only when a ticket is created. */
-function checkActionTrigger(trigger: Automation["trigger"], acts: Action[]) {
+/** A merge joins a new ticket to an earlier one: it runs only when a ticket is created. A procedure
+ * is one of the workspace's, and never runs on ticket_updated (contracts/ai.md "Automations"). */
+function checkActionTrigger(ws: WsData, trigger: Automation["trigger"], acts: Action[]) {
   if (trigger !== "ticket_created" && acts.some((a) => a.type === "merge_into_open_ticket")) throw invalid("merge_into_open_ticket runs only on the ticket_created trigger");
+  if (trigger === "ticket_updated" && acts.some((a) => a.type === "run_procedure"))
+    throw invalid("run_procedure runs on ticket_created, customer_replied, agent_replied and call_ended, not on ticket_updated");
+  const known = new Set(proceduresOf(ws).map((p) => p.id));
+  if (acts.some((a) => a.type === "run_procedure" && !known.has(a.value))) throw invalid("ai procedure not found in this workspace");
 }
 
 function uniqueSlug(rows: { slug: string }[], base: string): string {

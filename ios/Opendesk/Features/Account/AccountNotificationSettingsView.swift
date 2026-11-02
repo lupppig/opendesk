@@ -178,6 +178,7 @@ struct AccountNotificationSettingsView: View {
                     }
                 }
             }
+            teams(prefs)
             VStack(alignment: .leading, spacing: 6) {
                 Text("Phone: the opendesk iPhone app. Each phone can also mute types of its own, in This iPhone.")
                 Text("Desktop: the opendesk desktop app, or a browser that allowed notifications.")
@@ -186,6 +187,27 @@ struct AccountNotificationSettingsView: View {
             .foregroundStyle(Theme.fg3)
             .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 4)
+        }
+    }
+
+    // MARK: Teams
+
+    /// One switch per team the caller leads or works in: whether its new tickets, and
+    /// replies nobody has picked up, reach them.
+    @ViewBuilder
+    private func teams(_ prefs: NotificationPreferences) -> some View {
+        if !prefs.teams.isEmpty {
+            AccountSection(title: "Your teams", footer: "New tickets in a team, and replies nobody has picked up. Tickets assigned to you and mentions always reach you.") {
+                ForEach(Array(prefs.teams.enumerated()), id: \.element.id) { index, team in
+                    if index > 0 { AccountDivider() }
+                    AccountToggleRow(symbol: "person.2", tone: .gray, title: team.name, isOn: Binding(get: { team.notify }, set: { on in
+                        Task {
+                            do { try await store.setTeamNotify(team.id, on: on) } catch { env.toasts.error(error) }
+                        }
+                    }))
+                    .accessibilityLabel("Notifications from \(team.name)")
+                }
+            }
         }
     }
 
@@ -260,17 +282,11 @@ struct AccountNotificationSettingsView: View {
     }
 
     static func hourLabel(_ hour: Int) -> String {
-        var components = DateComponents()
-        components.hour = hour
-        components.minute = 0
-        let date = Calendar.current.date(from: components) ?? .now
-        return date.formatted(.dateTime.hour().minute())
+        Format.hour(hour)
     }
 
     static func when(_ date: Date) -> String {
-        Calendar.current.isDate(date, inSameDayAs: AppClock.now)
-            ? Format.clock(date)
-            : date.formatted(.dateTime.weekday(.abbreviated).hour().minute())
+        Calendar.current.isDate(date, inSameDayAs: AppClock.now) ? Format.clock(date) : Format.weekdayClock(date)
     }
 
     static func tomorrowMorning() -> Date {

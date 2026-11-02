@@ -179,6 +179,61 @@ func TicketLeads(ctx context.Context, tx pgx.Tx, wid uuid.UUID, team *uuid.UUID,
 
 // enqueuePush queues the push for a stored notification when the user has a phone or a
 // subscribed browser.
+// DeleteNotifications runs query, a DELETE FROM notifications ... RETURNING id, user_id,
+// read_at IS NULL, and tells each recipient which of theirs are gone, so a bell or badge open
+// in another window or device drops them; a phone whose unread count fell gets its badge again.
+func DeleteNotifications(ctx context.Context, tx pgx.Tx, wid uuid.UUID, query string, args ...any) error {
+	rows, err := tx.Query(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	gone := map[uuid.UUID][]uuid.UUID{}
+	unread := map[uuid.UUID]bool{}
+	var users []uuid.UUID
+	for rows.Next() {
+		var id, uid uuid.UUID
+		var wasUnread bool
+		if err := rows.Scan(&id, &uid, &wasUnread); err != nil {
+			rows.Close()
+			return err
+		}
+		if _, ok := gone[uid]; !ok {
+			users = append(users, uid)
+		}
+		gone[uid] = append(gone[uid], id)
+		unread[uid] = unread[uid] || wasUnread
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, uid := range users {
+		if _, err := events.Publish(ctx, tx, events.Event{WorkspaceID: wid, Type: "notification.deleted",
+			Users: []uuid.UUID{uid}, Data: map[string]any{"ids": gone[uid]}}); err != nil {
+			return err
+		}
+		if unread[uid] {
+			if err := enqueueBadge(ctx, tx, uid); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// enqueueBadge queues a badge update for a user with a phone.
+func enqueueBadge(ctx context.Context, tx pgx.Tx, userID uuid.UUID) error {
+	jc := pushJobs.Load()
+	if jc == nil {
+		return nil
+	}
+	var phone bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM push_devices WHERE user_id = $1)`, userID).Scan(&phone); err != nil || !phone {
+		return err
+	}
+	_, err := jc.InsertTx(ctx, tx, jobs.PushBadgeArgs{UserID: userID}, &river.InsertOpts{MaxAttempts: 2})
+	return err
+}
+
 func enqueuePush(ctx context.Context, tx pgx.Tx, wid, userID, notificationID uuid.UUID) error {
 	jc := pushJobs.Load()
 	if jc == nil {

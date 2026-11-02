@@ -53,8 +53,8 @@ struct APIError: LocalizedError, Sendable, Equatable {
         switch code {
         case "invalid_credentials": return "That email and password don't match."
         case "invalid_code": return "That code didn't work. Try a fresh one."
-        case "mfa_required": return "Confirm with your two-factor code first."
-        case "reauth_required": return "Sign in again to do this."
+        case "mfa_required": return "Sign in again with your two-factor code to do this."
+        case "reauth_required": return "This needs a sign-in from the last 12 hours. Sign in again to confirm it's you."
         case "captcha_failed": return "This device couldn't be verified. Try again, or sign in another way."
         case "rate_limited": return "Too many tries. Wait a moment and try again."
         case "email_taken": return "An account with that email already exists."

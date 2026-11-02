@@ -77,6 +77,8 @@ struct User: Codable, Hashable, Sendable, Identifiable {
     var avatarSource: String?
     var emailVerified: Bool?
     var totpEnabled: Bool?
+    /// The clock times are shown in: "auto", "12h" or "24h" (`TimeFormat`).
+    var timeFormat: String?
     var createdAt: Date?
 
     enum CodingKeys: String, CodingKey {
@@ -85,6 +87,7 @@ struct User: Codable, Hashable, Sendable, Identifiable {
         case avatarSource = "avatar_source"
         case emailVerified = "email_verified"
         case totpEnabled = "totp_enabled"
+        case timeFormat = "time_format"
         case createdAt = "created_at"
     }
 
@@ -108,6 +111,8 @@ struct UserRef: Codable, Hashable, Sendable, Identifiable {
 struct DisplayOverride: Codable, Hashable, Sendable {
     var label: String?
     var color: String?
+    /// Statuses only: left out of the menus agents pick a status from (never open or solved).
+    var hidden: Bool?
 }
 
 struct WorkspaceSettings: Codable, Hashable, Sendable {
@@ -115,12 +120,42 @@ struct WorkspaceSettings: Codable, Hashable, Sendable {
     var timezone: String?
     var statusLabels: [String: DisplayOverride]?
     var priorityLabels: [String: DisplayOverride]?
+    /// The composer shows "Send and solve" on a segment of its own before Send.
+    var sendAndFinishButton: Bool?
+    /// With Collab, members may answer email tickets from their own addresses (default true).
+    var collabTicketReplies: Bool?
+    /// Where answers to such a reply go when it names no Reply-To: "address" (default) or "mailbox".
+    var collabTicketReplyTo: String?
+    /// Seconds a reply on an email (or any non-chat) ticket is held with Undo (default 5).
+    var undoSendSeconds: Int?
+    /// The same for chat replies (default 0).
+    var undoSendChatSeconds: Int?
 
     enum CodingKeys: String, CodingKey {
         case brandColor = "brand_color"
         case timezone
         case statusLabels = "status_labels"
         case priorityLabels = "priority_labels"
+        case sendAndFinishButton = "send_and_finish_button"
+        case collabTicketReplies = "collab_ticket_replies"
+        case collabTicketReplyTo = "collab_ticket_reply_to"
+        case undoSendSeconds = "undo_send_seconds"
+        case undoSendChatSeconds = "undo_send_chat_seconds"
+    }
+}
+
+extension WorkspaceSettings {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        brandColor = c.lenient(String.self, forKey: .brandColor)
+        timezone = c.lenient(String.self, forKey: .timezone)
+        statusLabels = c.lenient([String: DisplayOverride].self, forKey: .statusLabels)
+        priorityLabels = c.lenient([String: DisplayOverride].self, forKey: .priorityLabels)
+        sendAndFinishButton = c.lenient(Bool.self, forKey: .sendAndFinishButton)
+        collabTicketReplies = c.lenient(Bool.self, forKey: .collabTicketReplies)
+        collabTicketReplyTo = c.lenient(String.self, forKey: .collabTicketReplyTo)
+        undoSendSeconds = c.lenient(Int.self, forKey: .undoSendSeconds)
+        undoSendChatSeconds = c.lenient(Int.self, forKey: .undoSendChatSeconds)
     }
 }
 
@@ -347,9 +382,17 @@ struct CSAT: Codable, Hashable, Sendable {
     var comment: String?
 }
 
+/// A workspace skill the route that created the ticket requires for automatic assignment.
+struct TicketSkill: Codable, Hashable, Sendable, Identifiable {
+    var id: String
+    var name: String
+}
+
 struct Ticket: Codable, Hashable, Sendable, Identifiable {
     var id: String
     var number: Int
+    /// An optional reference of the workspace's own, unique in it (`ORDER-42`).
+    var alias: String?
     var subject: String
     var status: TicketStatus
     var priority: Priority
@@ -360,6 +403,8 @@ struct Ticket: Codable, Hashable, Sendable, Identifiable {
     var assignee: UserRef?
     var teamID: String?
     var tags: [TagRef]
+    /// Fixed when the ticket was created; automatic assignment needs every one.
+    var requiredSkills: [TicketSkill] = []
     var fields: [String: JSONValue]
     var sla: TicketSLA?
     var firstRespondedAt: Date?
@@ -377,7 +422,8 @@ struct Ticket: Codable, Hashable, Sendable, Identifiable {
     var updatedAt: Date
 
     enum CodingKeys: String, CodingKey {
-        case id, number, subject, status, priority, severity, channel, contact, assignee, tags, fields, sla, spam, csat, custom
+        case id, number, alias, subject, status, priority, severity, channel, contact, assignee, tags, fields, sla, spam, csat, custom
+        case requiredSkills = "required_skills"
         case mailboxID = "mailbox_id"
         case teamID = "team_id"
         case firstRespondedAt = "first_responded_at"
@@ -396,6 +442,7 @@ struct Ticket: Codable, Hashable, Sendable, Identifiable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
         number = c.lenient(Int.self, forKey: .number) ?? 0
+        alias = c.lenient(String.self, forKey: .alias).flatMap { $0.isEmpty ? nil : $0 }
         subject = c.lenient(String.self, forKey: .subject) ?? ""
         status = c.lenient(TicketStatus.self, forKey: .status) ?? .open
         priority = c.lenient(Priority.self, forKey: .priority) ?? .normal
@@ -406,6 +453,7 @@ struct Ticket: Codable, Hashable, Sendable, Identifiable {
         assignee = c.lenient(UserRef.self, forKey: .assignee)
         teamID = c.lenient(String.self, forKey: .teamID)
         tags = c.lenient([TagRef].self, forKey: .tags) ?? []
+        requiredSkills = c.lenient([TicketSkill].self, forKey: .requiredSkills) ?? []
         fields = c.lenient([String: JSONValue].self, forKey: .fields) ?? [:]
         sla = c.lenient(TicketSLA.self, forKey: .sla)
         firstRespondedAt = c.lenient(Date.self, forKey: .firstRespondedAt)
@@ -460,11 +508,13 @@ struct TicketPatch: Encodable, Sendable {
     var addTags: [String]?
     var removeTags: [String]?
     var subject: String?
+    /// The ticket's reference; `.clear` removes it.
+    var alias: Reference<String>?
     /// Custom field values, merged; `.null` clears one.
     var fields: [String: JSONValue]?
 
     enum CodingKeys: String, CodingKey {
-        case status, priority, severity, spam, tags, subject, fields
+        case status, priority, severity, spam, tags, subject, fields, alias
         case assigneeID = "assignee_id"
         case teamID = "team_id"
         case snoozedUntil = "snoozed_until"
@@ -485,6 +535,7 @@ struct TicketPatch: Encodable, Sendable {
         try c.encodeIfPresent(addTags, forKey: .addTags)
         try c.encodeIfPresent(removeTags, forKey: .removeTags)
         try c.encodeIfPresent(subject, forKey: .subject)
+        try Self.encode(alias, forKey: .alias, in: &c)
         try c.encodeIfPresent(fields, forKey: .fields)
     }
 
@@ -530,6 +581,11 @@ struct TicketPatch: Encodable, Sendable {
         }
         if let spam { next.spam = spam }
         if let subject { next.subject = subject }
+        switch alias {
+        case let .set(value)?: next.alias = value
+        case .clear?: next.alias = nil
+        case nil: break
+        }
         for (key, value) in fields ?? [:] {
             next.fields[key] = value.isNull ? nil : value
         }
@@ -582,13 +638,17 @@ struct FieldFilter: Codable, Hashable, Sendable {
     var value: String
 }
 
+/// A view's filters (contracts/api.md `TicketFilters`). Every key the API knows is kept, so
+/// saving a view from the app never drops what the web set.
 struct TicketFilters: Codable, Hashable, Sendable {
     var status: [String]?
     var priority: [String]?
     var severity: [String]?
     var assignee: String?
+    /// Comma-separated team ids, `mine` and `none`: tickets of any of them.
     var teamID: String?
     var mailboxID: String?
+    /// Comma-separated label names: tickets carrying any of them.
     var tag: String?
     var channel: String?
     var q: String?
@@ -596,14 +656,68 @@ struct TicketFilters: Codable, Hashable, Sendable {
     var receivedAt: String?
     var brandID: String?
     var widgetID: String?
+    /// The same values as `teamID`: tickets of none of them.
+    var teamNot: String?
+    /// Comma-separated mailbox ids: tickets whose reply address is none of them.
+    var mailboxNot: String?
+    /// Comma-separated contact ids: tickets whose contact is none of them.
+    var contactNot: String?
+    /// Comma-separated company ids: tickets whose contact belongs to none of them.
+    var companyNot: String?
+    /// Comma-separated label names: tickets carrying none of them.
+    var tagNot: String?
+    /// Tickets carrying no label.
+    var untagged: Bool?
+    /// Tickets on none of these channels.
+    var channelNot: [String]?
 
     enum CodingKeys: String, CodingKey {
-        case status, priority, severity, assignee, tag, channel, q, fields
+        case status, priority, severity, assignee, tag, channel, q, fields, untagged
         case teamID = "team_id"
         case mailboxID = "mailbox_id"
         case receivedAt = "received_at"
         case brandID = "brand_id"
         case widgetID = "widget_id"
+        case teamNot = "team_not"
+        case mailboxNot = "mailbox_not"
+        case contactNot = "contact_not"
+        case companyNot = "company_not"
+        case tagNot = "tag_not"
+        case channelNot = "channel_not"
+    }
+}
+
+/// What the sidebar shows beside a view's name (contracts/api.md `ViewIcon`): one emoji, an
+/// icon of the curated list, or one or two letters or digits, the last two in a palette colour.
+struct ViewIcon: Codable, Hashable, Sendable {
+    enum Kind: String, Codable, Sendable { case emoji, icon, text }
+
+    var kind: Kind
+    var value: String
+    /// A `LabelColor`; always nil for an emoji.
+    var color: String?
+
+    enum CodingKeys: String, CodingKey { case kind, value, color }
+
+    init(kind: Kind, value: String, color: String? = nil) {
+        self.kind = kind
+        self.value = value
+        self.color = kind == .emoji ? nil : color
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try c.decode(Kind.self, forKey: .kind)
+        value = c.lenient(String.self, forKey: .value) ?? ""
+        color = c.lenient(String.self, forKey: .color)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(kind, forKey: .kind)
+        try c.encode(value, forKey: .value)
+        // Written whole: no colour is sent as null.
+        try c.encode(kind == .emoji ? nil : color, forKey: .color)
     }
 }
 
@@ -613,6 +727,39 @@ struct SavedView: Codable, Hashable, Sendable, Identifiable {
     var shared: Bool?
     var filters: TicketFilters?
     var position: Int?
+    /// Shared with that team's members.
+    var teamID: String?
+    /// The sidebar heading it shows under, with the other views that name it.
+    var section: String?
+    var icon: ViewIcon?
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, shared, filters, position, section, icon
+        case teamID = "team_id"
+    }
+
+    init(id: String, name: String, shared: Bool?, filters: TicketFilters?, position: Int?, teamID: String? = nil, section: String? = nil, icon: ViewIcon? = nil) {
+        self.id = id
+        self.name = name
+        self.shared = shared
+        self.filters = filters
+        self.position = position
+        self.teamID = teamID
+        self.section = section
+        self.icon = icon
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = c.lenient(String.self, forKey: .name) ?? ""
+        shared = c.lenient(Bool.self, forKey: .shared)
+        filters = c.lenient(TicketFilters.self, forKey: .filters)
+        position = c.lenient(Int.self, forKey: .position)
+        teamID = c.lenient(String.self, forKey: .teamID)
+        section = c.lenient(String.self, forKey: .section)
+        icon = c.lenient(ViewIcon.self, forKey: .icon)
+    }
 }
 
 struct SavedReply: Codable, Hashable, Sendable, Identifiable {
@@ -722,6 +869,41 @@ struct BotRef: Codable, Hashable, Sendable {
     var nativeEmoji: String? { lookKind == "emoji" && !emoji.isEmpty ? emoji : nil }
 }
 
+/// The Collab address a reply went out from, and the Reply-To it asked for:
+/// "address" (the address's own), "mailbox" (the ticket's reply address) or an address.
+struct MessageFromAccount: Codable, Hashable, Sendable {
+    var accountID: String
+    var email: String
+    var replyTo: String
+
+    enum CodingKeys: String, CodingKey {
+        case email
+        case accountID = "account_id"
+        case replyTo = "reply_to"
+    }
+
+    init(accountID: String, email: String, replyTo: String) {
+        self.accountID = accountID
+        self.email = email
+        self.replyTo = replyTo
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        accountID = try c.decode(String.self, forKey: .accountID)
+        email = (c.lenient(String.self, forKey: .email) ?? "").lowercased()
+        replyTo = c.lenient(String.self, forKey: .replyTo) ?? ""
+    }
+
+    /// An empty Reply-To is left out, so the ticket's reply address decides.
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(accountID, forKey: .accountID)
+        if !email.isEmpty { try c.encode(email, forKey: .email) }
+        if !replyTo.isEmpty { try c.encode(replyTo, forKey: .replyTo) }
+    }
+}
+
 enum MessageKind: String, LenientEnum {
     case reply, note
     static let fallback = MessageKind.reply
@@ -754,9 +936,12 @@ struct Message: Codable, Hashable, Sendable, Identifiable {
     var threadID: String?
     /// When the author last edited a note.
     var editedAt: Date?
+    /// An email reply sent from a member's own Collab address, else nil.
+    var fromAccount: MessageFromAccount?
 
     enum CodingKeys: String, CodingKey {
         case id, kind, direction, author, subject, to, cc, attachments, ai
+        case fromAccount = "from_account"
         case ticketID = "ticket_id"
         case bodyHTML = "body_html"
         case bodyText = "body_text"
@@ -776,6 +961,7 @@ struct Message: Codable, Hashable, Sendable, Identifiable {
         ticketID = c.lenient(String.self, forKey: .ticketID) ?? ""
         threadID = c.lenient(String.self, forKey: .threadID)
         editedAt = c.lenient(Date.self, forKey: .editedAt)
+        fromAccount = c.lenient(MessageFromAccount.self, forKey: .fromAccount)
         kind = c.lenient(MessageKind.self, forKey: .kind) ?? .reply
         direction = c.lenient(String.self, forKey: .direction) ?? "inbound"
         let author = c.lenient(MessageAuthor.self, forKey: .author)
@@ -921,6 +1107,7 @@ enum NotificationKind: String, CaseIterable, Sendable, Identifiable {
     case autoRechargeFailed = "auto_recharge_failed"
     case teamJoined = "team_joined"
     case importFinished = "import_finished"
+    case supportChannelUnhealthy = "support_channel_unhealthy"
     case threadReplied = "thread_replied"
     case collabAssigned = "collab_assigned"
     case collabMention = "collab_mention"
@@ -943,6 +1130,7 @@ enum NotificationKind: String, CaseIterable, Sendable, Identifiable {
         case .autoRechargeFailed: "Auto-recharge failed"
         case .teamJoined: "Team joins"
         case .importFinished: "Imports"
+        case .supportChannelUnhealthy: "Support channel problems"
         case .threadReplied: "Side conversation answers"
         case .collabAssigned: "Mail assigned to you"
         case .collabMention: "Mail comment mentions"
@@ -964,6 +1152,7 @@ enum NotificationKind: String, CaseIterable, Sendable, Identifiable {
         case .autoRechargeFailed: "Owners and admins"
         case .teamJoined: "An admin joins a team you lead"
         case .importFinished: "An import you started ends or needs new credentials"
+        case .supportChannelUnhealthy: "A provider connection stays unhealthy for at least 15 minutes"
         case .threadReplied: "Someone outside your team answers a side conversation on your ticket"
         case .collabAssigned: "A teammate assigns you a mail conversation"
         case .collabMention: "Someone mentions you in a comment on a mail conversation"
@@ -982,6 +1171,7 @@ enum NotificationKind: String, CaseIterable, Sendable, Identifiable {
         case .aiBalanceLow, .aiBalanceOut, .autoRechargeFailed: "creditcard"
         case .teamJoined: "person.2"
         case .importFinished: "square.and.arrow.down"
+        case .supportChannelUnhealthy: "exclamationmark.triangle"
         case .threadReplied: "bubble.left.and.bubble.right"
         case .collabAssigned: "envelope.badge.person.crop"
         case .collabMention: "at"
@@ -991,7 +1181,7 @@ enum NotificationKind: String, CaseIterable, Sendable, Identifiable {
     /// Ticket-bound kinds; the rest are workspace alerts for owners and admins.
     var isAdminAlert: Bool {
         switch self {
-        case .aiCapReached, .aiKeyFailed, .aiBalanceLow, .aiBalanceOut, .autoRechargeFailed, .importFinished: true
+        case .aiCapReached, .aiKeyFailed, .aiBalanceLow, .aiBalanceOut, .autoRechargeFailed, .importFinished, .supportChannelUnhealthy: true
         default: false
         }
     }
@@ -1065,12 +1255,15 @@ struct AppNotification: Codable, Hashable, Sendable, Identifiable {
             case "needs_credentials": return "Your \(source) import needs new credentials"
             default: return "Your \(source) import stopped"
             }
+        case .supportChannelUnhealthy:
+            return "\(data["name"]?.string.flatMap { $0.isEmpty ? nil : $0 } ?? "Support channel") needs attention"
         case nil: return "Notification"
         }
     }
 
     var preview: String? {
         if let preview = data["preview"]?.string, !preview.isEmpty { return preview }
+        if kind == .supportChannelUnhealthy, let detail = data["detail"]?.string, !detail.isEmpty { return detail }
         return nil
     }
 }

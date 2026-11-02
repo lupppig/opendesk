@@ -5,15 +5,16 @@ Two native clients sit on the same public API as the web app (`contracts/api.md`
 | app | path | what it is |
 | --- | --- | --- |
 | Desktop | `desktop/` | Electron shell (macOS, Windows, Linux) that loads the instance's own web app in a window and adds what a browser cannot: OS notifications, a dock/taskbar badge, `opendesk://` deep links, auto-update, a translucent sidebar |
-| iPhone | `ios/` | Native SwiftUI app (`sh.opendesk.app`, iOS 26+) for daily work: inbox with folders, views, team inboxes, filters, bulk edits and search; new tickets; the ticket view (reply, note, side conversations, saved replies, attachments, details and custom fields, merge); live chat; notifications; Ollie (ticket AI and the assistant with approvals); Collab mail; contacts and companies; knowledge base; reports; personal settings (profile, security, notification preferences, saved replies, views). Workspace settings and admin stay on the web, opened in an in-app browser that keeps its own web session |
+| iPhone | `ios/` | Native SwiftUI app (`sh.opendesk.app`, iOS 26+) for daily work: inbox with folders, views, team inboxes, filters, bulk edits and search; new tickets; the ticket view (reply, note, side conversations, saved replies, attachments, details and custom fields, merge); live chat; notifications; Ollie (ticket AI and the assistant with approvals); Collab mail; contacts and companies; knowledge base and changelog; the internal wiki; reports; personal settings (profile, security, notification preferences, saved replies, views). Workspace settings and admin stay on the web, opened in an in-app browser that keeps its own web session |
 
 Both work against opendesk Cloud and any self-hosted instance. The instance is chosen at
 runtime, never at build time.
 
-A `v*` release builds and publishes the server and desktop apps together. iOS
-Debug and Release simulator builds are part of required CI. Device distribution
-is separate; iOS release builds use production push and App Attest entitlements.
-Build instructions are in `ios/README.md`.
+A `v*` release builds and publishes the server and desktop apps together, and the
+same tag uploads the iOS build to TestFlight beside it, without holding the release
+back. iOS Debug and Release simulator builds are part of required CI; iOS release
+builds use production push and App Attest entitlements. Signing and upload are in
+`ios/README.md`.
 
 ## Finding an instance
 
@@ -316,7 +317,7 @@ type UpdateState =
 
 - The web app, when `window.opendeskDesktop` exists, sets `<html data-desktop="darwin|win32|linux">`
   and: shows OS notifications through `notify` when the window is not focused (the toasts
-  stay for the focused window) and the type's `desktop` channel is on and notifications are not paused, keeps the badge equal to the unread notification count,
+  stay for the focused window) and the type's `desktop` channel is on and notifications are not paused, keeps the badge equal to the unread notification count (reads and removals elsewhere arrive as `notification.read` and `notification.deleted`, contracts/events.md),
   runs OAuth sign-in through `oauth`, opens mailbox and integration connect flows with
   `openExternal`, and lays itself out for the window chrome (translucent sidebar, inset
   content panel, drag regions, room for the macOS traffic lights).

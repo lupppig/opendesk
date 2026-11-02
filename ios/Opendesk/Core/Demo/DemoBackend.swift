@@ -176,6 +176,10 @@ actor DemoBackend {
         }
         if call.match("PATCH", "me") != nil {
             if let name = call.string("name"), !name.isEmpty { world.user.name = name }
+            if let format = call.string("time_format") {
+                guard TimeFormat(rawValue: format) != nil else { throw Failure(status: 422, code: "validation_failed", detail: "Choose auto, 12h or 24h.") }
+                world.user.timeFormat = format
+            }
             return encode(world.user)
         }
         if call.match("DELETE", "me") != nil || call.match("POST", "me/heartbeat") != nil { return nil }
@@ -379,7 +383,7 @@ actor DemoBackend {
     /// A ticket by id, or by number as links may name it.
     func ticket(_ key: String, in ws: DemoWorkspace) throws -> Int {
         let number = Int(key.trimmingCharacters(in: CharacterSet(charactersIn: "#")))
-        guard let index = ws.tickets.firstIndex(where: { $0.id == key || $0.number == number }) else { throw notFound("ticket") }
+        guard let index = ws.tickets.firstIndex(where: { $0.id == key || $0.number == number || ($0.alias.map { $0.caseInsensitiveCompare(key) == .orderedSame } ?? false) }) else { throw notFound("ticket") }
         return index
     }
 
@@ -443,6 +447,13 @@ actor DemoBackend {
         query["tag"] = filters.tag
         query["channel"] = filters.channel
         query["q"] = filters.q
+        query["team_not"] = filters.teamNot
+        query["mailbox_not"] = filters.mailboxNot
+        query["contact_not"] = filters.contactNot
+        query["company_not"] = filters.companyNot
+        query["tag_not"] = filters.tagNot
+        if filters.untagged == true { query["untagged"] = "true" }
+        if let channels = filters.channelNot, !channels.isEmpty { query["channel_not"] = channels.joined(separator: ",") }
         return query
     }
 
@@ -457,10 +468,11 @@ actor DemoBackend {
             guard let raw = query[key], !raw.isEmpty else { return nil }
             return Set(raw.split(separator: ",").map(String.init))
         }
+        func teamHit(_ values: Set<String>) -> Bool { self.teamHit(ticket, values, in: ws) }
         if query["spam"] == "true" { guard ticket.spam else { return false } } else if ticket.spam { return false }
         if let statuses = list("status"), !statuses.contains(ticket.status.rawValue) { return false }
         if let priorities = list("priority"), !priorities.contains(ticket.priority.rawValue) { return false }
-        if let severities = list("severity"), !severities.contains(ticket.severity?.rawValue ?? "") { return false }
+        if let severities = list("severity"), !severities.contains(ticket.severity?.rawValue ?? "none") { return false }
         if let assignee = query["assignee"], !assignee.isEmpty {
             switch assignee {
             case "none": if ticket.assignee != nil { return false }
@@ -468,15 +480,37 @@ actor DemoBackend {
             default: if ticket.assignee?.id != assignee { return false }
             }
         }
-        if let team = query["team_id"], !team.isEmpty, ticket.teamID != team { return false }
-        if let mailbox = query["mailbox_id"], !mailbox.isEmpty, ticket.mailboxID != mailbox { return false }
+        if let team = list("team_id"), !teamHit(team) { return false }
+        if let team = list("team_not"), teamHit(team) { return false }
+        if let mailbox = list("mailbox_id"), !mailbox.contains(ticket.mailboxID ?? "") { return false }
+        if let mailbox = list("mailbox_not"), mailbox.contains(ticket.mailboxID ?? "") { return false }
         if let channel = query["channel"], !channel.isEmpty, ticket.channel.rawValue != channel { return false }
-        if let tag = query["tag"], !tag.isEmpty, !ticket.tags.contains(where: { $0.name.caseInsensitiveCompare(tag) == .orderedSame }) { return false }
+        if let channels = list("channel_not"), channels.contains(ticket.channel.rawValue) { return false }
+        if let contacts = list("contact_not"), contacts.contains(ticket.contact?.id ?? "") { return false }
+        if let companies = list("company_not") {
+            let company = ws.directory.contacts.first { $0.id == ticket.contact?.id }?.company?.id
+            if let company, companies.contains(company) { return false }
+        }
+        let names = Set(ticket.tags.map { $0.name.lowercased() })
+        if let tags = list("tag"), names.isDisjoint(with: tags.map { $0.lowercased() }) { return false }
+        if let tags = list("tag_not"), !names.isDisjoint(with: tags.map { $0.lowercased() }) { return false }
+        if query["untagged"] == "true", !names.isEmpty { return false }
         if let text = query["q"]?.trimmingCharacters(in: .whitespaces), !text.isEmpty {
-            let haystack = [ticket.subject, ticket.contact?.name ?? "", ticket.contact?.email ?? "", ticket.lastMessagePreview, "#\(ticket.number)", String(ticket.number)]
+            let haystack = [ticket.subject, ticket.contact?.name ?? "", ticket.contact?.email ?? "", ticket.lastMessagePreview, "#\(ticket.number)", String(ticket.number), ticket.alias ?? ""]
             guard haystack.contains(where: { $0.localizedCaseInsensitiveContains(text) }) else { return false }
         }
         return true
+    }
+
+    /// Whether a ticket's team is one of a team list (`mine` and `none` included).
+    private func teamHit(_ ticket: Ticket, _ values: Set<String>, in ws: DemoWorkspace) -> Bool {
+        values.contains { value in
+            switch value {
+            case "none": ticket.teamID == nil
+            case "mine": ticket.teamID.map { id in ws.teams.first { $0.id == id }?.memberIDs?.contains(world.user.id) == true } ?? false
+            default: ticket.teamID == value
+            }
+        }
     }
 
     func sorted(_ tickets: [Ticket], _ query: [String: String]) -> [Ticket] {

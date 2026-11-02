@@ -904,7 +904,7 @@
     },
     "empty": {
       "title": "Aucune téléphonie pour l'instant",
-      "body": "Connectez Aircall et chaque appel est consigné sur le ticket de l'appelant.",
+      "body": "Connectez Aircall ou Voys et chaque appel est consigné sur le ticket de l'appelant.",
       "tipTimeline": "Les appels dans l'historique du ticket",
       "tipMissed": "Aucun appel manqué sans suite",
       "tipAutomations": "Des automatisations à la fin d'un appel"
@@ -917,13 +917,15 @@
       "test": "Tester",
       "tested": "La connexion fonctionne.",
       "testedAttention": "La connexion demande votre attention.",
-      "testError": "Impossible de tester la connexion."
+      "testError": "Impossible de tester la connexion.",
+      "waiting": "En attente du premier appel"
     },
     "healthCode": {
       "receiving": "Les appels sont envoyés à opendesk.",
       "webhook_missing": "La téléphonie n'envoie pas les appels à opendesk. Testez la connexion pour la configurer à nouveau.",
       "credentials_refused": "La téléphonie a refusé les identifiants. Remplacez-les par des identifiants valides.",
-      "provider_unreachable": "Impossible de joindre la téléphonie. Réessayez dans un instant."
+      "provider_unreachable": "Impossible de joindre la téléphonie. Réessayez dans un instant.",
+      "webhookManual": "Aucun appel n'est encore arrivé. Ajoutez l'adresse du webhook ci-dessous dans {{name}}, puis passez un appel de test."
     },
     "lastEvent": "Dernier événement d'appel {{when}}",
     "noEventYet": "Aucun appel pour l'instant. Les appels apparaissent sur les tickets dès qu'ils sonnent.",
@@ -955,7 +957,7 @@
       "cards": "Afficher l'appelant dans Aircall",
       "cardsHint": "Pendant qu'un appel sonne, Aircall affiche l'appelant, le ticket de l'appel et ses derniers tickets.",
       "dial": "Appeler depuis opendesk",
-      "dialHint": "Les numéros des contacts et des tickets ouvrent votre application de téléphone. Choisissez Aircall comme application par défaut pour les liens téléphoniques pour passer vos appels avec."
+      "dialHint": "Les numéros des contacts et des tickets ouvrent votre application de téléphone. Choisissez {{name}} comme application par défaut pour les liens téléphoniques pour passer vos appels avec."
     },
     "automations": {
       "title": "Automatisations",
@@ -978,7 +980,8 @@
       "description": "Un administrateur peut connecter une téléphonie."
     },
     "provider": {
-      "aircall": "Téléphonie cloud. Appels, enregistrements et résumés IA arrivent sur les tickets."
+      "aircall": "Téléphonie cloud. Appels, enregistrements et résumés IA arrivent sur les tickets.",
+      "voys": "Téléphonie cloud néerlandaise. Appels, transcriptions et résumés Voys Intelligence arrivent sur les tickets."
     },
     "field": {
       "api_id": "ID d'API",
@@ -990,7 +993,27 @@
       "cancel": "Annuler",
       "submit": "Connecter",
       "connected": "{{name}} connecté.",
-      "error": "Impossible de connecter {{name}}."
+      "error": "Impossible de connecter {{name}}.",
+      "voysSetup": "Dans Voys Freedom, ouvrez vos paramètres personnels et copiez votre jeton d'API. Utilisez le jeton d'un administrateur qui a accès aux enregistrements d'appels, pour recevoir aussi les transcriptions et les résumés. Ensuite, vous ajoutez l'adresse du webhook d'opendesk dans Voys."
+    },
+    "webhookManual": "Adresse du webhook, à ajouter dans {{name}} comme notification d'appel",
+    "disconnectBodyManual": "opendesk ne consigne plus les nouveaux appels de {{name}}. Retirez aussi la notification d'appel dans {{name}}. Les appels déjà sur les tickets restent.",
+    "hook": {
+      "title": "Ajouter opendesk dans {{name}}",
+      "description": "{{name}} envoie les appels à cette adresse dès que vous l'ajoutez comme notification d'appel.",
+      "done": "Terminé",
+      "rotate": "Créer une nouvelle adresse",
+      "rotateLabel": "Créer une nouvelle adresse de webhook pour {{name}}",
+      "rotateTitle": "Créer une nouvelle adresse de webhook ?",
+      "rotateBody": "L'adresse actuelle cesse de fonctionner tout de suite. Collez la nouvelle dans {{name}} pour continuer à recevoir les appels.",
+      "rotateError": "Impossible de créer une nouvelle adresse de webhook."
+    },
+    "voys": {
+      "step1": "Dans Voys Freedom, ouvrez Integratie, puis Gespreksnotificaties, et cliquez sur Toevoegen.",
+      "step2": "Saisissez une description comme opendesk et choisissez Custom comme service.",
+      "step3": "Collez l'adresse du webhook comme Web hook URL.",
+      "step4": "Cochez les événements de résumé et de transcription (ils demandent Voys Intelligence), puis cliquez sur Opslaan.",
+      "step5": "Passez un appel de test : la connexion indique Reçoit les appels dès qu'il arrive."
     }
   }
 }

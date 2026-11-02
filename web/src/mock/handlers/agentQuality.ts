@@ -24,13 +24,14 @@ import { assertAi, requireAiAdmin, terms } from "./ai";
 import { checkTrialBot, plan, widgetModel, type Overrides } from "./agent";
 import { addSnippet } from "./knowledge";
 import { mcpTool } from "./mcp";
+import { proceduresOf } from "./procedures";
 
 export const MAX_TESTS = 200;
 const MAX_MESSAGES = 6;
 const MAX_EXPECTATIONS = 10;
 const EXPECTATION_MAX = 1000;
 const NAME_MAX = 100;
-const KINDS: AgentExpectationKind[] = ["mentions", "not_mentions", "handoff", "no_handoff", "uses_tool", "cites_knowledge"];
+const KINDS: AgentExpectationKind[] = ["mentions", "not_mentions", "handoff", "no_handoff", "uses_tool", "cites_knowledge", "uses_procedure"];
 /** How long each test takes in the simulated run. */
 export const STEP_MS = 700;
 
@@ -123,6 +124,10 @@ function cleanExpectations(ws: WsData, v: unknown): AgentExpectation[] {
       if (!/^[A-Za-z0-9_-]+__[A-Za-z0-9_-]+$/.test(value)) throw invalid(`expectations[${i}].value must be a tool key like shop__lookup_order`);
       return { kind, value };
     }
+    if (kind === "uses_procedure") {
+      if (!/^[0-9a-f-]{36}$/i.test(value)) throw invalid(`expectations[${i}].value must be a procedure id`);
+      return { kind, value: value.toLowerCase() };
+    }
     return { kind };
   });
   const kinds = new Set(out.map((e) => e.kind));
@@ -199,6 +204,13 @@ export function answerTest(ws: WsData, t: StoredTest, settings: Overrides | null
         const title = tool.tool.title || name;
         return { kind: e.kind, value, passed: used, reason: used ? `Ollie used ${title}.` : `Ollie did not use ${title}.` };
       }
+      case "uses_procedure": {
+        const proc = proceduresOf(ws).find((x) => x.id === value);
+        if (!proc) return { kind: e.kind, value, passed: false, reason: "This procedure no longer exists." };
+        const used = p.procedures.some((x) => x.id === value);
+        if (used) return { kind: e.kind, value, passed: true, reason: `Ollie followed ${proc.name}.` };
+        return { kind: e.kind, value, passed: false, reason: proc.enabled ? `Ollie did not follow ${proc.name}.` : `${proc.name} is turned off.` };
+      }
       default: {
         if (!plain) return { kind: e.kind, value, passed: e.kind === "not_mentions", reason: "Ollie wrote no answer." };
         judged = true;
@@ -217,6 +229,7 @@ export function answerTest(ws: WsData, t: StoredTest, settings: Overrides | null
     handoff: p.handoff,
     tools: toolsUsed,
     sources: p.sources,
+    procedures: p.procedures,
     action: p.action,
     checks,
     error: null,
@@ -227,7 +240,7 @@ export function answerTest(ws: WsData, t: StoredTest, settings: Overrides | null
 // ─── Runs ──────────────────────────────────────────────────────────────────
 
 function pending(run: StoredRun, testId: string): AgentTestResult {
-  return { run_id: run.id, test_id: testId, status: "pending", answer_html: "", handoff: false, tools: [], sources: [], action: null, checks: [], error: null, usd: 0, draft: run.draft, previous_status: null, finished_at: null };
+  return { run_id: run.id, test_id: testId, status: "pending", answer_html: "", handoff: false, tools: [], sources: [], procedures: [], action: null, checks: [], error: null, usd: 0, draft: run.draft, previous_status: null, finished_at: null };
 }
 
 function tally(s: State, run: StoredRun) {

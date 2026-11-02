@@ -14,6 +14,7 @@ import {
   FileText,
   Globe,
   Hand,
+  ScrollText,
   Loader2,
   MessageSquareQuote,
   RotateCcw,
@@ -40,7 +41,7 @@ import { BotSelect, resolveBot } from "@/components/bots/BotSelect";
 import { ImproveAnswerDialog, TestEditor, toTestMessages } from "@/components/agent/quality";
 import { api } from "@/lib/api/endpoints";
 import { errorMessage } from "@/lib/api/client";
-import type { AgentExpectation, AgentSource, AgentTestBody, Bot, PlaygroundBody, PlaygroundDone, PlaygroundMessage, PlaygroundToolEvent } from "@/lib/api/types";
+import type { AgentExpectation, AgentSource, AgentTestBody, Bot, PlaygroundBody, PlaygroundDone, PlaygroundMessage, PlaygroundToolEvent, ProcedureRef } from "@/lib/api/types";
 import { useAI } from "@/lib/ai";
 import { formatUsd } from "@/lib/format";
 import { springs } from "@/lib/motion";
@@ -61,6 +62,7 @@ type Turn =
       sources: AgentSource[];
       action: PlaygroundDone["action"];
       handoff: boolean;
+      procedures: ProcedureRef[];
       usd: number | null;
       streaming: boolean;
       error: string | null;
@@ -110,6 +112,7 @@ export default function AgentPlayground() {
   const saveAsTest = (turn: AgentTurn) => {
     const expectations: AgentExpectation[] = [{ kind: turn.handoff ? "handoff" : "no_handoff" }];
     if (turn.sources.length) expectations.push({ kind: "cites_knowledge" });
+    for (const p of turn.procedures.slice(0, 3)) expectations.push({ kind: "uses_procedure", value: p.id });
     const email = visitor.email.trim();
     setSaving({
       messages: toTestMessages(toMessages(before(turn))),
@@ -188,7 +191,7 @@ export function usePlaygroundChat(settings: PlaygroundBody["settings"], visitor:
     if (!msg || busy) return;
     setText("");
     const history = [...turns, { id: nextId(), role: "visitor" as const, text: msg }];
-    const agent: Turn = { id: nextId(), role: "agent", text: "", html: null, tools: [], sources: [], action: null, handoff: false, usd: null, streaming: true, error: null };
+    const agent: Turn = { id: nextId(), role: "agent", text: "", html: null, tools: [], sources: [], action: null, handoff: false, procedures: [], usd: null, streaming: true, error: null };
     setTurns([...history, agent]);
     setBusy(true);
     const ctl = new AbortController();
@@ -218,6 +221,7 @@ export function usePlaygroundChat(settings: PlaygroundBody["settings"], visitor:
               sources: e.data.sources,
               action: e.data.action,
               handoff: e.data.handoff,
+              procedures: e.data.procedures ?? [],
               usd: e.data.usd,
               streaming: false,
             }));
@@ -447,6 +451,12 @@ function AgentBubble({
               <span className="mono truncate">{turn.action.tool}</span>
               <span className="ml-auto">{t("playground.actionNote")}</span>
             </div>
+          </div>
+        )}
+        {turn.procedures.length > 0 && !turn.streaming && (
+          <div className="flex items-center gap-2 text-[12px] text-fg-3">
+            <ScrollText className={cn("size-3.5 shrink-0", tone[AI_TONE].text)} />
+            <span className="min-w-0 truncate">{t("playground.followed", { names: turn.procedures.map((p) => p.name).join(", ") })}</span>
           </div>
         )}
         {turn.handoff && (

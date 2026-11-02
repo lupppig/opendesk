@@ -39,6 +39,7 @@ export const TYPICAL_TOKENS: Record<AIFeature, [number, number]> = {
   kb_draft: [8000, 1500],
   assistant: [6000, 400],
   assistant_peer: [4000, 400],
+  procedure: [6000, 400],
 };
 
 /** What a call costs when no price gives it (contracts/billing.md "Typical costs"), in US dollars. */
@@ -57,6 +58,7 @@ export const FALLBACK_USD: Record<AIFeature, number> = {
   kb_draft: 0.05,
   assistant: 0.02,
   assistant_peer: 0.01,
+  procedure: 0.02,
 };
 
 export const DEFAULT_MODEL = "anthropic/claude-sonnet-5.5";

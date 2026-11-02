@@ -7,7 +7,7 @@ enum TicketSheet: Identifiable {
     case details, status, priority, severity, assignee, team, labels, snooze, merge
     case savedReplies, ask, sides, newSide, thread(String), guidedDraft
     case field(CustomField), required([CustomField])
-    case editNote(Message)
+    case editNote(Message), sentEmail(Message)
 
     var id: String {
         switch self {
@@ -29,6 +29,7 @@ enum TicketSheet: Identifiable {
         case let .field(field): "field-" + field.key
         case let .required(fields): "required-" + fields.map(\.key).joined(separator: ",")
         case let .editNote(message): "edit-" + message.id
+        case let .sentEmail(message): "sent-" + message.id
         }
     }
 }
@@ -45,6 +46,14 @@ struct ScrollRequest: Equatable {
     enum Target: Equatable { case top, bottom }
     var target: Target
     var id = UUID()
+}
+
+/// Profile → Appearance: after a send that takes the ticket out of its list, open the next
+/// ticket of that list. On this device, on by default, as the web keeps it per browser.
+enum NextTicketAfterSend {
+    static let key = "ticket.nextAfterSend"
+
+    static var isOn: Bool { UserDefaults.standard.object(forKey: key) as? Bool ?? true }
 }
 
 /// The ticket screen's state and actions, shared by the screen and its sheets. Network
@@ -84,6 +93,8 @@ final class TicketController {
     var me: UserRef? { env.session.userRef }
     var canWrite: Bool { env.session.canWrite }
     var ticket: Ticket? { store.ticket }
+    /// Who this reply may go from.
+    var senders: ReplySenders { ReplySenders(env: env, store: store, composer: composer) }
 
     // MARK: Presenting
 
@@ -167,6 +178,15 @@ final class TicketController {
         apply(change)
     }
 
+    /// Sets the ticket's reference; an empty one removes it. The server checks its form.
+    func setAlias(_ text: String) {
+        let alias = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard alias != (ticket?.alias ?? "") else { return }
+        var change = TicketPatch()
+        change.alias = alias.isEmpty ? .clear : .set(alias)
+        apply(change, toast: alias.isEmpty ? "Reference removed" : "Reference saved")
+    }
+
     func setField(_ key: String, _ value: JSONValue?) {
         var change = TicketPatch()
         change.fields = [key: value ?? .null]
@@ -208,7 +228,7 @@ final class TicketController {
                 guard let updated = store.ticket else { return }
                 env.inbox.place(updated)
                 Haptics.success()
-                let message = status == .solved ? "Solved #\(number)" : status == .open ? "Reopened #\(number)" : "Marked #\(number) \(status.title.lowercased())"
+                let message = env.statusDisplay.statusToast(status, number: number)
                 let inbox = env.inbox
                 let members = members
                 let me = me
@@ -239,7 +259,7 @@ final class TicketController {
             try await store.patch(change, members: members, me: me)
             if let updated = store.ticket { env.inbox.place(updated) }
             Haptics.success()
-            env.toasts.show("Solved #\(current.number)", kind: .success)
+            env.toasts.show(env.statusDisplay.finishToast(current.number), kind: .success)
             go(to: next)
             return true
         } catch {
@@ -391,6 +411,8 @@ final class TicketController {
             }
         case .hideOriginal:
             store.hideOriginal(message)
+        case .viewSent:
+            sheet = .sentEmail(message)
         case .editNote:
             sheet = .editNote(message)
         case .sendAsReply:
@@ -477,6 +499,8 @@ final class TicketController {
         let ready = composer.attachments.compactMap(\.uploaded)
         let ids = composer.readyAttachmentIDs
         scroll = ScrollRequest(target: .bottom)
+        // A send that finishes the ticket, or takes it out of the list it came from, opens the next one.
+        let advance = composer.mode != .side ? advancing(with: status) : nil
 
         switch composer.mode {
         case .note:
@@ -484,21 +508,28 @@ final class TicketController {
             composer.clear()
             Haptics.success()
             Task { await deliver(outgoing, author: me) }
+            if let advance { go(after: advance, holding: 0) }
         case .reply:
             let channel = ticket.channel
             let mailbox = ticket.mailboxID
             let cc = TicketComposerStore.addresses(composer.cc)
             let bcc = TicketComposerStore.addresses(composer.bcc)
             let fromNote = composer.fromNoteID
+            let from = senders.from
+            let settings = env.session.workspace?.workspace.settings
+            let seconds = Double(channel == .chat ? settings?.undoSendChatSeconds ?? 0 : settings?.undoSendSeconds ?? 5)
             Task {
                 let rendered = await store.render(html)
                 var outgoing = OutgoingMessage(kind: .reply, html: rendered, text: HTMLText.plain(from: rendered), cc: cc, bcc: bcc, attachmentIDs: ids, attachments: ready, status: status, mailboxID: mailbox)
                 outgoing.fromNoteID = fromNote
+                outgoing.fromAccount = from
                 Haptics.success()
-                if channel == .email {
-                    composer.hold(outgoing, seconds: 5) { [self] held in await self.deliver(held, author: me) }
+                if seconds > 0 {
+                    composer.hold(outgoing, seconds: seconds) { [self] held in await self.deliver(held, author: me) }
+                    if let advance { go(after: advance, holding: seconds) }
                 } else {
                     composer.clear()
+                    if let advance { go(after: advance, holding: 0) }
                     await deliver(outgoing, author: me)
                 }
             }
@@ -506,6 +537,78 @@ final class TicketController {
             sendSide(html: html, ids: ids, author: me)
         }
         if !askForFields.isEmpty { sheet = .required(askForFields) }
+    }
+
+    // MARK: Next ticket after sending
+
+    /// Where the screen goes after a send that takes the ticket out of its list.
+    struct Advance {
+        var from: Ticket
+        var next: Ticket?
+    }
+
+    /// The next ticket after a send with `status`, when the setting is on, the ticket was opened
+    /// from the inbox list and the send takes it out of that list (`web/src/lib/nextTicket.ts`).
+    private func advancing(with status: TicketStatus?) -> Advance? {
+        guard let status, NextTicketAfterSend.isOn, let current = ticket else { return nil }
+        let router = env.router
+        guard router.tab == .inbox, case let .ticket(route)? = router.inboxPath.last, route.id == current.id || route.id == store.ticketID else { return nil }
+        let list = env.inbox.tickets
+        guard let index = list.firstIndex(where: { $0.id == current.id }), leavesList(current, status: status) else { return nil }
+        let after = list[list.index(after: index)...].first { $0.id != current.id }
+        return Advance(from: current, next: after)
+    }
+
+    /// Whether `status` takes the ticket out of the list on screen: always when it finishes it,
+    /// otherwise when the folder or team tab no longer holds it. A view or a search keeps it.
+    private func leavesList(_ ticket: Ticket, status: TicketStatus) -> Bool {
+        if status.isDone { return true }
+        guard env.inbox.search.isEmpty else { return false }
+        var moved = ticket
+        moved.status = status
+        let inbox = env.inbox
+        switch inbox.scope {
+        case let .folder(folder):
+            return !(folder.contains(moved, me: me?.id) && inbox.filters.matches(moved, myTeams: inbox.myTeamIDs))
+        case let .team(_, tab):
+            return !tab.contains(moved)
+        case .view:
+            return false
+        }
+    }
+
+    /// Opens the next ticket (or the list after the last one). A held reply can still be taken
+    /// back from the toast, which brings the ticket back with what was written.
+    private func go(after advance: Advance, holding seconds: Double) {
+        if let next = advance.next {
+            go(to: next)
+        } else if env.inbox.nextCursor != nil {
+            let inbox = env.inbox
+            let known = Set(inbox.tickets.map(\.id))
+            Task {
+                await inbox.loadMore()
+                go(to: inbox.tickets.first { !known.contains($0.id) && $0.id != advance.from.id })
+            }
+        } else {
+            onClose()
+        }
+        guard seconds > 0 else { return }
+        let composer = composer
+        let router = env.router
+        let ticket = advance.from
+        env.toasts.show(Toast(message: "Sending your reply on #\(ticket.number)", kind: .success, actionTitle: "Undo", action: {
+            guard composer.held != nil else { return }
+            composer.undo()
+            if case let .ticket(route)? = router.inboxPath.last, route.id == ticket.id { return }
+            // The screen moved on: the ticket's next composer takes the draft and its files back.
+            TicketComposerStore.returnFiles(composer.attachments, to: composer.ticketID)
+            if case .ticket? = router.inboxPath.last {
+                router.inboxPath[router.inboxPath.count - 1] = .ticket(ticket)
+            } else {
+                router.tab = .inbox
+                router.inboxPath.append(.ticket(ticket))
+            }
+        }), seconds: seconds)
     }
 
     private func sendSide(html: String, ids: [String], author: UserRef) {

@@ -66,13 +66,22 @@ func Logger(log *slog.Logger) func(http.Handler) http.Handler {
 }
 
 // LogPath is a request path as logs may keep it: a survey link of an earlier version
-// carried its token in the path (/csat/<token>), which is left out.
+// carried its token in the path (/csat/<token>), and a phone webhook an admin adds by hand
+// carries its secret after the connection (/v1/phone/hooks/<provider>/<id>/<secret>),
+// which are left out.
 func LogPath(p string) string {
 	if strings.HasPrefix(p, "/csat/") {
 		return "/csat/…"
 	}
+	if rest, ok := strings.CutPrefix(p, phoneHooks); ok {
+		if parts := strings.SplitN(rest, "/", 3); len(parts) == 3 {
+			return phoneHooks + parts[0] + "/" + parts[1] + "/…"
+		}
+	}
 	return p
 }
+
+const phoneHooks = "/v1/phone/hooks/"
 
 // SecurityHeaders sets HSTS, nosniff, frame denial, referrer policy and a default-deny CSP
 // on every API response. API responses (/v1/) are not stored by browsers or proxies unless
