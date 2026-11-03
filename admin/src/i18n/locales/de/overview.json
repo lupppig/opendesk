@@ -1,0 +1,40 @@
+{
+  "title": "Übersicht",
+  "subtitle": "Diese Instanz auf einen Blick",
+  "last30": "Letzte 30 Tage",
+  "series": {
+    "signups": "Registrierungen",
+    "workspaces": "Neue Workspaces",
+    "ai": "Berechnete KI"
+  },
+  "tiles": {
+    "users": "Benutzer",
+    "growth": "+{{week}} diese Woche, +{{month}} in 30 Tagen",
+    "activeUsers": "Aktive Benutzer, 7 Tage",
+    "ofAllUsers": "{{percent}} aller Benutzer",
+    "seenInApp": "In der App gesehen",
+    "workspaces": "Workspaces",
+    "activeWorkspaces": "Aktive Workspaces, 7 Tage",
+    "suspended_one": "{{n}} gesperrt",
+    "suspended_other": "{{n}} gesperrt",
+    "noneSuspended": "Keiner gesperrt",
+    "paidWorkspaces": "Bezahlte Workspaces",
+    "pastDue_one": "{{n}} überfällig",
+    "pastDue_other": "{{n}} überfällig",
+    "nonePastDue": "Keiner überfällig",
+    "billedSeats": "Berechnete Plätze",
+    "aiCharged": "Berechnete KI diesen Monat",
+    "calls_one": "{{n}} Aufruf",
+    "calls_other": "{{n}} Aufrufe",
+    "aiCost": "KI-Anbieterkosten diesen Monat",
+    "aboveCost": "{{amount}} über den Kosten",
+    "belowCost": "{{amount}} unter den Kosten",
+    "providerBilled": "Was der Anbieter dieser Instanz berechnet hat"
+  },
+  "health": {
+    "title": "Zustand",
+    "error": "Die Prüfungen ließen sich nicht laden",
+    "allPass_one": "Die Prüfung besteht",
+    "allPass_other": "Alle {{count}} Prüfungen bestehen"
+  }
+}

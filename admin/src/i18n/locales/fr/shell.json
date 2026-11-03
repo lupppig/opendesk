@@ -1,0 +1,59 @@
+{
+  "navigation": "Navigation",
+  "openNavigation": "Ouvrir la navigation",
+  "instanceAdministration": "Administration de l’instance",
+  "signedOutHere": "Déconnecté ici",
+  "signedOutHereHint": "L’API ne l’a pas confirmé. La session prend fin d’elle-même dans l’heure.",
+  "logoLink": "Vue d’ensemble de l’admin opendesk",
+  "openApp": "Ouvrir l’application",
+  "signOut": "Se déconnecter",
+  "newVersion": "Une nouvelle version du panneau est sortie. Rechargez la page pour l’obtenir.",
+  "notFound": {
+    "title": "Page introuvable",
+    "description": "Il n’y a pas de page à cette adresse dans le panneau d’admin.",
+    "action": "Aller à la vue d’ensemble"
+  },
+  "theme": {
+    "label": "Thème",
+    "system": "Système",
+    "light": "Clair",
+    "dark": "Sombre"
+  },
+  "nav": {
+    "overview": "Vue d’ensemble",
+    "workspaces": "Espaces de travail",
+    "testWorkspaces": "Espaces de test",
+    "users": "Utilisateurs",
+    "jobs": "Tâches",
+    "health": "État",
+    "audit": "Journal d’audit",
+    "admins": "Admins"
+  },
+  "shortcuts": {
+    "dialog": "Raccourcis clavier",
+    "search": "Rechercher dans cette page",
+    "go": {
+      "overview": "Aller à la vue d’ensemble",
+      "workspaces": "Aller aux espaces de travail",
+      "testWorkspaces": "Aller aux espaces de test",
+      "users": "Aller aux utilisateurs",
+      "jobs": "Aller aux tâches",
+      "health": "Aller à l’état",
+      "audit": "Aller au journal d’audit",
+      "admins": "Aller aux admins"
+    }
+  },
+  "titles": {
+    "signIn": "Connexion",
+    "overview": "Vue d’ensemble",
+    "workspaces": "Espaces de travail",
+    "workspace": "Espace de travail",
+    "testWorkspaces": "Espaces de test",
+    "users": "Utilisateurs",
+    "user": "Utilisateur",
+    "jobs": "Tâches",
+    "health": "État",
+    "audit": "Journal d’audit",
+    "admins": "Admins"
+  }
+}

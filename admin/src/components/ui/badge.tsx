@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { i18n } from "@/i18n";
 import { cn } from "@/lib/cn";
 import { isTone, tone as tones, toneFor, type Tone } from "@/lib/tones";
 
@@ -43,7 +44,7 @@ export function TagChip({ name, color, onRemove, className }: { name: string; co
       {onRemove && (
         <button
           type="button"
-          aria-label={`Remove ${name}`}
+          aria-label={i18n.t("ui.remove", { name })}
           onClick={(e) => {
             e.stopPropagation();
             onRemove();

@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useId, useRef, useState, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from "react";
 import { Eye, EyeOff, Search, X } from "lucide-react";
+import { i18n } from "@/i18n";
 import { cn } from "@/lib/cn";
 
 export const inputBase =
@@ -91,7 +92,7 @@ export const PasswordInput = forwardRef<HTMLInputElement, InputProps>(function P
         <button
           type="button"
           onClick={() => setShow((s) => !s)}
-          aria-label={show ? "Hide password" : "Show password"}
+          aria-label={show ? i18n.t("ui.hidePassword") : i18n.t("ui.showPassword")}
           className="flex size-7 items-center justify-center rounded-sm text-fg-4 transition-colors hover:bg-hover hover:text-fg"
         >
           {show ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
@@ -104,7 +105,7 @@ export const PasswordInput = forwardRef<HTMLInputElement, InputProps>(function P
 export function SearchInput({
   value,
   onChange,
-  placeholder = "Search",
+  placeholder = i18n.t("ui.search"),
   className,
   autoFocus,
   inputSize = "sm",
@@ -148,7 +149,7 @@ export function SearchInput({
         value ? (
           <button
             type="button"
-            aria-label="Clear search"
+            aria-label={i18n.t("ui.clearSearch")}
             onClick={() => onChange("")}
             className="flex size-5 items-center justify-center rounded text-fg-3 hover:bg-hover hover:text-fg"
           >
@@ -164,7 +165,7 @@ export function Label({ children, htmlFor, className, optional }: { children: Re
   return (
     <label htmlFor={htmlFor} className={cn("flex items-center gap-1.5 text-[12.5px] font-medium text-fg", className)}>
       {children}
-      {optional && <span className="font-normal text-fg-4">Optional</span>}
+      {optional && <span className="font-normal text-fg-4">{i18n.t("ui.optional")}</span>}
     </label>
   );
 }

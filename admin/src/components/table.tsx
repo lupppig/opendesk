@@ -3,6 +3,7 @@
 
 import { useNavigate, type LinkProps } from "@tanstack/react-router";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/cn";
@@ -67,8 +68,9 @@ export function TR({ children, className }: { children: ReactNode; className?: s
 }
 
 export function TableSkeleton({ rows = 8, cols = 5 }: { rows?: number; cols?: number }) {
+  const { t } = useTranslation();
   return (
-    <div aria-busy="true" aria-label="Loading" className="divide-y divide-line-soft">
+    <div aria-busy="true" aria-label={t("loading")} className="divide-y divide-line-soft">
       {Array.from({ length: rows }).map((_, i) => (
         <div key={i} className="flex h-11 items-center gap-6 px-4 md:px-6" style={{ opacity: 1 - i * (0.75 / rows) }}>
           {Array.from({ length: cols }).map((__, j) => (
@@ -81,16 +83,17 @@ export function TableSkeleton({ rows = 8, cols = 5 }: { rows?: number; cols?: nu
 }
 
 export function LoadMore({ hasMore, loading, onLoad, shown }: { hasMore: boolean; loading: boolean; onLoad: () => void; shown: number }) {
+  const { t } = useTranslation();
   if (!hasMore && shown === 0) return null;
   return (
     <div className="flex items-center justify-center gap-3 border-t border-line-soft py-3 text-[11.5px] text-fg-4">
-      <span className="mono tabular-nums">{shown} shown</span>
+      <span className="mono tabular-nums">{t("table.shown", { count: shown })}</span>
       {hasMore ? (
         <Button size="xs" variant="secondary" loading={loading} onClick={onLoad}>
-          Load more
+          {t("actions.loadMore")}
         </Button>
       ) : (
-        <span>End of the list</span>
+        <span>{t("table.end")}</span>
       )}
     </div>
   );

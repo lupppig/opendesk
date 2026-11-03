@@ -2,6 +2,7 @@
 // the hovered (or arrow-key focused) day called out above the bars.
 
 import { useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { cn } from "@/lib/cn";
 import { tone as tones, toneVar, type Tone } from "@/lib/tones";
 
@@ -21,6 +22,7 @@ export function BarChart({
   /** What the chart shows, for screen readers. */
   label: string;
 }) {
+  const { t } = useTranslation();
   const [active, setActive] = useState<number | null>(null);
   const max = Math.max(0, ...data.map((d) => d.value));
   const n = Math.max(1, data.length);
@@ -35,16 +37,16 @@ export function BarChart({
       <div className="flex h-9 items-end justify-between gap-3">
         <div className="min-w-0">
           <div className="mono text-[18px] font-medium leading-none tracking-[-0.02em] tabular-nums text-fg">{cur ? format(cur.value) : format(0)}</div>
-          <div className="mt-1 text-[11px] text-fg-3">{cur ? cur.label : "No data"}</div>
+          <div className="mt-1 text-[11px] text-fg-3">{cur ? cur.label : t("noData")}</div>
         </div>
         <div className="text-right text-[11px] text-fg-3">
-          <span className="mono text-fg-2 tabular-nums">{format(total)}</span> in {data.length} days
+          <Trans t={t} i18nKey="chart.total" count={data.length} values={{ total: format(total) }} components={{ n: <span className="mono text-fg-2 tabular-nums" /> }} />
         </div>
       </div>
       <div
         tabIndex={0}
         role="img"
-        aria-label={`${label}: ${format(total)} over ${data.length} days`}
+        aria-label={t("chart.summary", { label, total: format(total), count: data.length })}
         className="relative rounded-md outline-none focus-visible:shadow-[0_0_0_3px_var(--focus)]"
         style={{ height }}
         onMouseLeave={() => setActive(null)}

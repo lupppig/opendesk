@@ -1,16 +1,18 @@
 import { Link, useRouter, type ErrorComponentProps } from "@tanstack/react-router";
 import { useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty";
 import { ErrorState } from "@/components/ErrorState";
 
 /** A quiet bar while a route's code loads; it waits a beat so fast loads never flash. */
 export function RoutePending() {
+  const { t } = useTranslation();
   return (
     <div
       className="flex h-full min-h-[200px] items-start justify-center pt-24 opacity-0 animate-[fade-in_200ms_ease-out_150ms_forwards] motion-reduce:animate-none motion-reduce:opacity-100"
       role="status"
-      aria-label="Loading"
+      aria-label={t("loading")}
     >
       <div className="h-0.5 w-24 overflow-hidden rounded-full bg-hover">
         <div className="h-full w-1/3 animate-[pending-bar_1s_ease-in-out_infinite] rounded-full bg-fg-4 motion-reduce:animate-none" />
@@ -37,6 +39,7 @@ function reloadOnce(): boolean {
 }
 
 export function RouteError({ error, reset }: ErrorComponentProps) {
+  const { t } = useTranslation("shell");
   const router = useRouter();
   const chunk = error instanceof Error && CHUNK_ERROR.test(error.message);
   useEffect(() => {
@@ -45,7 +48,7 @@ export function RouteError({ error, reset }: ErrorComponentProps) {
   return (
     <div className="flex h-full min-h-[60vh] items-center justify-center p-8">
       <ErrorState
-        error={chunk ? new Error("A new version of the panel is out. Reload to get it.") : error}
+        error={chunk ? new Error(t("newVersion")) : error}
         onRetry={() => {
           if (chunk) return window.location.reload();
           reset();
@@ -53,7 +56,7 @@ export function RouteError({ error, reset }: ErrorComponentProps) {
         }}
         action={
           <Button variant="ghost" asChild>
-            <Link to="/">Overview</Link>
+            <Link to="/">{t("nav.overview")}</Link>
           </Button>
         }
       />
@@ -62,15 +65,16 @@ export function RouteError({ error, reset }: ErrorComponentProps) {
 }
 
 export function NotFound() {
+  const { t } = useTranslation("shell");
   return (
     <div className="flex min-h-[60vh] flex-1 items-center justify-center p-8">
       <EmptyState
         art="notfound"
-        title="Page not found"
-        description="There is no page at this address in the admin panel."
+        title={t("notFound.title")}
+        description={t("notFound.description")}
         action={
           <Button variant="secondary" asChild>
-            <Link to="/">Go to the overview</Link>
+            <Link to="/">{t("notFound.action")}</Link>
           </Button>
         }
       />

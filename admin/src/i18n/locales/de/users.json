@@ -1,0 +1,116 @@
+{
+  "list": {
+    "title": "Benutzer",
+    "search": "Nach E-Mail, Name oder ID suchen",
+    "filterLabel": "Benutzer filtern",
+    "filter": {
+      "all": "Alle",
+      "suspended": "Gesperrt",
+      "admins": "Admins",
+      "unverified": "Unbestätigt"
+    },
+    "noMatch": "Keine passenden Benutzer",
+    "noMatchHint": "Versuche eine andere E-Mail, einen Namen oder eine ID, oder setze die Filter zurück.",
+    "empty": "Noch keine Benutzer",
+    "emptyHint": "Personen erscheinen hier, sobald sie sich registrieren oder eine Einladung annehmen.",
+    "col": {
+      "user": "Benutzer",
+      "security": "Sicherheit",
+      "workspaces": "Workspaces",
+      "lastSeen": "Zuletzt gesehen",
+      "joined": "Beigetreten"
+    }
+  },
+  "flag": {
+    "verified": "Bestätigt",
+    "unverified": "Unbestätigt",
+    "twoFactor": "2FA",
+    "noTwoFactor": "Ohne 2FA",
+    "noPassword": "Ohne Passwort"
+  },
+  "detail": {
+    "allUsers": "Alle Benutzer",
+    "actions": "Aktionen",
+    "joinedSeen": "Beigetreten <joined/>, zuletzt gesehen <seen/>",
+    "deviceOn": "{{browser}} auf {{os}}",
+    "unknownDevice": "Unbekanntes Gerät",
+    "client": {
+      "web": "Browser",
+      "desktop": "Desktop-App",
+      "ios": "iPhone-App"
+    },
+    "blocked": {
+      "suspendSelf": "Du kannst dich nicht selbst sperren",
+      "suspendAdmin": "Entziehe zuerst die Admin-Rolle",
+      "mfaOff": "Die Zwei-Faktor-Authentifizierung ist aus",
+      "mfaSelf": "Schalte deine in der App aus",
+      "deleteSelf": "Lösche dein eigenes Konto in der App"
+    },
+    "toast": {
+      "verificationSent": "Bestätigungs-E-Mail an {{email}} gesendet",
+      "alreadyVerified": "Diese E-Mail ist bereits bestätigt",
+      "restored": "Benutzer wiederhergestellt",
+      "signedOutAll": "Überall abgemeldet",
+      "sessionSignedOut": "Sitzung abgemeldet",
+      "suspended": "Benutzer gesperrt",
+      "mfaOff": "Zwei-Faktor-Authentifizierung ausgeschaltet",
+      "deleted": "{{email}} wurde gelöscht"
+    },
+    "restore": {
+      "title": "Diesen Benutzer wiederherstellen?",
+      "button": "Benutzer wiederherstellen",
+      "text": "<b>{{email}}</b> kann sich wieder anmelden."
+    },
+    "signOutAll": {
+      "title": "Überall abmelden?",
+      "button": "Überall abmelden",
+      "text": "Jede Sitzung von <b>{{email}}</b> endet auf jedem Gerät, in der App und im Panel. Die Person kann sich wieder anmelden."
+    },
+    "resendVerification": "Bestätigungs-E-Mail erneut senden",
+    "suspend": {
+      "button": "Benutzer sperren",
+      "title": "{{email}} sperren?",
+      "description": "Jede Sitzung endet, in der App und im Panel, und die Person kann sich nicht anmelden, bis sie wiederhergestellt ist. Ihre Workspaces funktionieren für alle anderen weiter."
+    },
+    "mfa": {
+      "button": "Zwei-Faktor-Authentifizierung ausschalten",
+      "title": "Zwei-Faktor-Authentifizierung ausschalten?",
+      "confirm": "2FA ausschalten",
+      "description": "Der Authenticator und die Wiederherstellungscodes von {{email}} werden entfernt (Passkeys bleiben), jede Sitzung endet, und die Person erhält eine E-Mail, dass ein Administrator das getan hat. Tu das nur, nachdem du geprüft hast, wer fragt."
+    },
+    "delete": {
+      "button": "Benutzer löschen",
+      "title": "{{email}} löschen?",
+      "description": "Das Konto und seine Daten werden endgültig entfernt, wie bei Konto löschen durch den Benutzer selbst. Das lässt sich nicht rückgängig machen.",
+      "descriptionLeaves_one": "Das Konto und seine Daten werden endgültig entfernt, wie bei Konto löschen durch den Benutzer selbst. Die Person verlässt {{n}} Workspace. Das lässt sich nicht rückgängig machen.",
+      "descriptionLeaves_other": "Das Konto und seine Daten werden endgültig entfernt, wie bei Konto löschen durch den Benutzer selbst. Die Person verlässt {{n}} Workspaces. Das lässt sich nicht rückgängig machen.",
+      "soleOwner": "Die Person besitzt einen Workspace mit weiteren Mitgliedern. Übertrage ihn oder lösche zuerst diesen Workspace."
+    },
+    "suspendedSince": "Gesperrt <time/>",
+    "suspendedHint": "Die Person kann sich nicht anmelden; ihre Workspaces funktionieren für alle anderen weiter.",
+    "noWorkspaces": "Keine Workspaces",
+    "noWorkspacesHint": "Diese Person ist in keinem Workspace Mitglied.",
+    "sessions": {
+      "title": "Aktive Sitzungen",
+      "device": "Gerät",
+      "signedIn": "Angemeldet",
+      "lastUsed": "Zuletzt genutzt",
+      "signOut": "Abmelden",
+      "empty": "Keine aktiven Sitzungen",
+      "emptyHint": "Die Person ist überall abgemeldet."
+    },
+    "account": {
+      "title": "Konto",
+      "email": "E-Mail",
+      "twoFactor": "Zwei-Faktor",
+      "password": "Passwort",
+      "set": "Gesetzt",
+      "passkeys": "Passkeys",
+      "adminRole": "Admin-Rolle"
+    },
+    "identities": {
+      "title": "Anmeldeidentitäten",
+      "none": "Nur E-Mail und Passwort."
+    }
+  }
+}

@@ -1,6 +1,7 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Outlet, useMatches } from "@tanstack/react-router";
 import { useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { ConfirmProvider } from "@/components/ui/confirm";
 import { Toaster } from "@/components/ui/toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -13,8 +14,10 @@ export function pageTitle(title: string | null | undefined) {
 }
 
 function useRouteTitle() {
+  const { t } = useTranslation("shell");
   const matches = useMatches();
-  const title = [...matches].reverse().find((m) => m.staticData?.title)?.staticData.title;
+  const key = [...matches].reverse().find((m) => m.staticData?.title)?.staticData.title;
+  const title = key ? t(`titles.${key}`) : null;
   useEffect(() => {
     document.title = pageTitle(title);
   }, [title]);

@@ -1,0 +1,34 @@
+{
+  "title": "Audit log",
+  "subtitle": "Every sign-in and action in the admin panel and from the command line",
+  "allActions": "All actions",
+  "allAdmins": "All admins",
+  "clearTarget": "Clear the target filter",
+  "clearFilters": "Clear filters",
+  "col": {
+    "admin": "Admin",
+    "action": "Action",
+    "target": "Target",
+    "details": "Details",
+    "ip": "IP",
+    "when": "When"
+  },
+  "actor": {
+    "cli": "Command line",
+    "system": "Instance cleanup",
+    "unknown": "Unknown"
+  },
+  "target": {
+    "user": "User",
+    "workspace": "Workspace",
+    "admin": "Admin",
+    "job": "Job",
+    "instance": "Instance"
+  },
+  "empty": {
+    "title": "Nothing logged yet",
+    "hint": "Sign-ins and every change made from the panel or the command line show up here.",
+    "noMatch": "Nothing matches these filters",
+    "noMatchHint": "Try another action or admin, or clear the filters."
+  }
+}

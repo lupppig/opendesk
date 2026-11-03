@@ -1,0 +1,211 @@
+{
+  "title": "Espaces de test",
+  "days": "jours",
+  "deleteLabel": "Supprimer l’espace",
+  "createdBy": "par {{email}}",
+  "actionsFor": "Actions pour {{name}}",
+  "empty": {
+    "title": "Aucun espace de test",
+    "hint": "Créez-en un pour faire une démo d’opendesk avec des données réalistes, ou pour essayer quelque chose sans toucher à l’espace d’un client. Il est supprimé le jour que vous choisissez.",
+    "tipPassword": "Les propriétaires reçoivent un compte de test dont le mot de passe expire",
+    "tipCounts": "Les espaces de test ne sont pas comptés dans la vue d’ensemble"
+  },
+  "col": {
+    "owner": "Propriétaire",
+    "sample": "Données d’exemple",
+    "deleted": "Suppression"
+  },
+  "owner": {
+    "test": "Compte de test",
+    "own": "Compte personnel",
+    "none": "Aucun propriétaire",
+    "new": "Nouveau compte de test",
+    "existing": "Compte existant"
+  },
+  "plan": {
+    "recorded": "enregistrée",
+    "recordedHint": "Facturation désactivée : chaque espace est illimité et la formule est seulement enregistrée",
+    "noBilling": "La facturation est désactivée sur cette instance : chaque espace est illimité et la formule est seulement enregistrée."
+  },
+  "planHint": {
+    "free": "Les limites de la formule gratuite",
+    "pro": "Ni limite de boîtes mail ni de membres, 20 $ d’IA par mois et un crédit d’IA de 50 $",
+    "collab": "Collab offert jusqu’à la suppression de l’espace"
+  },
+  "menu": {
+    "open": "Ouvrir l’espace"
+  },
+  "expiry": {
+    "kept": "Conservé",
+    "now": "Suppression imminente",
+    "soon": "Supprimé {{when}}",
+    "on": "Supprimé le {{date}}",
+    "keptHint": "Conservé jusqu’à ce que quelqu’un le supprime"
+  },
+  "password": {
+    "expired": "Mot de passe expiré",
+    "soon": "Mot de passe expire {{when}}",
+    "until": "Mot de passe jusqu’au {{date}}"
+  },
+  "delete": {
+    "1": "Après un jour",
+    "7": "Après une semaine",
+    "14": "Après 2 semaines",
+    "30": "Après 30 jours",
+    "90": "Après 90 jours",
+    "365": "Après un an",
+    "keep": "Conserver jusqu’à suppression"
+  },
+  "size": {
+    "small": "Petit",
+    "realistic": "Réaliste",
+    "large": "Grand"
+  },
+  "sizeHint": {
+    "small": "Un mois d’une petite équipe, vite parcouru",
+    "realistic": "Trois mois d’une équipe chargée",
+    "large": "Un an d’une grande équipe, pour les longues listes et les rapports"
+  },
+  "kind": {
+    "tickets": "Tickets",
+    "chat": "Chat en direct",
+    "kb": "Base de connaissances",
+    "team": "Coéquipiers",
+    "collab": "E-mails Collab",
+    "history": "Historique"
+  },
+  "adds": {
+    "tickets": "Environ {{tickets}} tickets ouverts, en attente et suspendus de {{contacts}} clients dans {{companies}} entreprises, avec libellés et assignations",
+    "ticketsExtras": "Environ {{tickets}} tickets ouverts, en attente et suspendus de {{contacts}} clients dans {{companies}} entreprises, avec libellés et assignations, vues et réponses enregistrées",
+    "chat": "{{chats}} conversations du widget, dont certaines attendent une réponse en ce moment",
+    "kb": "{{articles}} articles du centre d’aide dans {{collections}} collections",
+    "team": "{{members}} coéquipiers dans {{teams}} équipes ; ils n’ont pas de mot de passe et ne se connectent jamais",
+    "collab_one": "{{accounts}} compte mail de démo avec {{threads}} fils, jamais connecté à un fournisseur",
+    "collab_other": "{{accounts}} comptes mail de démo avec {{threads}} fils, jamais connectés à un fournisseur",
+    "collab_many": "{{accounts}} comptes mail de démo avec {{threads}} fils, jamais connectés à un fournisseur",
+    "history": "Des tickets résolus et fermés avec des évaluations sur les {{days}} derniers jours, pour que les rapports aient quelque chose à montrer"
+  },
+  "counts": {
+    "tickets_one": "{{n}} ticket",
+    "tickets_other": "{{n}} tickets",
+    "tickets_many": "{{n}} tickets",
+    "messages_one": "{{n}} message",
+    "messages_other": "{{n}} messages",
+    "messages_many": "{{n}} messages",
+    "chats_one": "{{n}} conversation",
+    "chats_other": "{{n}} conversations",
+    "chats_many": "{{n}} conversations",
+    "contacts_one": "{{n}} contact",
+    "contacts_other": "{{n}} contacts",
+    "contacts_many": "{{n}} contacts",
+    "companies_one": "{{n}} entreprise",
+    "companies_other": "{{n}} entreprises",
+    "companies_many": "{{n}} entreprises",
+    "articles_one": "{{n}} article",
+    "articles_other": "{{n}} articles",
+    "articles_many": "{{n}} articles",
+    "members_one": "{{n}} coéquipier",
+    "members_other": "{{n}} coéquipiers",
+    "members_many": "{{n}} coéquipiers",
+    "teams_one": "{{n}} équipe",
+    "teams_other": "{{n}} équipes",
+    "teams_many": "{{n}} équipes",
+    "mail_threads_one": "{{n}} fil d’e-mails",
+    "mail_threads_other": "{{n}} fils d’e-mails",
+    "mail_threads_many": "{{n}} fils d’e-mails"
+  },
+  "batch": {
+    "small": "Petit lot de {{list}}",
+    "realistic": "Lot réaliste de {{list}}",
+    "large": "Grand lot de {{list}}",
+    "nothing": "rien"
+  },
+  "sample": {
+    "adding": {
+      "small": "Ajout d’un petit lot",
+      "realistic": "Ajout d’un lot réaliste",
+      "large": "Ajout d’un grand lot",
+      "sample": "Ajout de données d’exemple"
+    },
+    "lastFailed": "Le dernier lot a échoué.",
+    "added": "Ajoutées",
+    "failed": "Échec",
+    "batches_one": "{{n}} lot",
+    "batches_other": "{{n}} lots",
+    "batches_many": "{{n}} lots",
+    "add": "Ajouter des données d’exemple",
+    "stillAdding": "Des données d’exemple sont encore en cours d’ajout",
+    "size": "Taille",
+    "kinds": "Types",
+    "clearAll": "Tout décocher",
+    "chooseAll": "Tout cocher",
+    "whatAdded": "Ce qui sera ajouté",
+    "oneBatch": "{{size}}, en un seul lot :",
+    "nothingSent": "Chaque adresse est sur le domaine réservé .invalid, et rien n’est envoyé, expédié par e-mail ni facturé.",
+    "chooseOne": "Choisissez au moins un type."
+  },
+  "result": {
+    "ready": "{{name}} est prêt",
+    "newPassword": "Nouveau mot de passe pour {{name}}",
+    "signInWith": "Connectez-vous à l’application avec ces informations.",
+    "ownAccount": "Le propriétaire se connecte avec son propre compte et son mot de passe.",
+    "sampleRunning": "Les données d’exemple sont en cours d’ajout et apparaissent au fur et à mesure.",
+    "dismiss": "Fermer",
+    "copyNow": "Copiez le mot de passe maintenant : il ne s’affiche qu’une fois. S’il est perdu, renouvelez-le depuis cette page.",
+    "copyNowUntil": "Copiez le mot de passe maintenant : il ne s’affiche qu’une fois et cesse de fonctionner le {{date}}. S’il est perdu, renouvelez-le depuis cette page.",
+    "signIn": "Connexion",
+    "passwordExpires": "Expiration du mot de passe",
+    "deletedOn": "Supprimé le {{date}}",
+    "openSignIn": "Ouvrir la page de connexion",
+    "done": "Terminé"
+  },
+  "create": {
+    "title": "Créer un espace de test",
+    "description": "Un espace pour les démos et les tests, créé comme les autres et marqué comme test. Il n’est pas compté dans la vue d’ensemble et est supprimé le jour que vous choisissez.",
+    "emailError": "L’adresse d’un nouveau compte de test se termine par .invalid, qui ne reçoit jamais d’e-mail.",
+    "testEmailRequired": "Un nouveau compte de test a besoin d’une adresse en .invalid. Pour donner un espace de test à une vraie personne, choisissez son compte existant.",
+    "name": "Nom de l’espace",
+    "namePlaceholder": "Démo Acme",
+    "emailHint": "Une adresse réservée en .invalid : le compte est confirmé et rien ne lui est jamais envoyé.",
+    "ownerName": "Nom",
+    "ownerNamePlaceholder": "Alex Morgan",
+    "passwordLasts": "Durée du mot de passe",
+    "passwordHint": "Un mot de passe robuste est généré et affiché une fois. Il fonctionne 1 ou 2 jours.",
+    "sampleHint": "Ajoutées en arrière-plan une fois l’espace créé.",
+    "reasonHint": "{{length}} / {{max}}. Conservée dans le journal d’audit de l’admin.",
+    "reasonPlaceholder": "Démo commerciale pour Acme jeudi"
+  },
+  "picker": {
+    "search": "Rechercher un compte par e-mail, nom ou id",
+    "hint": "La personne possède le nouvel espace et se connecte avec son propre mot de passe ; rien ne change sur son compte.",
+    "accounts": "Comptes",
+    "noMatch": "Aucun compte ne correspond."
+  },
+  "add": {
+    "title": "Ajouter des données d’exemple à {{name}}",
+    "another": "Un lot de plus, en plus de ce qui existe.",
+    "anotherWith": "Un lot de plus, en plus de ce qui existe ({{counts}}).",
+    "background": "Ajoutées en arrière-plan ; la liste indique quand c’est terminé.",
+    "onItsWay": "{{batch}} en cours d’ajout",
+    "seeding": "Des données d’exemple sont encore en cours d’ajout. Réessayez quand ce sera terminé."
+  },
+  "change": {
+    "title": "Changer la date de suppression",
+    "titleRenew": "Prolonger ou renouveler le mot de passe",
+    "keepDay": "Garder le jour actuel ({{date}})",
+    "keepAsNow": "Le conserver jusqu’à suppression (comme maintenant)",
+    "fromToday": "{{choice}}, à partir d’aujourd’hui",
+    "deletedOn": "<b>{{name}}</b> est supprimé le {{date}}.",
+    "kept": "<b>{{name}}</b> est conservé jusqu’à ce que quelqu’un le supprime.",
+    "notTestAccount": "Le propriétaire a son propre compte ; seul le mot de passe d’un compte de test est renouvelé.",
+    "passwordReady": "Nouveau mot de passe prêt",
+    "renew": "Renouveler le mot de passe du propriétaire",
+    "renewHint": "Un nouveau mot de passe pour <m>{{email}}</m>, affiché une fois. L’ancien cesse de fonctionner et ses sessions prennent fin.",
+    "newPasswordLasts": "Durée du nouveau mot de passe",
+    "noPassword": "Le propriétaire se connecte avec son propre compte : il n’y a pas de mot de passe à renouveler."
+  },
+  "deleteDialog": {
+    "description": "Tout le contenu de cet espace de test est supprimé définitivement.",
+    "owner": "Le compte de test <m>{{email}}</m> est supprimé avec lui, sauf s’il est dans un autre espace."
+  }
+}

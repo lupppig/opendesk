@@ -3,6 +3,7 @@
 import { Link } from "@tanstack/react-router";
 import { ChevronLeft } from "lucide-react";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/cn";
 
@@ -143,9 +144,10 @@ export function Notice({ children, kind = "danger", className }: { children: Rea
 
 /** A detail page while it loads: a header and two columns. */
 export function DetailSkeleton() {
+  const { t } = useTranslation();
   return (
     <PageColumn>
-      <div className="flex items-center gap-3" aria-busy="true" aria-label="Loading">
+      <div className="flex items-center gap-3" aria-busy="true" aria-label={t("loading")}>
         <Skeleton className="size-10 rounded-lg" />
         <div className="flex flex-col gap-2">
           <Skeleton className="h-4 w-48" />

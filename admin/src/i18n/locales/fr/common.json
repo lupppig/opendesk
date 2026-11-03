@@ -1,0 +1,140 @@
+{
+  "adminPill": "Admin",
+  "thisInstance": "Cette instance",
+  "loading": "Chargement",
+  "none": "Aucun",
+  "noData": "Aucune donnée",
+  "noReason": "Aucune raison donnée.",
+  "saved": "Enregistré",
+  "id": "id",
+  "action": "Action",
+  "copyNamed": "Copier {{name}}",
+  "more_one": "+{{count}} autre",
+  "more_other": "+{{count}} autres",
+  "more_many": "+{{count}} autres",
+  "clearFilters": "Effacer la recherche et les filtres",
+  "actions": {
+    "cancel": "Annuler",
+    "confirm": "Confirmer",
+    "save": "Enregistrer",
+    "restore": "Rétablir",
+    "tryAgain": "Réessayer",
+    "loadMore": "Charger plus",
+    "copy": "Copier",
+    "copied": "Copié",
+    "undo": "Annuler",
+    "close": "Fermer"
+  },
+  "errors": {
+    "notFound": "Introuvable",
+    "notFoundHint": "Il a peut-être été supprimé, ou le lien est erroné.",
+    "didntLoad": "Le chargement a échoué",
+    "requestId": "Id de requête",
+    "copyRequestId": "Copier l’id de requête",
+    "generic": "Une erreur s’est produite",
+    "network": "Impossible de joindre l’API. Vérifiez votre connexion.",
+    "rateLimited": "Trop de tentatives. Patientez un instant puis réessayez.",
+    "forbidden": "Votre rôle d’admin ne le permet pas."
+  },
+  "time": {
+    "never": "Jamais",
+    "justNow": "à l’instant",
+    "inAMoment": "dans un instant",
+    "short": {
+      "s": "{{n}} s",
+      "m": "{{n}} min",
+      "h": "{{n}} h",
+      "d": "{{n}} j"
+    }
+  },
+  "table": {
+    "shown_one": "{{count}} affiché",
+    "shown_other": "{{count}} affichés",
+    "shown_many": "{{count}} affichés",
+    "end": "Fin de la liste"
+  },
+  "chart": {
+    "total_one": "<n>{{total}}</n> sur {{count}} jour",
+    "total_other": "<n>{{total}}</n> sur {{count}} jours",
+    "total_many": "<n>{{total}}</n> sur {{count}} jours",
+    "summary_one": "{{label}} : {{total}} sur {{count}} jour",
+    "summary_other": "{{label}} : {{total}} sur {{count}} jours",
+    "summary_many": "{{label}} : {{total}} sur {{count}} jours"
+  },
+  "reason": {
+    "label": "Raison",
+    "tooLong": "Restez sous {{max}} caractères.",
+    "placeholder": "Ce qui s’est passé, et le ticket ou le signalement concerné"
+  },
+  "ui": {
+    "remove": "Retirer {{name}}",
+    "areYouSure": "Confirmer ?",
+    "typeToConfirm": "Saisissez <v>{{text}}</v> pour confirmer",
+    "confirmText": "Texte de confirmation",
+    "dialog": "Boîte de dialogue",
+    "hidePassword": "Masquer le mot de passe",
+    "showPassword": "Afficher le mot de passe",
+    "search": "Rechercher",
+    "clearSearch": "Effacer la recherche",
+    "optional": "Facultatif",
+    "select": "Choisir"
+  },
+  "plan": {
+    "free": "Gratuit",
+    "pro": "Pro",
+    "collab": "Collab",
+    "self_hosted": "Auto-hébergé"
+  },
+  "subscription": {
+    "active": "Actif",
+    "trialing": "En essai",
+    "past_due": "Impayé en retard",
+    "unpaid": "Impayé",
+    "canceled": "Annulé",
+    "incomplete": "Incomplet",
+    "incomplete_expired": "Incomplet expiré",
+    "paused": "En pause"
+  },
+  "suspended": "Suspendu",
+  "test": "Test",
+  "mailbox": {
+    "active": "Active",
+    "error": "Erreur",
+    "disabled": "Désactivée"
+  },
+  "check": {
+    "ok": "OK",
+    "warn": "Avertissement",
+    "fail": "En échec"
+  },
+  "jobState": {
+    "available": "Disponible",
+    "running": "En cours",
+    "retryable": "À réessayer",
+    "scheduled": "Planifiée",
+    "pending": "En attente",
+    "completed": "Terminée",
+    "cancelled": "Annulée",
+    "discarded": "Abandonnée"
+  },
+  "memberRole": {
+    "owner": "Propriétaire",
+    "admin": "Admin",
+    "agent": "Agent",
+    "viewer": "Lecteur"
+  },
+  "role": {
+    "viewer": "Lecteur",
+    "support": "Support",
+    "super": "Super"
+  },
+  "roleHint": {
+    "viewer": "Lit toutes les pages, ne modifie rien",
+    "support": "Sessions, suspensions, limites, crédits d’IA, espaces de test et tâches",
+    "super": "Tout, y compris la 2FA, les suppressions et les admins"
+  },
+  "denied": {
+    "super": "Nécessite le rôle d’admin Super",
+    "role": "Nécessite le rôle d’admin {{role}} ou Super"
+  }
+}

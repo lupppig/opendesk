@@ -1,19 +1,28 @@
-// Display formatting. The panel is English: numbers and money in en-US
-// ("$1,234.56"), dates relative in lists with the absolute time on hover.
+// Display formatting in the panel's language (src/i18n): numbers and money
+// ("$1,234.56" in English), dates relative in lists with the absolute time on hover.
 
-const LOCALE = "en-US";
+import { i18n, intlLocale } from "@/i18n";
 
-const cache = new Map<string, Intl.NumberFormat | Intl.DateTimeFormat>();
+const cache = new Map<string, Intl.NumberFormat | Intl.DateTimeFormat | Intl.RelativeTimeFormat>();
 function nf(opts: Intl.NumberFormatOptions = {}): Intl.NumberFormat {
-  const key = `n|${JSON.stringify(opts)}`;
+  const loc = intlLocale();
+  const key = `n|${loc}|${JSON.stringify(opts)}`;
   let f = cache.get(key) as Intl.NumberFormat | undefined;
-  if (!f) cache.set(key, (f = new Intl.NumberFormat(LOCALE, opts)));
+  if (!f) cache.set(key, (f = new Intl.NumberFormat(loc, opts)));
   return f;
 }
 function dtf(opts: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
-  const key = `d|${JSON.stringify(opts)}`;
+  const loc = intlLocale();
+  const key = `d|${loc}|${JSON.stringify(opts)}`;
   let f = cache.get(key) as Intl.DateTimeFormat | undefined;
-  if (!f) cache.set(key, (f = new Intl.DateTimeFormat(LOCALE, opts)));
+  if (!f) cache.set(key, (f = new Intl.DateTimeFormat(loc, opts)));
+  return f;
+}
+function rtf(): Intl.RelativeTimeFormat {
+  const loc = intlLocale();
+  const key = `r|${loc}`;
+  let f = cache.get(key) as Intl.RelativeTimeFormat | undefined;
+  if (!f) cache.set(key, (f = new Intl.RelativeTimeFormat(loc, { numeric: "always" })));
   return f;
 }
 
@@ -72,11 +81,8 @@ export function relative(iso: string | null | undefined, now = Date.now()): stri
   if (t === null) return "";
   const s = Math.round((now - t) / 1000);
   const abs = Math.abs(s);
-  const ago = (n: number, unit: string) => {
-    const u = `${n} ${unit}${n === 1 ? "" : "s"}`;
-    return s >= 0 ? `${u} ago` : `in ${u}`;
-  };
-  if (abs < 45) return s >= 0 ? "just now" : "in a moment";
+  const ago = (n: number, unit: Intl.RelativeTimeFormatUnit) => rtf().format(s >= 0 ? -n : n, unit);
+  if (abs < 45) return s >= 0 ? i18n.t("time.justNow") : i18n.t("time.inAMoment");
   const m = Math.round(abs / 60);
   if (m < 60) return ago(Math.max(1, m), "minute");
   const h = Math.round(m / 60);
@@ -109,22 +115,18 @@ export function dayLabel(ymd: string): string {
   return dtf({ month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(Date.UTC(y, m - 1, d)));
 }
 
-/** Seconds as a short age: 42 -> "42s", 135 -> "2m 15s", 7200 -> "2h", 90000 -> "1d 1h". */
+/** Seconds as a short age: 42 -> "42s", 135 -> "2m 15s", 7200 -> "2h", 90000 -> "1d 1h" (in English). */
 export function duration(seconds: number | null | undefined): string {
   if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) return "–";
+  const u = (unit: "s" | "m" | "h" | "d", n: number) => i18n.t(`time.short.${unit}`, { n });
   const s = Math.max(0, Math.round(seconds));
-  if (s < 60) return `${s}s`;
+  if (s < 60) return u("s", s);
   const m = Math.floor(s / 60);
-  if (m < 60) return s % 60 ? `${m}m ${s % 60}s` : `${m}m`;
+  if (m < 60) return s % 60 ? `${u("m", m)} ${u("s", s % 60)}` : u("m", m);
   const h = Math.floor(m / 60);
-  if (h < 24) return m % 60 ? `${h}h ${m % 60}m` : `${h}h`;
+  if (h < 24) return m % 60 ? `${u("h", h)} ${u("m", m % 60)}` : u("h", h);
   const d = Math.floor(h / 24);
-  return h % 24 ? `${d}d ${h % 24}h` : `${d}d`;
-}
-
-/** English plural: plural(3, "member") -> "3 members". */
-export function plural(n: number, one: string, many = `${one}s`) {
-  return `${number(n)} ${n === 1 ? one : many}`;
+  return h % 24 ? `${u("d", d)} ${u("h", h % 24)}` : u("d", d);
 }
 
 /** "workspace.limits_changed" -> "Workspace limits changed". */

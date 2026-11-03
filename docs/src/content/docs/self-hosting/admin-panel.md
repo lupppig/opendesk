@@ -38,6 +38,10 @@ A panel session ends an hour after you last used it, and 12 hours after you sign
 
 The role is checked on every request, so removing or downgrading an admin takes effect at once. There is always at least one super admin.
 
+## Language
+
+The panel follows your browser's language, like the app: English, French or German. Any other language shows English. What the API itself writes, such as the names and details of the health checks, stays in English.
+
 ## Suspending
 
 **Suspending a user** signs them out everywhere and stops them signing in. Their workspaces keep working for everyone else.

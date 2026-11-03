@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { Ban, ChevronDown, LogOut, Mail, RotateCcw, ScrollText, ShieldOff, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { ActionButton, ActionMenuItem } from "@/components/ActionButton";
 import { IdChip, None } from "@/components/bits";
 import { ErrorState } from "@/components/ErrorState";
@@ -20,21 +21,23 @@ import { Field, TextInput } from "@/components/ui/input";
 import { Menu, MenuContent, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { toast } from "@/components/ui/toast";
 import { useDocumentTitle } from "@/app/RootLayout";
+import { i18n } from "@/i18n";
 import { isApiError } from "@/lib/api/client";
 import { api } from "@/lib/api/endpoints";
 import type { AdminSession, AdminUser } from "@/lib/api/types";
-import { humanize, number, plural } from "@/lib/format";
+import { humanize, number } from "@/lib/format";
 import { q, qk } from "@/lib/queries";
 import { useMe } from "@/lib/session";
 
 export default function UserDetail() {
+  const { t } = useTranslation(["users", "admins", "audit", "common", "health", "shell", "workspaces"]);
   const { id } = useParams({ from: "/shell/users/$id" });
   const user = useQuery(q.user(id));
   useDocumentTitle(user.data?.email);
 
   return (
     <>
-      <PageHeader title={<BackLink to="/users">Users</BackLink>} />
+      <PageHeader title={<BackLink to="/users">{t("list.title")}</BackLink>} />
       <PageBody>
         {user.isPending ? (
           <DetailSkeleton />
@@ -44,7 +47,7 @@ export default function UserDetail() {
             onRetry={() => void user.refetch()}
             action={
               <Button variant="ghost" asChild>
-                <Link to="/users">All users</Link>
+                <Link to="/users">{t("detail.allUsers")}</Link>
               </Button>
             }
           />
@@ -56,17 +59,18 @@ export default function UserDetail() {
   );
 }
 
-const CLIENT: Record<AdminSession["client"], string> = { web: "Browser", desktop: "Desktop app", ios: "iPhone app" };
 
 /** "Chrome on macOS" from a user agent, or the raw string cut short. */
 function deviceOf(ua: string) {
   const browser = /Edg\//.test(ua) ? "Edge" : /Firefox\//.test(ua) ? "Firefox" : /Chrome\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : /opendesk/i.test(ua) ? "opendesk" : "";
   const os = /iPhone|iPad/.test(ua) ? "iOS" : /Mac OS X|Macintosh/.test(ua) ? "macOS" : /Windows/.test(ua) ? "Windows" : /Android/.test(ua) ? "Android" : /Linux/.test(ua) ? "Linux" : "";
-  if (browser && os) return `${browser} on ${os}`;
-  return browser || os || ua.slice(0, 60) || "Unknown device";
+  if (browser && os) return i18n.t("users:detail.deviceOn", { browser, os });
+  return browser || os || ua.slice(0, 60) || i18n.t("users:detail.unknownDevice");
 }
 
 function UserView({ u }: { u: AdminUser }) {
+  const { t } = useTranslation(["users", "admins", "audit", "common", "health", "shell", "workspaces"]);
+  const client = (c: AdminSession["client"]) => t(`detail.client.${c}`, { defaultValue: c });
   const me = useMe();
   const qc = useQueryClient();
   const navigate = useNavigate();
@@ -74,7 +78,7 @@ function UserView({ u }: { u: AdminUser }) {
   const [dialog, setDialog] = useState<null | "suspend" | "mfa" | "delete">(null);
   const [confirmEmail, setConfirmEmail] = useState("");
   const self = u.id === me.id;
-  const suspendBlocked = self ? "You can't suspend yourself" : u.admin_role ? "Revoke their admin role first" : null;
+  const suspendBlocked = self ? t("detail.blocked.suspendSelf") : u.admin_role ? t("detail.blocked.suspendAdmin") : null;
 
   const apply = (next: AdminUser) => {
     qc.setQueryData(qk.user(u.id), next);
@@ -85,10 +89,10 @@ function UserView({ u }: { u: AdminUser }) {
   const resend = async () => {
     try {
       await api.users.resendVerification(u.id);
-      toast.success(`Verification email sent to ${u.email}`);
+      toast.success(t("detail.toast.verificationSent", { email: u.email }));
     } catch (e) {
       if (isApiError(e, "already_verified")) {
-        toast.info("This email is already verified");
+        toast.info(t("detail.toast.alreadyVerified"));
         void reload();
       } else toast.error(e);
     }
@@ -97,33 +101,33 @@ function UserView({ u }: { u: AdminUser }) {
   const restore = () =>
     confirm.show(
       <>
-        <span className="font-medium text-fg">{u.email}</span> can sign in again.
+        <Trans t={t} i18nKey="detail.restore.text" values={{ email: u.email }} components={{ b: <span className="font-medium text-fg" /> }} />
       </>,
       async () => {
         apply(await api.users.unsuspend(u.id));
-        toast.success("User restored");
+        toast.success(t("detail.toast.restored"));
       },
-      { title: "Restore this user?", confirmLabel: "Restore" },
+      { title: t("detail.restore.title"), confirmLabel: t("common:actions.restore") },
     );
 
   const signOutAll = () =>
     confirm.show(
       <>
-        Every session of <span className="font-medium text-fg">{u.email}</span> ends on every device, in the app and the panel. They can sign in again.
+        <Trans t={t} i18nKey="detail.signOutAll.text" values={{ email: u.email }} components={{ b: <span className="font-medium text-fg" /> }} />
       </>,
       async () => {
         await api.users.revokeSessions(u.id);
         await reload();
-        toast.success("Signed out everywhere");
+        toast.success(t("detail.toast.signedOutAll"));
       },
-      { title: "Sign out everywhere?", confirmLabel: "Sign out everywhere", danger: true },
+      { title: t("detail.signOutAll.title"), confirmLabel: t("detail.signOutAll.button"), danger: true },
     );
 
   const signOutOne = async (s: AdminSession) => {
     try {
       await api.users.revokeSessions(u.id, s.id);
       qc.setQueryData<AdminUser>(qk.user(u.id), (prev) => (prev ? { ...prev, sessions: prev.sessions.filter((x) => x.id !== s.id) } : prev));
-      toast.success("Session signed out");
+      toast.success(t("detail.toast.sessionSignedOut"));
     } catch (e) {
       toast.error(e);
     }
@@ -138,57 +142,57 @@ function UserView({ u }: { u: AdminUser }) {
             <h1 className="truncate text-[18px] font-semibold tracking-[-0.02em]">{u.name || u.email}</h1>
             {u.admin_role && <AdminRolePill role={u.admin_role} />}
             {u.suspended_at && <SuspendedPill />}
-            {self && <Badge tone="outline">You</Badge>}
+            {self && <Badge tone="outline">{t("admins:you")}</Badge>}
           </div>
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
             {u.name && <span className="text-[12.5px] text-fg-2">{u.email}</span>}
-            <IdChip label="id" value={u.id} />
+            <IdChip label={t("common:id")} value={u.id} />
             <span className="text-[11.5px] text-fg-3">
-              Joined <Time iso={u.created_at} />, last seen <Time iso={u.last_seen_at} />
+              <Trans t={t} i18nKey="detail.joinedSeen" components={{ joined: <Time iso={u.created_at} />, seen: <Time iso={u.last_seen_at} /> }} />
             </span>
           </div>
         </div>
         <div className="flex items-center gap-1.5">
           <Button variant="ghost" asChild icon={<ScrollText />}>
             <Link to="/audit" search={{ target: u.id }}>
-              Audit log
+              {t("shell:nav.audit")}
             </Link>
           </Button>
           <Menu>
             <MenuTrigger asChild>
               <Button variant="secondary" iconRight={<ChevronDown />}>
-                Actions
+                {t("detail.actions")}
               </Button>
             </MenuTrigger>
             <MenuContent className="w-[260px]">
               {!u.email_verified && (
                 <ActionMenuItem perm="users.sessions" icon={<Mail />} onSelect={() => void resend()}>
-                  Resend verification email
+                  {t("detail.resendVerification")}
                 </ActionMenuItem>
               )}
-              <ActionMenuItem perm="users.sessions" icon={<LogOut />} blocked={u.sessions.length ? null : "No live sessions"} onSelect={signOutAll}>
-                Sign out everywhere
+              <ActionMenuItem perm="users.sessions" icon={<LogOut />} blocked={u.sessions.length ? null : t("detail.sessions.empty")} onSelect={signOutAll}>
+                {t("detail.signOutAll.button")}
               </ActionMenuItem>
               {u.suspended_at ? (
                 <ActionMenuItem perm="users.suspend" icon={<RotateCcw />} onSelect={restore}>
-                  Restore user
+                  {t("detail.restore.button")}
                 </ActionMenuItem>
               ) : (
                 <ActionMenuItem perm="users.suspend" icon={<Ban />} blocked={suspendBlocked} onSelect={() => setDialog("suspend")}>
-                  Suspend user
+                  {t("detail.suspend.button")}
                 </ActionMenuItem>
               )}
               <MenuSeparator />
               <ActionMenuItem
                 perm="users.mfa"
                 icon={<ShieldOff />}
-                blocked={!u.totp_enabled ? "Two-factor authentication is off" : self ? "Turn yours off in the app" : null}
+                blocked={!u.totp_enabled ? t("detail.blocked.mfaOff") : self ? t("detail.blocked.mfaSelf") : null}
                 onSelect={() => setDialog("mfa")}
               >
-                Turn off two-factor authentication
+                {t("detail.mfa.button")}
               </ActionMenuItem>
-              <ActionMenuItem perm="users.delete" icon={<Trash2 />} danger blocked={self ? "Delete your own account in the app" : null} onSelect={() => setDialog("delete")}>
-                Delete user
+              <ActionMenuItem perm="users.delete" icon={<Trash2 />} danger blocked={self ? t("detail.blocked.deleteSelf") : null} onSelect={() => setDialog("delete")}>
+                {t("detail.delete.button")}
               </ActionMenuItem>
             </MenuContent>
           </Menu>
@@ -196,20 +200,20 @@ function UserView({ u }: { u: AdminUser }) {
       </div>
 
       {u.suspended_at && (
-        <Banner title={<>Suspended <Time iso={u.suspended_at} /></>}>
-          {u.suspended_reason ? <span className="whitespace-pre-wrap">{u.suspended_reason}</span> : "No reason was given."} They can't sign in; their workspaces keep working for everyone else.
+        <Banner title={<Trans t={t} i18nKey="detail.suspendedSince" components={{ time: <Time iso={u.suspended_at} /> }} />}>
+          {u.suspended_reason ? <span className="whitespace-pre-wrap">{u.suspended_reason}</span> : t("common:noReason")} {t("detail.suspendedHint")}
         </Banner>
       )}
 
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="flex min-w-0 flex-col gap-5">
-          <Section title="Workspaces" count={number(u.memberships.length)} flush>
+          <Section title={t("list.col.workspaces")} count={number(u.memberships.length)} flush>
             {u.memberships.length ? (
               <Table>
                 <THead>
-                  <TH>Workspace</TH>
-                  <TH>Role</TH>
-                  <TH>Joined</TH>
+                  <TH>{t("workspaces:list.col.workspace")}</TH>
+                  <TH>{t("admins:col.role")}</TH>
+                  <TH>{t("list.col.joined")}</TH>
                 </THead>
                 <tbody>
                   {u.memberships.map((m) => (
@@ -224,7 +228,7 @@ function UserView({ u }: { u: AdminUser }) {
                         </Link>
                       </TD>
                       <TD>
-                        <Badge tone={m.role === "owner" ? "indigo" : m.role === "admin" ? "blue" : "neutral"}>{humanize(m.role)}</Badge>
+                        <Badge tone={m.role === "owner" ? "indigo" : m.role === "admin" ? "blue" : "neutral"}>{t(`common:memberRole.${m.role}`, { defaultValue: humanize(m.role) })}</Badge>
                       </TD>
                       <TD className="text-fg-3">
                         <Time iso={m.created_at} />
@@ -234,18 +238,18 @@ function UserView({ u }: { u: AdminUser }) {
                 </tbody>
               </Table>
             ) : (
-              <EmptyState compact art="workspaces" title="No workspaces" description="This person isn't a member of any workspace." />
+              <EmptyState compact art="workspaces" title={t("detail.noWorkspaces")} description={t("detail.noWorkspacesHint")} />
             )}
           </Section>
 
           <Section
-            title="Live sessions"
+            title={t("detail.sessions.title")}
             count={number(u.sessions.length)}
             flush
             actions={
               u.sessions.length > 0 && (
                 <ActionButton perm="users.sessions" size="xs" variant="danger" onClick={signOutAll}>
-                  Sign out everywhere
+                  {t("detail.signOutAll.button")}
                 </ActionButton>
               )
             }
@@ -253,10 +257,10 @@ function UserView({ u }: { u: AdminUser }) {
             {u.sessions.length ? (
               <Table>
                 <THead>
-                  <TH>Device</TH>
-                  <TH>IP</TH>
-                  <TH>Signed in</TH>
-                  <TH>Last used</TH>
+                  <TH>{t("detail.sessions.device")}</TH>
+                  <TH>{t("audit:col.ip")}</TH>
+                  <TH>{t("detail.sessions.signedIn")}</TH>
+                  <TH>{t("detail.sessions.lastUsed")}</TH>
                   <TH />
                 </THead>
                 <tbody>
@@ -267,8 +271,8 @@ function UserView({ u }: { u: AdminUser }) {
                           {deviceOf(s.user_agent)}
                         </span>
                         <span className="flex items-center gap-1.5 text-[11.5px] text-fg-3">
-                          {CLIENT[s.client] ?? s.client}
-                          {s.mfa_verified && <Badge tone="green">2FA</Badge>}
+                          {client(s.client)}
+                          {s.mfa_verified && <Badge tone="green">{t("flag.twoFactor")}</Badge>}
                         </span>
                       </TD>
                       <TD mono className="text-[11.5px] text-fg-2">
@@ -282,7 +286,7 @@ function UserView({ u }: { u: AdminUser }) {
                       </TD>
                       <TD align="right">
                         <ActionButton perm="users.sessions" size="xs" variant="ghost" onClick={() => void signOutOne(s)}>
-                          Sign out
+                          {t("detail.sessions.signOut")}
                         </ActionButton>
                       </TD>
                     </TR>
@@ -290,24 +294,24 @@ function UserView({ u }: { u: AdminUser }) {
                 </tbody>
               </Table>
             ) : (
-              <EmptyState compact art="users" title="No live sessions" description="They're signed out everywhere." />
+              <EmptyState compact art="users" title={t("detail.sessions.empty")} description={t("detail.sessions.emptyHint")} />
             )}
           </Section>
         </div>
 
         <div className="flex min-w-0 flex-col gap-5">
-          <Section title="Account">
+          <Section title={t("detail.account.title")}>
             <KV
               items={[
-                ["Email", <FlagPill on={u.email_verified} yes="Verified" no="Unverified" warnOff />],
-                ["Two-factor", <FlagPill on={u.totp_enabled} yes="On" no="Off" />],
-                ["Password", <FlagPill on={u.has_password} yes="Set" no="None" />],
-                ["Passkeys", u.passkeys ? <span className="mono tabular-nums">{number(u.passkeys)}</span> : <None />],
-                ["Admin role", u.admin_role ? <AdminRolePill role={u.admin_role} /> : <None />],
+                [t("detail.account.email"), <FlagPill on={u.email_verified} yes={t("flag.verified")} no={t("flag.unverified")} warnOff />],
+                [t("detail.account.twoFactor"), <FlagPill on={u.totp_enabled} yes={t("health:on")} no={t("health:off")} />],
+                [t("detail.account.password"), <FlagPill on={u.has_password} yes={t("detail.account.set")} no={t("common:none")} />],
+                [t("detail.account.passkeys"), u.passkeys ? <span className="mono tabular-nums">{number(u.passkeys)}</span> : <None />],
+                [t("detail.account.adminRole"), u.admin_role ? <AdminRolePill role={u.admin_role} /> : <None />],
               ]}
             />
           </Section>
-          <Section title="Sign-in identities" count={number(u.identities.length)}>
+          <Section title={t("detail.identities.title")} count={number(u.identities.length)}>
             {u.identities.length ? (
               <ul className="flex flex-col gap-2">
                 {u.identities.map((i) => (
@@ -319,7 +323,7 @@ function UserView({ u }: { u: AdminUser }) {
                 ))}
               </ul>
             ) : (
-              <p className="text-[12.5px] text-fg-3">Email and password only.</p>
+              <p className="text-[12.5px] text-fg-3">{t("detail.identities.none")}</p>
             )}
           </Section>
         </div>
@@ -328,30 +332,25 @@ function UserView({ u }: { u: AdminUser }) {
       <ReasonDialog
         open={dialog === "suspend"}
         onOpenChange={(o) => setDialog(o ? "suspend" : null)}
-        title={`Suspend ${u.email}?`}
-        description="Every session ends, in the app and the panel, and they can't sign in until restored. Their workspaces keep working for everyone else."
-        confirmLabel="Suspend user"
+        title={t("detail.suspend.title", { email: u.email })}
+        description={t("detail.suspend.description")}
+        confirmLabel={t("detail.suspend.button")}
         onConfirm={async (reason) => {
           apply(await api.users.suspend(u.id, reason));
-          toast.success("User suspended");
+          toast.success(t("detail.toast.suspended"));
         }}
       />
 
       <StepUpDialog
         open={dialog === "mfa"}
         onOpenChange={(o) => setDialog(o ? "mfa" : null)}
-        title="Turn off two-factor authentication?"
-        description={
-          <>
-            The authenticator and recovery codes of {u.email} are removed (passkeys stay), every session ends, and they are emailed that an administrator did it. Do this only after
-            confirming who is asking.
-          </>
-        }
-        confirmLabel="Turn off 2FA"
+        title={t("detail.mfa.title")}
+        description={t("detail.mfa.description", { email: u.email })}
+        confirmLabel={t("detail.mfa.confirm")}
         danger
         onConfirm={async (code) => {
           apply(await api.users.disableMfa(u.id, code));
-          toast.success("Two-factor authentication turned off");
+          toast.success(t("detail.toast.mfaOff"));
         }}
       />
 
@@ -361,24 +360,24 @@ function UserView({ u }: { u: AdminUser }) {
           setDialog(o ? "delete" : null);
           if (!o) setConfirmEmail("");
         }}
-        title={`Delete ${u.email}?`}
-        description={`The account and its data are removed for good, the same as the user's own Delete account. ${u.memberships.length ? `They leave ${plural(u.memberships.length, "workspace")}.` : ""} This can't be undone.`}
-        confirmLabel="Delete user"
+        title={t("detail.delete.title", { email: u.email })}
+        description={u.memberships.length ? t("detail.delete.descriptionLeaves", { count: u.memberships.length, n: number(u.memberships.length) }) : t("detail.delete.description")}
+        confirmLabel={t("detail.delete.button")}
         danger
         ready={confirmEmail.trim().toLowerCase() === u.email.toLowerCase()}
         explain={(e) =>
-          isApiError(e, "sole_owner") ? "They own a workspace that has other members. Transfer it or delete that workspace first." : undefined
+          isApiError(e, "sole_owner") ? t("detail.delete.soleOwner") : undefined
         }
         onConfirm={async (code) => {
           await api.users.remove(u.id, code, confirmEmail.trim());
           qc.removeQueries({ queryKey: qk.user(u.id) });
           void qc.invalidateQueries({ queryKey: qk.users });
           void qc.invalidateQueries({ queryKey: qk.summary });
-          toast.success(`${u.email} was deleted`);
+          toast.success(t("detail.toast.deleted", { email: u.email }));
           void navigate({ to: "/users" });
         }}
       >
-        <Field label={<>Type <span className="mono font-medium">{u.email}</span> to confirm</>}>
+        <Field label={<Trans t={t} i18nKey="common:ui.typeToConfirm" values={{ text: u.email }} components={{ v: <span className="mono font-medium" /> }} />}>
           {(p) => <TextInput {...p} autoFocus autoComplete="off" spellCheck={false} value={confirmEmail} onChange={(e) => setConfirmEmail(e.target.value)} />}
         </Field>
       </StepUpDialog>

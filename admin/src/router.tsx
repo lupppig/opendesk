@@ -21,8 +21,8 @@ declare module "@tanstack/react-router" {
     router: typeof router;
   }
   interface StaticDataRouteOption {
-    /** Tab title, without the suffix. */
-    title?: string;
+    /** Tab title, without the suffix: `titles.<title>` in the shell catalog. */
+    title?: "signIn" | "overview" | "workspaces" | "workspace" | "testWorkspaces" | "users" | "user" | "jobs" | "health" | "audit" | "admins";
   }
 }
 
@@ -47,7 +47,7 @@ const loginRoute = createRoute({
     if (s.status === "authed") throw redirect(nextTarget(search.next) as never);
   },
   component: page(() => import("./pages/Login")),
-  staticData: { title: "Sign in" },
+  staticData: { title: "signIn" },
 });
 
 // ─── The panel ─────────────────────────────────────────────────────────────
@@ -70,7 +70,7 @@ const overviewRoute = createRoute({
     void context.queryClient.prefetchQuery(q.health());
   },
   component: page(() => import("./pages/Overview")),
-  staticData: { title: "Overview" },
+  staticData: { title: "overview" },
 });
 
 const WORKSPACE_FILTERS = ["all", "suspended", "paid", "free", "collab", "test"] as const satisfies readonly WorkspaceFilter[];
@@ -81,7 +81,7 @@ const workspacesRoute = createRoute({
   loaderDeps: ({ search }) => ({ q: search.q, filter: search.filter }),
   loader: ({ context, deps }) => void context.queryClient.prefetchInfiniteQuery(q.workspaces(deps)),
   component: page(() => import("./pages/Workspaces")),
-  staticData: { title: "Workspaces" },
+  staticData: { title: "workspaces" },
 });
 
 const workspaceRoute = createRoute({
@@ -89,7 +89,7 @@ const workspaceRoute = createRoute({
   path: "/workspaces/$id",
   loader: ({ context, params }) => void context.queryClient.prefetchQuery(q.workspace(params.id)),
   component: page(() => import("./pages/WorkspaceDetail")),
-  staticData: { title: "Workspace" },
+  staticData: { title: "workspace" },
 });
 
 const testWorkspacesRoute = createRoute({
@@ -97,7 +97,7 @@ const testWorkspacesRoute = createRoute({
   path: "/test-workspaces",
   loader: ({ context }) => void context.queryClient.prefetchInfiniteQuery(q.testWorkspaces()),
   component: page(() => import("./pages/TestWorkspaces")),
-  staticData: { title: "Test workspaces" },
+  staticData: { title: "testWorkspaces" },
 });
 
 const USER_FILTERS = ["all", "suspended", "admins", "unverified"] as const satisfies readonly UserFilter[];
@@ -108,7 +108,7 @@ const usersRoute = createRoute({
   loaderDeps: ({ search }) => ({ q: search.q, filter: search.filter }),
   loader: ({ context, deps }) => void context.queryClient.prefetchInfiniteQuery(q.users(deps)),
   component: page(() => import("./pages/Users")),
-  staticData: { title: "Users" },
+  staticData: { title: "users" },
 });
 
 const userRoute = createRoute({
@@ -116,7 +116,7 @@ const userRoute = createRoute({
   path: "/users/$id",
   loader: ({ context, params }) => void context.queryClient.prefetchQuery(q.user(params.id)),
   component: page(() => import("./pages/UserDetail")),
-  staticData: { title: "User" },
+  staticData: { title: "user" },
 });
 
 const jobsRoute = createRoute({
@@ -129,7 +129,7 @@ const jobsRoute = createRoute({
     void context.queryClient.prefetchInfiniteQuery(q.jobs(deps));
   },
   component: page(() => import("./pages/Jobs")),
-  staticData: { title: "Jobs" },
+  staticData: { title: "jobs" },
 });
 
 const healthRoute = createRoute({
@@ -137,7 +137,7 @@ const healthRoute = createRoute({
   path: "/health",
   loader: ({ context }) => void context.queryClient.prefetchQuery(q.health()),
   component: page(() => import("./pages/Health")),
-  staticData: { title: "Health" },
+  staticData: { title: "health" },
 });
 
 const auditRoute = createRoute({
@@ -150,7 +150,7 @@ const auditRoute = createRoute({
     void context.queryClient.prefetchQuery(q.admins());
   },
   component: page(() => import("./pages/Audit")),
-  staticData: { title: "Audit log" },
+  staticData: { title: "audit" },
 });
 
 const adminsRoute = createRoute({
@@ -158,7 +158,7 @@ const adminsRoute = createRoute({
   path: "/admins",
   loader: ({ context }) => void context.queryClient.prefetchQuery(q.admins()),
   component: page(() => import("./pages/Admins")),
-  staticData: { title: "Admins" },
+  staticData: { title: "admins" },
 });
 
 export const routeTree = rootRoute.addChildren([
