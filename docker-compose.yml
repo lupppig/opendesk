@@ -269,7 +269,7 @@ services:
   s3:
     <<: *hardening
     profiles: [minio, s3]
-    image: ${S3_IMAGE:-rustfs/rustfs:1.0.3}
+    image: ${S3_IMAGE:-rustfs/rustfs:1.0.4}
     environment:
       RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY_ID:-opendesk}
       RUSTFS_SECRET_KEY: ${S3_SECRET_ACCESS_KEY:-}
