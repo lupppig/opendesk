@@ -1,4 +1,4 @@
-// Package phone connects cloud phone systems (Aircall, Voys) to the helpdesk
+// Package phone connects cloud phone systems (Aircall, Voys, Placetel) to the helpdesk
 // (contracts/phone.md). Every call is documented on the caller's ticket as one call entry
 // in its timeline, kept current as the call moves on, and its end runs the call_ended
 // automations. Provider adapters (internal/phone/provider) only translate protocols: the
@@ -21,6 +21,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/jobs"
 	"github.com/useopendesk/opendesk/internal/phone/provider"
 	"github.com/useopendesk/opendesk/internal/phone/provider/aircall"
+	"github.com/useopendesk/opendesk/internal/phone/provider/placetel"
 	"github.com/useopendesk/opendesk/internal/phone/provider/voys"
 )
 
@@ -52,7 +53,7 @@ func For(d *deps.Deps) *Service {
 	if got, ok := services.Load(d); ok {
 		return got.(*Service)
 	}
-	got, _ := services.LoadOrStore(d, New(d, aircall.Adapter{}, voys.Adapter{}))
+	got, _ := services.LoadOrStore(d, New(d, aircall.Adapter{}, voys.Adapter{}, placetel.Adapter{}))
 	return got.(*Service)
 }
 

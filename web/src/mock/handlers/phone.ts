@@ -1,7 +1,6 @@
 // Phone connections (contracts/phone.md). The demo Aircall account takes the API ID
-// "demo" with any token, the demo Voys account the token "demo"; anything else is refused
-// like a wrong key. A Voys connection waits for its first call, as its webhook is added
-// in Voys by hand.
+// "demo" with any token; manual-webhook providers take the token "demo". Anything
+// else is refused like a wrong key. Manual connections wait for their first call.
 
 import type { PhoneProvider } from "@/lib/api/types";
 import { phoneConnection } from "../phone";
@@ -20,6 +19,7 @@ const providers: PhoneProvider[] = [
     insight_cards: true,
   },
   { key: "voys", name: "Voys", fields: [{ name: "api_token", label: "API token", secret: true }], manual_webhook: true, insight_cards: false },
+  { key: "placetel", name: "Placetel", fields: [{ name: "api_token", label: "API token", secret: true }], manual_webhook: true, insight_cards: false },
 ];
 
 const lines = [
@@ -27,10 +27,11 @@ const lines = [
   { id: "502", name: "EN - Support", provider: "aircall" },
   { id: "503", name: "EN - Sales", provider: "aircall" },
   { id: "+31332022074", name: "Support desk", provider: "voys" },
+  { id: "022129191999", name: "DE - Support", provider: "placetel" },
 ];
 
-/** A Voys webhook URL: the connection's id, then its secret. */
-const voysHook = (id: string) => `https://api.opendesk.sh/v1/phone/hooks/voys/${id}/${uuid().replace(/-/g, "")}${uuid().replace(/-/g, "").slice(0, 11)}`;
+/** A manual webhook URL: the provider, connection id, then its secret. */
+const manualHook = (provider: string, id: string) => `https://api.opendesk.sh/v1/phone/hooks/${provider}/${id}/${uuid().replace(/-/g, "")}${uuid().replace(/-/g, "").slice(0, 11)}`;
 
 const waiting = {
   health_status: "action_required",
@@ -49,10 +50,10 @@ export function registerPhone() {
     if (!p) throw invalid("Unknown phone provider.");
     if (ctx.ws.phone.some((c) => c.provider === b.provider)) throw new HttpError(409, "conflict", "This workspace is already connected to that provider.");
     if (!p.fields.every((f) => b.credentials?.[f.name]?.trim())) throw invalid("Provide every required credential.");
-    const demo = p.key === "voys" ? b.credentials?.api_token : b.credentials?.api_id;
+    const demo = p.manual_webhook ? b.credentials?.api_token : b.credentials?.api_id;
     if (demo !== "demo") throw new HttpError(422, "phone_credentials_refused", "The provider refused these credentials.");
     const row = phoneConnection({ name: "Margin", created_at: nowIso(), last_event_at: null, health_checked_at: nowIso() });
-    if (p.manual_webhook) Object.assign(row, { provider: p.key, account_name: "Margin", insight_cards: false, webhook_url: voysHook(row.id), ...waiting });
+    if (p.manual_webhook) Object.assign(row, { provider: p.key, account_name: "Margin", insight_cards: false, webhook_url: manualHook(p.key, row.id), ...waiting });
     ctx.ws.phone.push(row);
     return respond(201, row);
   });
@@ -78,7 +79,7 @@ export function registerPhone() {
     const row = ctx.ws.phone.find((c) => c.id === ctx.params.id);
     if (!row) throw notFound("Phone connection");
     if (!providers.find((p) => p.key === row.provider)?.manual_webhook) throw invalid("opendesk registers this provider's webhook itself. Test the connection to repair it.");
-    Object.assign(row, { webhook_url: voysHook(row.id), ...waiting, health_checked_at: nowIso() });
+    Object.assign(row, { webhook_url: manualHook(row.provider, row.id), ...waiting, health_checked_at: nowIso() });
     return respond(200, row);
   });
   del("/v1/phone/connections/:id", (ctx) => {
