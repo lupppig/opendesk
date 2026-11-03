@@ -1105,11 +1105,11 @@ type MailboxCheck = { inbound: MailboxTestLeg; outbound: MailboxTestLeg; cause?:
 
 Inbound mail is ignored, without a ticket, when it is machine-generated (`Auto-Submitted`, bulk,
 mail from `mailer-daemon` or `postmaster`, a delivery report with the null envelope sender), comes
-from the receiving mailbox's own address, connected account or aliases, comes from a forwarding
-address, or is mail we sent coming back: every message we send carries `X-Loop: <an opaque token of
-the sending mailbox>`, and mail carrying one of the workspace's tokens (or addresses) there is
-dropped. Mail from **another** of the workspace's addresses (a teammate forwarding or writing to this
-one) opens a ticket here unless its `Message-ID` is in our own format; it threads only into a
+from a forwarding address, or is mail we sent coming back: every message we send carries
+`X-Loop: <an opaque token of the sending mailbox>`, and mail carrying one of the workspace's tokens
+(or addresses) there is dropped. Mail from a workspace address, including the receiving mailbox's
+own address, connected account and aliases, opens a ticket here unless its `Message-ID` is in our
+own format. It threads only into a
 conversation whose customer is that address, and gets no auto-reply and no Ollie answer. A new email
 ticket is routed (contracts/teams.md "Routing"); every inbound message records the mailbox it arrived
 at (`mailbox_id`).

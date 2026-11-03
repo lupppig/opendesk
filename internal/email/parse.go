@@ -142,10 +142,14 @@ func (pm *parsedMail) headerValues(key string) []string {
 // noiseReason returns why a message is machine-generated (and must not open a ticket
 // or trigger replies), or "". null is whether the envelope sender is the null sender.
 func noiseReason(pm *parsedMail, ownAddrs []string, mailboxEmail string, null bool) string {
+	// Mail From the mailbox's own address is ours only when it carries our Message-ID:
+	// another sender using that address (a booking system's notices, say) writes in.
 	from := pm.FromAddr
-	for _, a := range ownAddrs {
-		if from != "" && strings.EqualFold(from, a) {
-			return "from_own_mailbox"
+	if ourMsgIDRe.MatchString(pm.MessageID) {
+		for _, a := range ownAddrs {
+			if from != "" && strings.EqualFold(from, a) {
+				return "from_own_mailbox"
+			}
 		}
 	}
 	if systemSender(pm) || null && isDeliveryReport(pm) {
