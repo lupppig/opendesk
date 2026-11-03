@@ -15,6 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
 import { StatusIcon } from "../bits";
 import { useMergeTicket } from "../useTicketActions";
+import { requesterLabel } from "../requester";
 import { EmptyState } from "@/components/ui/empty";
 import { qk } from "@/lib/queries";
 
@@ -107,7 +108,7 @@ export function MergeDialog({ ticket, open, onOpenChange }: { ticket: Ticket; op
                 {t.subject}
               </span>
               <span className="shrink-0 truncate text-xs text-fg-3" data-ph-mask>
-                {t.contact?.name}
+                {requesterLabel(t.contact)}
               </span>
               <span className="mono w-8 shrink-0 text-right text-[11px] text-fg-4">{relShort(t.last_message_at)}</span>
             </button>
