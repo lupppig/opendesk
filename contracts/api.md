@@ -59,7 +59,11 @@ type WorkspaceSettings = { brand_color?: string; timezone?: string; help_center_
   send_and_finish_button?: boolean /* default false: the app's composer shows "Send and solve" (or "Send and close" when solved is labelled Closed; a custom finish label) as a segment before Send rather than only in its menu, in the same words as the ticket header's finish button; display only */;
   agent_online_time?: boolean /* default true: heartbeats count toward each member's online time and the agents report shows it ("Agents report"); false records none, deletes the online time recorded so far (agent_presence), and the report answers online_time "off" */;
   severity_enabled?: boolean /* default true: tickets have a severity beside their priority. false is for teams that rank tickets by priority alone: the app leaves severity out (ticket properties, list rows, filters and sort, views, bulk actions, automation conditions and actions, triage fields, the reports' severity card), and AI never sets or proposes one (triage, procedure runs, Ollie's tools, the MCP server's tools; contracts/ai.md). Tickets keep the severity they have; the API still reads, writes and filters it, and automations that use it keep running */;
+  snooze_presets?: SnoozePreset[] /* at most 8: the times the app's snooze menu offers, in this order, beside a date and time picked by hand; absent or [] (a PATCH with [] restores them): in 1 hour, in 4 hours, tomorrow at 09:00, next week at 09:00. The app works each out on the agent's own clock when the menu opens; the API stores only the list */;
   status_labels?: Partial<Record<TicketStatus, DisplayOverride>>; priority_labels?: Partial<Record<Priority, DisplayOverride>> /* display only; the API values never change */ };
+type SnoozePreset = { kind: "hours"; hours: number /* 1..168: the top of the hour at least this many hours away */ }
+  | { kind: "days"; days: number /* 1..365 */; time: string /* "HH:mm", 24-hour: that many days from today at this time */ }
+  | { kind: "week"; time: string /* "HH:mm": next Monday (a week on, on a Monday) at this time */ };
 type DisplayOverride = { label?: string /* 1..40, no < > */; color?: LabelColor; hidden?: boolean /* status_labels only: left out of the menus agents pick a status from (a ticket in it keeps it; the API, automations and snooze still set it); never open or solved; finishing always sets solved, including when its display label is Closed */ };
 type Membership = { workspace: Workspace; role: Role; suspended: boolean /* an instance admin suspended it: its routes answer 403 workspace_suspended (contracts/admin.md) */ };
 type Role = "owner" | "admin" | "agent" | "viewer";
@@ -364,7 +368,7 @@ A suspended workspace is listed with its name and nothing else.
 | POST | `/v1/invitations/accept` | `{token}` → `Membership` (no workspace header) |
 | POST | `/v1/invitations/lookup` | `{token}` → `{workspace_name, email, role}` public (the token never rides in a URL) |
 | CRUD | `/v1/teams`, `/v1/teams/{id}` | `{name, member_ids}`; the full team API, brands, widgets and routing rules are in contracts/teams.md |
-| CRUD | `/v1/api-keys`, `/v1/api-keys/{id}` | admin users only (not API keys). create `{name, scopes, expires_at?, private_team_ids?}` → `ApiKey & {secret}`, needing the second factor (when on) and a sign-in within 12 hours (`403 mfa_required` / `reauth_required`) (`secret` shown once; `prefix` is `od_live_` + 8 chars); PATCH `{name?, private_team_ids?}` (the list is replaced; contracts/teams.md "Visibility": `422` for an id that is not a private team of the workspace, `403 forbidden` for adding a team the caller is not on; removing is open to admins; a change closes the key's sockets). `private_teams` lists the same teams with `granted_by`: a team lasts while its granter is on it, and setting the list makes the caller the granter of the listed teams they are on; DELETE revokes |
+| CRUD | `/v1/api-keys`, `/v1/api-keys/{id}` | admin users only (not API keys). create `{name, scopes, expires_at?, private_team_ids?}` → `ApiKey & {secret}`, needing the second factor (when on) and a sign-in within 12 hours (`403 mfa_required` / `reauth_required`) (`secret` shown once; `prefix` is `od_live_` + 8 chars); PATCH `{name?, private_team_ids?, scopes?}` (`scopes` replaces the key's scopes, validated as on create; adding a scope needs the second factor (when on) and a sign-in within 12 hours like create (`403 mfa_required` / `reauth_required`), removing does not; adding `collab:draft` is the key's creator's only (`403 forbidden`); a change is audit `api_key.scopes_changed` `{name, from, to, added, removed}` and closes the key's sockets. `private_team_ids`: the list is replaced; contracts/teams.md "Visibility": `422` for an id that is not a private team of the workspace, `403 forbidden` for adding a team the caller is not on; removing is open to admins; a change closes the key's sockets). `private_teams` lists the same teams with `granted_by`: a team lasts while its granter is on it, and setting the list makes the caller the granter of the listed teams they are on; DELETE revokes |
 | GET | `/v1/ai-clients/server` | members → `{url, resource_metadata, authorization_server, scopes, tools[]}`: the MCP server for AI client setup (`contracts/agent.md` "opendesk MCP server") |
 | GET · DELETE | `/v1/ai-clients/connections` · `/v1/ai-clients/connections/{id}` | members (users only) → `{data: AIClientConnection[]}`: AI clients connected with OAuth, your own (admins: everyone's); DELETE disconnects one (your own; admins any) → 204, audit `oauth.grant_revoked` |
 | GET · POST | `/v1/oauth/requests/{id}` · `/v1/oauth/requests/{id}/approve` · `/v1/oauth/requests/{id}/deny` | signed-in users (no workspace header, no API keys): the MCP OAuth consent page. GET → `OAuthRequest`; approve `{workspace_id}` → `{redirect_to}` (audit `oauth.grant_created`); deny → `{redirect_to}`. `410 request_expired` once decided or after 10 minutes |
@@ -1102,11 +1106,11 @@ type MailboxCheck = { inbound: MailboxTestLeg; outbound: MailboxTestLeg; cause?:
 
 Inbound mail is ignored, without a ticket, when it is machine-generated (`Auto-Submitted`, bulk,
 mail from `mailer-daemon` or `postmaster`, a delivery report with the null envelope sender), comes
-from the receiving mailbox's own address, connected account or aliases, comes from a forwarding
-address, or is mail we sent coming back: every message we send carries `X-Loop: <an opaque token of
-the sending mailbox>`, and mail carrying one of the workspace's tokens (or addresses) there is
-dropped. Mail from **another** of the workspace's addresses (a teammate forwarding or writing to this
-one) opens a ticket here unless its `Message-ID` is in our own format; it threads only into a
+from a forwarding address, or is mail we sent coming back: every message we send carries
+`X-Loop: <an opaque token of the sending mailbox>`, and mail carrying one of the workspace's tokens
+(or addresses) there is dropped. Mail from a workspace address, including the receiving mailbox's
+own address, connected account and aliases, opens a ticket here unless its `Message-ID` is in our
+own format. It threads only into a
 conversation whose customer is that address, and gets no auto-reply and no Ollie answer. A new email
 ticket is routed (contracts/teams.md "Routing"); every inbound message records the mailbox it arrived
 at (`mailbox_id`).

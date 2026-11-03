@@ -91,7 +91,103 @@ func collabTools() []*tool {
 			}, "conversation"),
 			Run: releaseCollabConversation,
 		},
+		{
+			Name: "list_collab_draft_outcomes", Title: "See what became of your mail drafts", Scopes: scopes, ReadOnly: true, Idempotent: true,
+			Description: "Read what people did with the drafts you saved, oldest news first: sent_unchanged, sent_edited (read the sent " +
+				"message with get_collab_conversation to compare), discarded, replaced (a person wrote their own reply) or abandoned (the " +
+				"conversation was done without it), with your own last text, your client_ref and any feedback a person gave (reason, note, " +
+				"a better answer). Pass the last cursor you read to get only what is new; a draft comes back when someone adds feedback. " +
+				"Use it to improve your instructions; nothing here changes the mail.",
+			Schema: obj(map[string]any{
+				"cursor": str("cursor of the last item you read; left out, from the start."),
+				"limit":  integer("How many to return.", 1, maxListConversations, 20),
+			}),
+			Run: listCollabDraftOutcomes,
+		},
 	}
+}
+
+func listCollabDraftOutcomes(ctx context.Context, c *caller, raw json.RawMessage) (any, error) {
+	a, err := decode[struct {
+		Cursor string `json:"cursor"`
+		Limit  int    `json:"limit"`
+	}](raw)
+	if err != nil {
+		return nil, err
+	}
+	limit := a.Limit
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > maxListConversations {
+		return nil, invalid("limit must be at most 50")
+	}
+	q := url.Values{"limit": {strconv.Itoa(limit)}}
+	if s := strings.TrimSpace(a.Cursor); s != "" {
+		if _, err := strconv.ParseUint(s, 10, 63); err != nil {
+			return nil, invalid("cursor is not one this tool gave")
+		}
+		q.Set("cursor", s)
+	}
+	var pg struct {
+		Data []struct {
+			ConversationID string     `json:"conversation_id"`
+			DraftID        string     `json:"draft_id"`
+			ClientRef      string     `json:"client_ref"`
+			AIBodyHTML     string     `json:"ai_body_html"`
+			Outcome        *string    `json:"outcome"`
+			OutcomeAt      *time.Time `json:"outcome_at"`
+			TakenOverAt    *time.Time `json:"taken_over_at"`
+			SentMessageID  *string    `json:"sent_message_id"`
+			Feedback       *struct {
+				Reason           string `json:"reason"`
+				Note             string `json:"note"`
+				BetterAnswerHTML string `json:"better_answer_html"`
+			} `json:"feedback"`
+			Cursor string `json:"cursor"`
+		} `json:"data"`
+		NextCursor *string `json:"next_cursor"`
+	}
+	if err := c.get(ctx, "/v1/collab/ai-drafts/outcomes", q, &pg); err != nil {
+		return nil, err
+	}
+	type feedbackOut struct {
+		Reason       string `json:"reason"`
+		Note         string `json:"note,omitempty"`
+		BetterAnswer string `json:"better_answer,omitempty"`
+	}
+	type outcomeOut struct {
+		Conversation  string       `json:"conversation"`
+		DraftID       string       `json:"draft_id"`
+		Outcome       string       `json:"outcome,omitempty"`
+		At            *time.Time   `json:"at,omitempty"`
+		EditedByHuman bool         `json:"taken_over_by_a_person,omitempty"`
+		ClientRef     string       `json:"client_ref,omitempty"`
+		YourText      string       `json:"your_text"`
+		SentMessageID string       `json:"sent_message_id,omitempty"`
+		Feedback      *feedbackOut `json:"feedback,omitempty"`
+		Cursor        string       `json:"cursor"`
+	}
+	out := struct {
+		Outcomes   []outcomeOut `json:"outcomes"`
+		NextCursor *string      `json:"next_cursor,omitempty"`
+	}{Outcomes: []outcomeOut{}, NextCursor: pg.NextCursor}
+	for _, d := range pg.Data {
+		o := outcomeOut{Conversation: d.ConversationID, DraftID: d.DraftID, At: d.OutcomeAt, EditedByHuman: d.TakenOverAt != nil,
+			ClientRef: d.ClientRef, YourText: clip(email.HTMLToText(d.AIBodyHTML), messageChars), Cursor: d.Cursor}
+		if d.Outcome != nil {
+			o.Outcome = *d.Outcome
+		}
+		if d.SentMessageID != nil {
+			o.SentMessageID = *d.SentMessageID
+		}
+		if d.Feedback != nil {
+			o.Feedback = &feedbackOut{Reason: d.Feedback.Reason, Note: d.Feedback.Note,
+				BetterAnswer: clip(email.HTMLToText(d.Feedback.BetterAnswerHTML), messageChars)}
+		}
+		out.Outcomes = append(out.Outcomes, o)
+	}
+	return out, nil
 }
 
 // --- API shapes ----------------------------------------------------------------------

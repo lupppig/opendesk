@@ -175,14 +175,14 @@ func (s *Service) readHTTP(ctx context.Context, x *row, sub subject, d *Data) (t
 		d.State = "empty"
 		return ttl, nil
 	case res.StatusCode >= 300:
-		return ttl, fmt.Errorf("The panel's URL answered %d.", res.StatusCode)
+		return ttl, &answerError{fmt.Sprintf("The panel's URL answered %d.", res.StatusCode), "status"}
 	}
 	if len(raw) > maxHTTPAnswer {
-		return ttl, errors.New("The panel's answer is larger than 64 KB.")
+		return ttl, &answerError{"The panel's answer is larger than 64 KB.", "answer"}
 	}
 	var answer answer
 	if err := json.Unmarshal(raw, &answer); err != nil {
-		return ttl, errors.New("The panel's answer is not the expected JSON.")
+		return ttl, &answerError{"The panel's answer is not the expected JSON.", "answer"}
 	}
 	ttl = cacheFor(answer.CacheSeconds)
 	d.State = "ok"

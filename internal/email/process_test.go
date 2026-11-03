@@ -312,7 +312,7 @@ func TestNoiseIgnored(t *testing.T) {
 		t.Fatalf("auto reply: %s %s", st, reason)
 	}
 	// From our own mailbox: a loop.
-	raw := "From: " + m.Email + "\r\nTo: x@y.test\r\nSubject: hi\r\nMessage-ID: <own" + crypto.RandomString(5) + "@a.test>\r\n\r\nbody\r\n"
+	raw := ourMail(m.Email, "x@y.test")
 	if st, reason := w.inbound(w.receive(m, raw)); st != "ignored" || reason != "from_own_mailbox" {
 		t.Fatalf("own: %s %s", st, reason)
 	}

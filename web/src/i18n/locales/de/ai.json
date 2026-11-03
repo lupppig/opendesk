@@ -102,6 +102,8 @@
     "instructions": "Anweisungen",
     "instructions_hint": "Zusätzliche Vorgaben für jeden Entwurf: Produktnamen, Richtlinien, was zu vermeiden ist.",
     "instructions_placeholder": "Nenne das Produkt Margin, nie Margin App. Biete eine Rückerstattung nur für Abbuchungen der letzten 30 Tage an.",
+    "draft_tools": "Fakten für Entwürfe mit deinen verbundenen Tools nachschlagen",
+    "draft_tools_hint": "Bevor {{name}} eine Antwort entwirft, schlägt es mit den verbundenen Tools, die ohne Freigabe laufen, nach, was die Antwort braucht, etwa eine Bestellung, eine Lieferung oder eine Erstattung, ohne dort je etwas zu ändern. Fügt eine kurze Abfrage mit dem schnellen Modell hinzu, wenn ein Entwurf eine braucht.",
     "model": "Modell",
     "provider": "Anbieter",
     "search": "Suche",

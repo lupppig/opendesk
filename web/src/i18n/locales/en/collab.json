@@ -200,7 +200,8 @@
     "syncing": "Syncing {{name}}",
     "sent": "Sent from {{email}}",
     "shared": "Sharing updated",
-    "assigned": "Assignees updated"
+    "assigned": "Assignees updated",
+    "aiFeedbackSaved": "Feedback saved"
   },
   "thread": {
     "label": "Conversation",
@@ -845,5 +846,29 @@
       "action": "Set up categories",
       "dismiss": "Not now"
     }
+  },
+  "aiFeedback": {
+    "from": "From AI draft by {{name}}",
+    "asWritten": "sent as written",
+    "edited": "edited before sending",
+    "give": "Give feedback",
+    "edit": "Edit feedback",
+    "title": "Feedback on this AI draft",
+    "description": "{{name}} reads this to improve its drafts. It never changes the mail.",
+    "reason": "What was wrong?",
+    "reasonPlaceholder": "Choose a reason",
+    "reasons": {
+      "wrong_facts": "Wrong facts",
+      "wrong_tone": "Wrong tone",
+      "missing_info": "Missing information",
+      "should_not_answer": "Should not have answered",
+      "other": "Other"
+    },
+    "note": "Note (optional)",
+    "notePlaceholder": "What should it do differently?",
+    "better": "Better answer (optional)",
+    "betterPlaceholder": "How you would have answered",
+    "privacy": "Only the AI client that wrote this draft reads your note and answer.",
+    "save": "Save feedback"
   }
 }

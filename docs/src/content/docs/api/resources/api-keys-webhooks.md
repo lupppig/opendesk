@@ -39,6 +39,21 @@ curl https://api.opendesk.sh/v1/api-keys \
 
 The response is the key plus `secret`, shown only this once. See [scopes](/api/authentication/#scopes).
 
+### Change a key's scopes
+
+Send the new list with `PATCH /v1/api-keys/{id}`: it replaces the key's scopes, and the key's next request already has them. The secret stays the same, so nothing changes where the key is used.
+
+```sh
+curl -X PATCH https://api.opendesk.sh/v1/api-keys/$KEY_ID   -H "Authorization: Bearer $ACCESS_TOKEN"   -H "OD-Workspace: $WORKSPACE_ID"   -H "Content-Type: application/json"   -d '{ "scopes": ["tickets:read", "tickets:write"] }'
+```
+
+- **Removing a scope** applies at once.
+- **Adding a scope** gives a live credential more access, so it asks for what creating a key asks for: a sign-in within the last 12 hours, and the second factor when it is on (`403 reauth_required` / `mfa_required`).
+- `collab:draft` drafts replies as the member who created the key: only that member can add it.
+- Each change is in the audit log as `api_key.scopes_changed`, with the scopes before and after, and what was added and removed.
+
+In the app: **Settings → API keys**, the key's menu, **Edit permissions**.
+
 ## Webhooks
 
 ```ts

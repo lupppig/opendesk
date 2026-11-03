@@ -395,8 +395,10 @@
   "snooze": {
     "title": "Snooze",
     "until": "Snooze until",
-    "hour": "In 1 hour",
-    "hours": "In 4 hours",
+    "inHours_one": "In {{count}} hour",
+    "inHours_other": "In {{count}} hours",
+    "inDays_one": "In {{count}} day",
+    "inDays_other": "In {{count}} days",
     "tomorrow": "Tomorrow",
     "week": "Next week",
     "set": "Set",
@@ -942,6 +944,14 @@
     "empty": "Nothing about this contact.",
     "emptyShopify": "No customer with this email in the store.",
     "error": "Couldn’t load: {{message}}",
+    "errors": {
+      "timeout": "No answer in time.",
+      "rate_limited": "Too many lookups. Try again in a minute.",
+      "ticket": "Couldn’t read the ticket.",
+      "refused": "The credentials were refused. An admin can check them in Settings.",
+      "status": "The other product answered with an error.",
+      "answer": "The answer couldn’t be read."
+    },
     "retry": "Try again",
     "orders_one": "{{count}} order",
     "orders_other": "{{count}} orders",

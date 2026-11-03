@@ -222,7 +222,7 @@ export function PanelBody({
     case "error":
       return (
         <p className="text-[12px] text-fg-4">
-          {t("panels.error", { message: data.message ?? "" })}{" "}
+          {t("panels.error", { message: data.code ? t(`panels.errors.${data.code}`, { defaultValue: data.message ?? "" }) : (data.message ?? "") })}{" "}
           {onRetry && (
             <button type="button" onClick={onRetry} className="text-fg-3 underline-offset-2 outline-none hover:text-fg hover:underline focus-visible:underline">
               {t("panels.retry")}

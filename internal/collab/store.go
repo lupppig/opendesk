@@ -361,6 +361,7 @@ type aiDrafter struct {
 	APIKeyID uuid.UUID
 	Client   string          // the key's name, for "AI draft by <name>"
 	P        *auth.Principal // for the audit entry
+	Ref      string          // client_ref: the client's own label, kept with the outcome
 }
 
 // insert parses, sanitizes and stores a new message and returns its id. A message that

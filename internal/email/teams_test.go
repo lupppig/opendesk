@@ -30,6 +30,11 @@ func (w *world) rule(name string, team uuid.UUID, position int, conds string) uu
 	return id
 }
 
+// ourMail is mail we sent: it carries our Message-ID.
+func ourMail(from, to string) string {
+	return "From: " + from + "\r\nTo: " + to + "\r\nSubject: x\r\nMessage-ID: <m_" + ids.New().String() + ".t4@acme.test>\r\n\r\nx\r\n"
+}
+
 func rawMail(from, to, subject, extra string) string {
 	return "From: " + from + "\r\nTo: " + to + "\r\nSubject: " + subject + "\r\nMessage-ID: <t" + crypto.RandomString(10) + "@c.test>\r\n" +
 		extra + "\r\nHello there\r\n"
@@ -188,11 +193,24 @@ func TestMailBetweenWorkspaceMailboxes(t *testing.T) {
 		t.Fatalf("auto-reply to a teammate: %d", n)
 	}
 
+	// A system that sends as the mailbox itself (a booking tool's notices, with its own
+	// Message-ID) writes in: a ticket opens, and nothing automatic answers it.
+	id = w.receive(b, rawMail("Acme <"+b.Email+">", b.Email, "New customer registered", "Reply-To: support@vendor.test\r\n"))
+	if st, reason := w.inbound(id); st != "processed" {
+		t.Fatalf("system mail as the mailbox: %s %s", st, reason)
+	}
+	if tk := w.ticket(w.messageFor(id).TicketID); tk.MailboxID == nil || *tk.MailboxID != b.ID {
+		t.Fatalf("system mail ticket mailbox %v", tk.MailboxID)
+	}
+	if n := w.jobCount("email.send_ticket_email", "", ""); n != 0 {
+		t.Fatalf("auto-reply to the mailbox's own address: %d", n)
+	}
+
 	cases := []struct {
 		name, raw, reason string
 	}{
-		{"own address", rawMail(b.Email, b.Email, "x", ""), "from_own_mailbox"},
-		{"own alias", rawMail("billing-alias@acme.test", b.Email, "x", ""), "from_own_mailbox"},
+		{"own address", ourMail(b.Email, b.Email), "from_own_mailbox"},
+		{"own alias", ourMail("billing-alias@acme.test", b.Email), "from_own_mailbox"},
 		{"forwarding address", rawMail(a.ForwardingToken+"+t1@in.test", b.Email, "x", ""), "from_own_mailbox"},
 		// Mail we sent from another address, still carrying our Message-ID.
 		{"our message id", "From: " + a.Email + "\r\nTo: " + b.Email + "\r\nSubject: x\r\nMessage-ID: <m_" + ids.New().String() + ".t4@acme.test>\r\n\r\nx\r\n", "from_own_mailbox"},

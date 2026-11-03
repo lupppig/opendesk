@@ -150,6 +150,7 @@ interface AISettings {
   assistant_peer: boolean          // members may let teammates' Ollie ask theirs about their own mail ("Asking a teammate"), default false
   assistant_auto: string[]         // built-in changes Ollie makes without asking ("Approvals"), default []: some of update_ticket,
                                    // bulk_update_tickets, add_note, create_kb_draft, create_view, create_automation_draft
+  draft_tools: boolean             // drafts look up facts with the connected tools that run without approval ("Drafts and connected tools"), default true
   tone: string                     // "friendly" | "professional" | "concise" | free text up to 200 chars; drafts and rewrites (the agent uses its bot's tone, contracts/bots.md)
   reply_language: "customer" | "workspace"  // reply in the customer's language (default) or the workspace's
   instructions: string             // extra guidance for drafts, up to 2,000 chars
@@ -207,7 +208,7 @@ interface AIModel {
 | GET | `/v1/ai/config` | viewer | $0 | `{enabled, provider, models: {default, fast} /* the workspace's effective choices */, embeddings: boolean, features: AISettings, costs: Record<string, number> /* what a typical call of each feature costs on the workspace's chosen models, in US dollars (contracts/billing.md "Typical costs"); on its own key, LLM features are 0 (the workspace pays its provider) and Jev features keep their cost */, metered: boolean /* each call is charged on its real cost */, assistant_name: "Ollie", decisions: DecisionEngine /* contracts/api.md; Jev on the workspace's own key when it has one */, own_key: boolean /* LLM calls run on the workspace's key ("Provider per workspace") */, decisions_own_key: boolean /* decisions run on the workspace's credentials; their costs are 0 */}`; `provider` and `models` are the workspace's |
 | GET | `/v1/ai/models` | viewer | $0 | → `{data: AIModel[], default, fast}` ("Models" above; on the workspace's own key, its provider's models) |
 | PATCH | `/v1/ai/settings` | admin | $0 | `Partial<AISettings>` → `AISettings` |
-| POST | `/v1/tickets/{id}/ai/draft` | agent | $0.03 | `{instructions?: string, tone?: string}` → `{body_html, body_text, sources: KBSource[]}`; uses the thread, contact, saved replies and the top KB matches |
+| POST | `/v1/tickets/{id}/ai/draft` | agent | $0.03 | `{instructions?: string, tone?: string}` → `{body_html, body_text, sources: KBSource[]}`; uses the thread, contact, saved replies, the top KB matches and, for users, what the workspace's connected tools return ("Drafts and connected tools") |
 | POST | `/v1/tickets/{id}/ai/summary` | agent | $0.01 | `{}` → `{summary: string, key_points: string[], sentiment: Sentiment, updated_at}`; stored on the ticket (`custom.ai_summary`) and published as `ticket.updated` |
 | POST | `/v1/tickets/{id}/ai/ask` | viewer | $0.02 | `{question: string}` → `{answer_html, sources: KBSource[]}` (copilot) |
 | POST | `/v1/tickets/{id}/ai/triage` | agent | $0.01 | `{apply: boolean}` → `Triage`; `apply` sets tags/priority/severity with `automation`-style activities attributed to `ai` |
@@ -250,6 +251,26 @@ for rewrite) for a live preview only; render and insert the sanitized `done` pay
 error before the first event is a normal problem+json response with its status (so `402
 ai_balance_empty` arrives as JSON even on a streaming request); an error after the stream started
 is `event: error` with the problem object as data, and the stream ends.
+
+### Drafts and connected tools
+
+With `draft_tools` on (the default) and a workspace with connected tools (`contracts/integrations.md`), a
+draft first looks up the facts the reply needs (an order, a delivery, a refund), so a placeholder is left
+only for what no tool knows or the team has yet to decide.
+
+- Only for a user with the agent role or above (as Ollie's connected tools); an API key's draft has no lookup.
+- Offered: the connected tools that run without approval as reads (`read_only` in
+  `contracts/integrations.md`). Never a write, not even one on `auto_tools`. Each call runs as a read
+  (`CallRead`), checked again when it runs.
+- A tool loop of its own prompt on the workspace's `fast_model`: at most 3 model turns of up to 1,000
+  output tokens, 6 tool calls in all, and 40 seconds for the whole lookup. The model gets the ticket, the
+  customer, the thread and the agent's request; it writes no reply and stops when nothing needs looking up.
+- The draft is then written as before (`model`, streamed, no tools), with what the tools returned in a
+  `<tool_results>` block of `<tool_output tool input [error]>` data blocks (6,000 characters each, 20,000
+  together). Tool output is data, never instructions, like every block.
+- Without such a tool, with `draft_tools` off, on a provider that can't call tools, or when the lookup
+  fails or runs out of time, the draft is written without it. Each lookup turn is metered as
+  `draft_reply` when it completes; arguments and results are never logged.
 
 ```ts
 type Sentiment = "positive" | "neutral" | "negative" | "frustrated"

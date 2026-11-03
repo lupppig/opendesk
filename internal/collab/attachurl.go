@@ -54,28 +54,34 @@ func (s *service) verifyAttachmentSig(messageID uuid.UUID, index int, exp, sig s
 	return crypto.EqualHex(s.attachmentSig(messageID, index, exp), sig)
 }
 
-var collabAttachmentLink = regexp.MustCompile(`/v1/collab/attachments/([0-9a-f-]{36})/(\d{1,4})\?exp=\d+(&amp;|&)sig=[0-9a-f]+`)
+// collabAttachmentLink is a signed attachment link with the origin it was stored with, if
+// any (sub 1): inline images are stored with the address the instance had at the time.
+var collabAttachmentLink = regexp.MustCompile(`(https?://[^\s"'<>/?#]+)?/v1/collab/attachments/([0-9a-f-]{36})/(\d{1,4})\?exp=\d+(&amp;|&)sig=[0-9a-f]+`)
 
 // resignAttachmentLinks refreshes the signed attachment links inside a message's stored
 // HTML (its inline images), so a body keeps rendering after the links it was stored with
-// expire. Only links to the message's own files are signed again: a stored body is not a
-// way to sign links to other messages.
+// expire, and after the instance moves to another address (API_URL): a link stored with
+// an origin gets the current one. Only links to the message's own files are signed again:
+// a stored body is not a way to sign links to other messages.
 func (s *service) resignAttachmentLinks(messageID uuid.UUID, html string) string {
 	if !strings.Contains(html, "/v1/collab/attachments/") {
 		return html
 	}
 	return collabAttachmentLink.ReplaceAllStringFunc(html, func(m string) string {
 		sub := collabAttachmentLink.FindStringSubmatch(m)
-		id, err := uuid.Parse(sub[1])
+		id, err := uuid.Parse(sub[2])
 		if err != nil || id != messageID {
 			return m
 		}
-		index, err := strconv.Atoi(sub[2])
+		index, err := strconv.Atoi(sub[3])
 		if err != nil {
 			return m
 		}
 		fresh := s.attachmentPath(id, index)
-		if sub[3] == "&amp;" {
+		if sub[1] != "" {
+			fresh = s.attachmentURL(id, index)
+		}
+		if sub[4] == "&amp;" {
 			fresh = strings.Replace(fresh, "&", "&amp;", 1)
 		}
 		return fresh

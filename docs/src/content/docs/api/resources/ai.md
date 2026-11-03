@@ -81,6 +81,8 @@ curl https://api.opendesk.sh/v1/tickets/1042/ai/draft \
 { "body_html": "<p>Hi Ana, ...</p>", "body_text": "Hi Ana, ...", "sources": [{ "article_id": "...", "title": "Refund policy", "url": "https://..." }] }
 ```
 
+For a team member, the draft first looks up what the reply needs with the workspace's connected tools that run without approval, unless `draft_tools` is off in the AI settings. It only reads there.
+
 ## Summary, ask and triage
 
 - `summary` returns `{ summary, key_points, sentiment, updated_at }` and stores it on the ticket, published as `ticket.updated`.

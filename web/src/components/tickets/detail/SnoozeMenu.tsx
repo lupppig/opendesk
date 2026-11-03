@@ -1,4 +1,5 @@
-import { addDays, addHours, nextMonday, setHours, setMinutes, startOfHour, format } from "date-fns";
+import { useQuery } from "@tanstack/react-query";
+import { setHours, setMinutes, format } from "date-fns";
 import { AlarmClock } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -7,19 +8,8 @@ import { Button } from "@/components/ui/button";
 import { DateField, TimeField, parseDay, parseTime } from "@/components/ui/date-picker";
 import { Tooltip } from "@/components/ui/tooltip";
 import { weekdayClock } from "@/lib/format";
-
-function at9(d: Date) {
-  return setMinutes(setHours(d, 9), 0);
-}
-
-export function snoozeOptions(now = new Date()) {
-  return [
-    { key: "hour", label: "In 1 hour", at: startOfHour(addHours(now, 2)) },
-    { key: "hours", label: "In 4 hours", at: startOfHour(addHours(now, 5)) },
-    { key: "tomorrow", label: "Tomorrow", at: at9(addDays(now, 1)) },
-    { key: "week", label: "Next week", at: at9(nextMonday(now)) },
-  ] as const;
-}
+import { q } from "@/lib/queries";
+import { snoozeAt, snoozeLabel, snoozePresets } from "./snooze";
 
 export function SnoozeMenu({ onSnooze, disabled, open: openProp, onOpenChange }: { onSnooze: (at: Date) => void; disabled?: boolean; open?: boolean; onOpenChange?: (o: boolean) => void }) {
   const { t } = useTranslation("inbox");
@@ -37,7 +27,9 @@ export function SnoozeMenu({ onSnooze, disabled, open: openProp, onOpenChange }:
     return d && t ? setMinutes(setHours(d, t[0]), t[1]) : null;
   })();
   const valid = !!custom && custom.getTime() > Date.now();
-  const opts = snoozeOptions();
+  const { data: workspace } = useQuery(q.workspace());
+  const now = new Date();
+  const opts = snoozePresets(workspace?.settings).map((p) => ({ label: snoozeLabel(p, t), at: snoozeAt(p, now) }));
   return (
     <Popover
       open={open}
@@ -51,9 +43,9 @@ export function SnoozeMenu({ onSnooze, disabled, open: openProp, onOpenChange }:
       }
     >
       <div className="label-caps px-2 pb-1 pt-1.5">{t("snooze.until")}</div>
-      {opts.map((o) => (
+      {opts.map((o, i) => (
         <button
-          key={o.label}
+          key={i}
           type="button"
           onClick={() => {
             onSnooze(o.at);
@@ -61,7 +53,7 @@ export function SnoozeMenu({ onSnooze, disabled, open: openProp, onOpenChange }:
           }}
           className="flex h-8 w-full items-center justify-between rounded-md px-2 text-[12.5px] outline-none transition-colors hover:bg-hover focus-visible:bg-hover"
         >
-          {t(`snooze.${o.key}`)}
+          {o.label}
           <span className="mono text-[11px] text-fg-4">{weekdayClock(o.at)}</span>
         </button>
       ))}
