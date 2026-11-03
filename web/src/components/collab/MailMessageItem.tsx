@@ -11,6 +11,7 @@ import { formatAddress, normEmail } from "@/lib/collab/recipients";
 import { bytes, clock, fullDate, relShort } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { isDesignedEmail, sanitizeEmailHtml, sanitizeProse } from "@/lib/sanitize";
+import { useAlwaysShowImages } from "@/lib/alwaysShowImages";
 import { escapeHtml } from "@/lib/collab/html";
 import { isForward, splitQuotedHtml, splitQuotedText } from "@/lib/collab/quote";
 import { Avatar } from "@/components/ui/avatar";
@@ -141,7 +142,9 @@ export const MailMessageItem = memo(function MailMessageItem({
   onToggle: () => void;
 }) {
   const { t } = useTranslation("collab");
-  const [remote, setRemote] = useState(false);
+  const [loaded, setRemote] = useState(false);
+  // Loaded for this mail, or for every email (Settings → Profile → Appearance).
+  const remote = useAlwaysShowImages() || loaded;
   const [showQuoted, setShowQuoted] = useState(false);
   // Where the mail came from decides, not the From it claims: a sender writes their own From.
   const external = !m.outgoing;

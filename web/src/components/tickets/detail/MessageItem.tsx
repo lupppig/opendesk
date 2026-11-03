@@ -9,6 +9,7 @@ import { q, qk } from "@/lib/queries";
 import { atLeast, useRole, useSession } from "@/lib/session";
 import { isBlankHtml } from "@/lib/collab/html";
 import { isDesignedEmail, type Sanitized, sanitizeEmailHtml, sanitizeProse } from "@/lib/sanitize";
+import { useAlwaysShowImages } from "@/lib/alwaysShowImages";
 import { bytes, clock, fullDate } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { Avatar } from "@/components/ui/avatar";
@@ -571,7 +572,9 @@ export const MessageItem = memo(function MessageItem({
     );
   const address = useMessageAddress(m, receivedAt);
   const inbound = m.direction === "inbound" && !note;
-  const [remote, setRemote] = useState(false);
+  const [loaded, setRemote] = useState(false);
+  // Loaded for this message, or for every email (Settings → Profile → Appearance).
+  const remote = useAlwaysShowImages() || loaded;
   const translated = !!(tr.showing && tr.html);
   const body = useBody(translated ? tr.html! : m.body_html || `<p>${m.body_text}</p>`, inbound, inbound && !translated, remote);
   const replyTo = inbound && m.reply_to && m.reply_to.toLowerCase() !== m.from_email.toLowerCase() ? m.reply_to : null;

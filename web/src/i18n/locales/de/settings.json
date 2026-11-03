@@ -270,6 +270,10 @@
       "label": "Nach „{{action}}“ das nächste Ticket öffnen",
       "hint": "Auch nach dem Senden mit einem Status, der das Ticket aus der Liste nimmt. Das nächste Ticket der Liste oder Ansicht, aus der du kommst, öffnet sich, mit ihren Filtern und ihrer Sortierung; nach dem letzten bist du zurück in der Liste. Machst du das Senden rückgängig, kommst du zum Ticket zurück."
     },
+    "alwaysShowImages": {
+      "label": "Bilder immer anzeigen",
+      "hint": "Externe Bilder in empfangenen E-Mails werden mit ihnen geladen, ohne „Bilder laden“. Sie kommen von den Servern des Absenders, der so erfahren kann, wann eine E-Mail geöffnet wurde."
+    },
     "sounds": {
       "title": "Töne",
       "hint": "Gilt für diesen Browser. Live-Chat hat einen helleren Klang; alles andere ist leise.",
