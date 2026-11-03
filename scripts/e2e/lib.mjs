@@ -14,6 +14,9 @@ export const cfg = {
   inboundSecret: process.env.E2E_INBOUND_SECRET || "dev",
   headless: process.env.E2E_HEADED !== "1",
   shots: process.env.E2E_SHOTS || "",
+  // An installed Chromium-based browser (Brave, Chrome) instead of Playwright's
+  // bundled build, which is pinned to an early release and lags security fixes.
+  executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH || undefined,
 };
 
 export const PASSWORD = "correct horse battery staple 42";
@@ -24,7 +27,7 @@ export function uid() {
 
 let browser;
 export async function launch() {
-  browser ??= await chromium.launch({ headless: cfg.headless });
+  browser ??= await chromium.launch({ headless: cfg.headless, executablePath: cfg.executablePath });
   return browser;
 }
 

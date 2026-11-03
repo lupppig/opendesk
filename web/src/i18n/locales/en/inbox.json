@@ -806,6 +806,13 @@
   },
   "links": {
     "title": "Linked",
+    "add": "Add link",
+    "addTitle": "Add a link",
+    "addDescription": "Add a URL from Linear or another tool to this ticket.",
+    "url": "URL",
+    "linkTitle": "Title (optional)",
+    "httpsRequired": "Enter a full HTTPS URL.",
+    "added": "Link added",
     "removed": "Link removed",
     "remove": "Remove link",
     "removeNamed": "Remove the link to {{title}}",
