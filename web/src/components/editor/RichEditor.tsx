@@ -3,7 +3,7 @@ import { EditorContent, useEditor, type Editor, type Extensions } from "@tiptap/
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import Image from "@tiptap/extension-image";
-import { Bold, Code, Heading2, Heading3, ImageIcon, Italic, Link2, List, ListOrdered, Quote, Strikethrough, Type } from "lucide-react";
+import { Bold, Code, Heading2, Heading3, ImageIcon, Italic, Link2, List, ListOrdered, Quote, Strikethrough, Type, Underline } from "lucide-react";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from "react";
 import { Popover } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
@@ -184,6 +184,9 @@ export function Toolbar({ editor, full, onImage, end, folded }: { editor: Editor
       </TB>
       <TB label={ui("italic")} shortcut="mod i" active={editor.isActive("italic")} onClick={() => editor.chain().focus().toggleItalic().run()}>
         <Italic />
+      </TB>
+      <TB label={ui("underline")} shortcut="mod u" active={editor.isActive("underline")} onClick={() => editor.chain().focus().toggleUnderline().run()}>
+        <Underline />
       </TB>
       {full && (
         <TB label={ui("strikethrough")} active={editor.isActive("strike")} onClick={() => editor.chain().focus().toggleStrike().run()}>
