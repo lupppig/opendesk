@@ -506,11 +506,16 @@ with a claim that expires on its own, and reports back. Nobody has to assign it.
   person's or an AI's) and no live claim, that this key has not skipped since its last message.
   The one that has waited longest (oldest `last_message_at`) comes first.
 - `POST /v1/collab/ai-queue/claim` (`collab:draft` key, member an agent or above; `403
-  ai_queue_keys_only` for a person) `{account_id?, ttl_seconds? (60..900, 300)}` → `{claim:
-  {conversation_id, claim_token, claimed_at, expires_at} | null, conversation: MailThreadDetail |
-  null}`. One holder at a time: concurrent claims take different conversations. A claim that
-  expired, or whose key was revoked, no longer holds. `claim_token` is new on every claim. At most
-  60 claims a minute per key. Claiming changes nothing a person sees.
+  ai_queue_keys_only` for a person) `{account_id?, ttl_seconds? (60..900, 300), categories?}` →
+  `{claim: {conversation_id, claim_token, claimed_at, expires_at} | null, conversation:
+  MailThreadDetail | null}`. One holder at a time: concurrent claims take different conversations.
+  A claim that expired, or whose key was revoked, no longer holds. `claim_token` is new on every
+  claim. At most 60 claims a minute per key. Claiming changes nothing a person sees.
+- **Categories** (GH#262): `categories` (category keys, at most 8; `422` otherwise) offers only
+  conversations in one of them, read as the inbox tabs read them ("Categories"): `primary` takes
+  conversations of accounts not split and those whose key the account no longer has. A conversation
+  waiting to be sorted (`collab.categorize`) is held back until it is, so it is not offered as
+  Primary before it is filed. A person's move decides from then on. Left out, every category.
 - **Report back**: the worker saves its reply with `POST /v1/collab/drafts` and `claim_token`. It
   is checked before the provider is called: `409 claim_lost` when that claim has expired, passed to
   another holder or been spent, and nothing is saved; `422 validation_failed` from a person or for

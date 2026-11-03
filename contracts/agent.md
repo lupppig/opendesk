@@ -645,7 +645,7 @@ Tools (offered only when the key has the scope):
 | `list_collab_conversations` | `collab:draft` (API keys only) | the Collab conversations of the key's creator (box, account, text), at most 50; reading changes no read state |
 | `get_collab_conversation` | `collab:draft` (API keys only) | a conversation with its messages and internal comments, as the creator sees it |
 | `draft_collab_reply` | `collab:draft` (API keys only) | saves a reply (or reply-all) draft to a message, `body` markdown, labelled "AI draft by" the key's name; never sends (contracts/collab.md "AI drafts"); with the `claim_token` of a claim it reports back on it (refused once the claim has expired or passed on) and ends it |
-| `claim_collab_conversation` | `collab:draft` (API keys only) | claims the conversation that has waited longest in Needs action with no draft, for `minutes` (1..15, 5), and returns it like `get_collab_conversation` with its `claim_token`; `claimed: false` when nothing waits (contracts/collab.md "AI queue") |
+| `claim_collab_conversation` | `collab:draft` (API keys only) | claims the conversation that has waited longest in Needs action with no draft, optionally only in `categories` (inbox category keys, at most 8; mail still waiting to be sorted is held back), for `minutes` (1..15, 5), and returns it like `get_collab_conversation` with its `claim_token`; `claimed: false` when nothing waits (contracts/collab.md "AI queue") |
 | `release_collab_conversation` | `collab:draft` (API keys only) | gives a claimed conversation back; `skip` (with a short `reason`) keeps it from the key until new mail arrives |
 
 Tool annotations mark read-only and destructive tools. Output is JSON text. No `Mcp-Session-Id` is

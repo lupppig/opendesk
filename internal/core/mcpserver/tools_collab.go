@@ -75,6 +75,8 @@ func collabTools() []*tool {
 			Schema: obj(map[string]any{
 				"account_id": str("Only this mail account's conversations."),
 				"minutes":    integer("How long to hold the claim.", 1, 15, 5),
+				"categories": arr("Only conversations in these inbox categories (keys such as primary; primary also takes accounts whose "+
+					"inbox is not split). A conversation still waiting to be sorted is not offered until it is.", str("A category key."), 8),
 			}),
 			Run: claimCollabConversation,
 		},
@@ -361,13 +363,20 @@ func renderConversation(d *apiMailDetail) conversationOut {
 
 func claimCollabConversation(ctx context.Context, c *caller, raw json.RawMessage) (any, error) {
 	a, err := decode[struct {
-		AccountID string `json:"account_id"`
-		Minutes   int    `json:"minutes"`
+		AccountID  string   `json:"account_id"`
+		Minutes    int      `json:"minutes"`
+		Categories []string `json:"categories"`
 	}](raw)
 	if err != nil {
 		return nil, err
 	}
 	body := map[string]any{}
+	if len(a.Categories) > 8 {
+		return nil, invalid("categories: at most 8")
+	}
+	if len(a.Categories) > 0 {
+		body["categories"] = a.Categories
+	}
 	if a.AccountID != "" {
 		id, err := idRef(a.AccountID, "account_id")
 		if err != nil {
