@@ -802,6 +802,13 @@
   },
   "links": {
     "title": "Verknüpft",
+    "add": "Link hinzufügen",
+    "addTitle": "Link hinzufügen",
+    "addDescription": "Füge eine URL aus Linear oder einem anderen Tool zu diesem Ticket hinzu.",
+    "url": "URL",
+    "linkTitle": "Titel (optional)",
+    "httpsRequired": "Gib eine vollständige HTTPS-URL ein.",
+    "added": "Link hinzugefügt",
     "removed": "Verknüpfung entfernt",
     "remove": "Verknüpfung entfernen",
     "removeNamed": "Verknüpfung mit {{title}} entfernen",
