@@ -100,9 +100,20 @@ type UsageMailbox struct {
 	Email string    `json:"email"`
 }
 
+// UsageAPIKey is an API key that speaks as a bot (contracts/api.md "API keys").
+type UsageAPIKey struct {
+	ID   uuid.UUID `json:"id"`
+	Name string    `json:"name"`
+}
+
 type Usage struct {
 	Widgets   []UsageWidget  `json:"widgets"`
 	Mailboxes []UsageMailbox `json:"mailboxes"`
+	APIKeys   []UsageAPIKey  `json:"api_keys" doc:"Live API keys that speak as this bot"`
+}
+
+func emptyUsage() Usage {
+	return Usage{Widgets: []UsageWidget{}, Mailboxes: []UsageMailbox{}, APIKeys: []UsageAPIKey{}}
 }
 
 // Bot is Bot from contracts/bots.md.
@@ -145,8 +156,7 @@ func (b Bot) IDPtr() *uuid.UUID {
 // Ollie is the stand-in for a workspace that has no stored default bot (it gets one on
 // its first bots request): the default bot as it is created.
 func Ollie() Bot {
-	b := Bot{Name: DefaultName, Look: OllieLook, Personality: DefaultPersonality(), IsDefault: true,
-		Usage: Usage{Widgets: []UsageWidget{}, Mailboxes: []UsageMailbox{}}}
+	b := Bot{Name: DefaultName, Look: OllieLook, Personality: DefaultPersonality(), IsDefault: true, Usage: emptyUsage()}
 	b.AvatarURL = domain.PublicURL("/v1/public/bots/ollie/avatar.png")
 	return b
 }
@@ -171,7 +181,7 @@ func scanBot(row pgx.Row) (Bot, error) {
 	}
 	b.AvatarURL = domain.BotAvatarURL(b.ID, b.avatar, look)
 	b.Personality = readPersonality(pers)
-	b.Usage = Usage{Widgets: []UsageWidget{}, Mailboxes: []UsageMailbox{}}
+	b.Usage = emptyUsage()
 	return b, nil
 }
 
@@ -250,19 +260,44 @@ func fillUsage(ctx context.Context, q db.Querier, wid uuid.UUID, list []Bot) err
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
 	for rows.Next() {
 		var m UsageMailbox
 		var bot *uuid.UUID
 		if err := rows.Scan(&m.ID, &m.Name, &m.Email, &bot); err != nil {
+			rows.Close()
 			return err
 		}
 		if i := at(bot); i >= 0 {
 			list[i].Usage.Mailboxes = append(list[i].Usage.Mailboxes, m)
 		}
 	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	// A key speaks as its own bot only: one without a bot speaks as itself, not the default.
+	rows, err = q.Query(ctx, `SELECT id, name, bot_id FROM api_keys WHERE workspace_id = $1 AND bot_id IS NOT NULL AND `+liveKey+`
+		ORDER BY name, id`, wid)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var k UsageAPIKey
+		var bot uuid.UUID
+		if err := rows.Scan(&k.ID, &k.Name, &bot); err != nil {
+			return err
+		}
+		if i, ok := idx[bot]; ok {
+			list[i].Usage.APIKeys = append(list[i].Usage.APIKeys, k)
+		}
+	}
 	return rows.Err()
 }
+
+// liveKey is the SQL condition of an API key that still works (no alias): not revoked and
+// not expired.
+const liveKey = `revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())`
 
 // load reads a bot without its usage.
 func load(ctx context.Context, q db.Querier, wid uuid.UUID, where string, args ...any) (Bot, error) {
@@ -309,6 +344,20 @@ func ForMailbox(ctx context.Context, q db.Querier, wid uuid.UUID, mailboxID *uui
 		}
 	}
 	return Resolve(ctx, q, wid, bot)
+}
+
+// ForAPIKey is the bot an API key speaks as (contracts/api.md "API keys"), or nil when it
+// speaks as itself.
+func ForAPIKey(ctx context.Context, q db.Querier, wid, keyID uuid.UUID) (*Bot, error) {
+	b, err := scanBot(q.QueryRow(ctx, `SELECT `+botColumns+` FROM api_keys k JOIN bots b ON b.id = k.bot_id AND b.workspace_id = k.workspace_id
+		WHERE k.workspace_id = $1 AND k.id = $2`, wid, keyID))
+	if db.IsNotFound(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &b, nil
 }
 
 // Check confirms id is a bot of the workspace (a widget's or mailbox's bot_id).

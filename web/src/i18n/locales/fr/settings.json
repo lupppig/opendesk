@@ -260,6 +260,12 @@
       "label": "Disposition en conversation",
       "hint": "Les messages du client à gauche, les réponses et notes de votre équipe à droite, comme dans un chat. Pleine largeur sur un écran étroit."
     },
+    "conversationWidth": {
+      "label": "Largeur de la conversation",
+      "hint": "Limitée garde les messages et la zone de réponse à une largeur facile à lire sur un grand écran. Pleine largeur leur laisse toute la largeur du ticket.",
+      "limited": "Limitée",
+      "full": "Pleine largeur"
+    },
     "properties": {
       "label": "Propriétés du ticket",
       "hint": "Statut, priorité, responsable, équipe et étiquettes dans la colonne des détails, ou dans une barre au-dessus de la conversation, modifiables sur place. Avec la barre, la colonne des détails commence par le client et ce que vos applications savent de lui.",
@@ -333,6 +339,19 @@
     "conversations": "Conversations",
     "csat": "Enquête de satisfaction",
     "csatHint": "Demandez aux clients d’évaluer la conversation après la résolution d’un ticket.",
+    "snoozePresets": "Options de mise en attente",
+    "snoozePresetsHint": "Les moments que propose le menu « Mettre en attente » d’un ticket, dans cet ordre, à l’heure de chaque agent. Les agents peuvent toujours choisir un autre jour et une autre heure.",
+    "snoozeKind": "Type de moment",
+    "snoozeKindHours": "Dans … heures",
+    "snoozeKindDays": "Dans … jours",
+    "snoozeKindWeek": "Semaine prochaine (lundi)",
+    "snoozeHours": "Heures",
+    "snoozeDays": "Jours",
+    "snoozeAt": "à",
+    "snoozeTime": "Heure",
+    "snoozeRemove": "Retirer ce moment",
+    "snoozeAdd": "Ajouter un moment",
+    "snoozeReset": "Rétablir les valeurs par défaut",
     "collabReplies": "Répondre depuis sa propre messagerie",
     "collabRepliesHint": "Les membres peuvent répondre à un ticket e-mail depuis l’un de leurs comptes de messagerie connectés plutôt que depuis l’adresse du ticket, réponse par réponse. Les réponses du client reviennent quand même sur le ticket. Chaque boîte mail peut avoir ses propres règles.",
     "collabReplyTo": "Destination des réponses",

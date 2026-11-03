@@ -3,6 +3,7 @@ package phone_test
 import (
 	"bytes"
 	"encoding/json"
+	"net"
 	"net/http"
 	"os"
 	"slices"
@@ -354,19 +355,26 @@ func TestWebhookVerification(t *testing.T) {
 		res.Body.Close()
 		return res.StatusCode
 	}
+	// Addresses of this run only (2001:db8::/32): the limiter lives as long as the process,
+	// so under -count a fixed address would start the next run already over its limit.
+	addr := func() string {
+		u := uuid.New()
+		return net.IP(append([]byte{0x20, 0x01, 0x0d, 0xb8}, u[4:]...)).String()
+	}
+	flood, unknown, provider := addr(), addr(), addr()
 	hook := "/v1/phone/hooks/aircall/" + h.conn.ID.String()
 	forged := bytes.ReplaceAll(body, []byte(h.token(t)), []byte("forged"))
 	codes := map[int]int{}
 	for i := 0; i < 40; i++ {
-		codes[from("203.0.113.9", hook, forged)]++
+		codes[from(flood, hook, forged)]++
 	}
 	for i := 0; i < 40; i++ {
-		codes[from("203.0.113.10", "/v1/phone/hooks/aircall/"+uuid.NewString(), body)]++
+		codes[from(unknown, "/v1/phone/hooks/aircall/"+uuid.NewString(), body)]++
 	}
 	if codes[401] != 30 || codes[404] != 30 || codes[429] != 20 {
 		t.Fatalf("forged and unknown: %v", codes)
 	}
-	if got := from("198.51.100.7", hook, ignored); got != 200 {
+	if got := from(provider, hook, ignored); got != 200 {
 		t.Fatalf("the provider's event after a flood from elsewhere: %d", got)
 	}
 

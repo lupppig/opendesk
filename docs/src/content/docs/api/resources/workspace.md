@@ -48,7 +48,13 @@ type WorkspaceSettings = {
   send_and_finish_button?: boolean;              // default false: a Send and solve button (named after solved's display label) next to Send in the reply box
   message_delete?: "off" | "own" | "all";        // default "own" (own internal notes); "all": any agent's notes and replies; admins any
   agent_online_time?: boolean;                   // default true: record each member's online time for the agents report; false deletes it and records none
+  snooze_presets?: SnoozePreset[];               // at most 8: the snooze menu's times, in order; absent or [] = in 1 hour, in 4 hours, tomorrow and next week at 09:00
 };
+// Worked out on each agent's own clock when the snooze menu opens.
+type SnoozePreset =
+  | { kind: "hours"; hours: number }             // 1-168: the top of the hour at least this many hours away
+  | { kind: "days"; days: number; time: string } // 1-365 days from today at time ("HH:mm", 24-hour)
+  | { kind: "week"; time: string };              // next Monday at time
 type Member = {
   user: UserRef & { avatar_source: AvatarSource | null }; role: "owner" | "admin" | "agent" | "viewer";
   availability: "online" | "away" | "offline"; presence: "online" | "away" | "offline";

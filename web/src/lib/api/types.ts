@@ -62,9 +62,13 @@ export type WorkspaceSettings = {
   /** Display-only names and colours for the fixed statuses and priorities. */
   status_labels?: Partial<Record<TicketStatus, DisplayOverride>>;
   priority_labels?: Partial<Record<Priority, DisplayOverride>>;
+  /** The times a ticket's snooze menu offers, in order (at most 8). Absent or empty: in 1 hour, in 4 hours, tomorrow and next week, at 09:00. */
+  snooze_presets?: SnoozePreset[];
 };
 /** `hidden` (statuses only): left out of the menus agents pick a status from. */
 export type DisplayOverride = { label?: string; color?: LabelColor; hidden?: boolean };
+/** A snooze menu time, on the agent's clock: the top of the hour at least `hours` away (1-168), `days` from today at `time` (1-365), or next Monday at `time` ("HH:mm"). */
+export type SnoozePreset = { kind: "hours"; hours: number } | { kind: "days"; days: number; time: string } | { kind: "week"; time: string };
 export type Workspace = {
   id: string;
   name: string;
@@ -446,8 +450,10 @@ export type Message = {
     type: "contact" | "user" | "system" | "api";
     user: UserRef | null;
     contact: ContactRef | null;
-    /** The bot an AI reply was sent as (contracts/bots.md). */
+    /** The bot a reply or note was sent as (contracts/bots.md): the AI agent's, or an API key's that speaks as one. */
     bot?: BotRef | null;
+    /** The API key that wrote it (type "api"); null otherwise. */
+    api_key?: { id: string; name: string } | null;
   };
   body_html: string;
   body_text: string;
@@ -1013,6 +1019,8 @@ export type ApiKey = {
   created_by: UserRef | null;
   private_team_ids?: string[];
   private_teams?: PrivateTeamGrant[];
+  /** The bot the key speaks as on tickets (contracts/api.md "API keys"); null: it writes as itself. */
+  bot_id?: string | null;
 };
 export type Webhook = {
   id: string;
@@ -1277,11 +1285,15 @@ export type PanelBlock =
   | { type: "fields"; title?: string; items: PanelField[] }
   | { type: "list"; title?: string; items: PanelListItem[] }
   | { type: "note"; text: string; tone: PanelTone };
+export type TicketPanelErrorCode = "timeout" | "rate_limited" | "ticket" | "refused" | "status" | "answer";
+
 export type TicketPanelData = {
   panel_id: string;
   kind: "shopify" | "http";
   state: "ok" | "empty" | "no_contact" | "error";
   message?: string;
+  /** error: why, for the app to say in the reader's language; absent when only `message` (the product's or the network's words) says it. */
+  code?: TicketPanelErrorCode;
   customer?: PanelCustomer;
   orders?: PanelOrder[];
   /** http: a version 1 answer's sections. */
@@ -1886,6 +1898,8 @@ export type AISettings = {
   assistant_peer?: boolean;
   /** Built-in changes Ollie makes without asking (contracts/ai.md "Approvals"). Default empty. */
   assistant_auto?: AssistantAutoTool[];
+  /** Drafts look up facts with the connected tools that run without approval as reads (contracts/ai.md "Drafts and connected tools"). Default true. */
+  draft_tools?: boolean;
   tone: string;
   reply_language: "customer" | "workspace";
   instructions: string;
@@ -2331,6 +2345,8 @@ export type BotPersonality = {
 export type BotUsage = {
   widgets: { id: string; name: string; brand_id: string }[];
   mailboxes: { id: string; name: string; email: string }[];
+  /** Live API keys that speak as the bot. */
+  api_keys?: { id: string; name: string }[];
 };
 export type Bot = {
   id: string;
@@ -2828,12 +2844,35 @@ export type MailMessage = {
   draft_id?: string | null;
   /** Drafts an AI key saved and no person has saved since: the key's name, shown "AI draft by" (contracts/collab.md "AI drafts"). */
   drafted_by_ai?: string | null;
+  /** The AI draft it is, or was sent from, even once a person took it over (contracts/collab.md "AI draft outcomes"). */
+  ai_draft?: AIDraftRef | null;
   /** The message of the conversation it answers (its In-Reply-To), when stored. */
   in_reply_to_id?: string | null;
   /** The account's address (its own or an alias) it was sent from or written to; null when none. */
   own_address?: string | null;
   /** Mail the account wrote: sent from opendesk, a draft, or in its Sent or Drafts at the provider. A From naming the account does not make mail outgoing. */
   outgoing: boolean;
+};
+
+export type AIDraftOutcomeKind = "sent_unchanged" | "sent_edited" | "discarded" | "replaced" | "abandoned";
+
+export type AIDraftRef = {
+  /** The AI draft record (PUT /v1/collab/ai-drafts/{id}/feedback). */
+  id: string;
+  /** The key's name when it last saved the draft. */
+  client: string;
+  outcome: AIDraftOutcomeKind | null;
+  has_feedback: boolean;
+};
+
+export type AIDraftFeedbackReason = "wrong_facts" | "wrong_tone" | "missing_info" | "should_not_answer" | "other";
+
+export type AIDraftFeedbackBody = {
+  reason: AIDraftFeedbackReason;
+  /** At most 1,000 characters. */
+  note?: string;
+  /** Sanitized like mail. */
+  better_answer_html?: string;
 };
 
 /** How a message came, read from its source (GET /v1/collab/messages/{id}/details). */

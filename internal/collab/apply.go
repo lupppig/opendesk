@@ -438,8 +438,11 @@ func (s *service) storeSent(ctx context.Context, a *accountRow, raw []byte, ref 
 	var id uuid.UUID
 	err = p.batch(ctx, func(tx pgx.Tx) error {
 		var err error
-		id, err = p.insert(ctx, tx, in)
-		return err
+		if id, err = p.insert(ctx, tx, in); err != nil || id == uuid.Nil {
+			return err
+		}
+		// A reply sent instead of an AI draft of the conversation replaces it ("AI draft outcomes").
+		return settleSent(ctx, tx, nil, id, sentBy)
 	})
 	if err != nil {
 		return uuid.Nil, err

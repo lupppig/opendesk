@@ -1,0 +1,105 @@
+{
+  "title": "Health",
+  "updated": "Updated",
+  "stale": "The last refresh failed; these figures may be out of date.",
+  "down": "Down",
+  "on": "On",
+  "off": "Off",
+  "checks": {
+    "title": "Checks",
+    "failing_one": "{{count}} failing",
+    "failing_other": "{{count}} failing",
+    "warning_one": "{{count}} warning",
+    "warning_other": "{{count}} warnings",
+    "allPassing": "All passing"
+  },
+  "instance": {
+    "title": "Instance",
+    "version": "Version",
+    "commit": "Commit",
+    "role": "Role",
+    "started": "Started"
+  },
+  "database": {
+    "title": "Database",
+    "status": "Status",
+    "latency": "Latency",
+    "schema": "Schema",
+    "dirty": "Dirty",
+    "pool": "Pool",
+    "poolLine": "{{inUse}} in use, {{idle}} idle, {{total}} of {{max}}"
+  },
+  "events": {
+    "title": "Events",
+    "embedded": "Embedded",
+    "cluster": "Cluster",
+    "unpublished": "Unpublished",
+    "oldestUnpublished": "Oldest unpublished"
+  },
+  "mail": {
+    "title": "Mail and webhooks",
+    "driver": "Platform mailer",
+    "inboundFailed": "Inbound failed, 24 h",
+    "inboundPending": "Inbound pending",
+    "mailboxesInError": "Mailboxes in error",
+    "webhooksFailing": "Webhooks failing, 24 h"
+  },
+  "jobs": {
+    "title": "Jobs",
+    "available": "Available",
+    "running": "Running",
+    "retrying": "Retrying",
+    "scheduled": "Scheduled",
+    "discarded": "Discarded, 24 h",
+    "oldestWaiting": "Oldest waiting"
+  },
+  "config": {
+    "title": "Configuration",
+    "billing": "Billing",
+    "signup": "Sign-up",
+    "aiProvider": "AI provider",
+    "decisions": "Decisions",
+    "embeddings": "Embeddings",
+    "storage": "Storage",
+    "imap": "Mailbox IMAP",
+    "systemSend": "System send",
+    "push": "Push",
+    "helpDomain": "Help domain"
+  },
+  "update": {
+    "available": "opendesk {{version}} is available",
+    "releaseNotes": "Release notes",
+    "auto": "This instance runs {{current}}. It installs at the next automatic update, after a backup.",
+    "major": "A new major version, so automatic updates leave it to you: read the release notes first.",
+    "runs": "This instance runs {{current}}.",
+    "how": "Upgrade on the server, which backs up first:",
+    "copyCommand": "Copy the command"
+  },
+  "updates": {
+    "title": "Updates",
+    "checkNow": "Check now",
+    "versionAvailable": "{{version}} is available",
+    "unreachable": "Could not reach GitHub",
+    "newest": "This is the newest release",
+    "running": "Running",
+    "from": "from {{version}},",
+    "newestRelease": "Newest release",
+    "notChecked": "Not checked",
+    "newMajor": "New major",
+    "availableBadge": "Available",
+    "current": "Current",
+    "noneFound": "None found yet",
+    "lastChecked": "Last checked",
+    "checkOff": "Off (UPDATE_CHECK=false)",
+    "notRelease": "Not a release build",
+    "automatic": "Automatic",
+    "notSetUp": "Not set up on this host",
+    "result": {
+      "none": "No run yet",
+      "current": "Already on the newest release",
+      "updated": "Updated",
+      "skipped": "Skipped",
+      "failed": "Failed, went back"
+    }
+  }
+}

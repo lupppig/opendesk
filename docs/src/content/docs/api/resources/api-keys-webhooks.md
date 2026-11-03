@@ -26,6 +26,7 @@ type ApiKey = {
   expires_at: string | null;
   created_at: string;
   created_by: UserRef | null;
+  bot_id: string | null; // the bot the key speaks as on tickets, or null
 };
 ```
 
@@ -38,6 +39,42 @@ curl https://api.opendesk.sh/v1/api-keys \
 ```
 
 The response is the key plus `secret`, shown only this once. See [scopes](/api/authentication/#scopes).
+
+### Speak as a bot
+
+When an AI of your own answers customers through the API, give its key a [bot](/guides/bots/) to speak as. Set `bot_id` when you create the key, or later with `PATCH /v1/api-keys/{id}` (`null` takes it off). The key needs `tickets:write`, and the bot must be one of the workspace's.
+
+```sh
+curl -X PATCH https://api.opendesk.sh/v1/api-keys/$KEY_ID \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "OD-Workspace: $WORKSPACE_ID" \
+  -H "Content-Type: application/json" \
+  -d '{ "bot_id": "0192f0c5-..." }'
+```
+
+Then every reply and note the key writes is the bot's, with nothing to change in your requests:
+
+- The team sees the bot's name and face with the **AI** label, and which key wrote it (`author.bot`, `author.api_key`).
+- An email reply goes out under the bot's name in the address's sender name (`{agent}` in `from_name_format`), marked as automatic mail (`Auto-Submitted`), and ends with the bot's email sign-off. If your text already ends with the sign-off, it is not added twice, so you can leave signing to the bot.
+- `{{ agent.name }}` and the other agent variables in a reply are the bot's.
+- Messages stay `author.type: "api"`: they are not the built-in AI agent's, so its reports and ratings leave them out.
+
+A bot that a working key speaks as can't be deleted: pick another bot for the key, or revoke it, first.
+
+### Change a key's scopes
+
+Send the new list with `PATCH /v1/api-keys/{id}`: it replaces the key's scopes, and the key's next request already has them. The secret stays the same, so nothing changes where the key is used.
+
+```sh
+curl -X PATCH https://api.opendesk.sh/v1/api-keys/$KEY_ID   -H "Authorization: Bearer $ACCESS_TOKEN"   -H "OD-Workspace: $WORKSPACE_ID"   -H "Content-Type: application/json"   -d '{ "scopes": ["tickets:read", "tickets:write"] }'
+```
+
+- **Removing a scope** applies at once.
+- **Adding a scope** gives a live credential more access, so it asks for what creating a key asks for: a sign-in within the last 12 hours, and the second factor when it is on (`403 reauth_required` / `mfa_required`).
+- `collab:draft` drafts replies as the member who created the key: only that member can add it.
+- Each change is in the audit log as `api_key.scopes_changed`, with the scopes before and after, and what was added and removed.
+
+In the app: **Settings → API keys**, the key's menu, **Edit permissions**.
 
 ## Webhooks
 

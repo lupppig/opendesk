@@ -69,8 +69,9 @@ func (w *sendTicketEmailWorker) Work(ctx context.Context, job *river.Job[jobs.Se
 	return err
 }
 
-// ollieSender marks a reply written by the AI agent and the bot name it is sent under.
-// system marks a reply an automation sent.
+// ollieSender marks a reply sent as a bot and the bot name it is sent under: one the AI
+// agent wrote, or one an API key that speaks as a bot wrote (contracts/bots.md). system
+// marks a reply an automation sent.
 type ollieSender struct {
 	ai     bool
 	name   string
@@ -370,7 +371,7 @@ func (s *service) sendMessage(ctx context.Context, wid, mid uuid.UUID, lastAttem
 	var bot ollieSender
 	var deleted bool
 	err := s.d.DB.Pool.QueryRow(ctx, `SELECT ticket_id, kind, direction, body_html, body_text, subject, to_emails, cc_emails, bcc_emails,
-		delivery_status, author_user_id, ai, from_name, mailbox_id, author_type, thread_id, deleted_at IS NOT NULL FROM messages WHERE workspace_id = $1 AND id = $2`, wid, mid).
+		delivery_status, author_user_id, ai OR bot_id IS NOT NULL, from_name, mailbox_id, author_type, thread_id, deleted_at IS NOT NULL FROM messages WHERE workspace_id = $1 AND id = $2`, wid, mid).
 		Scan(&ticketID, &kind, &direction, &bodyHTML, &bodyText, &subject, &to, &cc, &bcc, &status, &authorID, &bot.ai, &bot.name, &mailboxID, &authorType, &threadID, &deleted)
 	if db.IsNotFound(err) {
 		return nil

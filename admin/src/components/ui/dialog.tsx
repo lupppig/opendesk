@@ -1,6 +1,7 @@
 import { Dialog as D } from "radix-ui";
 import { X } from "lucide-react";
 import type { ReactNode } from "react";
+import { i18n } from "@/i18n";
 import { cn } from "@/lib/cn";
 
 export function Dialog({
@@ -46,11 +47,11 @@ export function Dialog({
               {description ? (
                 <D.Description className="mt-1 text-[12.5px] leading-[18px] text-fg-3">{description}</D.Description>
               ) : (
-                <D.Description className="sr-only">{typeof title === "string" ? title : "Dialog"}</D.Description>
+                <D.Description className="sr-only">{typeof title === "string" ? title : i18n.t("ui.dialog")}</D.Description>
               )}
             </div>
             <D.Close
-              aria-label="Close"
+              aria-label={i18n.t("actions.close")}
               className="-mr-2 -mt-1 flex size-7 shrink-0 items-center justify-center rounded-md text-fg-4 transition-colors hover:bg-hover hover:text-fg"
             >
               <X className="size-4" />
@@ -106,7 +107,7 @@ export function Drawer({
           <div className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-4">
             <div className="min-w-0 flex-1">{header ?? <span className="text-sm font-medium">{title}</span>}</div>
             <D.Close
-              aria-label="Close"
+              aria-label={i18n.t("actions.close")}
               className="flex size-7 items-center justify-center rounded-md text-fg-3 hover:bg-hover hover:text-fg"
             >
               <X className="size-4" />

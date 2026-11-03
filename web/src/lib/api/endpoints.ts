@@ -393,8 +393,8 @@ export const api = {
     test: (b: RoutingTestBody) => http.post<T.RoutingTest>("/v1/routing/test", b),
   },
   apiKeys: {
-    ...crud<T.ApiKey, { name: string; scopes: string[]; expires_at?: string | null; private_team_ids?: string[] }>("/v1/api-keys"),
-    create: (b: { name: string; scopes: string[]; expires_at?: string | null; private_team_ids?: string[] }) =>
+    ...crud<T.ApiKey, { name: string; scopes: string[]; expires_at?: string | null; private_team_ids?: string[]; bot_id?: string | null }>("/v1/api-keys"),
+    create: (b: { name: string; scopes: string[]; expires_at?: string | null; private_team_ids?: string[]; bot_id?: string | null }) =>
       http.create<T.ApiKey & { secret: string }>("/v1/api-keys", b),
   },
   /** Settings > AI clients: opendesk's MCP server and the clients connected with OAuth. */
@@ -905,6 +905,8 @@ export const api = {
       /** With a body the draft is saved with it first. */
       send: (id: string, b?: CollabDraftBody) => http.post<T.MailMessage>(`/v1/collab/drafts/${id}/send`, b),
     },
+    /** A person's feedback on an AI draft, for the key that wrote it (contracts/collab.md "AI draft outcomes"). */
+    aiDraftFeedback: (id: string, b: T.AIDraftFeedbackBody) => http.put<void>(`/v1/collab/ai-drafts/${id}/feedback`, b),
     sidebar: {
       get: () => http.get<T.SidebarPrefs>("/v1/collab/sidebar"),
       put: (b: T.SidebarPrefs) => http.put<T.SidebarPrefs>("/v1/collab/sidebar", b),

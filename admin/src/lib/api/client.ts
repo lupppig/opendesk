@@ -9,6 +9,7 @@
 // - The token is refreshed shortly before it expires when the operator has been
 //   active since it was issued, so an idle panel lets its session lapse.
 
+import { i18n } from "@/i18n";
 import type { AdminAuthResult } from "./types";
 
 export type Problem = {
@@ -67,11 +68,11 @@ export function isApiError(e: unknown, code?: string): e is ApiError {
 }
 
 /** A human message for any thrown value, for toasts and inline errors. */
-export function errorMessage(e: unknown, fallback = "Something went wrong"): string {
+export function errorMessage(e: unknown, fallback = i18n.t("errors.generic")): string {
   if (e instanceof ApiError) {
-    if (e.code === "network_error") return "Can't reach the API. Check your connection.";
-    if (e.code === "rate_limited") return "Too many attempts. Wait a moment and try again.";
-    if (e.code === "forbidden" && !e.detail) return "Your admin role doesn't allow this.";
+    if (e.code === "network_error") return i18n.t("errors.network");
+    if (e.code === "rate_limited") return i18n.t("errors.rateLimited");
+    if (e.code === "forbidden" && !e.detail) return i18n.t("errors.forbidden");
     const field = e.errors?.find((x) => x.message)?.message;
     return e.detail || field || e.title || fallback;
   }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { fullDate, relative } from "@/lib/format";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
@@ -25,9 +26,10 @@ function useNow() {
 }
 
 /** A relative time ("5 minutes ago") with the absolute one on hover. */
-export function Time({ iso, className, empty = "Never" }: { iso: string | null | undefined; className?: string; empty?: string }) {
+export function Time({ iso, className, empty }: { iso: string | null | undefined; className?: string; empty?: string }) {
+  const { t } = useTranslation();
   const now = useNow();
-  if (!iso) return <span className={cn("text-fg-4", className)}>{empty}</span>;
+  if (!iso) return <span className={cn("text-fg-4", className)}>{empty ?? t("time.never")}</span>;
   return (
     <Tooltip content={fullDate(iso)}>
       <time dateTime={iso} className={cn("whitespace-nowrap", className)} tabIndex={-1}>

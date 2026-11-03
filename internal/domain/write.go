@@ -270,8 +270,11 @@ type NewMessage struct {
 	AI bool
 	// AIAction is an action card the visitor confirms (contracts/agent.md).
 	AIAction *AIAction
-	// BotID is the bot an AI reply is sent as (contracts/bots.md).
+	// BotID is the bot an AI reply is sent as (contracts/bots.md), or the bot the API key
+	// that writes it speaks as.
 	BotID *uuid.UUID
+	// APIKeyID is the API key that writes the message, nil for anyone else.
+	APIKeyID *uuid.UUID
 	// Inbound email (contracts/api.md "Inbound email"). ReplyTo is the Reply-To it named when
 	// that differs from FromEmail; AuthFailed marks a From that failed DMARC; NoAutoReply
 	// keeps automatic answers away from it; FormSender is the trusted contact form address
@@ -374,13 +377,13 @@ func AddMessage(ctx context.Context, tx pgx.Tx, jc Jobs, nm NewMessage) (Message
 	_, err := tx.Exec(ctx, `INSERT INTO messages (id, workspace_id, ticket_id, kind, direction, author_type, author_user_id,
 		author_contact_id, body_html, body_text, full_html, subject, from_email, from_name, to_emails, cc_emails, bcc_emails,
 		email_message_id, in_reply_to, "references", inbound_email_id, delivery_status, created_at, ai, ai_action, mailbox_id,
-		reply_to, auth_failed, no_auto_reply, form_sender, bot_id, received_at, thread_id, collab_account_id, collab_reply_to)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35)`,
+		reply_to, auth_failed, no_auto_reply, form_sender, bot_id, received_at, thread_id, collab_account_id, collab_reply_to, api_key_id)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36)`,
 		id, nm.WorkspaceID, nm.TicketID, nm.Kind, nm.Direction, nm.AuthorType, nm.AuthorUserID, nm.AuthorContactID,
 		nm.BodyHTML, nm.BodyText, nm.FullHTML, truncateRunes(nm.Subject, 500), nm.FromEmail, nm.FromName, nm.To, nm.Cc, nm.Bcc,
 		nm.EmailMessageID, nm.InReplyTo, nm.References, nm.InboundEmailID, nm.DeliveryStatus, nm.CreatedAt, nm.AI, nm.AIAction, nm.MailboxID,
 		truncateRunes(nm.ReplyTo, 320), nm.AuthFailed, nm.NoAutoReply, truncateRunes(nm.FormSender, 320), nm.BotID,
-		truncateRunes(strings.ToLower(strings.TrimSpace(nm.ReceivedAt)), 320), nm.ThreadID, nm.CollabAccountID, truncateRunes(nm.CollabReplyTo, 320))
+		truncateRunes(strings.ToLower(strings.TrimSpace(nm.ReceivedAt)), 320), nm.ThreadID, nm.CollabAccountID, truncateRunes(nm.CollabReplyTo, 320), nm.APIKeyID)
 	if err != nil {
 		return Message{}, fmt.Errorf("insert message: %w", err)
 	}

@@ -1119,6 +1119,15 @@ func TestAttachmentLinks(t *testing.T) {
 	if other := w.s.resignAttachmentLinks(uuid.New(), old); other != old {
 		t.Fatalf("resigned another message's link: %s", other)
 	}
+	// A link stored while the instance had another address (API_URL) gets the current one.
+	moved := `<img src="https://old-desk.example.com/v1/collab/attachments/` + id.String() + `/0?exp=1&amp;sig=abcd">`
+	if fresh := w.s.resignAttachmentLinks(id, moved); strings.Contains(fresh, "old-desk") ||
+		!strings.HasPrefix(fresh, `<img src="http://api.test/v1/collab/attachments/`+id.String()+"/0?exp=") || !strings.Contains(fresh, "&amp;sig=") {
+		t.Fatalf("moved: %s", fresh)
+	}
+	if other := w.s.resignAttachmentLinks(uuid.New(), moved); other != moved {
+		t.Fatalf("moved another message's link: %s", other)
+	}
 }
 
 func TestParticipantsAndFolders(t *testing.T) {

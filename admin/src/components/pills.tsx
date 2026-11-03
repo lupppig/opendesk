@@ -1,36 +1,34 @@
 // Soft tinted pills for the states the panel shows: plan, subscription status,
 // suspension, admin role, mailbox status, health checks and job states.
 
+import { useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/badge";
 import type { AdminRole, HealthStatus, JobState, Plan } from "@/lib/api/types";
 import { humanize } from "@/lib/format";
 import { ROLE_LABEL } from "@/lib/permissions";
 import type { Tone } from "@/lib/tones";
 
-const PLAN: Record<Plan, { label: string; tone: Tone }> = {
-  free: { label: "Free", tone: "gray" },
-  pro: { label: "Pro", tone: "blue" },
-  collab: { label: "Collab", tone: "indigo" },
-  self_hosted: { label: "Self-hosted", tone: "teal" },
-};
+const PLAN_TONE: Record<Plan, Tone> = { free: "gray", pro: "blue", collab: "indigo", self_hosted: "teal" };
 
 export function PlanPill({ plan }: { plan: Plan }) {
-  const p = PLAN[plan] ?? { label: humanize(plan), tone: "gray" as Tone };
-  return <Badge tone={p.tone}>{p.label}</Badge>;
+  const { t } = useTranslation();
+  return <Badge tone={PLAN_TONE[plan] ?? "gray"}>{t(`plan.${plan}`, { defaultValue: humanize(plan) })}</Badge>;
 }
 
 /** Stripe subscription statuses. Empty (no subscription) shows nothing. */
 export function SubscriptionPill({ status }: { status: string }) {
+  const { t } = useTranslation();
   if (!status) return null;
-  const t: Tone =
+  const tn: Tone =
     status === "active" ? "green" : status === "trialing" ? "blue" : status === "past_due" || status === "unpaid" ? "amber" : status === "canceled" || status === "incomplete_expired" ? "gray" : "gray";
-  return <Badge tone={t}>{humanize(status)}</Badge>;
+  return <Badge tone={tn}>{t(`subscription.${status}` as never, { defaultValue: humanize(status) })}</Badge>;
 }
 
 export function SuspendedPill() {
+  const { t } = useTranslation();
   return (
     <Badge tone="red" dot>
-      Suspended
+      {t("suspended")}
     </Badge>
   );
 }
@@ -38,15 +36,18 @@ export function SuspendedPill() {
 const ROLE_TONE: Record<AdminRole, Tone> = { viewer: "gray", support: "blue", super: "indigo" };
 
 export function AdminRolePill({ role }: { role: AdminRole }) {
-  return <Badge tone={ROLE_TONE[role]}>{ROLE_LABEL[role]}</Badge>;
+  const { t } = useTranslation();
+  return <Badge tone={ROLE_TONE[role]}>{t(ROLE_LABEL[role])}</Badge>;
 }
 
 export function MailboxStatusPill({ status }: { status: "active" | "error" | "disabled" }) {
-  return status === "active" ? <Badge tone="ok">Active</Badge> : status === "error" ? <Badge tone="danger">Error</Badge> : <Badge tone="gray">Disabled</Badge>;
+  const { t } = useTranslation();
+  return status === "active" ? <Badge tone="ok">{t("mailbox.active")}</Badge> : status === "error" ? <Badge tone="danger">{t("mailbox.error")}</Badge> : <Badge tone="gray">{t("mailbox.disabled")}</Badge>;
 }
 
 export function CheckPill({ status }: { status: HealthStatus }) {
-  return status === "ok" ? <Badge tone="ok">OK</Badge> : status === "warn" ? <Badge tone="warn">Warning</Badge> : <Badge tone="danger">Failing</Badge>;
+  const { t } = useTranslation();
+  return status === "ok" ? <Badge tone="ok">{t("check.ok")}</Badge> : status === "warn" ? <Badge tone="warn">{t("check.warn")}</Badge> : <Badge tone="danger">{t("check.fail")}</Badge>;
 }
 
 export const JOB_TONE: Record<JobState, Tone> = {
@@ -61,12 +62,14 @@ export const JOB_TONE: Record<JobState, Tone> = {
 };
 
 export function JobStatePill({ state }: { state: JobState }) {
-  return <Badge tone={JOB_TONE[state] ?? "gray"}>{humanize(state)}</Badge>;
+  const { t } = useTranslation();
+  return <Badge tone={JOB_TONE[state] ?? "gray"}>{t(`jobState.${state}`, { defaultValue: humanize(state) })}</Badge>;
 }
 
 /** A test workspace (contracts/admin.md "Test workspaces"). */
 export function TestPill() {
-  return <Badge tone="violet">Test</Badge>;
+  const { t } = useTranslation();
+  return <Badge tone="violet">{t("test")}</Badge>;
 }
 
 /** A yes/no fact: "2FA on" in green, "2FA off" in grey (or amber when it should be on). */

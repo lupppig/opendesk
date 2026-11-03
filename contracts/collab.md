@@ -500,7 +500,8 @@ Any AI client, whatever model runs it (local or hosted), may draft replies for a
 - **Routes it may call**: `GET /v1/collab/threads`, `GET /v1/collab/threads/{id}` (messages and the
   team's internal comments), `POST /v1/collab/drafts` (mode `reply` or `reply_all`, no
   `attachment_ids` or `forward_attachments`) and `PUT /v1/collab/drafts/{id}` for a draft it saved
-  that nobody has saved since (`403 ai_draft_not_own` otherwise; no `attachment_ids`). Every other
+  that nobody has saved since (`403 ai_draft_not_own` otherwise; no `attachment_ids`), both with an
+  optional `client_ref`, and the outcome feed ("AI draft outcomes"). Every other
   Collab route refuses it (`403`): it never sends, discards, marks read or unread, moves, labels,
   assigns, shares or comments. Reading changes no state, so a conversation the key read stays
   unread for the team.
@@ -512,8 +513,8 @@ Any AI client, whatever model runs it (local or hosted), may draft replies for a
   as with any draft. Each save by a key is audit-logged (`collab.ai_draft_saved`, actor the member,
   `actor: "ai"` with the key).
 - **MCP tools** (contracts/agent.md): `list_collab_conversations`, `get_collab_conversation`,
-  `draft_collab_reply`, `claim_collab_conversation` and `release_collab_conversation`, offered to a
-  key with `collab:draft`.
+  `draft_collab_reply`, `claim_collab_conversation`, `release_collab_conversation` and
+  `list_collab_draft_outcomes`, offered to a key with `collab:draft`.
 
 ### AI queue
 
@@ -549,6 +550,42 @@ with a claim that expires on its own, and reports back. Nobody has to assign it.
 - **Approval**: an AI draft does not clear Needs action (only a sent reply does), so the
   conversation waits in Needs action, its draft labelled "AI draft by <name>", until a person sends
   or discards it.
+
+### AI draft outcomes
+
+opendesk records what becomes of each AI draft and lets the key that wrote it read that back
+(GH#261), so a client can improve its own instructions. opendesk never trains, scores or
+changes a model; what the client does with the feedback is its own business.
+
+- **The AI's text is kept** (`collab_ai_drafts`): each save by a key keeps its text, with the
+  conversation, the key, its member and the key's name. Once a person saves the draft (taking it
+  over), sends it or discards it, the AI's last text stays as it was.
+- **The server sets the outcome**, never the client:
+  - `sent_unchanged` or `sent_edited`, with the sent message's id: the draft was sent, and the words
+    a person sent (without the signature block and quoted history) are or are not the AI's;
+  - `discarded`: a person discarded it;
+  - `replaced`: a person sent another reply in the conversation while the draft waited;
+  - `abandoned`: a person marked the conversation done while the draft waited.
+
+  `sent_*` and `discarded` are final. A draft `replaced` or `abandoned` that is then sent or
+  discarded takes that outcome. A draft sent or discarded outside opendesk has none.
+- **`client_ref`** (≤200) on `POST /v1/collab/drafts` and `PUT /v1/collab/drafts/{id}` from a key:
+  the client's own label for the instructions behind the draft (for example `prompt:replies@v14`),
+  stored without being read; left out on a save again keeps the last one.
+- **On messages**: `ai_draft` names the AI draft a draft is, or a sent message was sent from
+  (`{id, client, outcome, has_feedback}`), even after a person took it over.
+- **Feedback** from a person, which never blocks a send: `PUT /v1/collab/ai-drafts/{id}/feedback`
+  (agent or above, who sees the conversation; never a key) `{reason: wrong_facts | wrong_tone |
+  missing_info | should_not_answer | other, note? (≤1000), better_answer_html? (sanitized like
+  mail)}` → `204`. Saving again replaces it. It is audit-logged (`collab.ai_draft_feedback`) with
+  the reason, never the words.
+- **The feed**: `GET /v1/collab/ai-drafts/outcomes?cursor&limit (1..200, 50)` for a `collab:draft`
+  key (`403 ai_outcomes_keys_only` otherwise) → `{data: AIDraftOutcome[], next_cursor}`: that key's
+  drafts with an outcome or feedback, in conversations its member sees now, in the order they last
+  changed. Pass the last item's `cursor`: a draft comes back when it gets an outcome or feedback.
+  It returns the sent message's id, not its text: read it with the conversation. At most 60 reads
+  a minute per key.
+- **Retention**: the records go with their conversation, account, key or workspace.
 
 ## Shapes
 
@@ -699,9 +736,35 @@ interface MailMessage {
   sent_by: UserRef | null      // the teammate who sent it from opendesk (for a draft, who saved it)
   draft_id: string | null      // drafts: the id the /v1/collab/drafts routes take (the message's id)
   drafted_by_ai: string | null // drafts an AI key saved and no person has saved since: the key's name ("AI drafts")
+  ai_draft: AIDraftRef | null  // the AI draft it is, or was sent from, even once a person took it over ("AI draft outcomes")
   in_reply_to_id: string | null  // the message of the conversation it answers (its In-Reply-To), when stored
   own_address: string | null   // the account's address (its own or an alias) it was sent from, else the first in its To, Cc, then Delivered-To / X-Original-To
   outgoing: boolean            // mail the account wrote: sent from opendesk (sent_by), a draft, or filed by the provider in Sent or Drafts. Its From alone never makes mail outgoing, since a sender writes their own From. Mail that is not outgoing holds back its remote images until the reader loads them
+}
+
+type AIDraftOutcomeKind = "sent_unchanged" | "sent_edited" | "discarded" | "replaced" | "abandoned"
+
+interface AIDraftRef {
+  id: string                   // the AI draft record (PUT /v1/collab/ai-drafts/{id}/feedback)
+  client: string               // the key's name when it last saved the draft
+  outcome: AIDraftOutcomeKind | null
+  has_feedback: boolean
+}
+
+interface AIDraftOutcome {     // an item of GET /v1/collab/ai-drafts/outcomes
+  id: string
+  conversation_id: string
+  draft_id: string
+  client: string
+  client_ref: string
+  ai_body_html: string         // the AI's last saved text
+  ai_saved_at: string
+  taken_over_at: string | null // when a person first saved it
+  outcome: AIDraftOutcomeKind | null
+  outcome_at: string | null
+  sent_message_id: string | null
+  feedback: { reason: string; note: string; better_answer_html: string; at: string } | null
+  cursor: string
 }
 
 interface MailAttachment {

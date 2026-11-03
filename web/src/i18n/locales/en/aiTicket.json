@@ -134,7 +134,8 @@
     "showTranslation": "Show translation",
     "failed": "Couldn't translate this message",
     "aiLabel": "AI",
-    "aiHint": "Answered by the AI assistant from your knowledge base"
+    "aiHint": "Answered by the AI assistant from your knowledge base",
+    "apiBotHint": "Written by your own AI through the API key {{key}}"
   },
   "tools": {
     "title": "In your tools",

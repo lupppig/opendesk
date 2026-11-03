@@ -1,6 +1,7 @@
 import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { DataPairs } from "@/components/bits";
 import { ErrorState } from "@/components/ErrorState";
 import { PageBody, PageHeader } from "@/components/layout";
@@ -26,10 +27,12 @@ export function actionTone(action: string): Tone {
 }
 
 function Target({ e }: { e: AdminAuditLog }) {
+  const { t } = useTranslation("audit");
+  const type = t(`target.${e.target_type}`, { defaultValue: humanize(e.target_type) });
   const id = e.target_id;
   const short = id ? (id.length > 14 ? `${id.slice(0, 12)}…` : id) : "";
-  if (e.target_type === "instance" || !id) return <span className="text-fg-3">{humanize(e.target_type)}</span>;
-  const label = <span className="text-fg-3">{humanize(e.target_type)}</span>;
+  if (e.target_type === "instance" || !id) return <span className="text-fg-3">{type}</span>;
+  const label = <span className="text-fg-3">{type}</span>;
   const idEl = (
     <span className="mono text-[11.5px]" title={id}>
       {short}
@@ -58,16 +61,17 @@ function Target({ e }: { e: AdminAuditLog }) {
 }
 
 function Actor({ e }: { e: AdminAuditLog }) {
+  const { t } = useTranslation("audit");
   if (e.actor.type === "cli")
     return (
       <span className="flex items-center gap-1.5">
-        <Badge tone="outline">Command line</Badge>
+        <Badge tone="outline">{t("actor.cli")}</Badge>
       </span>
     );
   if (e.actor.type === "system")
     return (
       <span className="flex items-center gap-1.5">
-        <Badge tone="outline">Instance cleanup</Badge>
+        <Badge tone="outline">{t("actor.system")}</Badge>
       </span>
     );
   if (e.actor.id)
@@ -76,10 +80,11 @@ function Actor({ e }: { e: AdminAuditLog }) {
         {e.actor.email}
       </Link>
     );
-  return <span className="block truncate text-fg-2">{e.actor.email || "Unknown"}</span>;
+  return <span className="block truncate text-fg-2">{e.actor.email || t("actor.unknown")}</span>;
 }
 
 export default function Audit() {
+  const { t } = useTranslation("audit");
   const search = useSearch({ from: "/shell/audit" });
   const navigate = useNavigate({ from: "/audit" });
   const admins = useQuery(q.admins());
@@ -92,32 +97,32 @@ export default function Audit() {
 
   return (
     <>
-      <PageHeader title="Audit log" subtitle="Every sign-in and action in the admin panel and from the command line" />
+      <PageHeader title={t("title")} subtitle={t("subtitle")} />
       <div className="flex min-h-11 shrink-0 flex-wrap items-center gap-2 border-b border-line-soft px-4 py-2 md:px-6">
         <div className="w-[230px]">
           <Select
             size="sm"
-            aria-label="Action"
+            aria-label={t("col.action")}
             value={search.action ?? ALL}
             onChange={(v) => void navigate({ search: (p) => ({ ...p, action: v === ALL ? undefined : v }), replace: true })}
-            options={[{ value: ALL, label: "All actions" }, ...AUDIT_ACTIONS.map((a) => ({ value: a, label: a }))]}
+            options={[{ value: ALL, label: t("allActions") }, ...AUDIT_ACTIONS.map((a) => ({ value: a, label: a }))]}
           />
         </div>
         <div className="w-[230px]">
           <Select
             size="sm"
-            aria-label="Admin"
+            aria-label={t("col.admin")}
             value={search.actor ?? ALL}
             onChange={(v) => void navigate({ search: (p) => ({ ...p, actor: v === ALL ? undefined : v }), replace: true })}
-            options={[{ value: ALL, label: "All admins" }, ...actorOptions]}
+            options={[{ value: ALL, label: t("allAdmins") }, ...actorOptions]}
           />
         </div>
         {search.target && (
           <span className="inline-flex h-7 items-center gap-1 rounded-md bg-hover pl-2.5 pr-1 text-[12px] text-fg-2">
-            Target <span className="mono text-fg">{search.target}</span>
+            {t("col.target")} <span className="mono text-fg">{search.target}</span>
             <button
               type="button"
-              aria-label="Clear the target filter"
+              aria-label={t("clearTarget")}
               onClick={() => void navigate({ search: (p) => ({ ...p, target: undefined }), replace: true })}
               className="flex size-5 items-center justify-center rounded-sm text-fg-3 hover:bg-active hover:text-fg"
             >
@@ -127,7 +132,7 @@ export default function Audit() {
         )}
         {filtered && (
           <Button variant="ghost" size="xs" className="ml-auto" onClick={() => void navigate({ search: {}, replace: true })}>
-            Clear filters
+            {t("clearFilters")}
           </Button>
         )}
       </div>
@@ -140,12 +145,12 @@ export default function Audit() {
           <EmptyState
             art={filtered ? "search" : "audit"}
             ghost={filtered ? undefined : <GhostList />}
-            title={filtered ? "Nothing matches these filters" : "Nothing logged yet"}
-            description={filtered ? "Try another action or admin, or clear the filters." : "Sign-ins and every change made from the panel or the command line show up here."}
+            title={filtered ? t("empty.noMatch") : t("empty.title")}
+            description={filtered ? t("empty.noMatchHint") : t("empty.hint")}
             action={
               filtered ? (
                 <Button variant="secondary" onClick={() => void navigate({ search: {}, replace: true })}>
-                  Clear filters
+                  {t("clearFilters")}
                 </Button>
               ) : undefined
             }
@@ -154,12 +159,12 @@ export default function Audit() {
           <>
             <Table className={list.isPlaceholderData ? "opacity-60 transition-opacity" : undefined}>
               <THead>
-                <TH>Admin</TH>
-                <TH>Action</TH>
-                <TH>Target</TH>
-                <TH>Details</TH>
-                <TH>IP</TH>
-                <TH>When</TH>
+                <TH>{t("col.admin")}</TH>
+                <TH>{t("col.action")}</TH>
+                <TH>{t("col.target")}</TH>
+                <TH>{t("col.details")}</TH>
+                <TH>{t("col.ip")}</TH>
+                <TH>{t("col.when")}</TH>
               </THead>
               <tbody>
                 {rows.map((e) => (

@@ -99,6 +99,8 @@
     "instructions": "Instructions",
     "instructions_hint": "Consignes supplémentaires pour chaque brouillon : noms des produits, politiques, points à éviter.",
     "instructions_placeholder": "Appelez le produit Margin, jamais Margin App. Proposez un remboursement uniquement pour les paiements des 30 derniers jours.",
+    "draft_tools": "Vérifier les faits des brouillons avec vos outils connectés",
+    "draft_tools_hint": "Avant de rédiger une réponse, {{name}} vérifie ce qu’il lui faut (une commande, une livraison, un remboursement) avec les outils connectés qui s’exécutent sans approbation, sans jamais rien y modifier. Ajoute une courte recherche sur le modèle rapide quand un brouillon en a besoin.",
     "model": "Modèle",
     "provider": "Fournisseur",
     "search": "Recherche",

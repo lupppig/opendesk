@@ -20,6 +20,7 @@ type Data struct {
 	Kind      string       `json:"kind" enum:"shopify,http"`
 	State     string       `json:"state" enum:"ok,empty,no_contact,error" doc:"empty: the product knows nothing about this contact; no_contact: the ticket's contact has no email"`
 	Message   string       `json:"message,omitempty" doc:"error: what went wrong, in a few words"`
+	Code      string       `json:"code,omitempty" enum:"timeout,rate_limited,ticket,refused,status,answer" doc:"error: why, when it is one of these, for the app to say in the reader's language: no answer in time, too many lookups, the ticket could not be read, the credentials were refused, the URL answered an error status, its answer was too large or not the expected JSON. Absent for other failures, whose message is the product's or the network's words"`
 	Customer  *Customer    `json:"customer,omitempty"`
 	Orders    []Order      `json:"orders,omitempty"`
 	Sections  []Section    `json:"sections,omitempty" doc:"http: a version 1 answer's sections"`
@@ -157,13 +158,13 @@ func (s *Service) read(ctx context.Context, x *row, t *domain.Ticket, refresh bo
 		c, ok := s.contexts.get(ck)
 		if refresh || !ok {
 			if !allow() || !s.d.Limiter.Allow("ticket-panel:read:"+x.WorkspaceID.String(), readingsPerMinute, time.Minute) {
-				base.State, base.Message = "error", "Too many lookups. Try again in a minute."
+				base.State, base.Message, base.Code = "error", "Too many lookups. Try again in a minute.", "rate_limited"
 				return base
 			}
 			var err error
 			if c, err = s.lookupContext(ctx, x, t, sub); err != nil {
 				s.d.Log.Warn("ticket panel context", "panel", x.ID, "err", err)
-				base.State, base.Message = "error", "Couldn't read the ticket."
+				base.State, base.Message, base.Code = "error", "Couldn't read the ticket.", "ticket"
 				return base
 			}
 			s.contexts.set(ck, c, cacheTTL)
@@ -179,7 +180,7 @@ func (s *Service) read(ctx context.Context, x *row, t *domain.Ticket, refresh bo
 		}
 	}
 	if !allow() {
-		base.State, base.Message = "error", "Too many lookups. Try again in a minute."
+		base.State, base.Message, base.Code = "error", "Too many lookups. Try again in a minute.", "rate_limited"
 		return base
 	}
 	lctx, cancel := context.WithTimeout(ctx, fetchTimeout)
@@ -193,7 +194,7 @@ func (s *Service) read(ctx context.Context, x *row, t *domain.Ticket, refresh bo
 		ttl, err = s.readHTTP(lctx, x, sub, &base)
 	}
 	if err != nil {
-		base.State, base.Message, base.Customer, base.Orders, base.Sections, base.Blocks = "error", lookupMessage(err), nil, nil, nil, nil
+		base.State, base.Message, base.Code, base.Customer, base.Orders, base.Sections, base.Blocks = "error", lookupMessage(err), lookupCode(err), nil, nil, nil, nil
 		ttl = errTTL
 		s.d.Log.Info("ticket panel lookup failed", "panel", x.ID, "kind", x.Kind, "host", x.api().Host, "err", lookupMessage(err))
 	}
@@ -205,6 +206,28 @@ func (s *Service) read(ctx context.Context, x *row, t *domain.Ticket, refresh bo
 	}
 	return base
 }
+
+// lookupCode is the reason the app says in the reader's language (Data.Code), or "" for a
+// failure only the product's or the network's words describe.
+func lookupCode(err error) string {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return "timeout"
+	case errors.Is(err, errAuth):
+		return "refused"
+	}
+	var ae *answerError
+	if errors.As(err, &ae) {
+		return ae.code
+	}
+	return ""
+}
+
+// answerError is an answer of the panel's URL that cannot be shown, said in a few words:
+// code "status" for an error status, "answer" for one too large or not the expected JSON.
+type answerError struct{ msg, code string }
+
+func (e *answerError) Error() string { return e.msg }
 
 // lookupMessage is what an agent reads when a lookup fails: the product's words or how
 // reaching it failed, never a URL (a path or query can carry a secret).

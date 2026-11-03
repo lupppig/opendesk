@@ -2,7 +2,7 @@ import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
-import { i18n } from "@/i18n";
+import { i18n, loadAgentCatalogs } from "@/i18n";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { __resetClientForTests, configureClient, setTransport } from "@/lib/api/client";
 import { api } from "@/lib/api/endpoints";
@@ -509,5 +509,28 @@ describe("reading a panel", () => {
     await api.tickets.panel("t1", "p2");
     expect(asked.map((u) => u.pathname)).toEqual(Array(3).fill("/v1/tickets/t1/panels/p2"));
     expect(asked.map((u) => Object.fromEntries(u.searchParams))).toEqual([{ locale: "fr" }, { refresh: "true", locale: "fr" }, { locale: "en" }]);
+  });
+});
+
+describe("a failed lookup", () => {
+  const failed = (patch: Partial<TicketPanelData>): TicketPanelData => ({ panel_id: "p2", kind: "http", state: "error", fetched_at: "2026-10-27T10:00:00Z", ...patch });
+  const said = (d: TicketPanelData) => text(renderToStaticMarkup(<PanelBody data={d} />)).trim();
+
+  it("says a reason the server names in the reader's language, and other failures in the product's words", async () => {
+    await loadAgentCatalogs("fr");
+    await i18n.changeLanguage("fr");
+    try {
+      expect(said(failed({ code: "timeout", message: "No answer in time." }))).toBe("Chargement impossible : pas de réponse à temps.");
+      expect(said(failed({ code: "status", message: "The panel's URL answered 502." }))).toBe("Chargement impossible : l’autre produit a répondu par une erreur.");
+      expect(said(failed({ message: "dial tcp: connection refused" }))).toBe("Chargement impossible : dial tcp: connection refused");
+    } finally {
+      await i18n.changeLanguage("en");
+    }
+    expect(said(failed({ code: "refused", message: "Shopify refused the access token." }))).toBe("Couldn’t load: The credentials were refused. An admin can check them in Settings.");
+  });
+
+  it("says the server's words for a reason this app does not know yet", () => {
+    const newer = failed({ code: "quota" as TicketPanelData["code"], message: "The product's quota is used up." });
+    expect(said(newer)).toBe("Couldn’t load: The product's quota is used up.");
   });
 });

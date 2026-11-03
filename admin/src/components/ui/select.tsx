@@ -1,6 +1,7 @@
 import { Select as S } from "radix-ui";
 import { Check, ChevronDown } from "lucide-react";
 import type { ReactNode } from "react";
+import { i18n } from "@/i18n";
 import { cn } from "@/lib/cn";
 import { floatingPanel } from "./popover";
 
@@ -10,7 +11,7 @@ export function Select<V extends string>({
   value,
   onChange,
   options,
-  placeholder = "Select",
+  placeholder = i18n.t("ui.select"),
   className,
   size = "md",
   id,

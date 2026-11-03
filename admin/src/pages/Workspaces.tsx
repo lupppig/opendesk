@@ -1,5 +1,6 @@
 import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
 import { ErrorState } from "@/components/ErrorState";
 import { FilterChips } from "@/components/FilterChips";
 import { PageBody, PageHeader } from "@/components/layout";
@@ -14,16 +15,11 @@ import { number } from "@/lib/format";
 import { q, type WorkspaceFilter } from "@/lib/queries";
 import { useSession } from "@/lib/session";
 
-const FILTERS: { value: WorkspaceFilter; label: string }[] = [
-  { value: "all", label: "All" },
-  { value: "suspended", label: "Suspended" },
-  { value: "paid", label: "Paid" },
-  { value: "free", label: "Free" },
-  { value: "collab", label: "Collab" },
-  { value: "test", label: "Test" },
-];
+/** Each filter's label is `list.filter.<value>` in the workspaces catalog. */
+const FILTERS: WorkspaceFilter[] = ["all", "suspended", "paid", "free", "collab", "test"];
 
 export default function Workspaces() {
+  const { t } = useTranslation(["workspaces", "common"]);
   const search = useSearch({ from: "/shell/workspaces" });
   const navigate = useNavigate({ from: "/workspaces" });
   const billing = useSession((s) => s.me?.instance.billing_enabled ?? false);
@@ -31,20 +27,20 @@ export default function Workspaces() {
   const list = useInfiniteQuery({ ...q.workspaces({ q: search.q, filter }), placeholderData: keepPreviousData });
   const rows = list.data?.pages.flatMap((p) => p.data) ?? [];
   const filtered = !!search.q || filter !== "all";
-  const filters = billing ? FILTERS : FILTERS.filter((f) => f.value === "all" || f.value === "suspended" || f.value === "test");
+  const filters = (billing ? FILTERS : FILTERS.filter((f) => f === "all" || f === "suspended" || f === "test")).map((f) => ({ value: f, label: t(`list.filter.${f}`) }));
 
   return (
     <>
-      <PageHeader title="Workspaces">
+      <PageHeader title={t("list.title")}>
         <ListSearch
           value={search.q}
-          placeholder="Search by name, slug, id or a member's email"
+          placeholder={t("list.search")}
           onCommit={(v) => void navigate({ search: (s) => ({ ...s, q: v }), replace: true })}
         />
       </PageHeader>
       <div className="flex h-11 shrink-0 items-center gap-3 border-b border-line-soft px-4 md:px-6">
         <FilterChips
-          label="Filter workspaces"
+          label={t("list.filterLabel")}
           value={filter}
           onChange={(f) => void navigate({ search: (s) => ({ ...s, filter: f === "all" ? undefined : f }), replace: true })}
           options={filters}
@@ -59,27 +55,27 @@ export default function Workspaces() {
           filtered ? (
             <EmptyState
               art="search"
-              title="No workspaces match"
-              description="Try another name, slug, id or member email, or clear the filters."
+              title={t("list.noMatch")}
+              description={t("list.noMatchHint")}
               action={
                 <Button variant="secondary" onClick={() => void navigate({ search: {}, replace: true })}>
-                  Clear search and filters
+                  {t("common:clearFilters")}
                 </Button>
               }
             />
           ) : (
-            <EmptyState art="workspaces" ghost={<GhostList />} title="No workspaces yet" description="Workspaces show up here as people sign up and create them." />
+            <EmptyState art="workspaces" ghost={<GhostList />} title={t("list.empty")} description={t("list.emptyHint")} />
           )
         ) : (
           <>
             <Table className={list.isPlaceholderData ? "opacity-60 transition-opacity" : undefined}>
               <THead>
-                <TH>Workspace</TH>
-                <TH>Plan</TH>
-                {billing && <TH>Subscription</TH>}
-                <TH align="right">Members</TH>
-                <TH>Last activity</TH>
-                <TH>Created</TH>
+                <TH>{t("list.col.workspace")}</TH>
+                <TH>{t("list.col.plan")}</TH>
+                {billing && <TH>{t("list.col.subscription")}</TH>}
+                <TH align="right">{t("list.col.members")}</TH>
+                <TH>{t("list.col.lastActivity")}</TH>
+                <TH>{t("list.col.created")}</TH>
               </THead>
               <tbody>
                 {rows.map((w) => (

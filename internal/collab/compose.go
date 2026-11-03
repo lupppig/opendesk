@@ -40,6 +40,8 @@ type composeIn struct {
 	Keep  []int
 	// NeedRecipients refuses a message without recipients (sending; a draft may have none).
 	NeedRecipients bool
+	// ClientRef is an AI key's label for the instructions behind a draft ("AI draft outcomes").
+	ClientRef string
 }
 
 // composed is a message ready for the provider.

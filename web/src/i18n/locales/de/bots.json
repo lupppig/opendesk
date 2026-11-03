@@ -31,7 +31,8 @@
     "defaultNone": "Antwortet überall, wo kein anderer Bot gewählt ist",
     "on": "Antwortet auf {{list}}",
     "listMore_one": "{{list}} und {{count}} weiteres",
-    "listMore_other": "{{list}} und {{count}} weitere"
+    "listMore_other": "{{list}} und {{count}} weitere",
+    "apiKey": "{{name}} (API-Schlüssel)"
   },
   "summary": {
     "title": "Bots",

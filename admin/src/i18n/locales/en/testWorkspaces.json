@@ -1,0 +1,200 @@
+{
+  "title": "Test workspaces",
+  "days": "days",
+  "deleteLabel": "Delete the workspace",
+  "createdBy": "by {{email}}",
+  "actionsFor": "Actions for {{name}}",
+  "empty": {
+    "title": "No test workspaces",
+    "hint": "Make one to demo opendesk with realistic data, or to try something without touching a customer's workspace. It is deleted on the day you choose.",
+    "tipPassword": "Owners get a test account with a password that expires",
+    "tipCounts": "Test workspaces stay out of the overview's counts"
+  },
+  "col": {
+    "owner": "Owner",
+    "sample": "Sample data",
+    "deleted": "Deleted"
+  },
+  "owner": {
+    "test": "Test account",
+    "own": "Own account",
+    "none": "No owner",
+    "new": "New test account",
+    "existing": "Existing account"
+  },
+  "plan": {
+    "recorded": "recorded",
+    "recordedHint": "Billing is off: every workspace is unlimited and the plan is only recorded",
+    "noBilling": "Billing is off on this instance: every workspace is unlimited and the plan is only recorded."
+  },
+  "planHint": {
+    "free": "The free plan's limits",
+    "pro": "No mailbox or member limit, $20 of AI a month and a $50 AI grant",
+    "collab": "Complimentary Collab until the workspace is deleted"
+  },
+  "menu": {
+    "open": "Open workspace"
+  },
+  "expiry": {
+    "kept": "Kept",
+    "now": "Deleting now",
+    "soon": "Deletes {{when}}",
+    "on": "Deletes {{date}}",
+    "keptHint": "Kept until someone deletes it"
+  },
+  "password": {
+    "expired": "Password expired",
+    "soon": "Password expires {{when}}",
+    "until": "Password until {{date}}"
+  },
+  "delete": {
+    "1": "After a day",
+    "7": "After a week",
+    "14": "After 2 weeks",
+    "30": "After 30 days",
+    "90": "After 90 days",
+    "365": "After a year",
+    "keep": "Keep until deleted"
+  },
+  "size": {
+    "small": "Small",
+    "realistic": "Realistic",
+    "large": "Large"
+  },
+  "sizeHint": {
+    "small": "A month of a small team, quick to look through",
+    "realistic": "Three months of a busy team",
+    "large": "A year of a big team, for long lists and reports"
+  },
+  "kind": {
+    "tickets": "Tickets",
+    "chat": "Live chat",
+    "kb": "Knowledge base",
+    "team": "Teammates",
+    "collab": "Collab mail",
+    "history": "History"
+  },
+  "adds": {
+    "tickets": "About {{tickets}} open, pending and on-hold tickets from {{contacts}} customers at {{companies}} companies, with labels and assignees",
+    "ticketsExtras": "About {{tickets}} open, pending and on-hold tickets from {{contacts}} customers at {{companies}} companies, with labels and assignees, saved views and saved replies",
+    "chat": "{{chats}} widget chats, some waiting for a reply right now",
+    "kb": "{{articles}} help center articles in {{collections}} collections",
+    "team": "{{members}} teammates in {{teams}} teams; they have no password and never sign in",
+    "collab_one": "{{accounts}} demo mail account with {{threads}} threads, never connected to a provider",
+    "collab_other": "{{accounts}} demo mail accounts with {{threads}} threads, never connected to a provider",
+    "history": "Solved and closed tickets with ratings across the last {{days}} days, so reports have something to show"
+  },
+  "counts": {
+    "tickets_one": "{{n}} ticket",
+    "tickets_other": "{{n}} tickets",
+    "messages_one": "{{n}} message",
+    "messages_other": "{{n}} messages",
+    "chats_one": "{{n}} chat",
+    "chats_other": "{{n}} chats",
+    "contacts_one": "{{n}} contact",
+    "contacts_other": "{{n}} contacts",
+    "companies_one": "{{n}} company",
+    "companies_other": "{{n}} companies",
+    "articles_one": "{{n}} article",
+    "articles_other": "{{n}} articles",
+    "members_one": "{{n}} teammate",
+    "members_other": "{{n}} teammates",
+    "teams_one": "{{n}} team",
+    "teams_other": "{{n}} teams",
+    "mail_threads_one": "{{n}} mail thread",
+    "mail_threads_other": "{{n}} mail threads"
+  },
+  "batch": {
+    "small": "Small batch of {{list}}",
+    "realistic": "Realistic batch of {{list}}",
+    "large": "Large batch of {{list}}",
+    "nothing": "nothing"
+  },
+  "sample": {
+    "adding": {
+      "small": "Adding small data",
+      "realistic": "Adding realistic data",
+      "large": "Adding large data",
+      "sample": "Adding sample data"
+    },
+    "lastFailed": "The last batch failed.",
+    "added": "Added",
+    "failed": "Failed",
+    "batches_one": "{{n}} batch",
+    "batches_other": "{{n}} batches",
+    "add": "Add sample data",
+    "stillAdding": "Sample data is still being added",
+    "size": "Size",
+    "kinds": "Kinds",
+    "clearAll": "Clear all",
+    "chooseAll": "Choose all",
+    "whatAdded": "What will be added",
+    "oneBatch": "{{size}}, in one batch:",
+    "nothingSent": "Every address is on the reserved .invalid domain and nothing is sent, emailed or charged.",
+    "chooseOne": "Choose at least one kind."
+  },
+  "result": {
+    "ready": "{{name}} is ready",
+    "newPassword": "New password for {{name}}",
+    "signInWith": "Sign in to the app with these details.",
+    "ownAccount": "The owner signs in with their own account and password.",
+    "sampleRunning": "Sample data is being added and shows up as it lands.",
+    "dismiss": "Dismiss",
+    "copyNow": "Copy the password now: it is shown only once. If it is lost, renew it from this page.",
+    "copyNowUntil": "Copy the password now: it is shown only once and stops working on {{date}}. If it is lost, renew it from this page.",
+    "signIn": "Sign in",
+    "passwordExpires": "Password expires",
+    "deletedOn": "Deleted on {{date}}",
+    "openSignIn": "Open sign-in page",
+    "done": "Done"
+  },
+  "create": {
+    "title": "Create test workspace",
+    "description": "A workspace for demos and testing, made like any other and flagged as a test. It stays out of the overview's counts and is deleted on the day you choose.",
+    "emailError": "A new test account's address ends in .invalid, which never receives mail.",
+    "testEmailRequired": "A new test account needs an address ending in .invalid. To give a real person a test workspace, choose their existing account.",
+    "name": "Workspace name",
+    "namePlaceholder": "Acme demo",
+    "emailHint": "A reserved .invalid address: the account is confirmed and nothing is ever sent to it.",
+    "ownerName": "Name",
+    "ownerNamePlaceholder": "Alex Morgan",
+    "passwordLasts": "Password lasts",
+    "passwordHint": "A strong password is generated and shown once. It works for 1 or 2 days.",
+    "sampleHint": "Added in the background once the workspace exists.",
+    "reasonHint": "{{length}} / {{max}}. Kept in the admin audit log.",
+    "reasonPlaceholder": "Sales demo for Acme on Thursday"
+  },
+  "picker": {
+    "search": "Search accounts by email, name or id",
+    "hint": "They own the new workspace and sign in with their own password; nothing about their account changes.",
+    "accounts": "Accounts",
+    "noMatch": "No account matches."
+  },
+  "add": {
+    "title": "Add sample data to {{name}}",
+    "another": "Another batch, on top of what is there.",
+    "anotherWith": "Another batch, on top of what is there ({{counts}}).",
+    "background": "Added in the background; the list shows when it is done.",
+    "onItsWay": "{{batch}} is on its way",
+    "seeding": "Sample data is still being added. Try again when it finishes."
+  },
+  "change": {
+    "title": "Change when it is deleted",
+    "titleRenew": "Extend or renew password",
+    "keepDay": "Keep the current day ({{date}})",
+    "keepAsNow": "Keep it until deleted (as now)",
+    "fromToday": "{{choice}}, from today",
+    "deletedOn": "<b>{{name}}</b> is deleted on {{date}}.",
+    "kept": "<b>{{name}}</b> is kept until someone deletes it.",
+    "notTestAccount": "The owner has their own account; only a test account's password is renewed.",
+    "passwordReady": "New password ready",
+    "renew": "Renew the owner's password",
+    "renewHint": "A new password for <m>{{email}}</m>, shown once. The old one stops working and their sessions end.",
+    "newPasswordLasts": "New password lasts",
+    "noPassword": "The owner signs in with their own account, so there is no password to renew."
+  },
+  "deleteDialog": {
+    "description": "Everything in this test workspace is removed for good.",
+    "owner": "The test account <m>{{email}}</m> goes with it unless it is in another workspace."
+  }
+}

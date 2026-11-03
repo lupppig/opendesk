@@ -1,0 +1,116 @@
+{
+  "list": {
+    "title": "Users",
+    "search": "Search by email, name or id",
+    "filterLabel": "Filter users",
+    "filter": {
+      "all": "All",
+      "suspended": "Suspended",
+      "admins": "Admins",
+      "unverified": "Unverified"
+    },
+    "noMatch": "No users match",
+    "noMatchHint": "Try another email, name or id, or clear the filters.",
+    "empty": "No users yet",
+    "emptyHint": "People show up here once they sign up or accept an invitation.",
+    "col": {
+      "user": "User",
+      "security": "Security",
+      "workspaces": "Workspaces",
+      "lastSeen": "Last seen",
+      "joined": "Joined"
+    }
+  },
+  "flag": {
+    "verified": "Verified",
+    "unverified": "Unverified",
+    "twoFactor": "2FA",
+    "noTwoFactor": "No 2FA",
+    "noPassword": "No password"
+  },
+  "detail": {
+    "allUsers": "All users",
+    "actions": "Actions",
+    "joinedSeen": "Joined <joined/>, last seen <seen/>",
+    "deviceOn": "{{browser}} on {{os}}",
+    "unknownDevice": "Unknown device",
+    "client": {
+      "web": "Browser",
+      "desktop": "Desktop app",
+      "ios": "iPhone app"
+    },
+    "blocked": {
+      "suspendSelf": "You can't suspend yourself",
+      "suspendAdmin": "Revoke their admin role first",
+      "mfaOff": "Two-factor authentication is off",
+      "mfaSelf": "Turn yours off in the app",
+      "deleteSelf": "Delete your own account in the app"
+    },
+    "toast": {
+      "verificationSent": "Verification email sent to {{email}}",
+      "alreadyVerified": "This email is already verified",
+      "restored": "User restored",
+      "signedOutAll": "Signed out everywhere",
+      "sessionSignedOut": "Session signed out",
+      "suspended": "User suspended",
+      "mfaOff": "Two-factor authentication turned off",
+      "deleted": "{{email}} was deleted"
+    },
+    "restore": {
+      "title": "Restore this user?",
+      "button": "Restore user",
+      "text": "<b>{{email}}</b> can sign in again."
+    },
+    "signOutAll": {
+      "title": "Sign out everywhere?",
+      "button": "Sign out everywhere",
+      "text": "Every session of <b>{{email}}</b> ends on every device, in the app and the panel. They can sign in again."
+    },
+    "resendVerification": "Resend verification email",
+    "suspend": {
+      "button": "Suspend user",
+      "title": "Suspend {{email}}?",
+      "description": "Every session ends, in the app and the panel, and they can't sign in until restored. Their workspaces keep working for everyone else."
+    },
+    "mfa": {
+      "button": "Turn off two-factor authentication",
+      "title": "Turn off two-factor authentication?",
+      "confirm": "Turn off 2FA",
+      "description": "The authenticator and recovery codes of {{email}} are removed (passkeys stay), every session ends, and they are emailed that an administrator did it. Do this only after confirming who is asking."
+    },
+    "delete": {
+      "button": "Delete user",
+      "title": "Delete {{email}}?",
+      "description": "The account and its data are removed for good, the same as the user's own Delete account. This can't be undone.",
+      "descriptionLeaves_one": "The account and its data are removed for good, the same as the user's own Delete account. They leave {{n}} workspace. This can't be undone.",
+      "descriptionLeaves_other": "The account and its data are removed for good, the same as the user's own Delete account. They leave {{n}} workspaces. This can't be undone.",
+      "soleOwner": "They own a workspace that has other members. Transfer it or delete that workspace first."
+    },
+    "suspendedSince": "Suspended <time/>",
+    "suspendedHint": "They can't sign in; their workspaces keep working for everyone else.",
+    "noWorkspaces": "No workspaces",
+    "noWorkspacesHint": "This person isn't a member of any workspace.",
+    "sessions": {
+      "title": "Live sessions",
+      "device": "Device",
+      "signedIn": "Signed in",
+      "lastUsed": "Last used",
+      "signOut": "Sign out",
+      "empty": "No live sessions",
+      "emptyHint": "They're signed out everywhere."
+    },
+    "account": {
+      "title": "Account",
+      "email": "Email",
+      "twoFactor": "Two-factor",
+      "password": "Password",
+      "set": "Set",
+      "passkeys": "Passkeys",
+      "adminRole": "Admin role"
+    },
+    "identities": {
+      "title": "Sign-in identities",
+      "none": "Email and password only."
+    }
+  }
+}

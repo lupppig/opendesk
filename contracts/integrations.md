@@ -132,6 +132,8 @@ Tools turned off in settings are neither offered nor run. `disabled_tools`, `ask
   and whose result has a link on the provider's hosts, is linked back to the ticket
   (`POST /v1/tickets/{id}/links`, attributed `ai` for the user). The step's `refs` carry
   `{kind: "external", id: <url>}`.
+- A draft reply (`contracts/ai.md` "Drafts and connected tools") calls reads only (`CallRead`), before
+  it is written.
 - A procedure an automation runs (`contracts/ai.md` "Automations") calls reads, and writes on
   `auto_tools` only (`CallAuto`); a create-style write's link on the provider's hosts is linked to its
   ticket the same way, `actor_type: "ai"` with no user.
@@ -176,7 +178,9 @@ interface TicketPanel { id: string; kind: "shopify" | "http"; name: string;
   last_error: string; created_at: string; updated_at: string }
 interface TicketPanelData { panel_id: string; kind: "shopify" | "http";
   state: "ok" | "empty" /* nothing about this contact */ | "no_contact" /* shopify: the contact has no email */ | "error";
-  message?: string /* error: a few words, never a URL */; customer?: Customer; orders?: Order[] /* shopify */;
+  message?: string /* error: a few words, never a URL */;
+  code?: "timeout" | "rate_limited" | "ticket" | "refused" | "status" | "answer" /* error: why, for the app to say in the reader's language; absent when only the product's or the network's words say it */;
+  customer?: Customer; orders?: Order[] /* shopify */;
   sections?: Section[] /* http, a version 1 answer */; blocks?: Block[] /* http, a version 2 answer, cleaned ("The http answer") */;
   fetched_at: string }
 /* A field the panel does not show is left out of Customer and Order, and its list is empty. */

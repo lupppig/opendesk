@@ -1,7 +1,9 @@
 package panels
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -387,7 +389,7 @@ func TestShopifyPanel(t *testing.T) {
 	// A revoked token: a quiet state on the ticket, and the panel needs attention in settings.
 	shop.only("shpat_new")
 	d = readPanel(t, e, path+"?refresh=true", viewer)
-	if d.State != "error" || !strings.Contains(d.Message, "access token") {
+	if d.State != "error" || !strings.Contains(d.Message, "access token") || d.Code != "refused" {
 		t.Fatalf("revoked = %+v", d)
 	}
 	var lastErr string
@@ -671,7 +673,7 @@ func TestHTTPPanel(t *testing.T) {
 		t.Fatalf("rotated = %q", rotated.Secret)
 	}
 	d = readPanel(t, e, path, viewer)
-	if d.State != "error" || !strings.Contains(d.Message, "signing secret") {
+	if d.State != "error" || !strings.Contains(d.Message, "signing secret") || d.Code != "refused" {
 		t.Fatalf("old secret = %+v", d)
 	}
 	secret.Store(rotated.Secret)
@@ -688,7 +690,7 @@ func TestHTTPPanel(t *testing.T) {
 	}
 	e.Do("PATCH", "/v1/ticket-panels/"+created.Panel.ID.String(), admin, map[string]any{"url": srv.URL + "/huge"}).Want(t, 200)
 	d = readPanel(t, e, path, viewer)
-	if d.State != "error" || !strings.Contains(d.Message, "64 KB") {
+	if d.State != "error" || !strings.Contains(d.Message, "64 KB") || d.Code != "answer" {
 		t.Fatalf("huge = %+v", d)
 	}
 }
@@ -725,6 +727,26 @@ func TestStatusFollowsTheSavedPanel(t *testing.T) {
 	e.Scalar(`SELECT status FROM ticket_panels WHERE id = $1`, &status, created.Panel.ID)
 	if status != "error" {
 		t.Fatalf("a refusal of the saved panel left it %q", status)
+	}
+}
+
+// TestLookupCode checks a failure the app says in the reader's language carries its code, and
+// one only the product's or the network's words describe carries none.
+func TestLookupCode(t *testing.T) {
+	cases := []struct {
+		err  error
+		want string
+	}{
+		{fmt.Errorf("lookup: %w", context.DeadlineExceeded), "timeout"},
+		{&authError{"Shopify refused the access token."}, "refused"},
+		{&answerError{"The panel's URL answered 500.", "status"}, "status"},
+		{fmt.Errorf("read: %w", &answerError{"The panel's answer is not the expected JSON.", "answer"}), "answer"},
+		{errors.New("dial tcp: connection refused"), ""},
+	}
+	for _, c := range cases {
+		if got := lookupCode(c.err); got != c.want {
+			t.Errorf("lookupCode(%v) = %q, want %q", c.err, got, c.want)
+		}
 	}
 }
 

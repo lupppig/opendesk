@@ -275,6 +275,9 @@ type MailMessage struct {
 	// DraftedByAI is, on a draft an AI client saved, the client's name ("Draft by <name>");
 	// null on anything a person wrote or saved last.
 	DraftedByAI *string `json:"drafted_by_ai"`
+	// AIDraft is the AI draft this message is, or was sent from, even after a person took
+	// it over: what became of it and whether a person gave feedback ("AI draft outcomes").
+	AIDraft *AIDraftRef `json:"ai_draft"`
 	// InReplyToID is the message of the conversation this one answers (its In-Reply-To), when stored.
 	InReplyToID *uuid.UUID `json:"in_reply_to_id"`
 	// OwnAddress is the account's address (its own or another) the message was sent from

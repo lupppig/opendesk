@@ -2,17 +2,15 @@
 // panel hides or disables what the role does not allow; the API enforces it
 // either way, reading the role from the database on every request.
 
+import { i18n } from "@/i18n";
 import type { AdminMe, AdminPermission, AdminRole } from "./api/types";
 
 export const ROLES: AdminRole[] = ["viewer", "support", "super"];
 
-export const ROLE_LABEL: Record<AdminRole, string> = { viewer: "Viewer", support: "Support", super: "Super" };
+/** Each role's name and what it may do, as keys of the common catalog: `t(ROLE_LABEL[role])`. */
+export const ROLE_LABEL = { viewer: "role.viewer", support: "role.support", super: "role.super" } as const satisfies Record<AdminRole, string>;
 
-export const ROLE_HINT: Record<AdminRole, string> = {
-  viewer: "Reads every page, changes nothing",
-  support: "Sessions, suspensions, limits, AI grants, test workspaces and jobs",
-  super: "Everything, including 2FA, deletion and admins",
-};
+export const ROLE_HINT = { viewer: "roleHint.viewer", support: "roleHint.support", super: "roleHint.super" } as const satisfies Record<AdminRole, string>;
 
 /** The table in the contract: the least role that holds each permission. */
 export const MIN_ROLE: Record<AdminPermission, AdminRole> = {
@@ -38,7 +36,7 @@ export function can(me: Pick<AdminMe, "permissions"> | null | undefined, perm: A
 export function deniedReason(me: Pick<AdminMe, "permissions"> | null | undefined, perm: AdminPermission): string | null {
   if (can(me, perm)) return null;
   const role = MIN_ROLE[perm];
-  return role === "super" ? "Needs the Super admin role" : `Needs the ${ROLE_LABEL[role]} or Super admin role`;
+  return role === "super" ? i18n.t("denied.super") : i18n.t("denied.role", { role: i18n.t(ROLE_LABEL[role]) });
 }
 
 /** The roles an admin may hold, highest first, for sorting. */

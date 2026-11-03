@@ -4,10 +4,21 @@
 // person; after a handoff or a team member's reply it is the team's.
 
 import type { ActionUi } from "./store";
-import type { AIAction, AIActionStatus, Conversation, Message } from "./types";
+import { readBotRef } from "./config";
+import type { AIAction, AIActionStatus, BotRef, Conversation, Message } from "./types";
 
 export function isAiAnswer(m: Pick<Message, "author" | "ai">): boolean {
   return m.author?.type === "system" && m.ai === true;
+}
+
+/**
+ * The bot a team reply was written as by an API key that speaks as one (contracts/api.md
+ * "API keys"): an AI of the team's own, shown with the bot's name and face. Null otherwise.
+ */
+export function keyBot(m: Pick<Message, "author" | "ai">): BotRef | null {
+  if (m.author?.type !== "api" || m.ai) return null;
+  const seen = readBotRef(m.author.bot);
+  return seen?.look ? { id: seen.id, name: seen.name, avatar_url: seen.avatar_url, look: seen.look } : null;
 }
 
 /** A person from the team has replied in the thread. */

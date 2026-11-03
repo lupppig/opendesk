@@ -129,6 +129,12 @@ Open the mailbox in **Settings, Mailboxes**. Once the agent answers emails to it
 
 Where no bot is picked, the default bot answers. Making another bot the default moves all of those at once.
 
+### For your own AI, through the API
+
+If an AI of your own answers customers through the [API](/api/), it can answer as one of your bots too. In **Settings, API keys**, create a key with **Full access** (or at least **Tickets: Write**) and choose the bot under **Speaks as**. For a key you already have, open its menu and choose **Speak as a bot**.
+
+Every reply and note that key writes then shows and goes out as the bot: its name and face with the **AI** label in the inbox (hover the label to see which key wrote it), its name as the email sender and its email sign-off at the end. Your AI no longer needs to sign its emails: if it does, with the same words, the sign-off is not added twice. Choose **No bot** to have the key write as itself again.
+
 ## What customers and your team see
 
 Visitors see the bot's name, face and role in the widget header, on each of its answers and while it writes. Email recipients see its name as the sender and its sign-off. In the inbox, its messages carry its name and face with the **AI** label, so your team always knows which answers came from a bot.
@@ -141,7 +147,7 @@ A sent message keeps the bot it was sent as, even if you rename or change the bo
 
 - **Duplicate** copies a bot's look and personality, without where it answers. A good start for a second brand.
 - **Drag** bots to reorder the list, or use <kbd>Alt</kbd> with the arrow keys on the handle. The order is also the order in pickers.
-- **Delete** removes a bot and its picture. The default bot can't be deleted: make another bot the default first. A bot that still answers on a widget or address can't be deleted either: pick another bot there first. Past messages keep its name.
+- **Delete** removes a bot and its picture. The default bot can't be deleted: make another bot the default first. A bot that still answers on a widget or address, or that an API key speaks as, can't be deleted either: pick another bot there first. Past messages keep its name.
 
 A workspace can have up to 50 bots. Creating, changing, deleting and reordering bots is recorded in the audit log.
 
@@ -149,7 +155,7 @@ A workspace can have up to 50 bots. Creating, changing, deleting and reordering 
 
 ## Bots in the API
 
-Bots are a resource of the [public API](/api/): `GET /v1/bots` lists them, and admins and API keys with settings access create and change them. A widget's and a mailbox's `bot_id` picks its bot; `null` means the default. Every bot's face is also a public image at `/v1/public/bots/{id}/avatar.svg` (and `.png`), so you can show it anywhere. Changes arrive live as `bot.created`, `bot.updated` and `bot.deleted` events.
+Bots are a resource of the [public API](/api/): `GET /v1/bots` lists them, and admins and API keys with settings access create and change them. A widget's and a mailbox's `bot_id` picks its bot; `null` means the default. An API key's `bot_id` is the bot it [speaks as](/api/resources/api-keys-webhooks/#speak-as-a-bot); `null` means none. Every bot's face is also a public image at `/v1/public/bots/{id}/avatar.svg` (and `.png`), so you can show it anywhere. Changes arrive live as `bot.created`, `bot.updated` and `bot.deleted` events.
 
 </Fold>
 

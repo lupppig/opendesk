@@ -212,7 +212,7 @@ export function draftArticle(ws: WsData, ticketIds: string[], topic: string): KB
 function settingsPatch(ctx: Ctx): Partial<AISettings> {
   const b = ctx.body;
   const out: Partial<AISettings> = {};
-  for (const k of ["enabled", "auto_triage", "auto_summarize", "widget_answers", "assistant", "assistant_peer"] as const) {
+  for (const k of ["enabled", "auto_triage", "auto_summarize", "widget_answers", "assistant", "assistant_peer", "draft_tools"] as const) {
     if (k in b) {
       if (typeof b[k] !== "boolean") throw invalid(`${k} must be true or false`);
       out[k] = b[k];

@@ -141,13 +141,13 @@ func (s *service) processInbound(ctx context.Context, wid, inboundID uuid.UUID) 
 	if !validAddress(sender) {
 		return s.markInbound(ctx, wid, inboundID, "ignored", "no_sender")
 	}
-	// Mail from this mailbox's own addresses, or replying through a forwarding address, is
-	// our own. Mail from another of the workspace's addresses (forwarded or sent to this
-	// one by a teammate) opens a ticket here, unless it is mail we generated.
-	if slicesContainsFold(self, sender) || strings.EqualFold(emailDomain(sender), s.inboundDomain()) {
+	// Mail replying through a forwarding address is our own, and so is mail we generated
+	// from any of the workspace's addresses. Other mail from one of those addresses (a
+	// teammate's forward, or a system that sends as the mailbox) opens a ticket here.
+	if strings.EqualFold(emailDomain(sender), s.inboundDomain()) {
 		return s.markInbound(ctx, wid, inboundID, "ignored", "from_own_mailbox")
 	}
-	internal := slicesContainsFold(own, sender)
+	internal := slicesContainsFold(own, sender) || slicesContainsFold(self, sender)
 	if internal && ourMsgIDRe.MatchString(pm.MessageID) {
 		return s.markInbound(ctx, wid, inboundID, "ignored", "from_own_mailbox")
 	}

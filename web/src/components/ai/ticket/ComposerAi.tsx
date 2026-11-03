@@ -261,6 +261,7 @@ export function ComposerAiMenu({ ai, hasDraft, disabled }: { ai: ComposerAi; has
   const { t } = useTranslation("aiTicket");
   const [guideOpen, setGuideOpen] = useState(false);
   const [guide, setGuide] = useState("");
+  const openingGuide = useRef(false);
   if (!ai.available) return null;
 
   const submitGuide = () => {
@@ -286,11 +287,30 @@ export function ComposerAiMenu({ ai, hasDraft, disabled }: { ai: ComposerAi; has
               </M.Trigger>
             </Tooltip>
             <M.Portal>
-              <M.Content side="top" align="end" sideOffset={6} collisionPadding={8} className={cn(floatingPanel, "w-[248px] p-1")}>
+              <M.Content
+                side="top"
+                align="end"
+                sideOffset={6}
+                collisionPadding={8}
+                className={cn(floatingPanel, "w-[248px] p-1")}
+                onCloseAutoFocus={(e) => {
+                  if (openingGuide.current) {
+                    e.preventDefault();
+                  }
+                  openingGuide.current = false;
+                }}
+              >
                 <Item icon={<AiIcon />} onSelect={() => ai.draft()} hint={<Kbd>mod j</Kbd>}>
                   {t("composer.draft")}
                 </Item>
-                <Item icon={<PenLine />} onSelect={() => setTimeout(() => setGuideOpen(true), 0)} hint={<Cost feature="draft_reply" />}>
+                <Item
+                  icon={<PenLine />}
+                  onSelect={() => {
+                    openingGuide.current = true;
+                    setTimeout(() => setGuideOpen(true), 0);
+                  }}
+                  hint={<Cost feature="draft_reply" />}
+                >
                   {t("composer.draftWithGuide")}
                 </Item>
                 <M.Separator className="-mx-1 my-1 h-px bg-line" />

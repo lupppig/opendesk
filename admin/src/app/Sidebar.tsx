@@ -4,6 +4,7 @@
 import { Link } from "@tanstack/react-router";
 import { ExternalLink, Keyboard, LogOut, Monitor, Moon, Sun } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
+import { useTranslation } from "react-i18next";
 import { AdminPill, Lockup } from "@/components/brand";
 import { AdminRolePill } from "@/components/pills";
 import { Avatar } from "@/components/ui/avatar";
@@ -30,19 +31,20 @@ function ActivePill() {
 }
 
 export function Sidebar({ onSignOut, onShortcuts }: { onSignOut: () => void; onShortcuts: () => void }) {
+  const { t } = useTranslation(["shell", "common"]);
   const me = useMe();
   const { pref, setTheme } = useTheme();
   const appUrl = me.instance.app_url || config.appUrl;
   const themes: { value: ThemePref; label: string; icon: React.ReactNode }[] = [
-    { value: "system", label: "System", icon: <Monitor /> },
-    { value: "light", label: "Light", icon: <Sun /> },
-    { value: "dark", label: "Dark", icon: <Moon /> },
+    { value: "system", label: t("theme.system"), icon: <Monitor /> },
+    { value: "light", label: t("theme.light"), icon: <Sun /> },
+    { value: "dark", label: t("theme.dark"), icon: <Moon /> },
   ];
 
   return (
-    <nav aria-label="Admin" className="flex h-full w-full flex-col bg-chrome">
+    <nav aria-label={t("common:adminPill")} className="flex h-full w-full flex-col bg-chrome">
       <div className="flex h-12 shrink-0 items-center gap-2 px-4">
-        <Link to="/" aria-label="opendesk admin overview" className="flex items-center text-fg">
+        <Link to="/" aria-label={t("logoLink")} className="flex items-center text-fg">
           <Lockup className="h-[15px]" />
         </Link>
         <AdminPill />
@@ -60,7 +62,7 @@ export function Sidebar({ onSignOut, onShortcuts }: { onSignOut: () => void; onS
                 <>
                   {isActive && <ActivePill />}
                   <n.icon />
-                  <span className="flex-1 truncate">{n.label}</span>
+                  <span className="flex-1 truncate">{t(`nav.${n.id}`)}</span>
                   <Kbd className="opacity-0 transition-opacity group-hover:opacity-100 [&_kbd]:h-4 [&_kbd]:min-w-4 [&_kbd]:text-[9.5px]">{n.keys}</Kbd>
                 </>
               )}
@@ -85,22 +87,22 @@ export function Sidebar({ onSignOut, onShortcuts }: { onSignOut: () => void; onS
             </button>
           </MenuTrigger>
           <MenuContent side="top" align="start" className="w-[232px]">
-            <MenuLabel>Theme</MenuLabel>
-            {themes.map((t) => (
-              <MenuCheckItem key={t.value} checked={pref === t.value} onSelect={() => setTheme(t.value)} icon={t.icon}>
-                {t.label}
+            <MenuLabel>{t("theme.label")}</MenuLabel>
+            {themes.map((th) => (
+              <MenuCheckItem key={th.value} checked={pref === th.value} onSelect={() => setTheme(th.value)} icon={th.icon}>
+                {th.label}
               </MenuCheckItem>
             ))}
             <MenuSeparator />
             <MenuItem icon={<Keyboard />} shortcut="?" onSelect={onShortcuts}>
-              Keyboard shortcuts
+              {t("shortcuts.dialog")}
             </MenuItem>
             <MenuItem icon={<ExternalLink />} onSelect={() => window.open(appUrl, "_blank", "noopener,noreferrer")}>
-              Open the app
+              {t("openApp")}
             </MenuItem>
             <MenuSeparator />
             <MenuItem icon={<LogOut />} onSelect={onSignOut}>
-              Sign out
+              {t("signOut")}
             </MenuItem>
           </MenuContent>
         </Menu>

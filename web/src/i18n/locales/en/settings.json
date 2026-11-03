@@ -260,6 +260,12 @@
       "label": "Conversation layout",
       "hint": "The customer's messages on the left, your team's replies and notes on the right, like a chat. Full width on a narrow screen."
     },
+    "conversationWidth": {
+      "label": "Conversation width",
+      "hint": "Limited keeps the messages and the reply box to a width that reads easily on a wide screen. Full width lets them use the whole width of the ticket.",
+      "limited": "Limited",
+      "full": "Full width"
+    },
     "properties": {
       "label": "Ticket properties",
       "hint": "Status, priority, assignee, team and labels in the details column, or in a bar above the conversation, edited in place. In the bar, the details column starts with the customer and what your apps know about them.",
@@ -375,6 +381,19 @@
     "undoSendChatHint": "Chat replies wait this long before the customer sees them. Off by default, so chat stays live.",
     "undoOff": "Off",
     "undoSeconds": "{{n}}s",
+    "snoozePresets": "Snooze options",
+    "snoozePresetsHint": "The times a ticket’s snooze menu offers, in this order, on each agent’s own clock. Agents can still pick any other day and time.",
+    "snoozeKind": "Kind of time",
+    "snoozeKindHours": "In … hours",
+    "snoozeKindDays": "In … days",
+    "snoozeKindWeek": "Next week (Monday)",
+    "snoozeHours": "Hours",
+    "snoozeDays": "Days",
+    "snoozeAt": "at",
+    "snoozeTime": "Time of day",
+    "snoozeRemove": "Remove this time",
+    "snoozeAdd": "Add a time",
+    "snoozeReset": "Restore the defaults",
     "messageDelete": "Agents can delete messages",
     "messageDeleteHint": "Own notes: agents delete their own internal notes. Any agent’s: also every agent’s notes and replies. A deleted message stays as a marker. Admins can delete any message, read deleted ones and restore them, and give an agent another rule in Members.",
     "messageDeleteOff": "Off",

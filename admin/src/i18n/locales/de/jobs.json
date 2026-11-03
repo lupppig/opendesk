@@ -1,0 +1,49 @@
+{
+  "title": "Jobs",
+  "subtitle": "Hintergrundarbeit auf dieser Instanz",
+  "refresh": "Aktualisieren",
+  "stateLabel": "Job-Status",
+  "kindLabel": "Job-Art",
+  "allKinds": "Alle Arten",
+  "retrying_one": "{{n}} wird wiederholt",
+  "retrying_other": "{{n}} werden wiederholt",
+  "empty": {
+    "title": "Keine Jobs mit Status „{{state}}“",
+    "titleKind": "Keine Jobs mit Status „{{state}}“ vom Typ {{kind}}",
+    "retryable": "Nichts schlägt fehl und wartet auf einen neuen Versuch.",
+    "discarded": "Kein Job hat seine Versuche aufgebraucht.",
+    "other": "Wähle einen anderen Status oder eine andere Art, um weiterzusuchen."
+  },
+  "col": {
+    "job": "Job",
+    "queue": "Warteschlange",
+    "state": "Status",
+    "attempt": "Versuch",
+    "lastError": "Letzter Fehler",
+    "scheduled": "Geplant"
+  },
+  "hideDetails": "Details verbergen",
+  "showDetails": "Details anzeigen",
+  "retry": "Wiederholen",
+  "cancel": {
+    "button": "Abbrechen",
+    "title": "Diesen Job abbrechen?",
+    "confirm": "Job abbrechen",
+    "text": "<k>{{kind}}</k> #{{id}} stoppt und läuft nicht mehr, außer er wird wiederholt."
+  },
+  "toast": {
+    "retried": "Job #{{id}} läuft jetzt erneut",
+    "cancelled": "Job #{{id}} abgebrochen"
+  },
+  "details": {
+    "args": "Argumente",
+    "copyArgs": "Argumente kopieren",
+    "copyError": "Fehler kopieren",
+    "lastErrorOf_one": "Letzter Fehler ({{n}} Fehler)",
+    "lastErrorOf_other": "Letzter Fehler ({{n}} Fehler)",
+    "created": "Erstellt",
+    "lastAttempt": "Letzter Versuch",
+    "finished": "Beendet",
+    "notYet": "Noch nicht"
+  }
+}

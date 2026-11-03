@@ -1,0 +1,34 @@
+{
+  "title": "Audit-Log",
+  "subtitle": "Jede Anmeldung und Aktion im Admin-Panel und über die Kommandozeile",
+  "allActions": "Alle Aktionen",
+  "allAdmins": "Alle Admins",
+  "clearTarget": "Zielfilter entfernen",
+  "clearFilters": "Filter zurücksetzen",
+  "col": {
+    "admin": "Admin",
+    "action": "Aktion",
+    "target": "Ziel",
+    "details": "Details",
+    "ip": "IP",
+    "when": "Wann"
+  },
+  "actor": {
+    "cli": "Kommandozeile",
+    "system": "Instanzbereinigung",
+    "unknown": "Unbekannt"
+  },
+  "target": {
+    "user": "Benutzer",
+    "workspace": "Workspace",
+    "admin": "Admin",
+    "job": "Job",
+    "instance": "Instanz"
+  },
+  "empty": {
+    "title": "Noch nichts protokolliert",
+    "hint": "Anmeldungen und jede Änderung über das Panel oder die Kommandozeile erscheinen hier.",
+    "noMatch": "Nichts passt zu diesen Filtern",
+    "noMatchHint": "Versuche eine andere Aktion oder einen anderen Admin, oder setze die Filter zurück."
+  }
+}

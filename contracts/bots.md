@@ -32,7 +32,8 @@ interface Bot {
   is_default: boolean        // exactly one per workspace; answers where nothing else is assigned
   position: number
   usage: { widgets: { id: string; name: string; brand_id: string }[];
-           mailboxes: { id: string; name: string; email: string }[] }   // what answers as this bot
+           mailboxes: { id: string; name: string; email: string }[];
+           api_keys: { id: string; name: string }[] }   // what answers as this bot; api_keys: live keys that speak as it
   created_at: string; updated_at: string
 }
 
@@ -93,7 +94,7 @@ interface BotLook {
 | GET | `/v1/bots/{id}` | members | → `Bot` |
 | POST | `/v1/bots` | admin (`settings:write`) | `{name, role?, language?, look?, personality?}` → `201 Bot` (missing keys take the defaults: the Ollie look, a friendly personality); goes last |
 | PATCH | `/v1/bots/{id}` | admin | `{name?, role?, language?, look?, personality?}` → `Bot`. `look` is replaced whole; `personality` keys are merged |
-| DELETE | `/v1/bots/{id}` | admin | → `204`. `409 bot_is_default` for the default bot; `409 bot_in_use` while a widget or mailbox answers as it or a procedure names it in `bot_ids` (the detail names them) |
+| DELETE | `/v1/bots/{id}` | admin | → `204`. `409 bot_is_default` for the default bot; `409 bot_in_use` while a widget or mailbox answers as it, a live API key speaks as it, a procedure names it in `bot_ids`, or undeleted outbound replies still await email delivery or remain failed. Queued chat follow-ups count until their job ends or is cancelled. Delivered messages and chat replies without a queued follow-up do not prevent deletion. The detail names the use; pending or failed replies must finish sending or be deleted first. A revoked or expired key keeps no bot |
 | POST | `/v1/bots/{id}/duplicate` | admin | → `201 Bot`: "<name> copy" with the same look (an uploaded picture is not copied: `kind` falls back to `built`), personality, role and language, placed right after |
 | POST | `/v1/bots/{id}/default` | admin | → `Bot`: it becomes the default (widgets and mailboxes without a bot answer as it) |
 | POST | `/v1/bots/reorder` | admin | `{ids}`: every bot once → `{data: Bot[]}` |
@@ -142,6 +143,9 @@ from the API, and nothing reads them.
   (`422 validation_failed`). Audit `widget.updated` / `mailbox.updated` with `bot_id`.
 - A chat conversation answers as its widget's bot; an email ticket as its mailbox's bot; the
   playground and tests as the bot they name (default: the default bot).
+- `ApiKey.bot_id` (contracts/api.md "API keys"): an AI of the team's own, answering through the API with that
+  key, writes as this bot. Unlike widgets and mailboxes, `null` means no bot (the key writes as itself), not the
+  default bot. Set with `POST`/`PATCH /v1/api-keys` (admin); only for a key with `tickets:write`.
 
 ## Where a bot shows
 
@@ -149,11 +153,14 @@ from the API, and nothing reads them.
   (contracts/api.md). The header shows it while the agent answers; its messages and typing state
   show its avatar and name; `ai.reply.started` carries `bot: {id, name, look, avatar_url}`.
 - Messages: an AI reply has `author.bot: {id, name, avatar_url, look} | null` (`Message`, contracts/api.md),
-  stored as `messages.bot_id`, so a reply keeps the bot it was sent as. `from_name` is the bot's name.
+  stored as `messages.bot_id`, so a reply keeps the bot it was sent as. `from_name` is the bot's name. So does
+  every message an API key that speaks as a bot writes (`author.type: "api"`, `ai: false`, `author.api_key` the key).
 - Email: the bot's name is `{agent}` in the mailbox's `from_name_format` (default "<bot name> at
   <mailbox name>", contracts/teams.md) and its emails end with its `sign_off`.
 - The app, iOS and the desktop app show the bot's name and avatar on its messages with an "AI"
   tint; Ollie stays the name of the in-app assistant and of AI actions (triage, drafts, summaries).
+  On a message an API key wrote as the bot, the tint's hint names the key. The widget shows such a reply with
+  the bot's name, face and "AI" pill, without the AI agent's rating and handoff buttons.
 
 ## The prompt
 

@@ -1,0 +1,234 @@
+{
+  "list": {
+    "title": "Workspaces",
+    "search": "Nach Name, Slug, ID oder E-Mail eines Mitglieds suchen",
+    "filterLabel": "Workspaces filtern",
+    "filter": {
+      "all": "Alle",
+      "suspended": "Gesperrt",
+      "paid": "Bezahlt",
+      "free": "Free",
+      "collab": "Collab",
+      "test": "Test"
+    },
+    "noMatch": "Keine passenden Workspaces",
+    "noMatchHint": "Versuche einen anderen Namen, Slug, eine ID oder Mitglieds-E-Mail, oder setze die Filter zurück.",
+    "empty": "Noch keine Workspaces",
+    "emptyHint": "Workspaces erscheinen hier, sobald sich Leute registrieren und welche anlegen.",
+    "col": {
+      "workspace": "Workspace",
+      "plan": "Tarif",
+      "subscription": "Abonnement",
+      "members": "Mitglieder",
+      "lastActivity": "Letzte Aktivität",
+      "created": "Erstellt"
+    }
+  },
+  "detail": {
+    "all": "Alle Workspaces",
+    "slug": "Slug",
+    "createdActive": "Erstellt <created/>, zuletzt aktiv <active/>",
+    "unlimited": "Unbegrenzt",
+    "gb": "{{gb}} GB",
+    "restore": {
+      "title": "Diesen Workspace wiederherstellen?",
+      "button": "Workspace wiederherstellen",
+      "text": "<b>{{name}}</b> funktioniert wieder für seine Mitglieder, API-Schlüssel, sein Widget und Hilfecenter. Während der Sperre ignorierte E-Mails werden nicht nachgeholt."
+    },
+    "suspend": {
+      "button": "Workspace sperren",
+      "title": "{{name}} sperren?",
+      "description": "Mitglieder, API-Schlüssel, Widget und Hilfecenter funktionieren nicht mehr, eingehende E-Mails werden gespeichert und ignoriert, und nichts wird gesendet. Nichts wird gelöscht."
+    },
+    "delete": {
+      "button": "Workspace löschen",
+      "title": "{{name}} löschen?",
+      "description": "Jedes Ticket, jeder Kontakt, jeder Artikel, jedes Postfach und jede Einstellung dieses Workspaces wird endgültig entfernt, und sein Stripe-Abonnement wird gekündigt. Das lässt sich nicht rückgängig machen."
+    },
+    "toast": {
+      "restored": "Workspace wiederhergestellt",
+      "suspended": "Workspace gesperrt",
+      "deleted": "{{name}} wurde gelöscht"
+    },
+    "suspendedHint": "Mitglieder können sich anmelden und ihn sehen, aber nichts läuft für ihn, bis er wiederhergestellt ist.",
+    "test": {
+      "deleted": "Test-Workspace, gelöscht <time/>",
+      "kept": "Test-Workspace, bleibt bis zur Löschung",
+      "adding": "Beispieldaten werden hinzugefügt.",
+      "sample": "Beispieldaten: {{counts}}.",
+      "noSample": "Keine Beispieldaten.",
+      "outOfCounts": "Er zählt nicht in der Übersicht."
+    },
+    "counts": {
+      "title": "Mengen",
+      "tickets": "Tickets",
+      "openTickets": "Offene Tickets",
+      "contacts": "Kontakte",
+      "articles": "Artikel",
+      "brands": "Marken",
+      "apiKeys": "API-Schlüssel",
+      "webhooks": "Webhooks"
+    },
+    "members": {
+      "title": "Mitglieder",
+      "pending_one": "{{n}} offene Einladung",
+      "pending_other": "{{n}} offene Einladungen",
+      "member": "Mitglied",
+      "empty": "Keine Mitglieder",
+      "emptyHint": "Alle haben diesen Workspace verlassen."
+    },
+    "mailboxes": {
+      "title": "Postfächer",
+      "mailbox": "Postfach",
+      "kinds": "Empfang, Versand",
+      "status": "Status",
+      "lastSync": "Letzte Synchronisierung",
+      "empty": "Keine Postfächer",
+      "emptyHint": "Dieser Workspace hat kein Postfach verbunden."
+    },
+    "limits": {
+      "title": "Tarif und Limits",
+      "edit": "Ausnahmen bearbeiten",
+      "planDefault": "Tarifstandard",
+      "override": "Ausnahme",
+      "mailboxes": "Postfächer",
+      "members": "Mitglieder",
+      "monthlyAi": "Monatliche KI",
+      "collabStorage": "Collab-Speicher",
+      "noBilling": "Die Abrechnung ist auf dieser Instanz aus, also ist jedes Limit unbegrenzt. Ausnahmen bleiben gespeichert, wirken aber nicht."
+    },
+    "sub": {
+      "none": "Kein Abonnement.",
+      "billingOff": "Die Abrechnung ist auf dieser Instanz aus.",
+      "billed": "Abrechnung",
+      "yearly": "Jährlich",
+      "monthly": "Monatlich",
+      "seats": "Plätze",
+      "seatsLine": "{{billed}} von {{total}} berechnet",
+      "ends": "Endet",
+      "renews": "Verlängert sich",
+      "canceling": "Wird gekündigt",
+      "stripeCustomer": "Stripe-Kunde"
+    },
+    "ai": {
+      "title": "KI-Nutzung",
+      "remaining": "Verbleibend",
+      "allowance": "Monatliches Kontingent",
+      "allowanceUsed": "Kontingent genutzt",
+      "purchasedLeft": "Gekauft übrig",
+      "period": "Dieser Zeitraum, {{start}} bis {{end}}",
+      "feature": "Funktion",
+      "calls": "Aufrufe",
+      "charged": "Berechnet",
+      "providerCost": "Anbieterkosten",
+      "total": "Gesamt",
+      "none": "Keine KI-Aufrufe in diesem Zeitraum."
+    },
+    "grant": {
+      "title": "KI-Guthaben gewähren",
+      "description": "Fügt {{name}} gekaufte KI-Nutzung hinzu. Sie wird nach dem monatlichen Kontingent verbraucht, wie eine Aufladung, und verfällt nie.",
+      "confirm": "Gewähren",
+      "confirmAmount": "{{amount}} gewähren",
+      "done": "{{amount}} KI-Nutzung gewährt",
+      "amount": "Betrag",
+      "amountHint": "Von {{min}} bis {{max}}.",
+      "noteHint": "{{length}} / {{max}}. Wird im Audit-Log festgehalten.",
+      "notePlaceholder": "Warum, und das zugehörige Ticket"
+    },
+    "audit": {
+      "title": "Audit-Log des Workspaces",
+      "last_one": "letzter {{count}}",
+      "last_other": "letzte {{count}}",
+      "who": "Wer",
+      "instanceAdmin": "Instanz-Admin",
+      "apiKey": "API-Schlüssel",
+      "system": "System",
+      "emptyHint": "Änderungen an Einstellungen, Mitgliedern und Schlüsseln erscheinen hier."
+    }
+  },
+  "limitsDialog": {
+    "title": "Limit-Ausnahmen",
+    "description": "Ausnahmen ersetzen die Limits des Tarifs für {{name}} in jedem Tarif und bleiben bei Tarifwechseln erhalten.",
+    "save": "Ausnahmen speichern",
+    "saved": "Limits gespeichert",
+    "noBilling": "Die Abrechnung ist auf dieser Instanz aus, also ist jedes Limit bereits unbegrenzt. Ausnahmen bleiben gespeichert, wirken aber nicht.",
+    "usePlan": "Tarifwert verwenden",
+    "usePlanFor": "Tarifwert für {{label}} verwenden",
+    "planApplies": "Das Limit des Tarifs gilt.",
+    "max_mailboxes": {
+      "label": "Postfächer",
+      "hint": "0 heißt unbegrenzt."
+    },
+    "max_members": {
+      "label": "Mitglieder",
+      "hint": "0 heißt unbegrenzt."
+    },
+    "monthly_ai_usd": {
+      "label": "Monatliches KI-Kontingent",
+      "hint": "US-Dollar KI-Nutzung, die jeden Monat enthalten sind."
+    },
+    "collab_storage_gb": {
+      "label": "Collab-Speicher",
+      "hint": "E-Mails, die Collab für den ganzen Workspace speichert. 0 heißt unbegrenzt."
+    }
+  },
+  "collab": {
+    "title": "Collab",
+    "change": "Ändern",
+    "offered": "Angeboten",
+    "complimentary": "Kostenlos",
+    "untilDate": "bis {{date}}",
+    "noEnd": "ohne Enddatum",
+    "access": "Zugang",
+    "accounts": "Mail-Konten",
+    "stored": "Gespeicherte E-Mails",
+    "ofUnlimited": "von unbegrenzt",
+    "ofGb": "von {{gb}} GB",
+    "note": "Notiz",
+    "hintBilling": "Der Collab-Tarif ist verborgen. Biete ihn an, damit dieser Workspace für 38 $ pro Benutzer und Monat abonnieren kann, oder gib ihn kostenlos.",
+    "hintNoBilling": "Die Abrechnung ist auf dieser Instanz aus, also hat jeder Workspace Collab, außer die Instanz schaltet es ab. Der Zugang bleibt gespeichert, wirkt aber nicht.",
+    "noBilling": "Die Abrechnung ist auf dieser Instanz aus, also bleibt das gespeichert, wirkt aber nicht.",
+    "offer": {
+      "title": "Collab-Tarif anbieten",
+      "description": "{{name}} sieht den Collab-Tarif auf seiner Abrechnungsseite und kann ihn für 38 $ pro Benutzer und Monat abonnieren oder sein Pro-Abonnement darauf umstellen.",
+      "confirm": "Tarif anbieten",
+      "done": "Collab-Tarif angeboten"
+    },
+    "free": {
+      "title": "Collab kostenlos geben",
+      "change": "Kostenlosen Zugang ändern",
+      "changeTitle": "Kostenlosen Collab-Zugang ändern",
+      "confirm": "Kostenlos geben",
+      "description_one": "{{name}} erhält den Collab-Tarif ohne Bezahlung: unbegrenzte Postfächer und Mitglieder, 20 $ KI pro bezahltem Platz und Monat (derzeit {{n}} Platz) und Collab.",
+      "description_other": "{{name}} erhält den Collab-Tarif ohne Bezahlung: unbegrenzte Postfächer und Mitglieder, 20 $ KI pro bezahltem Platz und Monat (derzeit {{n}} Plätze) und Collab.",
+      "done": "Collab ist kostenlos",
+      "doneUntil": "Collab ist bis {{date}} kostenlos"
+    },
+    "remove": {
+      "title": "Collab-Zugang entfernen?",
+      "button": "Zugang entfernen",
+      "done": "Collab-Zugang entfernt",
+      "complimentary": "<b>{{name}}</b> verliert Collab jetzt, außer er bezahlt den Tarif. Verbundene Mail-Konten werden nicht mehr synchronisiert und bleiben erhalten.",
+      "offered": "<b>{{name}}</b> kann den Collab-Tarif nicht mehr abonnieren. Ein bestehendes Abonnement läuft weiter."
+    },
+    "ends": "Endet",
+    "endsOn": "Endet am {{date}}.",
+    "lastDay": "Letzter Tag",
+    "lastDayHint": "Der Zugang endet am Ende dieses Tages, in deiner Zeit.",
+    "noteHint": "{{length}} / {{max}}. Nur Admins sehen sie.",
+    "notePlaceholder": "Warum, und wer gefragt hat",
+    "until": {
+      "none": "Ohne Enddatum",
+      "14": "Für 2 Wochen",
+      "30": "Für 30 Tage",
+      "90": "Für 90 Tage",
+      "365": "Für ein Jahr",
+      "date": "Bis zu einem Datum"
+    },
+    "dateError": {
+      "format": "Nutze ein Datum wie 2026-12-31.",
+      "noSuchDay": "Diesen Tag gibt es nicht.",
+      "past": "Wähle einen Tag in der Zukunft."
+    }
+  }
+}

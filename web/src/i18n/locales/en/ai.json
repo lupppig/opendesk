@@ -102,6 +102,8 @@
     "instructions": "Instructions",
     "instructions_hint": "Extra guidance for every draft: product names, policies, things to avoid.",
     "instructions_placeholder": "Call the product Margin, never Margin App. Offer a refund only for charges in the last 30 days.",
+    "draft_tools": "Look up facts for drafts with your connected tools",
+    "draft_tools_hint": "Before drafting a reply, {{name}} reads what it needs, such as an order, a delivery or a refund, with the connected tools that run without approval. It never changes anything in them. Adds a short lookup on the fast model when a draft needs one.",
     "model": "Model",
     "provider": "Provider",
     "search": "Search",

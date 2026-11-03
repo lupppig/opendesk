@@ -1,0 +1,47 @@
+{
+  "title": "Admins",
+  "subtitle": "Qui peut ouvrir ce panneau",
+  "you": "Vous",
+  "grantError": {
+    "noAccount": "Aucun compte n’utilise cet e-mail. La personne doit d’abord s’inscrire dans l’application.",
+    "mfa": "La personne doit activer l’authentification à deux facteurs dans l’application avant de devenir admin.",
+    "already": "La personne est déjà admin. Changez plutôt son rôle dans la liste.",
+    "suspended": "Ce compte est suspendu. Rétablissez-le avant d’en faire un admin."
+  },
+  "locked": {
+    "ownRole": "Vous ne pouvez pas changer votre propre rôle",
+    "self": "Vous ne pouvez pas vous retirer vous-même",
+    "lastSuper": "Le dernier super admin reste. La ligne de commande peut le changer."
+  },
+  "empty": {
+    "title": "Aucun admin",
+    "hint": "Le premier admin est désigné sur la machine qui fait tourner l’instance, avec opendesk admin grant."
+  },
+  "col": {
+    "admin": "Admin",
+    "role": "Rôle",
+    "grantedBy": "Accordé par",
+    "since": "Depuis"
+  },
+  "grant": {
+    "title": "Ajouter un admin",
+    "description": "La personne a besoin d’un compte avec l’authentification à deux facteurs activée. Elle se connecte ici avec son propre e-mail, son mot de passe et son code.",
+    "confirm": "Ajouter l’admin",
+    "done": "{{email}} est maintenant admin {{role}}",
+    "email": "E-mail",
+    "emailPlaceholder": "nom@exemple.com"
+  },
+  "change": {
+    "button": "Changer le rôle",
+    "title": "Changer le rôle de {{email}}",
+    "description": "Le nouveau rôle s’applique immédiatement, à sa prochaine requête.",
+    "done": "Rôle changé en {{role}}"
+  },
+  "revoke": {
+    "button": "Retirer",
+    "confirm": "Retirer l’admin",
+    "title": "Retirer {{email}} ?",
+    "description": "La personne perd l’accès au panneau immédiatement et ses sessions du panneau prennent fin. Son compte et ses espaces ne sont pas touchés.",
+    "done": "{{email}} n’est plus admin"
+  }
+}

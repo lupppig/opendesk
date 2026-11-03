@@ -15,7 +15,7 @@ import { realtime } from "@/lib/realtime/manager";
 import { cn } from "@/lib/cn";
 import { EmptyState } from "@/components/ui/empty";
 import { springs } from "@/lib/motion";
-import { snoozeOptions } from "@/components/tickets/detail/SnoozeMenu";
+import { SNOOZE_TOMORROW, snoozeAt } from "@/components/tickets/detail/snooze";
 import { InboxEmpty } from "./InboxEmpty";
 import { Skeleton, SkeletonRows } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -34,6 +34,7 @@ import { atLeast, useRole, useSession } from "@/lib/session";
 import { paneCss, setLiveWidth, usePaneWidth } from "@/lib/panes";
 import { rememberSort } from "@/lib/listSort";
 import { useDocumentTitle } from "@/app/RootLayout";
+import { conversationMaxWidth, useConversationWidth } from "@/lib/conversationWidth";
 import { TeamDot, useTeamsCtx } from "@/components/tickets/teams";
 import { ViewIcon, viewName } from "@/components/tickets/ViewIcon";
 import { TeamTabs } from "./TeamTabs";
@@ -114,13 +115,14 @@ function FocusGlide({ listRef, id, active, rows }: { listRef: React.RefObject<HT
 }
 
 function DetailFallback() {
+  const width = useConversationWidth();
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-12 items-center gap-3 border-b border-line px-4">
         <Skeleton className="h-3 w-10" />
         <Skeleton className="h-3 w-64" />
       </div>
-      <div className="mx-auto flex w-full max-w-[820px] flex-col gap-3 px-5 py-5">
+      <div className={cn("mx-auto flex w-full flex-col gap-3 px-5 py-5", conversationMaxWidth(width))}>
         <Skeleton className="h-24 rounded-lg" />
         <Skeleton className="h-16 rounded-lg opacity-60" />
       </div>
@@ -401,7 +403,7 @@ export default function InboxPage() {
           action: { label: tr("toast.undo"), onClick: () => update.mutate({ id: t.id, patch: { assignee_id: t.assignee?.id ?? null } }) },
         });
       } else if (a === "snooze") {
-        const at = snoozeOptions().find((o) => o.key === "tomorrow")!.at;
+        const at = snoozeAt(SNOOZE_TOMORROW);
         update.mutate({ id: t.id, patch: { snoozed_until: at.toISOString() } });
         toast.success(tr("quick.snoozed", { number: t.number }), {
           action: { label: tr("toast.undo"), onClick: () => update.mutate({ id: t.id, patch: { snoozed_until: t.snoozed_until } }) },

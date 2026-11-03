@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { bytes, dayLabel, duration, humanize, number, plural, relative, shortDate, usd } from "./format";
+import { afterEach, describe, expect, it } from "vitest";
+import { i18n } from "@/i18n";
+import { bytes, dayLabel, duration, humanize, number, relative, shortDate, usd } from "./format";
 
 describe("usd", () => {
   it("shows cents for ordinary amounts", () => {
@@ -49,10 +50,8 @@ describe("dates", () => {
 });
 
 describe("numbers", () => {
-  it("group and pluralize", () => {
+  it("group", () => {
     expect(number(12345)).toBe("12,345");
-    expect(plural(1, "member")).toBe("1 member");
-    expect(plural(1200, "member")).toBe("1,200 members");
   });
 
   it("read durations", () => {
@@ -75,5 +74,21 @@ describe("bytes", () => {
     expect(bytes(3.5 * 1024 * 1024)).toBe("3.5 MB");
     expect(bytes(25 * 1024 ** 3)).toBe("25.0 GB");
     expect(bytes(null)).toBe("–");
+  });
+});
+
+describe("in another language", () => {
+  afterEach(() => void i18n.changeLanguage("en"));
+
+  it("follows the panel's language", async () => {
+    const now = Date.parse("2026-10-18T12:00:00Z");
+    await i18n.changeLanguage("fr");
+    expect(relative(new Date(now - 10_000).toISOString(), now)).toBe("à l’instant");
+    expect(relative(new Date(now - 5 * 60_000).toISOString(), now)).toBe("il y a 5 minutes");
+    expect(duration(90000)).toBe("1 j 1 h");
+    expect(number(12345)).toBe("12 345");
+    await i18n.changeLanguage("de");
+    expect(relative(new Date(now - 3 * 3600_000).toISOString(), now)).toBe("vor 3 Stunden");
+    expect(duration(135)).toBe("2 Min. 15 s");
   });
 });

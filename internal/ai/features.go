@@ -139,16 +139,27 @@ func (s *Service) Draft(ctx context.Context, p *auth.Principal, rawID string, in
 		signoff = "A signature is appended automatically when the reply is sent: do not add a sign-off name or signature block."
 	}
 	task := "Write the reply to the customer now. " + signoff
+	request := ""
 	if ins := strings.TrimSpace(in.Instructions); ins != "" {
-		task = block("agent_request", nil, "The agent asks: "+angle.Replace(ins)) + "\n" + task
+		request = block("agent_request", nil, "The agent asks: "+angle.Replace(ins))
+		task = request + "\n" + task
+	}
+	thread := renderThread(tc.Msgs, tc.Summary, threadChars)
+	// The facts the reply needs, read from the workspace's connected tools first (draft_tools.go).
+	looked, err := s.draftLookup(ctx, p, tid, set, strings.Join([]string{renderTicket(tc.T), renderContact(tc.Contact), thread, request}, "\n"))
+	if err != nil {
+		return nil, err
+	}
+	blocks := []Block{
+		{Text: renderTicket(tc.T) + "\n" + renderContact(tc.Contact) + "\n" + renderKB(sources) + "\n" + replies, Cache: true},
+		{Text: thread},
+	}
+	if looked != "" {
+		blocks = append(blocks, Block{Text: looked})
 	}
 	req := Request{Model: s.models.Default, MaxTokens: 6000, Effort: "medium",
-		System: []Block{{Text: draftSystem, Cache: true}, {Text: guidance(tc.Workspace.Name, set, in.Tone, tc.language()), Cache: true}},
-		Messages: []Message{{Role: "user", Blocks: []Block{
-			{Text: renderTicket(tc.T) + "\n" + renderContact(tc.Contact) + "\n" + renderKB(sources) + "\n" + replies, Cache: true},
-			{Text: renderThread(tc.Msgs, tc.Summary, threadChars)},
-			{Text: task},
-		}}}}
+		System:   []Block{{Text: draftSystem, Cache: true}, {Text: guidance(tc.Workspace.Name, set, in.Tone, tc.language()), Cache: true}},
+		Messages: []Message{{Role: "user", Blocks: append(blocks, Block{Text: task})}}}
 	c := s.newCall(p.WorkspaceID, p.ActorUserID(), &tid, "draft_reply")
 	resp, err := c.run(ctx, req, onDelta)
 	if err != nil {

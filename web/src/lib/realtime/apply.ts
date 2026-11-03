@@ -133,7 +133,7 @@ function appendUnique<R extends { id: string }>(qc: QueryClient, key: readonly u
 }
 
 /**
- * Merge by id. Chat replies arrive customer-safe (no author email, no
+ * Merge by id. Chat replies arrive customer-safe (no API key, no author email, no
  * to/cc/bcc), so an existing copy keeps its fields, and a new partial one
  * triggers a refetch of the full list.
  */
@@ -154,7 +154,7 @@ function mergeMessage(qc: QueryClient, ticketId: string, m: Message) {
   if (m.deleted_at) defined.ai_action = null;
   const i = old.findIndex((x) => x.id === m.id);
   if (i >= 0) {
-    qc.setQueryData<Message[]>(key, old.map((x, j) => (j === i ? { ...x, ...defined, author: { ...x.author, ...(m.author ?? {}) } } : x)));
+    qc.setQueryData<Message[]>(key, old.map((x, j) => (j === i ? { ...x, ...defined, author: { ...x.author, ...(m.author ?? {}), api_key: m.author?.api_key ?? x.author?.api_key } } : x)));
     return;
   }
   const partial = !Array.isArray(m.to) || !Array.isArray(m.attachments) || !m.author;
@@ -263,6 +263,7 @@ function applyInScope(qc: QueryClient, env: Envelope, ctx: ApplyContext): void {
       const tid = (d.ticket_id as string) ?? m?.ticket_id;
       if (!m || !tid) return;
       mergeMessage(qc, tid, m);
+      if (m.author?.type === "api" && !m.author.api_key) void qc.invalidateQueries({ queryKey: qk.messages(tid), exact: true });
       // A newer message means Ollie's suggestion no longer answers the latest one.
       if (env.type === "message.created" && m.kind === "reply") {
         const s = qc.getQueryData<SuggestedReply | null>(qk.suggestedReply(tid));

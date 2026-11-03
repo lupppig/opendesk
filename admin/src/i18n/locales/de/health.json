@@ -1,0 +1,105 @@
+{
+  "title": "Zustand",
+  "updated": "Aktualisiert",
+  "stale": "Die letzte Aktualisierung ist fehlgeschlagen; diese Zahlen sind vielleicht veraltet.",
+  "down": "Ausgefallen",
+  "on": "An",
+  "off": "Aus",
+  "checks": {
+    "title": "Prüfungen",
+    "failing_one": "{{count}} fehlgeschlagen",
+    "failing_other": "{{count}} fehlgeschlagen",
+    "warning_one": "{{count}} Warnung",
+    "warning_other": "{{count}} Warnungen",
+    "allPassing": "Alle bestanden"
+  },
+  "instance": {
+    "title": "Instanz",
+    "version": "Version",
+    "commit": "Commit",
+    "role": "Rolle",
+    "started": "Gestartet"
+  },
+  "database": {
+    "title": "Datenbank",
+    "status": "Status",
+    "latency": "Latenz",
+    "schema": "Schema",
+    "dirty": "Inkonsistent",
+    "pool": "Pool",
+    "poolLine": "{{inUse}} in Nutzung, {{idle}} frei, {{total}} von {{max}}"
+  },
+  "events": {
+    "title": "Ereignisse",
+    "embedded": "Eingebettet",
+    "cluster": "Cluster",
+    "unpublished": "Unveröffentlicht",
+    "oldestUnpublished": "Ältestes unveröffentlicht"
+  },
+  "mail": {
+    "title": "E-Mail und Webhooks",
+    "driver": "Plattform-Versand",
+    "inboundFailed": "Eingehend fehlgeschlagen, 24 h",
+    "inboundPending": "Eingehend ausstehend",
+    "mailboxesInError": "Postfächer mit Fehler",
+    "webhooksFailing": "Fehlschlagende Webhooks, 24 h"
+  },
+  "jobs": {
+    "title": "Jobs",
+    "available": "Bereit",
+    "running": "Laufend",
+    "retrying": "Wird wiederholt",
+    "scheduled": "Geplant",
+    "discarded": "Verworfen, 24 h",
+    "oldestWaiting": "Ältester wartend"
+  },
+  "config": {
+    "title": "Konfiguration",
+    "billing": "Abrechnung",
+    "signup": "Registrierung",
+    "aiProvider": "KI-Anbieter",
+    "decisions": "Entscheidungen",
+    "embeddings": "Embeddings",
+    "storage": "Speicher",
+    "imap": "Postfach-IMAP",
+    "systemSend": "Systemversand",
+    "push": "Push",
+    "helpDomain": "Hilfe-Domain"
+  },
+  "update": {
+    "available": "opendesk {{version}} ist verfügbar",
+    "releaseNotes": "Versionshinweise",
+    "auto": "Diese Instanz läuft mit {{current}}. Das Update wird beim nächsten automatischen Update installiert, nach einem Backup.",
+    "major": "Eine neue Hauptversion, also überlassen automatische Updates sie dir: lies zuerst die Versionshinweise.",
+    "runs": "Diese Instanz läuft mit {{current}}.",
+    "how": "Aktualisiere auf dem Server, der zuerst ein Backup macht:",
+    "copyCommand": "Befehl kopieren"
+  },
+  "updates": {
+    "title": "Updates",
+    "checkNow": "Jetzt prüfen",
+    "versionAvailable": "{{version}} ist verfügbar",
+    "unreachable": "GitHub war nicht erreichbar",
+    "newest": "Das ist die neueste Version",
+    "running": "Läuft",
+    "from": "von {{version}},",
+    "newestRelease": "Neueste Version",
+    "notChecked": "Nicht geprüft",
+    "newMajor": "Neue Hauptversion",
+    "availableBadge": "Verfügbar",
+    "current": "Aktuell",
+    "noneFound": "Noch keine gefunden",
+    "lastChecked": "Zuletzt geprüft",
+    "checkOff": "Aus (UPDATE_CHECK=false)",
+    "notRelease": "Kein Release-Build",
+    "automatic": "Automatisch",
+    "notSetUp": "Auf diesem Host nicht eingerichtet",
+    "result": {
+      "none": "Noch kein Lauf",
+      "current": "Bereits auf der neuesten Version",
+      "updated": "Aktualisiert",
+      "skipped": "Übersprungen",
+      "failed": "Fehlgeschlagen, zurückgesetzt"
+    }
+  }
+}

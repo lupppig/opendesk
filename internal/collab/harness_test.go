@@ -270,6 +270,7 @@ func (w *world) api(p *auth.Principal) *httptest.Server {
 	s.registerSendRoutes(api)
 	s.registerDraftRoutes(api)
 	s.registerQueueRoutes(api)
+	s.registerOutcomeRoutes(api)
 	s.registerCommentRoutes(api)
 	s.registerDetailRoutes(api)
 	s.registerSidebarRoutes(api)

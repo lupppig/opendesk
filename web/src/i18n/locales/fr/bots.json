@@ -32,7 +32,8 @@
     "on": "Répond sur {{list}}",
     "listMore_one": "{{list}} et {{count}} de plus",
     "listMore_other": "{{list}} et {{count}} de plus",
-    "listMore_many": "{{list}} et {{count}} de plus"
+    "listMore_many": "{{list}} et {{count}} de plus",
+    "apiKey": "{{name}} (clé API)"
   },
   "summary": {
     "title": "Bots",

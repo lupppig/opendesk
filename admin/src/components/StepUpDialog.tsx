@@ -5,6 +5,7 @@
 
 import { ShieldCheck } from "lucide-react";
 import { useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { errorMessage, isApiError } from "@/lib/api/client";
@@ -41,6 +42,7 @@ export function StepUpDialog({
   /** Wider for a form with many fields. */
   size?: "sm" | "md" | "lg";
 }) {
+  const { t } = useTranslation(["auth", "common"]);
   const [mode, setMode] = useState<CodeMode>("totp");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -69,10 +71,10 @@ export function StepUpDialog({
       if (isApiError(e, "invalid_code")) {
         setCode("");
         setCodeError(true);
-        setError(mode === "totp" ? "That code didn't work. Check your authenticator app and try again." : "That recovery code didn't work.");
+        setError(mode === "totp" ? t("code.invalidTotp") : t("code.invalidRecovery"));
       } else if (isApiError(e, "mfa_required")) {
         setCodeError(true);
-        setError("Enter a code from your authenticator app.");
+        setError(t("stepUp.codeRequired"));
       } else {
         setError(explain?.(e) ?? errorMessage(e));
       }
@@ -96,7 +98,7 @@ export function StepUpDialog({
       footer={
         <>
           <Button variant="ghost" disabled={busy} onClick={() => close(false)}>
-            Cancel
+            {t("common:actions.cancel")}
           </Button>
           <Button variant={danger ? "danger-solid" : "primary"} loading={busy} disabled={!ready || !codeReady(mode, code)} onClick={() => void submit()}>
             {confirmLabel}
@@ -115,7 +117,7 @@ export function StepUpDialog({
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-2 text-[12.5px] font-medium text-fg">
             <ShieldCheck className="size-3.5 text-tone-indigo" aria-hidden />
-            {mode === "totp" ? "Your authenticator code" : "One of your recovery codes"}
+            {mode === "totp" ? t("stepUp.totpTitle") : t("stepUp.recoveryTitle")}
           </div>
           <CodeField
             mode={mode}

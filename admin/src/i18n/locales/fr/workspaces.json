@@ -1,0 +1,237 @@
+{
+  "list": {
+    "title": "Espaces de travail",
+    "search": "Rechercher par nom, slug, id ou e-mail d’un membre",
+    "filterLabel": "Filtrer les espaces",
+    "filter": {
+      "all": "Tous",
+      "suspended": "Suspendus",
+      "paid": "Payants",
+      "free": "Gratuits",
+      "collab": "Collab",
+      "test": "Test"
+    },
+    "noMatch": "Aucun espace ne correspond",
+    "noMatchHint": "Essayez un autre nom, slug, id ou e-mail de membre, ou effacez les filtres.",
+    "empty": "Aucun espace de travail",
+    "emptyHint": "Les espaces apparaissent ici quand des personnes s’inscrivent et les créent.",
+    "col": {
+      "workspace": "Espace de travail",
+      "plan": "Formule",
+      "subscription": "Abonnement",
+      "members": "Membres",
+      "lastActivity": "Dernière activité",
+      "created": "Créé"
+    }
+  },
+  "detail": {
+    "all": "Tous les espaces",
+    "slug": "slug",
+    "createdActive": "Créé <created/>, actif pour la dernière fois <active/>",
+    "unlimited": "Illimité",
+    "gb": "{{gb}} Go",
+    "restore": {
+      "title": "Rétablir cet espace ?",
+      "button": "Rétablir l’espace",
+      "text": "<b>{{name}}</b> fonctionne à nouveau pour ses membres, ses clés API, son widget et son centre d’aide. Les e-mails ignorés pendant la suspension ne sont pas rejoués."
+    },
+    "suspend": {
+      "button": "Suspendre l’espace",
+      "title": "Suspendre {{name}} ?",
+      "description": "Les membres, les clés API, le widget et le centre d’aide cessent de fonctionner, les e-mails entrants sont conservés et ignorés, et rien n’est envoyé. Rien n’est supprimé."
+    },
+    "delete": {
+      "button": "Supprimer l’espace",
+      "title": "Supprimer {{name}} ?",
+      "description": "Chaque ticket, contact, article, boîte mail et réglage de cet espace est supprimé définitivement, et son abonnement Stripe est annulé. C’est irréversible."
+    },
+    "toast": {
+      "restored": "Espace rétabli",
+      "suspended": "Espace suspendu",
+      "deleted": "{{name}} a été supprimé"
+    },
+    "suspendedHint": "Les membres peuvent se connecter et le voir, mais rien ne tourne pour lui tant qu’il n’est pas rétabli.",
+    "test": {
+      "deleted": "Espace de test, supprimé <time/>",
+      "kept": "Espace de test, conservé jusqu’à sa suppression",
+      "adding": "Des données d’exemple sont en cours d’ajout.",
+      "sample": "Données d’exemple : {{counts}}.",
+      "noSample": "Pas de données d’exemple.",
+      "outOfCounts": "Il n’est pas compté dans la vue d’ensemble."
+    },
+    "counts": {
+      "title": "Volumes",
+      "tickets": "Tickets",
+      "openTickets": "Tickets ouverts",
+      "contacts": "Contacts",
+      "articles": "Articles",
+      "brands": "Marques",
+      "apiKeys": "Clés API",
+      "webhooks": "Webhooks"
+    },
+    "members": {
+      "title": "Membres",
+      "pending_one": "{{n}} invitation en attente",
+      "pending_other": "{{n}} invitations en attente",
+      "pending_many": "{{n}} invitations en attente",
+      "member": "Membre",
+      "empty": "Aucun membre",
+      "emptyHint": "Tout le monde a quitté cet espace."
+    },
+    "mailboxes": {
+      "title": "Boîtes mail",
+      "mailbox": "Boîte mail",
+      "kinds": "Réception, envoi",
+      "status": "Statut",
+      "lastSync": "Dernière synchro",
+      "empty": "Aucune boîte mail",
+      "emptyHint": "Cet espace n’a connecté aucune boîte mail."
+    },
+    "limits": {
+      "title": "Formule et limites",
+      "edit": "Modifier les dérogations",
+      "planDefault": "Valeur de la formule",
+      "override": "Dérogation",
+      "mailboxes": "Boîtes mail",
+      "members": "Membres",
+      "monthlyAi": "IA mensuelle",
+      "collabStorage": "Stockage Collab",
+      "noBilling": "La facturation est désactivée sur cette instance : toutes les limites sont illimitées. Les dérogations sont conservées mais sans effet."
+    },
+    "sub": {
+      "none": "Pas d’abonnement.",
+      "billingOff": "La facturation est désactivée sur cette instance.",
+      "billed": "Facturé",
+      "yearly": "Annuel",
+      "monthly": "Mensuel",
+      "seats": "Sièges",
+      "seatsLine": "{{billed}} facturés sur {{total}}",
+      "ends": "Se termine",
+      "renews": "Se renouvelle",
+      "canceling": "Annulation prévue",
+      "stripeCustomer": "Client Stripe"
+    },
+    "ai": {
+      "title": "Utilisation de l’IA",
+      "remaining": "Restant",
+      "allowance": "Enveloppe mensuelle",
+      "allowanceUsed": "Enveloppe utilisée",
+      "purchasedLeft": "Achats restants",
+      "period": "Cette période, du {{start}} au {{end}}",
+      "feature": "Fonctionnalité",
+      "calls": "Appels",
+      "charged": "Facturé",
+      "providerCost": "Coût fournisseur",
+      "total": "Total",
+      "none": "Aucun appel d’IA sur cette période."
+    },
+    "grant": {
+      "title": "Créditer de l’IA",
+      "description": "Ajoute de l’IA achetée à {{name}}. Elle est consommée après l’enveloppe mensuelle, comme une recharge, et n’expire jamais.",
+      "confirm": "Créditer",
+      "confirmAmount": "Créditer {{amount}}",
+      "done": "{{amount}} d’IA crédités",
+      "amount": "Montant",
+      "amountHint": "De {{min}} à {{max}}.",
+      "noteHint": "{{length}} / {{max}}. Conservée dans le journal d’audit.",
+      "notePlaceholder": "Pourquoi, et le ticket concerné"
+    },
+    "audit": {
+      "title": "Journal d’audit de l’espace",
+      "last_one": "{{count}} dernier",
+      "last_other": "{{count}} derniers",
+      "last_many": "{{count}} derniers",
+      "who": "Qui",
+      "instanceAdmin": "Admin de l’instance",
+      "apiKey": "Clé API",
+      "system": "Système",
+      "emptyHint": "Les changements de réglages, de membres et de clés apparaissent ici."
+    }
+  },
+  "limitsDialog": {
+    "title": "Dérogations aux limites",
+    "description": "Les dérogations remplacent les limites de la formule pour {{name}}, quelle que soit la formule, et survivent aux changements de formule.",
+    "save": "Enregistrer les dérogations",
+    "saved": "Limites enregistrées",
+    "noBilling": "La facturation est désactivée sur cette instance : toutes les limites sont déjà illimitées. Les dérogations sont conservées mais sans effet.",
+    "usePlan": "Valeur de la formule",
+    "usePlanFor": "Utiliser la valeur de la formule pour {{label}}",
+    "planApplies": "La limite de la formule s’applique.",
+    "max_mailboxes": {
+      "label": "Boîtes mail",
+      "hint": "0 signifie illimité."
+    },
+    "max_members": {
+      "label": "Membres",
+      "hint": "0 signifie illimité."
+    },
+    "monthly_ai_usd": {
+      "label": "Enveloppe mensuelle d’IA",
+      "hint": "Dollars américains d’IA inclus chaque mois."
+    },
+    "collab_storage_gb": {
+      "label": "Stockage Collab",
+      "hint": "E-mails que Collab stocke pour tout l’espace. 0 signifie illimité."
+    }
+  },
+  "collab": {
+    "title": "Collab",
+    "change": "Modifier",
+    "offered": "Proposé",
+    "complimentary": "Offert",
+    "untilDate": "jusqu’au {{date}}",
+    "noEnd": "sans date de fin",
+    "access": "Accès",
+    "accounts": "Comptes mail",
+    "stored": "E-mails stockés",
+    "ofUnlimited": "sur illimité",
+    "ofGb": "sur {{gb}} Go",
+    "note": "Note",
+    "hintBilling": "La formule Collab est masquée. Proposez-la pour que cet espace puisse s’abonner à 38 $ par utilisateur et par mois, ou offrez-la.",
+    "hintNoBilling": "La facturation est désactivée sur cette instance : chaque espace a Collab sauf si l’instance le désactive. L’accès est conservé mais sans effet.",
+    "noBilling": "La facturation est désactivée sur cette instance : ce choix est conservé mais sans effet.",
+    "offer": {
+      "title": "Proposer la formule Collab",
+      "description": "{{name}} voit la formule Collab sur sa page de facturation et peut s’y abonner à 38 $ par utilisateur et par mois, ou y basculer son abonnement Pro.",
+      "confirm": "Proposer la formule",
+      "done": "Formule Collab proposée"
+    },
+    "free": {
+      "title": "Offrir Collab",
+      "change": "Modifier l’accès offert",
+      "changeTitle": "Modifier l’accès Collab offert",
+      "confirm": "Offrir",
+      "description_one": "{{name}} reçoit la formule Collab sans payer : boîtes mail et membres illimités, 20 $ d’IA par siège payant chaque mois ({{n}} siège aujourd’hui), et Collab.",
+      "description_other": "{{name}} reçoit la formule Collab sans payer : boîtes mail et membres illimités, 20 $ d’IA par siège payant chaque mois ({{n}} sièges aujourd’hui), et Collab.",
+      "description_many": "{{name}} reçoit la formule Collab sans payer : boîtes mail et membres illimités, 20 $ d’IA par siège payant chaque mois ({{n}} sièges aujourd’hui), et Collab.",
+      "done": "Collab est offert",
+      "doneUntil": "Collab est offert jusqu’au {{date}}"
+    },
+    "remove": {
+      "title": "Retirer l’accès Collab ?",
+      "button": "Retirer l’accès",
+      "done": "Accès Collab retiré",
+      "complimentary": "<b>{{name}}</b> perd Collab maintenant, sauf s’il paie la formule. Les comptes mail connectés ne se synchronisent plus et sont conservés.",
+      "offered": "<b>{{name}}</b> ne peut plus s’abonner à la formule Collab. Un abonnement déjà en place continue."
+    },
+    "ends": "Fin",
+    "endsOn": "Se termine le {{date}}.",
+    "lastDay": "Dernier jour",
+    "lastDayHint": "L’accès prend fin à la fin de ce jour, à votre heure.",
+    "noteHint": "{{length}} / {{max}}. Seuls les admins la voient.",
+    "notePlaceholder": "Pourquoi, et qui l’a demandé",
+    "until": {
+      "none": "Sans date de fin",
+      "14": "Pour 2 semaines",
+      "30": "Pour 30 jours",
+      "90": "Pour 90 jours",
+      "365": "Pour un an",
+      "date": "Jusqu’à une date"
+    },
+    "dateError": {
+      "format": "Utilisez une date comme 2026-12-31.",
+      "noSuchDay": "Ce jour n’existe pas.",
+      "past": "Choisissez un jour dans le futur."
+    }
+  }
+}

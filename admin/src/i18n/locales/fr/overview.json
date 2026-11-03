@@ -1,0 +1,44 @@
+{
+  "title": "Vue d’ensemble",
+  "subtitle": "Cette instance en un coup d’œil",
+  "last30": "30 derniers jours",
+  "series": {
+    "signups": "Inscriptions",
+    "workspaces": "Nouveaux espaces",
+    "ai": "IA facturée"
+  },
+  "tiles": {
+    "users": "Utilisateurs",
+    "growth": "+{{week}} cette semaine, +{{month}} sur 30 jours",
+    "activeUsers": "Utilisateurs actifs, 7 jours",
+    "ofAllUsers": "{{percent}} de tous les utilisateurs",
+    "seenInApp": "Vus dans l’application",
+    "workspaces": "Espaces de travail",
+    "activeWorkspaces": "Espaces actifs, 7 jours",
+    "suspended_one": "{{n}} suspendu",
+    "suspended_other": "{{n}} suspendus",
+    "suspended_many": "{{n}} suspendus",
+    "noneSuspended": "Aucun suspendu",
+    "paidWorkspaces": "Espaces payants",
+    "pastDue_one": "{{n}} en retard de paiement",
+    "pastDue_other": "{{n}} en retard de paiement",
+    "pastDue_many": "{{n}} en retard de paiement",
+    "nonePastDue": "Aucun retard de paiement",
+    "billedSeats": "Sièges facturés",
+    "aiCharged": "IA facturée ce mois-ci",
+    "calls_one": "{{n}} appel",
+    "calls_other": "{{n}} appels",
+    "calls_many": "{{n}} appels",
+    "aiCost": "Coût du fournisseur d’IA ce mois-ci",
+    "aboveCost": "{{amount}} au-dessus du coût",
+    "belowCost": "{{amount}} sous le coût",
+    "providerBilled": "Ce que le fournisseur a facturé à cette instance"
+  },
+  "health": {
+    "title": "État",
+    "error": "Impossible de charger les vérifications",
+    "allPass_one": "La vérification passe",
+    "allPass_other": "Les {{count}} vérifications passent",
+    "allPass_many": "Les {{count}} vérifications passent"
+  }
+}

@@ -66,7 +66,25 @@
       "never": "Never"
     },
     "scopeFull": "full access",
-    "scopeRead": "read only"
+    "scopeRead": "read only",
+    "bot": {
+      "label": "Speaks as",
+      "hint": "Replies and notes this key writes on tickets show and go out as this bot: its name, its face and its email sign-off. For an AI of your own that answers customers.",
+      "none": "No bot: it writes as the API",
+      "speaksAs": "Speaks as {{name}}",
+      "menu": "Speak as a bot",
+      "title": "Bot for {{name}}",
+      "save": "Save",
+      "error": "Couldn't change the key's bot"
+    },
+    "scopes": {
+      "menu": "Edit permissions",
+      "title": "Permissions for {{name}}",
+      "description": "Choose what this key can do. Taking a permission away applies at once.",
+      "save": "Save permissions",
+      "changes": "Changes",
+      "addingNeedsSignIn": "Adding a permission asks for a recent sign-in, as creating a key does."
+    }
   },
   "webhooks": {
     "title": "Webhooks",

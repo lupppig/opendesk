@@ -260,6 +260,12 @@
       "label": "Gesprächsansicht",
       "hint": "Nachrichten des Kunden links, Antworten und Notizen deines Teams rechts, wie in einem Chat. Volle Breite auf schmalen Bildschirmen."
     },
+    "conversationWidth": {
+      "label": "Breite der Unterhaltung",
+      "hint": "Begrenzt hält Nachrichten und Antwortfeld auf einer Breite, die sich auf großen Bildschirmen gut lesen lässt. Volle Breite lässt sie die ganze Breite des Tickets nutzen.",
+      "limited": "Begrenzt",
+      "full": "Volle Breite"
+    },
     "properties": {
       "label": "Ticket-Eigenschaften",
       "hint": "Status, Priorität, Zuständige Person, Team und Labels in der Detailspalte oder in einer Leiste über der Unterhaltung, direkt bearbeitbar. Mit der Leiste beginnt die Detailspalte mit dem Kunden und dem, was deine Apps über ihn wissen.",
@@ -375,6 +381,19 @@
     "undoSendChatHint": "Chat-Antworten warten so lange, bevor der Kunde sie sieht. Standardmäßig aus, damit der Chat live bleibt.",
     "undoOff": "Aus",
     "undoSeconds": "{{n}} s",
+    "snoozePresets": "Zeiten zum Zurückstellen",
+    "snoozePresetsHint": "Die Zeiten, die das Zurückstellen-Menü eines Tickets anbietet, in dieser Reihenfolge und nach der Uhr jedes Agenten. Agenten können weiterhin jeden anderen Tag und jede andere Uhrzeit wählen.",
+    "snoozeKind": "Art der Zeit",
+    "snoozeKindHours": "In … Stunden",
+    "snoozeKindDays": "In … Tagen",
+    "snoozeKindWeek": "Nächste Woche (Montag)",
+    "snoozeHours": "Stunden",
+    "snoozeDays": "Tage",
+    "snoozeAt": "um",
+    "snoozeTime": "Uhrzeit",
+    "snoozeRemove": "Diese Zeit entfernen",
+    "snoozeAdd": "Zeit hinzufügen",
+    "snoozeReset": "Standard wiederherstellen",
     "messageDelete": "Agenten dürfen Nachrichten löschen",
     "messageDeleteHint": "Eigene Notizen: Agenten löschen ihre eigenen internen Notizen. Alle Agenten: auch Notizen und Antworten aller Agenten. Eine gelöschte Nachricht bleibt als Markierung stehen. Admins können jede Nachricht löschen, gelöschte lesen und wiederherstellen und einem Agenten unter Mitglieder eine andere Regel geben.",
     "messageDeleteOff": "Aus",

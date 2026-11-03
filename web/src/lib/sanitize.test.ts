@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanSignatureHtml, isDesignedEmail, sanitizeEmailHtml, sanitizeHtml, sanitizeProse } from "./sanitize";
+import { cleanSignatureHtml, emphasizeInlineStyles, isDesignedEmail, sanitizeEmailHtml, sanitizeHtml, sanitizeProse } from "./sanitize";
 
 describe("sanitize", () => {
   it("keeps only the app's own classes in the app's DOM", () => {
@@ -81,5 +81,52 @@ describe("cleanSignatureHtml", () => {
 
   it("drops what runs", () => {
     expect(cleanSignatureHtml('<a href="javascript:alert(1)" onclick="x()">x</a><img src=x onerror="alert(1)"><style>a{}</style>')).toBe('<a>x</a><img>');
+  });
+});
+
+describe("emphasis set with inline styles", () => {
+  it("keeps bold, italic and underline as their tags once styles are gone", () => {
+    const { html } = sanitizeProse(
+      `<p>Invoice <span style="font-weight: bold">INV/2026/00123</span> of <span style="font-weight:700;font-style:italic">1,250.00 EUR</span>, ` +
+        `<span style="text-decoration: underline">by Friday</span> <span style="font-weight: 400">plain</span></p>`,
+    );
+    expect(html).toContain("<span><strong>INV/2026/00123</strong></span>");
+    expect(html).toContain("<span><strong><em>1,250.00 EUR</em></strong></span>");
+    expect(html).toContain("<span><u>by Friday</u></span>");
+    expect(html).toContain("<span>plain</span>");
+    expect(html).not.toContain("style=");
+  });
+
+  it("drops the text a sender hid, so a preheader does not show above the message", () => {
+    const { html } = sanitizeProse(
+      `<div style="display: none; max-height: 0px; overflow: hidden">Dear Northwind Lighting, We haven't received \u034f \u200b \u034f \u200b</div>` +
+        `<div style="mso-hide:all">old Outlook</div><p>Dear Northwind Lighting,</p>`,
+    );
+    expect(html).toBe("<p>Dear Northwind Lighting,</p>");
+  });
+
+  it("leaves what already carries emphasis, links, tables and lists as they are", () => {
+    const out = emphasizeInlineStyles(
+      `<b style="font-weight:bold">B</b><h3 style="font-weight:600">H</h3><a href="https://x.example" style="text-decoration:underline">link</a>` +
+        `<table style="font-weight:bold"><tbody><tr><td>cell</td></tr></tbody></table><ul style="font-style:italic"><li>item</li></ul>`,
+    );
+    expect(out).not.toContain("<strong>");
+    expect(out).not.toContain("<u>");
+    expect(out).not.toContain("<em>");
+    expect(sanitizeProse(out).html).toContain("<td>cell</td>");
+  });
+
+  it("does not touch HTML without styles, and keeps a designed email's styles for its frame", () => {
+    const plain = `<p>Hi <strong>there</strong></p>`;
+    expect(emphasizeInlineStyles(plain)).toBe(plain);
+    const { html } = sanitizeEmailHtml(`<div style="display:none">pre</div><table bgcolor="#fff"><tr><td style="font-weight:bold">x</td></tr></table>`);
+    expect(html).toContain(`style="display:none"`);
+    expect(html).toContain(`style="font-weight:bold"`);
+  });
+
+  it("runs nothing while it reads the email", () => {
+    const { html } = sanitizeProse(`<span style="font-weight:bold" onmouseover="alert(1)"><img src=x onerror="alert(1)">x</span><script>alert(1)</script>`);
+    for (const bad of ["onmouseover", "onerror", "<script", "alert"]) expect(html).not.toContain(bad);
+    expect(html).toContain("<strong>");
   });
 });

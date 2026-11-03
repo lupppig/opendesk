@@ -1,0 +1,59 @@
+{
+  "navigation": "Navigation",
+  "openNavigation": "Navigation öffnen",
+  "instanceAdministration": "Instanzverwaltung",
+  "signedOutHere": "Hier abgemeldet",
+  "signedOutHereHint": "Die API hat es nicht bestätigt. Die Sitzung endet von selbst innerhalb einer Stunde.",
+  "logoLink": "Übersicht des opendesk-Admins",
+  "openApp": "App öffnen",
+  "signOut": "Abmelden",
+  "newVersion": "Eine neue Version des Panels ist da. Lade die Seite neu, um sie zu erhalten.",
+  "notFound": {
+    "title": "Seite nicht gefunden",
+    "description": "Unter dieser Adresse gibt es im Admin-Panel keine Seite.",
+    "action": "Zur Übersicht"
+  },
+  "theme": {
+    "label": "Design",
+    "system": "System",
+    "light": "Hell",
+    "dark": "Dunkel"
+  },
+  "nav": {
+    "overview": "Übersicht",
+    "workspaces": "Workspaces",
+    "testWorkspaces": "Test-Workspaces",
+    "users": "Benutzer",
+    "jobs": "Jobs",
+    "health": "Zustand",
+    "audit": "Audit-Log",
+    "admins": "Admins"
+  },
+  "shortcuts": {
+    "dialog": "Tastenkürzel",
+    "search": "Diese Seite durchsuchen",
+    "go": {
+      "overview": "Zur Übersicht",
+      "workspaces": "Zu den Workspaces",
+      "testWorkspaces": "Zu den Test-Workspaces",
+      "users": "Zu den Benutzern",
+      "jobs": "Zu den Jobs",
+      "health": "Zum Zustand",
+      "audit": "Zum Audit-Log",
+      "admins": "Zu den Admins"
+    }
+  },
+  "titles": {
+    "signIn": "Anmelden",
+    "overview": "Übersicht",
+    "workspaces": "Workspaces",
+    "workspace": "Workspace",
+    "testWorkspaces": "Test-Workspaces",
+    "users": "Benutzer",
+    "user": "Benutzer",
+    "jobs": "Jobs",
+    "health": "Zustand",
+    "audit": "Audit-Log",
+    "admins": "Admins"
+  }
+}

@@ -202,7 +202,8 @@
     "syncing": "Synchronisation de {{name}}",
     "sent": "Envoyé depuis {{email}}",
     "shared": "Partage mis à jour",
-    "assigned": "Responsables mis à jour"
+    "assigned": "Responsables mis à jour",
+    "aiFeedbackSaved": "Avis enregistré"
   },
   "thread": {
     "label": "Conversation",
@@ -744,5 +745,29 @@
       "action": "Configurer les catégories",
       "dismiss": "Plus tard"
     }
+  },
+  "aiFeedback": {
+    "from": "Brouillon IA de {{name}}",
+    "asWritten": "envoyé tel quel",
+    "edited": "modifié avant l’envoi",
+    "give": "Donner un avis",
+    "edit": "Modifier l’avis",
+    "title": "Avis sur ce brouillon IA",
+    "description": "{{name}} le lit pour améliorer ses brouillons. Cela ne modifie jamais le message.",
+    "reason": "Qu’est-ce qui n’allait pas ?",
+    "reasonPlaceholder": "Choisir une raison",
+    "reasons": {
+      "wrong_facts": "Faits erronés",
+      "wrong_tone": "Ton inadapté",
+      "missing_info": "Informations manquantes",
+      "should_not_answer": "N’aurait pas dû répondre",
+      "other": "Autre"
+    },
+    "note": "Note (facultatif)",
+    "notePlaceholder": "Que devrait-il faire autrement ?",
+    "better": "Meilleure réponse (facultatif)",
+    "betterPlaceholder": "Ce que vous auriez répondu",
+    "privacy": "Seul le client IA qui a écrit ce brouillon lit votre note et votre réponse.",
+    "save": "Enregistrer l’avis"
   }
 }

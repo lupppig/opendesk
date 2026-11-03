@@ -139,9 +139,46 @@ export function sanitizeHtml(html: string): string {
   return sanitizeProse(html).html;
 }
 
+// Inline styles do not reach the app's DOM, so an email's emphasis set with them (Outlook's,
+// Odoo's and most senders' bold, italic and underline) becomes the tags that carry it, and text
+// the sender hid (a preheader: the inbox preview line, often padded with invisible characters)
+// stays hidden instead of showing above the message.
+const HIDDEN = /(^|;)\s*(display\s*:\s*none|mso-hide\s*:\s*all)\s*(!important\s*)?(;|$)/i;
+const BOLD = /(^|;)\s*font-weight\s*:\s*(bold|bolder|[6-9]00)\b/i;
+const ITALIC = /(^|;)\s*font-style\s*:\s*(italic|oblique)\b/i;
+const UNDERLINE = /(^|;)\s*text-decoration(-line)?\s*:[^;]*\bunderline\b/i;
+const EMPHASIS = new Set(["B", "STRONG", "H1", "H2", "H3", "H4", "H5", "H6", "TH"]);
+// Elements whose children a wrapper may not hold (a table's rows, a list's items): their style is left as it is.
+const STRUCTURE = new Set(["TABLE", "THEAD", "TBODY", "TFOOT", "TR", "COLGROUP", "UL", "OL", "DL", "SELECT"]);
+
+function wrapChildren(el: Element, tag: string) {
+  const w = el.ownerDocument.createElement(tag);
+  while (el.firstChild) w.appendChild(el.firstChild);
+  el.appendChild(w);
+}
+
+/** The emphasis an email's inline styles set, as tags, and its hidden text dropped (sanitizeProse's first pass). */
+export function emphasizeInlineStyles(html: string): string {
+  if (!html || !/\sstyle\s*=/i.test(html)) return html;
+  const t = document.createElement("template");
+  t.innerHTML = html;
+  for (const el of Array.from(t.content.querySelectorAll("[style]"))) {
+    const style = el.getAttribute("style") ?? "";
+    if (HIDDEN.test(style)) {
+      el.remove();
+      continue;
+    }
+    if (STRUCTURE.has(el.tagName)) continue;
+    if (UNDERLINE.test(style) && el.tagName !== "U" && el.tagName !== "A" && !el.closest("a")) wrapChildren(el, "u");
+    if (ITALIC.test(style) && el.tagName !== "I" && el.tagName !== "EM") wrapChildren(el, "em");
+    if (BOLD.test(style) && !EMPHASIS.has(el.tagName)) wrapChildren(el, "strong");
+  }
+  return t.innerHTML;
+}
+
 export function sanitizeProse(html: string, opts: SanitizeOptions = {}): Sanitized {
   const p: Pass = { keepClasses: false, blockRemote: !!opts.blockRemoteImages, blocked: 0 };
-  const out = run(html, p, { ALLOWED_TAGS, ALLOWED_ATTR: [...ALLOWED_ATTR, "loading", "referrerpolicy"], ALLOW_DATA_ATTR: false, ALLOWED_URI_REGEXP: URI });
+  const out = run(emphasizeInlineStyles(html), p, { ALLOWED_TAGS, ALLOWED_ATTR: [...ALLOWED_ATTR, "loading", "referrerpolicy"], ALLOW_DATA_ATTR: false, ALLOWED_URI_REGEXP: URI });
   return { html: out, held: p.blocked };
 }
 

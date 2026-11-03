@@ -1,0 +1,34 @@
+{
+  "title": "Journal d’audit",
+  "subtitle": "Chaque connexion et action dans le panneau d’admin et en ligne de commande",
+  "allActions": "Toutes les actions",
+  "allAdmins": "Tous les admins",
+  "clearTarget": "Effacer le filtre de cible",
+  "clearFilters": "Effacer les filtres",
+  "col": {
+    "admin": "Admin",
+    "action": "Action",
+    "target": "Cible",
+    "details": "Détails",
+    "ip": "IP",
+    "when": "Quand"
+  },
+  "actor": {
+    "cli": "Ligne de commande",
+    "system": "Nettoyage de l’instance",
+    "unknown": "Inconnu"
+  },
+  "target": {
+    "user": "Utilisateur",
+    "workspace": "Espace de travail",
+    "admin": "Admin",
+    "job": "Tâche",
+    "instance": "Instance"
+  },
+  "empty": {
+    "title": "Rien n’est encore journalisé",
+    "hint": "Les connexions et chaque changement fait depuis le panneau ou la ligne de commande apparaissent ici.",
+    "noMatch": "Rien ne correspond à ces filtres",
+    "noMatchHint": "Essayez une autre action ou un autre admin, ou effacez les filtres."
+  }
+}

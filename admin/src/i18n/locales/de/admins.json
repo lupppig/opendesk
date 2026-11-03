@@ -1,0 +1,47 @@
+{
+  "title": "Admins",
+  "subtitle": "Wer dieses Panel öffnen kann",
+  "you": "Du",
+  "grantError": {
+    "noAccount": "Kein Konto nutzt diese E-Mail. Die Person registriert sich zuerst in der App.",
+    "mfa": "Die Person muss in der App die Zwei-Faktor-Authentifizierung einschalten, bevor sie Admin werden kann.",
+    "already": "Die Person ist bereits Admin. Ändere stattdessen ihre Rolle in der Liste.",
+    "suspended": "Dieses Konto ist gesperrt. Stelle es wieder her, bevor du es zum Admin machst."
+  },
+  "locked": {
+    "ownRole": "Du kannst deine eigene Rolle nicht ändern",
+    "self": "Du kannst dich nicht selbst entfernen",
+    "lastSuper": "Der letzte Super-Admin bleibt. Die Kommandozeile kann das ändern."
+  },
+  "empty": {
+    "title": "Keine Admins",
+    "hint": "Der erste Admin wird auf dem Rechner ernannt, auf dem die Instanz läuft, mit opendesk admin grant."
+  },
+  "col": {
+    "admin": "Admin",
+    "role": "Rolle",
+    "grantedBy": "Ernannt von",
+    "since": "Seit"
+  },
+  "grant": {
+    "title": "Admin hinzufügen",
+    "description": "Die Person braucht ein Konto mit eingeschalteter Zwei-Faktor-Authentifizierung. Sie meldet sich hier mit ihrer eigenen E-Mail, ihrem Passwort und Code an.",
+    "confirm": "Admin hinzufügen",
+    "done": "{{email}} ist jetzt Admin mit der Rolle {{role}}",
+    "email": "E-Mail",
+    "emailPlaceholder": "name@beispiel.de"
+  },
+  "change": {
+    "button": "Rolle ändern",
+    "title": "Rolle von {{email}} ändern",
+    "description": "Die neue Rolle gilt sofort, bei der nächsten Anfrage.",
+    "done": "Rolle zu {{role}} geändert"
+  },
+  "revoke": {
+    "button": "Entziehen",
+    "confirm": "Admin entziehen",
+    "title": "{{email}} entziehen?",
+    "description": "Die Person verliert sofort den Zugang zum Panel und ihre Panel-Sitzungen enden. Ihr Konto und ihre Workspaces bleiben unberührt.",
+    "done": "{{email}} ist kein Admin mehr"
+  }
+}

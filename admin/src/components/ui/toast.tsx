@@ -1,5 +1,6 @@
 import { Toaster as Sonner, toast as sonner } from "sonner";
 import { errorMessage } from "@/lib/api/client";
+import { i18n } from "@/i18n";
 import { useTheme } from "@/lib/theme";
 import { Check, Info, Undo2, X } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -71,7 +72,7 @@ export const toast = {
   success: (msg: string, opts?: Opts) => sonner.success(msg, { ...withAction(opts), icon: <ToastIcon hue="green"><Check /></ToastIcon> }),
   info: (msg: string, opts?: Opts) => sonner(msg, { ...withAction(opts), icon: <ToastIcon hue="blue"><Info /></ToastIcon> }),
   /** A done destructive action with a way back. */
-  undo: (msg: string, onUndo: () => void, label = "Undo") =>
+  undo: (msg: string, onUndo: () => void, label = i18n.t("actions.undo")) =>
     sonner(msg, { ...withAction({ action: { label, onClick: onUndo } }), icon: <ToastIcon hue="gray"><Undo2 /></ToastIcon> }),
   error: (e: unknown, fallback?: string) =>
     sonner.error(typeof e === "string" ? e : errorMessage(e, fallback), { icon: <ToastIcon hue="red"><X /></ToastIcon> }),

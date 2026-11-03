@@ -67,7 +67,25 @@
       "never": "Jamais"
     },
     "scopeFull": "accès complet",
-    "scopeRead": "lecture seule"
+    "scopeRead": "lecture seule",
+    "bot": {
+      "label": "Parle en tant que",
+      "hint": "Les réponses et notes que cette clé écrit sur les tickets s’affichent et partent au nom de ce bot : son nom, son visage et sa signature d’e-mail. Pour une IA à vous qui répond aux clients.",
+      "none": "Aucun bot : elle écrit en tant qu’API",
+      "speaksAs": "Parle en tant que {{name}}",
+      "menu": "Parler en tant que bot",
+      "title": "Bot de {{name}}",
+      "save": "Enregistrer",
+      "error": "Impossible de changer le bot de la clé"
+    },
+    "scopes": {
+      "menu": "Modifier les autorisations",
+      "title": "Autorisations de {{name}}",
+      "description": "Choisissez ce que cette clé peut faire. Retirer une autorisation s’applique tout de suite.",
+      "save": "Enregistrer les autorisations",
+      "changes": "Changements",
+      "addingNeedsSignIn": "Ajouter une autorisation demande une connexion récente, comme pour créer une clé."
+    }
   },
   "webhooks": {
     "title": "Webhooks",

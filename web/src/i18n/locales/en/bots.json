@@ -31,7 +31,8 @@
     "defaultNone": "Answers everywhere no other bot is picked",
     "on": "Answers on {{list}}",
     "listMore_one": "{{list}} and {{count}} more",
-    "listMore_other": "{{list}} and {{count}} more"
+    "listMore_other": "{{list}} and {{count}} more",
+    "apiKey": "{{name}} (API key)"
   },
   "summary": {
     "title": "Bots",

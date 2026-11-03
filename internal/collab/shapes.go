@@ -329,9 +329,14 @@ func (s *service) messagesOut(ctx context.Context, q db.Querier, a *accountRow, 
 		return nil, err
 	}
 	own := ownAddresses(a, idents)
+	aiDrafts, err := aiDraftRefs(ctx, q, list)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]MailMessage, 0, len(list))
 	for _, m := range list {
 		mm := s.messageOut(a, m, refOf(refs, m.SentBy))
+		mm.AIDraft = aiDrafts[m.ID]
 		if m.Draft {
 			id := m.ID
 			mm.DraftID = &id

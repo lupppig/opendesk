@@ -134,7 +134,8 @@
     "showTranslation": "Übersetzung anzeigen",
     "failed": "Diese Nachricht konnte nicht übersetzt werden",
     "aiLabel": "KI",
-    "aiHint": "Vom KI-Assistenten aus deiner Wissensdatenbank beantwortet"
+    "aiHint": "Vom KI-Assistenten aus deiner Wissensdatenbank beantwortet",
+    "apiBotHint": "Von deiner eigenen KI über den API-Schlüssel {{key}} geschrieben"
   },
   "tools": {
     "title": "In deinen Tools",
