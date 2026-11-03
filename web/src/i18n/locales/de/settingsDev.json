@@ -67,6 +67,16 @@
     },
     "scopeFull": "Vollzugriff",
     "scopeRead": "nur lesen",
+    "bot": {
+      "label": "Spricht als",
+      "hint": "Antworten und Notizen, die dieser Schlüssel in Tickets schreibt, erscheinen und gehen als dieser Bot raus: mit seinem Namen, seinem Gesicht und seiner E-Mail-Grußformel. Für eine eigene KI, die Kunden antwortet.",
+      "none": "Kein Bot: Er schreibt als API",
+      "speaksAs": "Spricht als {{name}}",
+      "menu": "Als Bot sprechen",
+      "title": "Bot für {{name}}",
+      "save": "Speichern",
+      "error": "Der Bot des Schlüssels konnte nicht geändert werden"
+    },
     "scopes": {
       "menu": "Berechtigungen bearbeiten",
       "title": "Berechtigungen für {{name}}",

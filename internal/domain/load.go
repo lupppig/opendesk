@@ -158,7 +158,7 @@ const MessageSelect = `SELECT m.id, m.ticket_id, m.kind, m.direction, m.author_t
 	du.id, du.name, du.email, du.avatar_url,
 	u.id, u.name, u.email, u.avatar_url,
 	c.id, c.email, c.name, c.avatar_url,
-	bt.id, bt.name, bt.avatar, bt.look,
+	bt.id, bt.name, bt.avatar, bt.look, ak.id, ak.name,
 	COALESCE((SELECT json_agg(json_build_object('id', a.id, 'filename', a.filename, 'content_type', a.content_type,
 		'size_bytes', a.size_bytes, 'inline', a.inline) ORDER BY a.created_at)
 		FROM attachments a WHERE a.message_id = m.id), '[]')
@@ -166,6 +166,7 @@ FROM messages m
 LEFT JOIN users u ON u.id = m.author_user_id
 LEFT JOIN contacts c ON c.id = m.author_contact_id
 LEFT JOIN bots bt ON bt.id = m.bot_id
+LEFT JOIN api_keys ak ON ak.id = m.api_key_id
 LEFT JOIN users du ON du.id = m.deleted_by`
 
 func ScanMessage(row pgx.Row) (Message, error) {
@@ -176,8 +177,8 @@ func ScanMessage(row pgx.Row) (Message, error) {
 	var bID *uuid.UUID
 	var bName, bAvatar *string
 	var bLook []byte
-	var dID *uuid.UUID
-	var dName, dEmail, dAvatar *string
+	var dID, keyID *uuid.UUID
+	var dName, dEmail, dAvatar, keyName *string
 	var collabAccount *uuid.UUID
 	var collabReplyTo string
 	err := row.Scan(&m.ID, &m.TicketID, &m.Kind, &m.Direction, &m.Author.Type, &m.BodyHTML, &m.BodyText,
@@ -185,7 +186,7 @@ func ScanMessage(row pgx.Row) (Message, error) {
 		&m.DeliveryStatus, &m.DeliveryError, &m.AI, &m.AIAction, &m.AIRating, &m.MailboxID, &m.ReplyTo, &m.AuthFailed,
 		&m.FormSender, &m.ReceivedAt, &m.ThreadID, &m.CreatedAt, &m.EditedAt, &m.DeletedAt, &m.PurgedAt, &m.SentAsReplyID,
 		&collabAccount, &collabReplyTo, &dID, &dName, &dEmail, &dAvatar,
-		&uID, &uName, &uEmail, &uAvatar, &cID, &cEmail, &cName, &cAvatar, &bID, &bName, &bAvatar, &bLook, &atts)
+		&uID, &uName, &uEmail, &uAvatar, &cID, &cEmail, &cName, &cAvatar, &bID, &bName, &bAvatar, &bLook, &keyID, &keyName, &atts)
 	if err != nil {
 		return m, err
 	}
@@ -203,6 +204,9 @@ func ScanMessage(row pgx.Row) (Message, error) {
 	}
 	if bID != nil {
 		m.Author.Bot = &BotRef{ID: *bID, Name: deref(bName), AvatarURL: BotAvatarURL(*bID, Avatar(deref(bAvatar)), bLook), Look: bLook}
+	}
+	if keyID != nil {
+		m.Author.APIKey = &APIKeyRef{ID: *keyID, Name: deref(keyName)}
 	}
 	m.Attachments = []Attachment{}
 	if err := json.Unmarshal(atts, &m.Attachments); err != nil {
@@ -333,6 +337,7 @@ func PublicMessage(m Message) Message {
 		u.Email = ""
 		m.Author.User = &u
 	}
+	m.Author.APIKey = nil
 	m.To, m.Cc, m.Bcc = []string{}, []string{}, []string{}
 	m.DeliveryError = ""
 	m.MailboxID = nil

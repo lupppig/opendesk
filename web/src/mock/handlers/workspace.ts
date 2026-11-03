@@ -17,6 +17,7 @@ import { mockWsToken } from "./workspaces";
 import { lapseGrants, registerTeams, seedDefaultBrand } from "./teams";
 import { envelopeTeam, standIn } from "../gateway";
 import { setGrants, teamRole } from "../teams";
+import { botsOf } from "../bots";
 
 const ROLES: Role[] = ["owner", "admin", "agent", "viewer"];
 
@@ -236,6 +237,7 @@ export function registerWorkspace() {
     if (!scopes.length) throw invalid("Choose at least one scope");
     const secret = `od_live_${randomToken(43)}`;
     const key: ApiKey = { id: uuid(), name, prefix: secret.slice(0, 16), scopes, last_used_at: null, expires_at: s(ctx, "expires_at") ?? null, created_at: nowIso(), created_by: userRef(db.meId) };
+    key.bot_id = keyBot(ctx, scopes);
     setGrants(ctx.ws, key, privateTeams(ctx, []));
     ctx.ws.apiKeys.unshift(key);
     audit(ctx.ws, "api_key.created", "api_key", key.id, { name });
@@ -255,6 +257,7 @@ export function registerWorkspace() {
     if (scopes && (scopes.length !== before.length || scopes.some((sc) => !before.includes(sc))))
       audit(ctx.ws, "api_key.scopes_changed", "api_key", key.id, { from: before, to: key.scopes });
     if ("private_team_ids" in ctx.body) setGrants(ctx.ws, key, privateTeams(ctx, key.private_team_ids ?? []));
+    if ("bot_id" in ctx.body) key.bot_id = keyBot(ctx, key.scopes);
     audit(ctx.ws, "api_key.updated", "api_key", key.id, { fields: Object.keys(ctx.body) });
     return key;
   });
@@ -392,6 +395,15 @@ function privateTeams(ctx: Ctx, current: string[]): string[] {
     if (!current.includes(id) && !teamRole(t, db.meId)) throw forbidden("Only members of a private team can give access to it");
   }
   return [...new Set(ids)];
+}
+
+/** The bot a key speaks as (contracts/api.md "API keys"): a bot of the workspace, for a key that writes tickets; null for none. */
+function keyBot(ctx: Ctx, scopes: string[]): string | null {
+  const id = s(ctx, "bot_id");
+  if (!id) return null;
+  if (!botsOf(ctx.ws).some((b) => b.id === id)) throw invalid("bot_id must be a bot of this workspace");
+  if (!scopes.includes("tickets:write")) throw invalid("A key speaks as a bot only with the tickets:write scope.");
+  return id;
 }
 
 function findHook(ctx: Ctx): Webhook {

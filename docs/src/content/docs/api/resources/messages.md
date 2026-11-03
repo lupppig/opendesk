@@ -26,7 +26,13 @@ type Message = {
   ticket_id: string;
   kind: "reply" | "note";
   direction: "inbound" | "outbound";
-  author: { type: "contact" | "user" | "system" | "api"; user: UserRef | null; contact: ContactRef | null };
+  author: {
+    type: "contact" | "user" | "system" | "api";
+    user: UserRef | null;
+    contact: ContactRef | null;
+    bot: BotRef | null;                    // the bot it was sent as: the AI agent's, or the bot an API key speaks as
+    api_key: { id: string; name: string } | null; // the API key that wrote it
+  };
   body_html: string;
   body_text: string;
   has_quoted: boolean;
@@ -70,7 +76,7 @@ curl https://api.opendesk.sh/v1/tickets/1042/messages \
   }'
 ```
 
-A reply's [template variables](/guides/email-templates/variables/), such as `{{ contact.first_name }}`, are filled in when it is created, with you as the agent (an API key has none, so the agent variables are empty). The stored message is what the customer gets. Notes are never filled.
+A reply's [template variables](/guides/email-templates/variables/), such as `{{ contact.first_name }}`, are filled in when it is created, with you as the agent (an API key has none, so the agent variables are empty, unless it [speaks as a bot](/api/resources/api-keys-webhooks/#speak-as-a-bot): the bot is then the agent). The stored message is what the customer gets. Notes are never filled.
 
 `status` sets the ticket status in the same step. A reply on an email ticket is queued for delivery through the mailbox; watch `delivery_status` change from `pending` to `sent` (or `failed` or `bounced`) through the `message.updated` event.
 

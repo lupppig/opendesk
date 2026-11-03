@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/useopendesk/opendesk/internal/ai/bots"
 	"github.com/useopendesk/opendesk/internal/audit"
 	"github.com/useopendesk/opendesk/internal/auth"
 	"github.com/useopendesk/opendesk/internal/crypto"
@@ -37,6 +38,9 @@ type CoreAPIKey struct {
 	PrivateTeamIDs []uuid.UUID `json:"private_team_ids"`
 	// PrivateTeams are the same teams, by name, with who granted each.
 	PrivateTeams []PrivateTeamGrant `json:"private_teams"`
+	// BotID is the bot the key speaks as: what it writes on tickets is shown and sent as that
+	// bot (contracts/bots.md). Null: it writes as itself.
+	BotID *uuid.UUID `json:"bot_id" doc:"The bot this key speaks as on tickets, or null"`
 }
 
 type CoreAPIKeyWithSecret struct {
@@ -44,7 +48,7 @@ type CoreAPIKeyWithSecret struct {
 	Secret string `json:"secret" doc:"The full key. Shown once."`
 }
 
-var apiKeySelect = `SELECT k.id, k.name, k.prefix, k.scopes, k.last_used_at, k.expires_at, k.created_at,
+var apiKeySelect = `SELECT k.id, k.name, k.prefix, k.scopes, k.last_used_at, k.expires_at, k.created_at, k.bot_id,
 	u.id, u.name, u.email, u.avatar_url, ` + grantedTeamsSQL("k.private_team_ids", "k.workspace_id") + `,
 	` + teamGrantsSQL("k.private_team_ids", "k.workspace_id", grantAPIKey, "k.id") + `
 	FROM api_keys k LEFT JOIN users u ON u.id = k.created_by`
@@ -54,7 +58,7 @@ func scanAPIKey(r pgx.Row) (CoreAPIKey, error) {
 	var uid *uuid.UUID
 	var name, email, avatar *string
 	var grants []byte
-	if err := r.Scan(&k.ID, &k.Name, &k.Prefix, &k.Scopes, &k.LastUsedAt, &k.ExpiresAt, &k.CreatedAt, &uid, &name, &email, &avatar,
+	if err := r.Scan(&k.ID, &k.Name, &k.Prefix, &k.Scopes, &k.LastUsedAt, &k.ExpiresAt, &k.CreatedAt, &k.BotID, &uid, &name, &email, &avatar,
 		&k.PrivateTeamIDs, &grants); err != nil {
 		return k, err
 	}
@@ -100,6 +104,19 @@ func validScopes(in []string) ([]string, error) {
 	}
 	slices.Sort(out)
 	return out, nil
+}
+
+// keyBot checks the bot a key is to speak as: a bot of the workspace, for a key that may
+// write on tickets. Nil clears it.
+func keyBot(ctx context.Context, q db.Querier, wid uuid.UUID, raw *string, scopes []string) (*uuid.UUID, error) {
+	bot, err := bots.ParseRef(ctx, q, wid, raw)
+	if err != nil || bot == nil {
+		return bot, err
+	}
+	if !slices.Contains(scopes, auth.ScopeTicketsWrite) {
+		return nil, httpx.Validation("A key speaks as a bot only with the tickets:write scope.")
+	}
+	return bot, nil
 }
 
 // scopeChanges says what going from one sorted scope list to another adds and removes.
@@ -181,6 +198,8 @@ func (s *svc) registerAPIKeys(api huma.API) {
 				ExpiresAt *time.Time `json:"expires_at,omitempty"`
 				// PrivateTeamIDs: private teams whose tickets the key sees; only their members add them.
 				PrivateTeamIDs []string `json:"private_team_ids,omitempty" maxItems:"200"`
+				// BotID: the bot the key speaks as on tickets (needs tickets:write).
+				BotID *string `json:"bot_id,omitempty" required:"false" nullable:"true" doc:"A bot of the workspace this key speaks as on tickets (needs tickets:write), or null"`
 			}
 		}) (*struct {
 			CacheControl string `header:"Cache-Control"`
@@ -219,16 +238,20 @@ func (s *svc) registerAPIKeys(api huma.API) {
 				if err != nil {
 					return err
 				}
+				bot, err := keyBot(ctx, tx, p.WorkspaceID, in.Body.BotID, scopes)
+				if err != nil {
+					return err
+				}
 				id := ids.New()
-				if _, err := tx.Exec(ctx, `INSERT INTO api_keys (id, workspace_id, name, prefix, key_hash, scopes, created_by, expires_at, private_team_ids)
-					VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`, id, p.WorkspaceID, name, prefix, hash, scopes, p.UserID, in.Body.ExpiresAt, teams); err != nil {
+				if _, err := tx.Exec(ctx, `INSERT INTO api_keys (id, workspace_id, name, prefix, key_hash, scopes, created_by, expires_at, private_team_ids, bot_id)
+					VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`, id, p.WorkspaceID, name, prefix, hash, scopes, p.UserID, in.Body.ExpiresAt, teams, bot); err != nil {
 					return err
 				}
 				if err := saveGrants(ctx, tx, p, grantAPIKey, id, teams); err != nil {
 					return err
 				}
 				if err := audit.Log(ctx, tx, p, p.WorkspaceID, "api_key.created", "api_key", &id,
-					map[string]any{"name": name, "scopes": scopes, "prefix": prefix, "private_team_ids": uuidStrings(teams)}); err != nil {
+					map[string]any{"name": name, "scopes": scopes, "prefix": prefix, "private_team_ids": uuidStrings(teams), "bot_id": bot}); err != nil {
 					return err
 				}
 				k, err = loadAPIKey(ctx, tx, p.WorkspaceID, id)
@@ -238,7 +261,7 @@ func (s *svc) registerAPIKeys(api huma.API) {
 				return nil, httpx.Wrap(err)
 			}
 			s.d.Analytics.Capture(p.UserID.String(), p.WorkspaceID.String(), "api_key_created",
-				map[string]any{"scope_count": len(scopes), "expires": in.Body.ExpiresAt != nil})
+				map[string]any{"scope_count": len(scopes), "expires": in.Body.ExpiresAt != nil, "bot": k.BotID != nil})
 			return &struct {
 				CacheControl string `header:"Cache-Control"`
 				Body         CoreAPIKeyWithSecret
@@ -253,6 +276,8 @@ func (s *svc) registerAPIKeys(api huma.API) {
 				Name *string `json:"name,omitempty" maxLength:"200"`
 				// PrivateTeamIDs replaces the list. Only a team's members add it; admins may remove any.
 				PrivateTeamIDs *[]string `json:"private_team_ids,omitempty" maxItems:"200"`
+				// BotID: the bot the key speaks as on tickets (needs tickets:write); null: itself.
+				BotID bots.Assignment `json:"bot_id,omitempty" doc:"A bot of the workspace this key speaks as on tickets (needs tickets:write), or null for none"`
 				// Scopes replaces the key's scopes. Adding one asks for the same fresh sign-in as
 				// creating a key; removing is immediate.
 				Scopes *[]string `json:"scopes,omitempty" maxItems:"20" doc:"The key's scopes, replacing the current ones. Adding a scope needs a recent sign-in (and the second factor when on), as creating a key does"`
@@ -284,9 +309,9 @@ func (s *svc) registerAPIKeys(api huma.API) {
 			teamsChanged, scopesChanged := false, false
 			err = s.tx(ctx, func(tx pgx.Tx) error {
 				var current, scopes []string
-				var creator *uuid.UUID
-				err := tx.QueryRow(ctx, `SELECT private_team_ids::text[], scopes, created_by FROM api_keys WHERE id = $1 AND workspace_id = $2 AND revoked_at IS NULL FOR UPDATE`,
-					id, p.WorkspaceID).Scan(&current, &scopes, &creator)
+				var bot, creator *uuid.UUID
+				err := tx.QueryRow(ctx, `SELECT private_team_ids::text[], scopes, bot_id, created_by FROM api_keys WHERE id = $1 AND workspace_id = $2 AND revoked_at IS NULL FOR UPDATE`,
+					id, p.WorkspaceID).Scan(&current, &scopes, &bot, &creator)
 				if db.IsNotFound(err) {
 					return httpx.NotFound("API key")
 				}
@@ -319,8 +344,13 @@ func (s *svc) registerAPIKeys(api huma.API) {
 					}
 					teamsChanged = !sameIDs(current, teams)
 				}
-				if _, err := tx.Exec(ctx, `UPDATE api_keys SET name = COALESCE($3, name), private_team_ids = COALESCE($4, private_team_ids), scopes = $5
-					WHERE id = $1 AND workspace_id = $2`, id, p.WorkspaceID, name, teams, scopes); err != nil {
+				if in.Body.BotID.Set {
+					if bot, err = keyBot(ctx, tx, p.WorkspaceID, in.Body.BotID.Value, scopes); err != nil {
+						return err
+					}
+				}
+				if _, err := tx.Exec(ctx, `UPDATE api_keys SET name = COALESCE($3, name), private_team_ids = COALESCE($4, private_team_ids), bot_id = $5, scopes = $6
+					WHERE id = $1 AND workspace_id = $2`, id, p.WorkspaceID, name, teams, bot, scopes); err != nil {
 					return err
 				}
 				if in.Body.PrivateTeamIDs != nil {
@@ -337,11 +367,11 @@ func (s *svc) registerAPIKeys(api huma.API) {
 						return err
 					}
 				}
-				if in.Body.Name == nil && in.Body.PrivateTeamIDs == nil {
+				if in.Body.Name == nil && in.Body.PrivateTeamIDs == nil && !in.Body.BotID.Set {
 					return nil
 				}
 				return audit.Log(ctx, tx, p, p.WorkspaceID, "api_key.updated", "api_key", &id,
-					map[string]any{"name": k.Name, "private_team_ids": uuidStrings(k.PrivateTeamIDs)})
+					map[string]any{"name": k.Name, "private_team_ids": uuidStrings(k.PrivateTeamIDs), "bot_id": k.BotID})
 			})
 			if err != nil {
 				return nil, httpx.Wrap(err)

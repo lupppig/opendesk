@@ -231,6 +231,62 @@ func TestBotForMailbox(t *testing.T) {
 	}
 }
 
+// An API key that speaks as a bot (contracts/api.md "API keys") shows in the bot's usage
+// and keeps it from being deleted while the key works.
+func TestBotForAPIKey(t *testing.T) {
+	e, ws := env(t)
+	admin := ws.Admin.As(ws)
+	var julia bots.Bot
+	e.Do("POST", "/v1/bots", admin, map[string]any{"name": "Julia", "look": pipLook}).Want(t, 201).JSON(t, &julia)
+	key, plain, other := ids.New(), ids.New(), e.NewWorkspace()
+	for _, k := range []struct {
+		id   uuid.UUID
+		name string
+		bot  *uuid.UUID
+	}{{key, "Replai", &julia.ID}, {plain, "Sync", nil}} {
+		e.Exec(`INSERT INTO api_keys (id, workspace_id, name, prefix, key_hash, scopes, bot_id) VALUES ($1, $2, $3, 'od_live_x', $4, '{tickets:write}', $5)`,
+			k.id, ws.ID, k.name, []byte(k.id.String()), k.bot)
+	}
+	ctx := context.Background()
+	if got, err := bots.ForAPIKey(ctx, e.D.DB.Pool, ws.ID, key); err != nil || got == nil || got.ID != julia.ID || got.Name != "Julia" {
+		t.Fatalf("for key = %+v %v", got, err)
+	}
+	// A key without a bot speaks as itself, not as the default bot; another workspace's id finds nothing.
+	for _, c := range []struct{ ws, key uuid.UUID }{{ws.ID, plain}, {other.ID, key}} {
+		if got, err := bots.ForAPIKey(ctx, e.D.DB.Pool, c.ws, c.key); err != nil || got != nil {
+			t.Fatalf("for key %v = %+v %v", c.key, got, err)
+		}
+	}
+	for _, b := range list(t, e, admin) {
+		want := 0
+		if b.ID == julia.ID {
+			want = 1
+		}
+		if len(b.Usage.APIKeys) != want || want == 1 && (b.Usage.APIKeys[0].ID != key || b.Usage.APIKeys[0].Name != "Replai") {
+			t.Fatalf("%s usage = %+v", b.Name, b.Usage)
+		}
+	}
+
+	// Deleting the bot waits until the key no longer speaks as it.
+	r := e.Do("DELETE", "/v1/bots/"+julia.ID.String(), admin, nil).Want(t, 409)
+	if !strings.Contains(string(r.Body), "bot_in_use") || !strings.Contains(string(r.Body), "the Replai API key") {
+		t.Fatalf("delete = %s", r.Body)
+	}
+	// A revoked key holds nothing: the bot goes and the key keeps no bot.
+	e.Exec(`UPDATE api_keys SET revoked_at = now() WHERE id = $1`, key)
+	for _, b := range list(t, e, admin) {
+		if b.ID == julia.ID && len(b.Usage.APIKeys) != 0 {
+			t.Fatalf("revoked key in usage = %+v", b.Usage)
+		}
+	}
+	e.Do("DELETE", "/v1/bots/"+julia.ID.String(), admin, nil).Want(t, 204)
+	var left *uuid.UUID
+	e.Scalar(`SELECT bot_id FROM api_keys WHERE id = $1`, &left, key)
+	if left != nil {
+		t.Fatalf("key still speaks as %v", left)
+	}
+}
+
 func TestMailboxBotPatch(t *testing.T) {
 	e := hdtest.New(t, helpdesk.Register, bots.Register, email.Register)
 	ws := e.NewWorkspace()
@@ -319,6 +375,11 @@ func TestBotsBackfill(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A later migration refers to bots: it is undone first, as a rollback would.
+	keyBot, err := migrations.FS.ReadFile("000711_api_key_bot.down.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
 	ctx := context.Background()
 	tx, err := e.D.DB.Pool.Begin(ctx)
 	if err != nil {
@@ -331,6 +392,7 @@ func TestBotsBackfill(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	exec(string(keyBot))
 	exec(string(down))
 	img := ids.New()
 	second := ids.New()

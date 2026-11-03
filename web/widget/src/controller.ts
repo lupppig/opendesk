@@ -3,7 +3,7 @@
 // ratings, and applying realtime events.
 
 import { WidgetApi, WidgetError, type Fetcher } from "./api";
-import { isAiAnswer } from "./ai";
+import { isAiAnswer, keyBot } from "./ai";
 import { pageUrl, readBotRef, resolveConfig } from "./config";
 import { t } from "./i18n";
 import { dropLive, liveMessage, reduceLive } from "./live";
@@ -513,7 +513,9 @@ export class Controller {
     }
     if (s.config?.sound && !s.preview && typeof document !== "undefined" && document.hidden) chime();
     const ai = isAiAnswer(m);
-    const who = m.author.user?.name ?? (ai ? readBotRef(m.author.bot)?.name || s.config?.bot?.name || t("ai") : s.config?.workspace_name || t("support"));
+    const who =
+      m.author.user?.name ??
+      (ai ? readBotRef(m.author.bot)?.name || s.config?.bot?.name || t("ai") : keyBot(m)?.name || s.config?.workspace_name || t("support"));
     const text = (m.body_text || plainText(m.body_html.replace(/<[^>]+>/g, " "))).slice(0, 200);
     this.announce(t("newMessage", { name: who, text }));
     this.emit("message", { conversation_id: tid, body: m.body_text, from: who });

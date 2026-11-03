@@ -450,8 +450,10 @@ export type Message = {
     type: "contact" | "user" | "system" | "api";
     user: UserRef | null;
     contact: ContactRef | null;
-    /** The bot an AI reply was sent as (contracts/bots.md). */
+    /** The bot a reply or note was sent as (contracts/bots.md): the AI agent's, or an API key's that speaks as one. */
     bot?: BotRef | null;
+    /** The API key that wrote it (type "api"); null otherwise. */
+    api_key?: { id: string; name: string } | null;
   };
   body_html: string;
   body_text: string;
@@ -1015,6 +1017,8 @@ export type ApiKey = {
   created_by: UserRef | null;
   private_team_ids?: string[];
   private_teams?: PrivateTeamGrant[];
+  /** The bot the key speaks as on tickets (contracts/api.md "API keys"); null: it writes as itself. */
+  bot_id?: string | null;
 };
 export type Webhook = {
   id: string;
@@ -2329,6 +2333,8 @@ export type BotPersonality = {
 export type BotUsage = {
   widgets: { id: string; name: string; brand_id: string }[];
   mailboxes: { id: string; name: string; email: string }[];
+  /** Live API keys that speak as the bot. */
+  api_keys?: { id: string; name: string }[];
 };
 export type Bot = {
   id: string;

@@ -68,6 +68,16 @@
     },
     "scopeFull": "accès complet",
     "scopeRead": "lecture seule",
+    "bot": {
+      "label": "Parle en tant que",
+      "hint": "Les réponses et notes que cette clé écrit sur les tickets s’affichent et partent au nom de ce bot : son nom, son visage et sa signature d’e-mail. Pour une IA à vous qui répond aux clients.",
+      "none": "Aucun bot : elle écrit en tant qu’API",
+      "speaksAs": "Parle en tant que {{name}}",
+      "menu": "Parler en tant que bot",
+      "title": "Bot de {{name}}",
+      "save": "Enregistrer",
+      "error": "Impossible de changer le bot de la clé"
+    },
     "scopes": {
       "menu": "Modifier les autorisations",
       "title": "Autorisations de {{name}}",

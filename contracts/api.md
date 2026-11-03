@@ -98,7 +98,8 @@ type Ticket = {
 type Message = {
   id: string; ticket_id: string; kind: "reply" | "note"; direction: "inbound" | "outbound";
   author: { type: "contact" | "user" | "system" | "api"; user: UserRef | null; contact: ContactRef | null;
-    bot: { id: string; name: string; avatar_url: string; look: BotLook } | null /* the bot an AI reply was sent as (contracts/bots.md) */ };
+    bot: { id: string; name: string; avatar_url: string; look: BotLook } | null /* the bot an AI reply was sent as, or the bot the API key that wrote it speaks as (contracts/bots.md) */;
+    api_key: { id: string; name: string } | null /* the API key that wrote it (type "api"); null otherwise, and in what customers receive */ };
   body_html: string; body_text: string; has_quoted: boolean /* an original to open: an inbound email's full text, or the copy of an email we sent as it went out */; subject: string;
   from_email: string; from_name: string; to: string[]; cc: string[]; bcc: string[];
   attachments: Attachment[]; delivery_status: "none" | "pending" | "sent" | "failed" | "bounced"; delivery_error: string;
@@ -232,7 +233,8 @@ type ChangelogEntry = { id: string; title: string /* 1..200 */; slug: string /* 
   published_at: string | null /* the date it carries: set when first published unless given. A published entry dated in the future is scheduled: public pages, feeds and lists show it from then */;
   author: UserRef | null /* public routes leave out the email */; brand_id: string | null /* the brand whose help center shows it; null = every brand */;
   created_at: string; updated_at: string };
-type ApiKey = { id: string; name: string; prefix: string; scopes: string[]; last_used_at: string | null; expires_at: string | null; created_at: string; created_by: UserRef | null };
+type ApiKey = { id: string; name: string; prefix: string; scopes: string[]; last_used_at: string | null; expires_at: string | null; created_at: string; created_by: UserRef | null;
+  bot_id: string | null /* the bot the key speaks as on tickets ("API keys" below); null: it writes as itself */ };
 type Webhook = { id: string; url: string; description: string; events: string[]; header_names: string[]; enabled: boolean; created_at: string };
 type WebhookDelivery = { id: string; event_id: string; event_type: string; status: "pending" | "succeeded" | "failed"; attempts: number; response_code: number | null; duration_ms: number | null; created_at: string };
 type AuditLog = { id: string; actor: { type: "user" | "api_key" | "system"; user: UserRef | null; api_key_id: string | null }; action: string; entity_type: string; entity_id: string | null; data: Record<string, unknown>; ip: string; created_at: string };
@@ -367,7 +369,7 @@ A suspended workspace is listed with its name and nothing else.
 | POST | `/v1/invitations/accept` | `{token}` → `Membership` (no workspace header) |
 | POST | `/v1/invitations/lookup` | `{token}` → `{workspace_name, email, role}` public (the token never rides in a URL) |
 | CRUD | `/v1/teams`, `/v1/teams/{id}` | `{name, member_ids}`; the full team API, brands, widgets and routing rules are in contracts/teams.md |
-| CRUD | `/v1/api-keys`, `/v1/api-keys/{id}` | admin users only (not API keys). create `{name, scopes, expires_at?, private_team_ids?}` → `ApiKey & {secret}`, needing the second factor (when on) and a sign-in within 12 hours (`403 mfa_required` / `reauth_required`) (`secret` shown once; `prefix` is `od_live_` + 8 chars); PATCH `{name?, private_team_ids?, scopes?}` (`scopes` replaces the key's scopes, validated as on create; adding a scope needs the second factor (when on) and a sign-in within 12 hours like create (`403 mfa_required` / `reauth_required`), removing does not; adding `collab:draft` is the key's creator's only (`403 forbidden`); a change is audit `api_key.scopes_changed` `{name, from, to, added, removed}` and closes the key's sockets. `private_team_ids`: the list is replaced; contracts/teams.md "Visibility": `422` for an id that is not a private team of the workspace, `403 forbidden` for adding a team the caller is not on; removing is open to admins; a change closes the key's sockets). `private_teams` lists the same teams with `granted_by`: a team lasts while its granter is on it, and setting the list makes the caller the granter of the listed teams they are on; DELETE revokes |
+| CRUD | `/v1/api-keys`, `/v1/api-keys/{id}` | admin users only (not API keys). create `{name, scopes, expires_at?, private_team_ids?, bot_id?}` → `ApiKey & {secret}`, needing the second factor (when on) and a sign-in within 12 hours (`403 mfa_required` / `reauth_required`) (`secret` shown once; `prefix` is `od_live_` + 8 chars); PATCH `{name?, private_team_ids?, scopes?}` (`scopes` replaces the key's scopes, validated as on create; adding a scope needs the second factor (when on) and a sign-in within 12 hours like create (`403 mfa_required` / `reauth_required`), removing does not; adding `collab:draft` is the key's creator's only (`403 forbidden`); a change is audit `api_key.scopes_changed` `{name, from, to, added, removed}` and closes the key's sockets. `private_team_ids`: the list is replaced; contracts/teams.md "Visibility": `422` for an id that is not a private team of the workspace, `403 forbidden` for adding a team the caller is not on; removing is open to admins; a change closes the key's sockets). `private_teams` lists the same teams with `granted_by`: a team lasts while its granter is on it, and setting the list makes the caller the granter of the listed teams they are on. Create and PATCH take `bot_id`: a bot of the workspace the key speaks as (below), `null` for none; `422 validation_failed` for another workspace's bot or a key without `tickets:write`. Audit `api_key.created` / `api_key.updated` carry `bot_id`; DELETE revokes |
 | GET | `/v1/ai-clients/server` | members → `{url, resource_metadata, authorization_server, scopes, tools[]}`: the MCP server for AI client setup (`contracts/agent.md` "opendesk MCP server") |
 | GET · DELETE | `/v1/ai-clients/connections` · `/v1/ai-clients/connections/{id}` | members (users only) → `{data: AIClientConnection[]}`: AI clients connected with OAuth, your own (admins: everyone's); DELETE disconnects one (your own; admins any) → 204, audit `oauth.grant_revoked` |
 | GET · POST | `/v1/oauth/requests/{id}` · `/v1/oauth/requests/{id}/approve` · `/v1/oauth/requests/{id}/deny` | signed-in users (no workspace header, no API keys): the MCP OAuth consent page. GET → `OAuthRequest`; approve `{workspace_id}` → `{redirect_to}` (audit `oauth.grant_created`); deny → `{redirect_to}`. `410 request_expired` once decided or after 10 minutes |
@@ -431,6 +433,19 @@ Core notes:
   closed, and marks the address confirmed only when the link was never copied: after `link`, the new account confirms
   its address by email like any other.
 - Role and list endpoints for API keys: workspace/members/teams read `settings:read`; writes `settings:write`.
+- **An API key that speaks as a bot** (`ApiKey.bot_id`): an AI of the team's own that answers customers through the
+  API shows and sends as one of the workspace's bots (contracts/bots.md), never as a person. Every reply and note the
+  key writes on a ticket (`POST /v1/tickets/{id}/messages`, the first message of `POST /v1/tickets`) has
+  `author.type: "api"`, `author.bot` the bot, `author.api_key` the key and `from_name` the bot's name; nothing in the
+  request changes. A reply's template variables are filled with the bot as the agent (`{{ agent.name }}`), its email
+  goes out with the bot as `{agent}` in the mailbox's `from_name_format` and `Auto-Submitted: auto-generated`, like the
+  AI agent's, and an email reply ends with the bot's `sign_off` as its last paragraph, unless the body already ends
+  with it (compared without case or spacing). The sign-off is the bot's text, never filled as a template. Notes, chat
+  replies and side conversations (threads) get no sign-off; thread messages stay the key's own (`author.api_key`,
+  no bot). It stays an API message: `ai` is false, it is not the AI agent's (its reports, ratings and "Improve
+  answer" leave it out) and, like any API reply, it does not set `first_responded_at`. The bot is read when the
+  message is written: a message keeps the bot it was sent as. Deleting a bot that a live key speaks as is
+  `409 bot_in_use`.
 - MCP OAuth (outside `/v1`, `contracts/agent.md` "OAuth"): `/.well-known/oauth-protected-resource[/mcp]`,
   `/.well-known/oauth-authorization-server`, `POST /oauth/register`, `GET /oauth/authorize`, `POST /oauth/token`,
   `POST /oauth/revoke`. A user acting through an OAuth grant is bound by the granted scopes like an API key, on top of

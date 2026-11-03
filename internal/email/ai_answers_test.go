@@ -169,3 +169,51 @@ func TestAIReplySentAsBot(t *testing.T) {
 		t.Fatalf("delivery %s", got.Delivery)
 	}
 }
+
+// A reply an API key writes as a bot (contracts/api.md "API keys") goes out like the AI
+// agent's: the bot is {agent} in the address's sender name, and the email is automatic.
+// A key that speaks as no bot sends as before.
+func TestAPIKeyReplySentAsBot(t *testing.T) {
+	w := newWorld(t)
+	m := w.mailbox(InboundForwarding, OutboundSystem, nil)
+	mustExec(t, w.d, `UPDATE mailboxes SET from_name_format = '{agent} - LampTwist Support' WHERE id = $1`, m.ID)
+	in := w.receive(m, fixture(t, "new_plain.eml", "{{FROM}}", customer(), "{{TO}}", "", "{{ID}}", "key"+crypto.RandomString(6)))
+	tk := w.messageFor(in).TicketID
+	bot := uuid.New()
+	mustExec(t, w.d, `INSERT INTO bots (id, workspace_id, name, look) VALUES ($1, $2, 'Julia', '{}')`, bot, w.wid)
+	var sent []byte
+	w.s.rawSend = func(_ context.Context, _ string, _ []string, raw []byte) error {
+		sent = raw
+		return nil
+	}
+	send := func(botID *uuid.UUID, fromName string) string {
+		t.Helper()
+		var mid uuid.UUID
+		err := w.d.DB.Tx(w.ctx, func(tx pgx.Tx) error {
+			msg, err := domain.AddMessage(w.ctx, tx, w.d.Jobs, domain.NewMessage{WorkspaceID: w.wid, TicketID: tk, Kind: "reply", Direction: "outbound",
+				AuthorType: "api", BodyHTML: "<p>It shipped.</p>", BodyText: "It shipped.", FromName: fromName, BotID: botID,
+				Trigger: "none", DeliveryStatus: "pending"})
+			mid = msg.ID
+			return err
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := w.s.sendMessage(w.ctx, w.wid, mid, false); err != nil {
+			t.Fatal(err)
+		}
+		if got := w.message(mid); got.Delivery != "sent" {
+			t.Fatalf("delivery %s", got.Delivery)
+		}
+		return string(sent)
+	}
+	raw := send(&bot, "Julia")
+	if !strings.Contains(raw, "Julia - LampTwist Support") || !strings.Contains(raw, "Auto-Submitted: auto-generated") {
+		t.Fatalf("as a bot: %s", raw)
+	}
+	raw = send(nil, "Acme Support")
+	head, _, _ := strings.Cut(raw, "\r\n\r\n")
+	if strings.Contains(head, "Julia") || strings.Contains(head, "Auto-Submitted") {
+		t.Fatalf("as itself: %s", head)
+	}
+}

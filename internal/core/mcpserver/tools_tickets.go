@@ -437,8 +437,9 @@ func authorOf(m apiMessage) outAuthor {
 		}
 	case m.Author.User != nil:
 		a.Name, a.Email = m.Author.User.Name, m.Author.User.Email
-	case m.AI:
-		// The AI's replies are its bot's (contracts/bots.md), else Ollie's.
+	case m.AI || m.Author.Bot != nil:
+		// The AI's replies are its bot's (contracts/bots.md), else Ollie's; so are those of
+		// an API key that speaks as a bot.
 		a.Name = ai.AssistantName
 		if m.Author.Bot != nil && m.Author.Bot.Name != "" {
 			a.Name = m.Author.Bot.Name

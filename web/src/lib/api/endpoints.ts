@@ -393,8 +393,8 @@ export const api = {
     test: (b: RoutingTestBody) => http.post<T.RoutingTest>("/v1/routing/test", b),
   },
   apiKeys: {
-    ...crud<T.ApiKey, { name: string; scopes: string[]; expires_at?: string | null; private_team_ids?: string[] }>("/v1/api-keys"),
-    create: (b: { name: string; scopes: string[]; expires_at?: string | null; private_team_ids?: string[] }) =>
+    ...crud<T.ApiKey, { name: string; scopes: string[]; expires_at?: string | null; private_team_ids?: string[]; bot_id?: string | null }>("/v1/api-keys"),
+    create: (b: { name: string; scopes: string[]; expires_at?: string | null; private_team_ids?: string[]; bot_id?: string | null }) =>
       http.create<T.ApiKey & { secret: string }>("/v1/api-keys", b),
   },
   /** Settings > AI clients: opendesk's MCP server and the clients connected with OAuth. */

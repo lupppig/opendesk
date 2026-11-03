@@ -191,8 +191,18 @@ type MessageAuthor struct {
 	Type    string      `json:"type" enum:"contact,user,system,api"`
 	User    *UserRef    `json:"user"`
 	Contact *ContactRef `json:"contact"`
-	// Bot is the bot an AI reply was sent as (contracts/bots.md); null otherwise.
+	// Bot is the bot a reply or note was sent as (contracts/bots.md): the AI agent's, or the
+	// bot an API key speaks as. Null otherwise.
 	Bot *BotRef `json:"bot"`
+	// APIKey is the API key that wrote the message (type "api"); null otherwise, and for
+	// customers.
+	APIKey *APIKeyRef `json:"api_key"`
+}
+
+// APIKeyRef names an API key: what the team sees of the key that wrote a message.
+type APIKeyRef struct {
+	ID   uuid.UUID `json:"id"`
+	Name string    `json:"name"`
 }
 
 type Message struct {

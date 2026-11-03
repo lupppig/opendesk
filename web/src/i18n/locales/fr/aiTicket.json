@@ -135,7 +135,8 @@
     "showTranslation": "Afficher la traduction",
     "failed": "Impossible de traduire ce message",
     "aiLabel": "IA",
-    "aiHint": "Réponse de l’assistant IA à partir de votre base de connaissances"
+    "aiHint": "Réponse de l’assistant IA à partir de votre base de connaissances",
+    "apiBotHint": "Écrit par votre propre IA avec la clé API {{key}}"
   },
   "tools": {
     "title": "Dans vos outils",

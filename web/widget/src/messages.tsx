@@ -4,7 +4,7 @@
 
 import type { JSX } from "preact";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { actionStatus } from "./ai";
+import { actionStatus, keyBot } from "./ai";
 import { botShown, readBotRef } from "./config";
 import type { Controller } from "./controller";
 import { hostOf, initials, safeHtml, size, splitSources } from "./html";
@@ -84,9 +84,12 @@ function BotHead({ bot, role }: { bot: BotRef; role?: string }) {
 export function Bubble({ m, me, grouped, onRetry }: { m: UiMessage; me: boolean; grouped: boolean; onRetry: () => void }) {
   const who = m.author.user?.name ?? (m.author.type === "system" ? t("automated") : t("support"));
   const hasBody = me ? !!m.body_text : !!(m.body_html || m.body_text);
+  // A reply an API key wrote as a bot shows the bot, with the AI pill.
+  const bot = me ? null : keyBot(m);
   return (
     <div class={`row ${me ? "me" : "them"}${grouped ? "" : " gap"}${m.local === "pending" ? " is-pending" : ""}`}>
-      {!me && !grouped && (
+      {!me && !grouped && bot && <BotHead bot={bot} />}
+      {!me && !grouped && !bot && (
         <div class="who">
           <PersonAvatar p={{ name: who, avatar_url: m.author.user?.avatar_url || null }} />
           <span class="who-name">{who}</span>

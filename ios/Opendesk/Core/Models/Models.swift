@@ -1035,7 +1035,7 @@ struct Message: Codable, Hashable, Sendable, Identifiable {
     }
     var authorSeed: String { author.bot?.id ?? author.user?.id ?? author.contact?.id ?? fromEmail }
     /// The bot an AI reply was sent as, shown with its name, avatar and an "AI" tint.
-    var bot: BotRef? { ai ? author.bot : nil }
+    var bot: BotRef? { (ai || author.type == "api") ? author.bot : nil }
 
     /// Merges an event copy into the stored one, keeping members the event left out.
     func merged(with update: Message) -> Message {

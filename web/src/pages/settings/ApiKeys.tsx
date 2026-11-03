@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { EyeOff, KeyRound, MoreHorizontal, Pencil, Plus, ShieldCheck, SlidersHorizontal, Trash2 } from "lucide-react";
+import { Bot as BotIcon, EyeOff, KeyRound, MoreHorizontal, Pencil, Plus, ShieldCheck, SlidersHorizontal, Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { NoAccess, Section, SettingsPage } from "@/components/layout";
@@ -20,9 +20,10 @@ import { MotionList, MotionRow } from "@/components/settings2/motion";
 import { useListMutation } from "@/components/settings2/optimistic";
 import { GrantedTeams, PrivateTeamsField } from "@/components/settings2/teams";
 import { ReauthNotice, isReauthError } from "@/components/settings/ReauthNotice";
+import { BotFace } from "@/components/bots/BotFace";
 import { api } from "@/lib/api/endpoints";
 import { errorMessage } from "@/lib/api/client";
-import type { ApiKey } from "@/lib/api/types";
+import type { ApiKey, Bot } from "@/lib/api/types";
 import { fullDate, relLong, shortDate } from "@/lib/format";
 import { q, qk, upsertInList } from "@/lib/queries";
 import { atLeast, useRole } from "@/lib/session";
@@ -43,6 +44,8 @@ const scopeGroups: { resource: string; label: string; scopes: { id: string; labe
 const optInScopes = ["collab:draft"];
 const allScopes = scopeGroups.flatMap((g) => g.scopes.map((s) => s.id)).filter((s) => !optInScopes.includes(s));
 const readScopes = allScopes.filter((s) => s.endsWith(":read"));
+// A key speaks as a bot only where it writes: replies and notes on tickets.
+const canSpeak = (scopes: string[]) => scopes.includes("tickets:write");
 
 type Expiry = "never" | "30" | "90" | "365";
 
@@ -51,10 +54,13 @@ export default function ApiKeys() {
   const role = useRole();
   const admin = atLeast(role, "admin");
   const { data: keys, isLoading } = useQuery({ ...q.apiKeys(), enabled: admin });
+  const { data: bots } = useQuery({ ...q.bots(), enabled: admin && !!keys?.some((k) => k.bot_id) });
   const confirm = useConfirm();
   const [creating, setCreating] = useState(false);
   const [created, setCreated] = useState<(ApiKey & { secret: string }) | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [speaking, setSpeaking] = useState<ApiKey | null>(null);
+  const qc = useQueryClient();
   const [scoping, setScoping] = useState<ApiKey | null>(null);
 
   const revoke = useListMutation<ApiKey, string>(qk.apiKeys, (id) => api.apiKeys.remove(id), (rows, id) => rows.filter((k) => k.id !== id), {
@@ -65,6 +71,13 @@ export default function ApiKeys() {
     (v) => api.apiKeys.update(v.id, { name: v.name }),
     (rows, v) => rows.map((k) => (k.id === v.id ? { ...k, name: v.name } : k)),
     { errorText: t("apiKeys.renameError") },
+  );
+  const speakAs = useListMutation<ApiKey, { id: string; bot_id: string | null }>(
+    qk.apiKeys,
+    (v) => api.apiKeys.update(v.id, { bot_id: v.bot_id }),
+    (rows, v) => rows.map((k) => (k.id === v.id ? { ...k, bot_id: v.bot_id } : k)),
+    // A bot lists the keys that speak as it.
+    { errorText: t("apiKeys.bot.error"), onSuccess: () => void qc.invalidateQueries({ queryKey: qk.bots }) },
   );
 
   if (!admin)
@@ -173,6 +186,7 @@ export default function ApiKeys() {
                             <span className="mono mr-1 text-[11px] text-fg-4">{k.prefix.slice(0, 12)}…</span>
                             <ScopeChips scopes={k.scopes} />
                           </div>
+                          {k.bot_id && <SpeaksAs bot={bots?.find((b) => b.id === k.bot_id)} />}
                           <GrantedTeams grants={k.private_teams} className="mt-1.5" />
                         </div>
                       </div>
@@ -209,6 +223,11 @@ export default function ApiKeys() {
                           <MenuItem icon={<Pencil />} onSelect={() => setRenaming(k.id)}>
                             {t("apiKeys.rename")}
                           </MenuItem>
+                          {canSpeak(k.scopes) && (
+                            <MenuItem icon={<BotIcon />} onSelect={() => setSpeaking(k)}>
+                              {t("apiKeys.bot.menu")}
+                            </MenuItem>
+                          )}
                           <MenuItem icon={<SlidersHorizontal />} onSelect={() => setScoping(k)}>
                             {t("apiKeys.scopes.menu")}
                           </MenuItem>
@@ -239,6 +258,16 @@ export default function ApiKeys() {
         )}
       </Section>
 
+      {speaking && (
+        <SpeaksAsDialog
+          apiKey={speaking}
+          onClose={() => setSpeaking(null)}
+          onSave={(bot_id) => {
+            if (bot_id !== (speaking.bot_id ?? null)) speakAs.mutate({ id: speaking.id, bot_id });
+            setSpeaking(null);
+          }}
+        />
+      )}
       {scoping && <ScopesDialog apiKey={scoping} onClose={() => setScoping(null)} />}
       {creating && (
         <CreateKeyDialog
@@ -289,6 +318,71 @@ function ScopeChips({ scopes }: { scopes: string[] }) {
   );
 }
 
+/** "Speaks as Julia" under a key that speaks as a bot. */
+function SpeaksAs({ bot }: { bot: Bot | undefined }) {
+  const { t } = useTranslation("settingsDev");
+  return (
+    <div className="mt-1.5 flex min-w-0 items-center gap-1.5 text-[12px] text-fg-3">
+      {bot ? <BotFace look={bot.look} image={bot.image_url} size={14} /> : <BotIcon className="size-3.5 text-fg-4" />}
+      <span className="truncate">{t("apiKeys.bot.speaksAs", { name: bot?.name ?? "…" })}</span>
+    </div>
+  );
+}
+
+/** Picks the bot a key speaks as, or none: the key then writes as itself. */
+function KeyBotSelect({ id, value, onChange }: { id?: string; value: string | null; onChange: (id: string | null) => void }) {
+  const { t } = useTranslation("settingsDev");
+  const { data: bots } = useQuery(q.bots());
+  return (
+    <Select<string>
+      id={id}
+      value={value ?? "none"}
+      onChange={(v) => onChange(v === "none" ? null : v)}
+      options={[
+        { value: "none", label: t("apiKeys.bot.none") },
+        ...(bots ?? []).map((b) => ({
+          value: b.id,
+          label: (
+            <span className="flex min-w-0 items-center gap-2">
+              <BotFace look={b.look} image={b.image_url} size={14} />
+              <span className="truncate">{b.name}</span>
+            </span>
+          ),
+          hint: b.role || undefined,
+        })),
+      ]}
+    />
+  );
+}
+
+/** Changes the bot an existing key speaks as. */
+function SpeaksAsDialog({ apiKey, onClose, onSave }: { apiKey: ApiKey; onClose: () => void; onSave: (bot: string | null) => void }) {
+  const { t } = useTranslation("settingsDev");
+  const [bot, setBot] = useState<string | null>(apiKey.bot_id ?? null);
+  return (
+    <Dialog
+      open
+      onOpenChange={(o) => !o && onClose()}
+      title={t("apiKeys.bot.title", { name: apiKey.name })}
+      description={t("apiKeys.bot.hint")}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            {t("cancel")}
+          </Button>
+          <Button variant="primary" onClick={() => onSave(bot)}>
+            {t("apiKeys.bot.save")}
+          </Button>
+        </>
+      }
+    >
+      <div className="pb-1">
+        <Field label={t("apiKeys.bot.label")}>{(p) => <KeyBotSelect id={p.id} value={bot} onChange={setBot} />}</Field>
+      </div>
+    </Dialog>
+  );
+}
+
 const SOON = 14 * 86400_000;
 function keyState(k: ApiKey, now: number): "active" | "expiring" | "expired" {
   if (!k.expires_at) return "active";
@@ -330,7 +424,9 @@ export function CreateKeyDialog({ onClose, onCreated }: { onClose: () => void; o
   const [scopes, setScopes] = useState<string[]>(readScopes);
   const [expiry, setExpiry] = useState<Expiry>("90");
   const [privateTeams, setPrivateTeams] = useState<string[]>([]);
+  const [bot, setBot] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const speaks = canSpeak(scopes);
 
   const create = useMutation({
     mutationFn: () =>
@@ -339,10 +435,12 @@ export function CreateKeyDialog({ onClose, onCreated }: { onClose: () => void; o
         scopes,
         expires_at: expiry === "never" ? null : new Date(Date.now() + Number(expiry) * 86400_000).toISOString(),
         ...(privateTeams.length ? { private_team_ids: privateTeams } : {}),
+        ...(speaks && bot ? { bot_id: bot } : {}),
       }),
     onSuccess: (k) => {
       const { secret: _secret, ...row } = k;
       upsertInList(qc, qk.apiKeys, row as ApiKey, { prepend: true });
+      if (k.bot_id) void qc.invalidateQueries({ queryKey: qk.bots });
       onCreated(k);
     },
     // A key needs a recent sign-in (with 2FA when on): the notice below says why and signs in again.
@@ -401,6 +499,11 @@ export function CreateKeyDialog({ onClose, onCreated }: { onClose: () => void; o
             />
           )}
         </Field>
+        {speaks && (
+          <Field label={t("apiKeys.bot.label")} hint={t("apiKeys.bot.hint")}>
+            {(p) => <KeyBotSelect id={p.id} value={bot} onChange={setBot} />}
+          </Field>
+        )}
         <PrivateTeamsField value={privateTeams} onChange={setPrivateTeams} />
         {isReauthError(create.error) && <ReauthNotice error={create.error} />}
         <button type="submit" className="hidden" />

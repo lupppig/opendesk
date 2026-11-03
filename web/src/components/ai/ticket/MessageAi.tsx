@@ -128,9 +128,11 @@ export function TranslatedNote({ tr }: { tr: MessageTranslation }) {
 /** A quiet "AI" label next to the author of a widget bot answer. */
 export function AiAuthorLabel({ m }: { m: Message }) {
   const { t } = useTranslation("aiTicket");
-  if (!isAiMessage(m)) return null;
+  // An API key that speaks as a bot is an AI of the team's own (contracts/api.md "API keys").
+  const viaKey = !m.ai && m.author.type === "api" && !!m.author.bot;
+  if (!isAiMessage(m) && !viaKey) return null;
   return (
-    <Tooltip content={t("message.aiHint")}>
+    <Tooltip content={viaKey ? t("message.apiBotHint", { key: m.author.api_key?.name ?? "API" }) : t("message.aiHint")}>
       <span className={cn("inline-flex h-4 shrink-0 items-center gap-1 rounded-sm px-1 text-[10px] font-medium", tone[AI_TONE].chip)}>
         <AiIcon className="size-2.5 text-current" />
         {t("message.aiLabel")}

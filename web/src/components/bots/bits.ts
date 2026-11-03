@@ -7,7 +7,11 @@ import type { Bot } from "@/lib/api/types";
 export function useUsageLine() {
   const { t } = useTranslation("bots");
   return (b: Bot): string => {
-    const names = [...b.usage.widgets.map((w) => w.name), ...b.usage.mailboxes.map((m) => m.email)];
+    const names = [
+      ...b.usage.widgets.map((w) => w.name),
+      ...b.usage.mailboxes.map((m) => m.email),
+      ...(b.usage.api_keys ?? []).map((k) => t("usage.apiKey", { name: k.name })),
+    ];
     if (!names.length) return b.is_default ? t("usage.defaultNone") : t("usage.none");
     const shown = names.slice(0, 2);
     const more = names.length - shown.length;
@@ -16,5 +20,5 @@ export function useUsageLine() {
   };
 }
 
-/** Where a bot answers, as one count: widgets and addresses. */
-export const usageCount = (b: Bot) => b.usage.widgets.length + b.usage.mailboxes.length;
+/** Where a bot answers, as one count: widgets, addresses and the API keys that speak as it. */
+export const usageCount = (b: Bot) => b.usage.widgets.length + b.usage.mailboxes.length + (b.usage.api_keys?.length ?? 0);

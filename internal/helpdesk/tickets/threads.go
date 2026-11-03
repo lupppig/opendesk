@@ -387,7 +387,7 @@ func addThreadMessage(ctx context.Context, tx pgx.Tx, d *deps.Deps, p *auth.Prin
 	return domain.AddMessage(ctx, tx, d.Jobs, domain.NewMessage{WorkspaceID: wid, TicketID: tid, ThreadID: &th.ID, Kind: "note",
 		Direction: "outbound", AuthorType: authorType, AuthorUserID: actor.UserID, BodyHTML: bodyHTML, BodyText: bodyText,
 		Subject: th.Subject, FromEmail: fromEmail, FromName: fromName, To: th.To, Cc: th.Cc, MailboxID: th.MailboxID,
-		AttachmentIDs: attIDs, DeliveryStatus: "pending"})
+		AttachmentIDs: attIDs, DeliveryStatus: "pending", APIKeyID: p.ActorAPIKeyID()})
 }
 
 // threadTemplateRef is what a thread's text is filled with (contracts/templates.md): the

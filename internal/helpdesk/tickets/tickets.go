@@ -835,8 +835,16 @@ func createTicket(ctx context.Context, tx pgx.Tx, d *deps.Deps, p *auth.Principa
 	}
 
 	if bodyText != "" || len(attIDs) > 0 {
+		// An API key may speak as a bot: the bot is then the agent its reply is filled and sent as.
+		bot, err := keyBot(ctx, tx, p)
+		if err != nil {
+			return domain.Ticket{}, err
+		}
 		if kind == "reply" && templates.HasTags(b.BodyHTML) {
 			ref := templates.Ref{WorkspaceID: wid, TicketID: &t.ID, AuthorUserID: actor.UserID, MailboxID: nt.MailboxID}
+			if bot != nil {
+				ref.BotName = bot.Name
+			}
 			if bodyHTML, err = hd.FillReply(ctx, tx, d.Cfg, ref, b.BodyHTML); err != nil {
 				return domain.Ticket{}, err
 			}
@@ -857,7 +865,9 @@ func createTicket(ctx context.Context, tx pgx.Tx, d *deps.Deps, p *auth.Principa
 			nm.FromEmail, nm.FromName = mailboxEmail, mailboxName
 			nm.MailboxID = nt.MailboxID
 			nm.DeliveryStatus = "pending"
+			nm.BodyHTML, nm.BodyText = withSignOff(nm.BodyHTML, nm.BodyText, bot)
 		}
+		asKeyBot(&nm, p, bot)
 		msg, err := domain.AddMessage(ctx, tx, d.Jobs, nm)
 		if err != nil {
 			return domain.Ticket{}, err

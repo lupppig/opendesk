@@ -522,9 +522,10 @@ export const MessageItem = memo(function MessageItem({
   const [showOriginal, setShowOriginal] = useState(false);
   const [viewingSent, setViewingSent] = useState(false);
   const ollie = useAssistantName();
-  // An AI reply shows the bot it was sent as (contracts/bots.md), else Ollie.
-  const bot = m.ai ? (m.author.bot ?? null) : null;
-  const name = m.ai ? (bot?.name ?? ollie) : authorName(m);
+  // A message sent as a bot shows it (contracts/bots.md): an AI reply's, or the bot an API
+  // key speaks as. An AI reply without one is Ollie's.
+  const bot = m.ai || m.author.type === "api" ? (m.author.bot ?? null) : null;
+  const name = bot?.name ?? (m.ai ? ollie : authorName(m));
   // A thread message is stored as a note, but it is email to or from someone outside the
   // team: it reads like one, and an answer from them is untrusted inbound mail.
   const inThread = !!m.thread_id;

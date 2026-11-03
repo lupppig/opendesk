@@ -69,6 +69,8 @@ export function botOut(ws: WsData, b: Bot): Bot {
     usage: {
       widgets: ws.widgets.filter((w) => answers(w.bot_id)).map((w) => ({ id: w.id, name: w.name, brand_id: w.brand_id })),
       mailboxes: ws.mailboxes.filter((m) => answers(m.bot_id)).map((m) => ({ id: m.id, name: m.name, email: m.email })),
+      // A key speaks as its own bot only: one without a bot is not the default's.
+      api_keys: ws.apiKeys.filter((k) => k.bot_id === b.id).map((k) => ({ id: k.id, name: k.name })),
     },
   };
 }
