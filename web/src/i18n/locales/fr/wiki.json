@@ -69,7 +69,7 @@
   "unsent": {
     "forbidden": "Vous ne pouvez pas modifier cette page.",
     "deleted": "Cette page a été supprimée.",
-    "body": "Ce que vous avez saisi n'a pas été enregistré. Copiez-le pour le garder.",
+    "body": "Ce que vous avez saisi n’a pas été enregistré. Copiez-le pour le garder.",
     "copy": "Copier mon texte",
     "copied": "Votre texte est copié",
     "discard": "Ignorer"
@@ -107,8 +107,8 @@
     "confirmAll_one": "Supprimer {{count}} page",
     "confirmAll_many": "Supprimer {{count}} pages",
     "confirmAll_other": "Supprimer {{count}} pages",
-    "adminOnlyPage": "Quelqu'un d'autre a créé cette page, seul un admin peut donc la supprimer.",
-    "adminOnlySubpages": "Quelqu'un d'autre a créé des pages en dessous, seul un admin peut donc la supprimer."
+    "adminOnlyPage": "Quelqu’un d’autre a créé cette page, seul un admin peut donc la supprimer.",
+    "adminOnlySubpages": "Quelqu’un d’autre a créé des pages en dessous, seul un admin peut donc la supprimer."
   },
   "toast": {
     "createFailed": "Impossible de créer la page.",

@@ -20,6 +20,7 @@ import { ChannelIcon, channelLabel, PriorityPill, SlaPill, slaState, StatusPill,
 import { Timeline } from "./detail/Timeline";
 import { useDisplay } from "./fields";
 import { TicketTeamChips, useTeamsCtx } from "./teams";
+import { requesterLabel } from "./requester";
 
 const noop = () => {};
 
@@ -29,7 +30,7 @@ export function TicketPreview({ ticket: t, onOpen, onReply }: { ticket: Ticket; 
   const messages = useQuery(q.messages(t.id));
   const activities = useQuery(q.activities(t.id));
   const display = useDisplay();
-  const contact = t.contact?.name || t.contact?.email || tr("row.unknown");
+  const contact = requesterLabel(t.contact) || tr("row.unknown");
   const sla = slaState(t);
   const [more, setMore] = useState(false);
   const teams = useTeamsCtx();

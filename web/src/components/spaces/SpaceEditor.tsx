@@ -75,7 +75,7 @@ function lookOf(item: SpaceItem, d: WorkspaceData | undefined, labels: RowLabels
   if (isEverywhere(item))
     return isEverywhereList(item.id) ? { label: labels.everywhere(item.id), icon: everywhereIcons[item.id], badgeKind: item.id === "mine" ? "ticket" : "mail" } : null;
   if (!d) return "loading";
-  if (item.kind === "section") return isSectionId(item.id) ? { label: labels.section(item.id), icon: sectionIcons[item.id], whole: true } : null;
+  if (item.kind === "section") return isSectionId(item.id) ? { label: labels.section(item.id, d.collab), icon: sectionIcons[item.id], whole: true } : null;
   const loading =
     (item.kind === "team" && !d.teams) ||
     (item.kind === "view" && !d.views) ||
@@ -100,7 +100,7 @@ function offersOf(d: WorkspaceData, labels: RowLabels, wholeHint: string): { id:
   const it = (kind: SpaceItem["kind"], id: string): SpaceItem => ({ workspace_id: d.id, kind, id });
   const sections = (["favorites", "inbox", "mail", "teams", "views", "workspace"] as SidebarSectionId[])
     .filter((id) => d.collab || id !== "mail")
-    .map((id) => ({ item: it("section", id), label: labels.section(id), icon: sectionIcons[id], hint: wholeHint }));
+    .map((id) => ({ item: it("section", id), label: labels.section(id, d.collab), icon: sectionIcons[id], hint: wholeHint }));
   const inbox = ticketFolders.map((f) => ({ item: it("ticket_folder", f.id), label: labels.folder(f.id), icon: buildRow(it("ticket_folder", f.id), d, { labels })?.icon }));
   const visible = (d.teams ?? []).filter((x) => canSeeTeam(d, x)).sort((a, b) => Number(d.myTeams.has(b.id)) - Number(d.myTeams.has(a.id)) || a.name.localeCompare(b.name));
   const teams: Offer[] = [
@@ -387,7 +387,7 @@ function AddFrom({ space, workspaces, data, active, onActive, labels, onToggle }
             {d?.collab === false && !needle && <p className="mx-2 mb-2 rounded-md bg-sunken px-2.5 py-2 text-[11.5px] text-fg-3">{t("editor.noCollab", { workspace: d.name })}</p>}
             {groups.map((g) => (
               <section key={g.id} className="mb-2">
-                <h4 className="label-caps px-2 pb-1 pt-1.5">{t(`editor.groups.${g.id}`)}</h4>
+                <h4 className="label-caps px-2 pb-1 pt-1.5">{t(g.id === "inbox" && d?.collab ? "editor.groups.tickets" : `editor.groups.${g.id}`)}</h4>
                 <ul className="flex flex-col">
                   {g.offers.map((o) => {
                     const on = hasItem(space, o.item);

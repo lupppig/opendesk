@@ -31,7 +31,7 @@
   "continue": "Continuer",
   "dropFiles": "Déposez des fichiers pour les joindre",
   "removeFile": "Retirer {name}",
-  "fileTypeRefused": "Impossible d'envoyer {name} ici. Essayez un autre type de fichier.",
+  "fileTypeRefused": "Impossible d’envoyer {name} ici. Essayez un autre type de fichier.",
   "fileTooLarge": "{name} dépasse 25 Mo.",
   "placeholder": "Écrivez un message…",
   "placeholderEmail": "Ajoutez votre e-mail ci-dessus pour commencer",

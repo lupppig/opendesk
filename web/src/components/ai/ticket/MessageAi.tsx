@@ -1,5 +1,6 @@
-// Per-message AI: translate a customer message written in another language,
-// and label answers the widget bot wrote.
+// Per-message AI: translate a customer message into the reader's language (the
+// app's), offered whenever the message isn't known to be in it already, and label
+// answers the widget bot wrote.
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -15,13 +16,16 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
 import { AiIcon, AiTooltip } from "../bits";
 import { balanceSpent, reportAiError } from "./errors";
-import { isAiMessage, isForeign, languageName, messageLanguage, streamTextToHtml } from "./text";
-
-const OURS = "en";
+import { uiLanguage } from "@/i18n";
+import { isAiMessage, isForeign, isLanguage, languageName, messageLanguage, streamTextToHtml } from "./text";
 
 export type MessageTranslation = {
-  /** Language to offer translation from, or null when none is needed. */
+  /** Whether a translation is offered. */
+  offered: boolean;
+  /** The message's detected language, or null when none was detected. */
   from: string | null;
+  /** The reader's language, the translation's target. */
+  to: string;
   showing: boolean;
   pending: boolean;
   html: string | null;
@@ -39,13 +43,16 @@ export function useMessageTranslation(m: Message): MessageTranslation {
   const [requested, setRequested] = useState(false);
   const [showing, setShowing] = useState(false);
   const lang = messageLanguage(m, ticket);
-  const eligible = ai.enabled && atLeast(role, "agent") && m.direction === "inbound" && m.kind === "reply" && isForeign(lang, OURS);
+  const ours = uiLanguage();
+  // Without a detected language (no triage), offer it anyway: the reader knows best.
+  const eligible = ai.enabled && atLeast(role, "agent") && m.direction === "inbound" && m.kind === "reply" &&
+    (!isLanguage(lang) || isForeign(lang, ours));
 
   const res = useQuery({
-    queryKey: qk.of("ai", "translate", m.id, OURS),
+    queryKey: qk.of("ai", "translate", m.id, ours),
     queryFn: async () => {
       try {
-        const r = await api.ai.translate({ html: m.body_html || undefined, text: m.body_html ? undefined : m.body_text, target: OURS });
+        const r = await api.ai.translate({ html: m.body_html || undefined, text: m.body_html ? undefined : m.body_text, target: ours });
         balanceSpent(qc);
         return r.html ?? streamTextToHtml(r.text ?? "");
       } catch (e) {
@@ -62,7 +69,9 @@ export function useMessageTranslation(m: Message): MessageTranslation {
   });
 
   return {
-    from: eligible ? lang : null,
+    offered: eligible,
+    from: eligible && isLanguage(lang) ? lang : null,
+    to: ours,
     showing: showing && !!res.data,
     pending: requested && res.isFetching,
     html: res.data ?? null,
@@ -76,7 +85,7 @@ export function useMessageTranslation(m: Message): MessageTranslation {
 /** The small "Translate" control in a message header. */
 export function TranslateButton({ tr }: { tr: MessageTranslation }) {
   const { t } = useTranslation("aiTicket");
-  if (!tr.from || tr.showing) return null;
+  if (!tr.offered || tr.showing) return null;
   const label = tr.pending ? t("message.translating") : tr.showing ? t("message.showOriginal") : tr.html ? t("message.showTranslation") : t("message.translate");
   const button = (
     <button
@@ -92,7 +101,8 @@ export function TranslateButton({ tr }: { tr: MessageTranslation }) {
   );
   if (tr.html) return button;
   return (
-    <AiTooltip feature="translate" label={t("message.translateHint", { language: languageName(tr.from) })}>
+    <AiTooltip feature="translate" label={tr.from ? t("message.translateHint", { language: languageName(tr.from, tr.to) })
+      : t("message.translateInto", { language: languageName(tr.to, tr.to) })}>
       {button}
     </AiTooltip>
   );
@@ -101,11 +111,12 @@ export function TranslateButton({ tr }: { tr: MessageTranslation }) {
 /** "Translated from Spanish" line shown above a translated body. */
 export function TranslatedNote({ tr }: { tr: MessageTranslation }) {
   const { t } = useTranslation("aiTicket");
-  if (!tr.showing || !tr.from) return null;
+  if (!tr.showing || !tr.offered) return null;
   return (
     <p className="mb-1.5 flex items-center gap-1.5 text-[11px] text-fg-4">
       <AiIcon className="size-3" />
-      {t("message.translatedFrom", { language: languageName(tr.from) })}
+      {tr.from ? t("message.translatedFrom", { language: languageName(tr.from, tr.to) })
+        : t("message.translatedInto", { language: languageName(tr.to, tr.to) })}
       <span aria-hidden>·</span>
       <button type="button" onClick={tr.toggle} className="underline-offset-2 hover:text-fg hover:underline">
         {t("message.showOriginal")}

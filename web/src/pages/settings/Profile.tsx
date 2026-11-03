@@ -29,6 +29,7 @@ import { useTheme, type ThemePref } from "@/lib/theme";
 import { setConversationLayout, useConversationLayout } from "@/lib/conversationLayout";
 import { setTicketPropertiesPlace, useTicketPropertiesPlace, type TicketPropertiesPlace } from "@/lib/ticketPropertiesPlace";
 import { setNextTicketAfterSend, useNextTicketAfterSend } from "@/lib/nextTicket";
+import { setAlwaysShowImages, useAlwaysShowImages } from "@/lib/alwaysShowImages";
 import { useDisplay } from "@/components/tickets/fields";
 
 export default function Profile() {
@@ -182,6 +183,7 @@ export default function Profile() {
         <ConversationLayout />
         <TicketPropertiesSetting />
         <NextTicketSetting />
+        <AlwaysShowImagesSetting />
       </Section>
 
       <Section title={t("profile.clock.title")} description={t("profile.clock.hint")}>
@@ -231,6 +233,17 @@ function NextTicketSetting() {
   return (
     <Row label={label} description={t("profile.nextTicket.hint")}>
       <Switch checked={on} onCheckedChange={setNextTicketAfterSend} aria-label={label} />
+    </Row>
+  );
+}
+
+/** Customers' emails show their images from other sites at once, without "Load images". Off until switched on, per browser. */
+function AlwaysShowImagesSetting() {
+  const { t } = useTranslation("settings");
+  const on = useAlwaysShowImages();
+  return (
+    <Row label={t("profile.alwaysShowImages.label")} description={t("profile.alwaysShowImages.hint")}>
+      <Switch checked={on} onCheckedChange={setAlwaysShowImages} aria-label={t("profile.alwaysShowImages.label")} />
     </Row>
   );
 }

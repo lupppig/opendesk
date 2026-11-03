@@ -58,13 +58,19 @@ const (
 	ActionUnlabel     = "unlabel"
 	ActionDone        = "done"
 	ActionNeedsAction = "needs_action"
+	// ActionSnooze takes conversations out of Needs action until a time ("Snooze"), in
+	// opendesk only; done and needs_action end it.
+	ActionSnooze = "snooze"
 	// ActionCategorize moves conversations to one of their inbox's categories, in opendesk only.
 	ActionCategorize = "categorize"
 )
 
 // Actions lists every action, for request validation.
 var Actions = []string{ActionRead, ActionUnread, ActionStar, ActionUnstar, ActionArchive, ActionInbox, ActionTrash,
-	ActionSpam, ActionNotSpam, ActionMove, ActionLabel, ActionUnlabel, ActionDone, ActionNeedsAction, ActionCategorize}
+	ActionSpam, ActionNotSpam, ActionMove, ActionLabel, ActionUnlabel, ActionDone, ActionNeedsAction, ActionSnooze, ActionCategorize}
+
+// handlingActions are the local handling actions: a shared account with handling on only.
+var handlingActions = []string{ActionDone, ActionNeedsAction, ActionSnooze}
 
 // Colors are the tone keys an account may use.
 var Colors = []string{"gray", "red", "orange", "amber", "green", "teal", "blue", "indigo", "violet", "pink"}
@@ -218,21 +224,23 @@ type MailFolder struct {
 }
 
 type MailThread struct {
-	ID             uuid.UUID        `json:"id"`
-	AccountID      uuid.UUID        `json:"account_id"`
-	Subject        string           `json:"subject"`
-	Snippet        string           `json:"snippet"`
-	Participants   []Address        `json:"participants"`
-	LastMessageAt  time.Time        `json:"last_message_at"`
-	MessageCount   int              `json:"message_count"`
-	Unread         bool             `json:"unread"`
-	Starred        bool             `json:"starred"`
-	HasAttachments bool             `json:"has_attachments"`
-	NeedsAction    bool             `json:"needs_action"`
-	FolderIDs      []uuid.UUID      `json:"folder_ids"`
-	Shared         bool             `json:"shared"`
-	Assignees      []domain.UserRef `json:"assignees"`
-	CommentCount   int              `json:"comment_count"`
+	ID             uuid.UUID `json:"id"`
+	AccountID      uuid.UUID `json:"account_id"`
+	Subject        string    `json:"subject"`
+	Snippet        string    `json:"snippet"`
+	Participants   []Address `json:"participants"`
+	LastMessageAt  time.Time `json:"last_message_at"`
+	MessageCount   int       `json:"message_count"`
+	Unread         bool      `json:"unread"`
+	Starred        bool      `json:"starred"`
+	HasAttachments bool      `json:"has_attachments"`
+	NeedsAction    bool      `json:"needs_action"`
+	// SnoozedUntil is when a snoozed conversation comes back to Needs action ("Snooze").
+	SnoozedUntil *time.Time       `json:"snoozed_until"`
+	FolderIDs    []uuid.UUID      `json:"folder_ids"`
+	Shared       bool             `json:"shared"`
+	Assignees    []domain.UserRef `json:"assignees"`
+	CommentCount int              `json:"comment_count"`
 	// ToAddress is the account's address other than its own the conversation was written
 	// to or sent from (an alias), newest first; null when none.
 	ToAddress *string `json:"to_address"`

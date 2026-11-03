@@ -189,6 +189,7 @@ type threadRow struct {
 	Starred        bool
 	HasAttachments bool
 	NeedsAction    bool
+	SnoozedUntil   *time.Time
 	FolderIDs      []uuid.UUID
 	// Addresses are every address on its messages, lower case, newest first.
 	Addresses []string
@@ -197,12 +198,12 @@ type threadRow struct {
 }
 
 const threadColumns = `id, workspace_id, account_id, remote_id, subject, snippet, participants, last_message_at, message_count,
-	unread, starred, has_attachments, needs_action, folder_ids, addresses, category`
+	unread, starred, has_attachments, needs_action, snoozed_until, folder_ids, addresses, category`
 
 func scanThread(row pgx.Row) (*threadRow, error) {
 	var t threadRow
 	if err := row.Scan(&t.ID, &t.WorkspaceID, &t.AccountID, &t.RemoteID, &t.Subject, &t.Snippet, &t.Participants, &t.LastMessageAt,
-		&t.MessageCount, &t.Unread, &t.Starred, &t.HasAttachments, &t.NeedsAction, &t.FolderIDs, &t.Addresses, &t.Category); err != nil {
+		&t.MessageCount, &t.Unread, &t.Starred, &t.HasAttachments, &t.NeedsAction, &t.SnoozedUntil, &t.FolderIDs, &t.Addresses, &t.Category); err != nil {
 		return nil, err
 	}
 	if t.Participants == nil {

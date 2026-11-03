@@ -42,7 +42,7 @@ import { PRIMARY } from "@/lib/collab/categories";
  */
 type Account = Omit<MailAccount, "identities" | "default_from" | "categories"> & { ownerId: string | null; aliases: MailIdentity[]; defaultFrom: string; catChoice: AccountChoice; catRules: MailCategoryRule[] };
 /** category: its tab once sorted (undefined: not yet); byPerson: someone moved it, so sorting leaves it. */
-type ThreadMeta = { id: string; account_id: string; subject: string; shares: MailAudience; assignees: string[]; comments: MailComment[]; needsAction?: boolean; category?: string; categoryByPerson?: boolean };
+type ThreadMeta = { id: string; account_id: string; subject: string; shares: MailAudience; assignees: string[]; comments: MailComment[]; needsAction?: boolean; snoozedUntil?: string; category?: string; categoryByPerson?: boolean };
 type State = { accounts: Account[]; folders: MailFolder[]; threads: Map<string, ThreadMeta>; messages: MailMessage[]; prefs: Record<string, SidebarPrefs> };
 
 const states = new Map<string, State>();
@@ -890,6 +890,7 @@ function threadOut(ws: WsData, t: ThreadMeta): MailThread {
     starred: ms.some((m) => m.starred),
     has_attachments: ms.some((m) => m.attachments.some((x) => !x.inline)),
     needs_action: t.needsAction === true,
+    snoozed_until: t.snoozedUntil ?? null,
     folder_ids: [...new Set(ms.flatMap((m) => m.folder_ids))],
     shared: t.shares.everyone || t.shares.team_ids.length > 0 || t.shares.user_ids.length > 0,
     assignees: t.assignees.map((id) => userRef(id)).filter((x): x is NonNullable<typeof x> => !!x),
@@ -960,7 +961,7 @@ function listThreads(ws: WsData, ctx: Ctx) {
   else {
     if (accountId) rows = rows.filter((t) => t.account_id === accountId);
     // A person's conversations (with) include those shared with you on their own.
-    else if (box !== "shared" && box !== "assigned" && box !== "needs_action" && !ctx.query.get("with")) rows = rows.filter((t) => seeAcc.has(t.account_id));
+    else if (box !== "shared" && box !== "assigned" && box !== "needs_action" && box !== "snoozed" && !ctx.query.get("with")) rows = rows.filter((t) => seeAcc.has(t.account_id));
     rows = rows.filter((t) => {
       const junk = inRole(s, t, "trash") || inRole(s, t, "spam");
       switch (box) {
@@ -984,6 +985,8 @@ function listThreads(ws: WsData, ctx: Ctx) {
           return t.assignees.some((x) => x.id === me);
         case "needs_action":
           return t.needs_action && s.accounts.some((a) => a.id === t.account_id && a.visibility === "shared" && a.handling_enabled) && inRole(s, t, "inbox");
+        case "snoozed":
+          return !!t.snoozed_until && s.accounts.some((a) => a.id === t.account_id && a.visibility === "shared" && a.handling_enabled) && inRole(s, t, "inbox");
         default:
           return false;
       }
@@ -1090,6 +1093,7 @@ function counts(ws: WsData) {
       assigned: assignedOpen.length,
       drafts: mine.filter((t) => inRole(s, t, "drafts")).length,
       needs_action: mine.filter((t) => t.needs_action && s.accounts.some((a) => a.id === t.account_id && a.visibility === "shared" && a.handling_enabled) && inRole(s, t, "inbox")).length,
+      snoozed: mine.filter((t) => !!t.snoozed_until && s.accounts.some((a) => a.id === t.account_id && a.visibility === "shared" && a.handling_enabled) && inRole(s, t, "inbox")).length,
     },
     accounts,
     folders,
@@ -1149,15 +1153,22 @@ function audienceFrom(v: unknown): MailAudience {
   return { everyone: v.everyone === true, team_ids: strArr(v.team_ids) ?? [], user_ids: strArr(v.user_ids) ?? [] };
 }
 
-function applyAction(ws: WsData, t: ThreadMeta, action: MailThreadAction, folderId?: string) {
+function applyAction(ws: WsData, t: ThreadMeta, action: MailThreadAction, folderId?: string, until?: string) {
   const s = state(ws);
   const a = s.accounts.find((x) => x.id === t.account_id)!;
   const ms = msgsOf(s, t.id);
   const rid = (role: MailFolderRole) => roleIdOf(s, a.id, role)!;
   const keep = (m: MailMessage) => m.folder_ids.filter((f) => f === rid("sent") || f === rid("drafts"));
   const isLabel = (id: string) => s.folders.find((f) => f.id === id)?.kind === "label" && !s.folders.find((f) => f.id === id)?.role;
+  // Done and needs action end a snooze (contracts/collab.md "Snooze").
   if (action === "done" || action === "needs_action") {
     t.needsAction = action === "needs_action";
+    t.snoozedUntil = undefined;
+    return;
+  }
+  if (action === "snooze") {
+    t.needsAction = false;
+    t.snoozedUntil = until;
     return;
   }
   for (const m of ms) {
@@ -1754,12 +1765,14 @@ export function registerCollab() {
     const folderId = typeof ctx.body.folder_id === "string" ? ctx.body.folder_id : undefined;
     const ts = ids.map((id) => threadOr404(ctx.ws, id));
     const s = state(ctx.ws);
-    if (action === "done" || action === "needs_action") {
+    if (action === "done" || action === "needs_action" || action === "snooze") {
       for (const t of ts) {
         const account = s.accounts.find((a) => a.id === t.account_id);
         if (!account?.handling_enabled || account.visibility !== "shared") throw invalid("Handling state is not enabled for this account.");
       }
     }
+    const until = typeof ctx.body.until === "string" ? ctx.body.until : undefined;
+    if (action === "snooze" && (!until || !(Date.parse(until) > Date.now()))) throw invalid("until must be a time in the future");
     if (action === "label" || action === "unlabel") {
       for (const t of ts) if (s.accounts.find((a) => a.id === t.account_id)?.provider === "imap") throw new HttpError(422, "labels_unsupported", "IMAP accounts have no labels. Move the conversation to a folder instead.");
     }
@@ -1777,7 +1790,7 @@ export function registerCollab() {
         t.categoryByPerson = true;
       }
     }
-    for (const t of ts) applyAction(ctx.ws, t, action, folderId);
+    for (const t of ts) applyAction(ctx.ws, t, action, folderId, until);
     const accountIds = [...new Set(ts.map((t) => t.account_id))];
     for (const acc of accountIds) changed(ctx.ws, acc, ts.filter((t) => t.account_id === acc).map((t) => t.id), true);
     return { threads: ts.map((t) => threadOut(ctx.ws, t)) };

@@ -102,13 +102,13 @@ export function useCanAct(): boolean {
   return atLeast(useRole(), "agent");
 }
 
-export type ThreadActionVars = { ids: string[]; action: MailThreadAction; folderId?: string; category?: string };
+export type ThreadActionVars = { ids: string[]; action: MailThreadAction; folderId?: string; category?: string; until?: string };
 
 /** Applies an action to conversations: in the cache (and the sidebar's numbers) at once, then the API; a refusal puts everything back. */
 export function useThreadAction() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (v: ThreadActionVars) => api.collab.threads.action({ thread_ids: v.ids, action: v.action, folder_id: v.folderId, category: v.category }),
+    mutationFn: (v: ThreadActionVars) => api.collab.threads.action({ thread_ids: v.ids, action: v.action, folder_id: v.folderId, category: v.category, until: v.until }),
     onMutate: async (v) => {
       await Promise.all([qc.cancelQueries({ queryKey: qk.mailThreadLists }), qc.cancelQueries({ queryKey: qk.mailCounts })]);
       const snap = snapshotThreads(qc, v.ids);
@@ -116,8 +116,8 @@ export function useThreadAction() {
       // The sidebar's numbers follow at once (a conversation opened reads as read there too).
       const before = cachedThreads(qc, ids);
       const addresses = Object.fromEntries((qc.getQueryData<MailAccount[]>(qk.mailAccounts) ?? []).filter((a) => aliasesOf(a).length).map((a) => [a.id, ownEmails(a)]));
-      qc.setQueryData<MailCounts>(qk.mailCounts, (c) => (c ? countsAfter(c, before, v.action, cachedFolders(qc), v.folderId, addresses, v.category) : c));
-      mapThreads(qc, ids, (t) => applyAction(t, v.action, v.folderId, v.category));
+      qc.setQueryData<MailCounts>(qk.mailCounts, (c) => (c ? countsAfter(c, before, v.action, cachedFolders(qc), v.folderId, addresses, v.category, v.until) : c));
+      mapThreads(qc, ids, (t) => applyAction(t, v.action, v.folderId, v.category, v.until));
       dropFromLists(qc, ids, v.action, v.folderId, v.category);
       return { snap };
     },

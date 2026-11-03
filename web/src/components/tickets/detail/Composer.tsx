@@ -13,6 +13,7 @@ import { realtime } from "@/lib/realtime/manager";
 import { SideIncludedChips, useSideInclude } from "./SideIncludes";
 import { cn } from "@/lib/cn";
 import { keyName } from "@/lib/hotkeys";
+import { findPlaceholders } from "@/lib/placeholders";
 import { Button } from "@/components/ui/button";
 import { Segmented } from "@/components/ui/tabs";
 import { Picker } from "@/components/ui/picker";
@@ -453,9 +454,12 @@ export const Composer = forwardRef<
   // A reply that @mentions a teammate was most likely meant as a note: ask before it goes out.
   const [mentionWarn, setMentionWarn] = useState<{ names: string[]; status?: TicketStatus } | null>(null);
   useEffect(() => setMentionWarn(null), [draft.html, mode]);
+  // A reply that still holds a [placeholder] a draft left to fill in: ask before it goes out.
+  const [placeholderWarn, setPlaceholderWarn] = useState<{ found: string[]; status?: TicketStatus; checked?: boolean } | null>(null);
+  useEffect(() => setPlaceholderWarn(null), [draft.html, mode]);
 
-  /** Sends what is written; `as` sends it as a note instead, `checked` skips the mention check. */
-  const submit = (status?: TicketStatus, opts: { as?: "note"; checked?: boolean } = {}) => {
+  /** Sends what is written; `as` sends it as a note instead, `checked` skips the mention check, `filled` the placeholder check. */
+  const submit = (status?: TicketStatus, opts: { as?: "note"; checked?: boolean; filled?: boolean } = {}) => {
     if (!canSend) return;
     if (mode === "thread") return submitThread(status);
     const kind = opts.as ?? mode;
@@ -465,6 +469,11 @@ export const Composer = forwardRef<
       if (names.length) return setMentionWarn({ names, status });
     }
     setMentionWarn(null);
+    if (reply && !opts.filled) {
+      const found = findPlaceholders(draft.html);
+      if (found.length) return setPlaceholderWarn({ found, status, checked: opts.checked });
+    }
+    setPlaceholderWarn(null);
     if (opts.as === "note" && draft.fromNote) {
       // A reply written from a note, kept as a note: it goes back into that note (edited if
       // the words changed) rather than adding the same words twice. Its status went with
@@ -626,6 +635,40 @@ export const Composer = forwardRef<
               </Button>
               <Button size="xs" variant="ghost" onClick={() => submit(mentionWarn.status, { checked: true })}>
                 {t("composer.mentionSend")}
+              </Button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        <AnimatePresence initial={false}>
+          {placeholderWarn && (
+            <motion.div
+              role="alert"
+              initial={reduced ? { opacity: 0 } : { opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={reduced ? { opacity: 0 } : { opacity: 0, y: 4 }}
+              transition={{ duration: 0.18 }}
+              className={cn("mb-2 flex items-center gap-2 rounded-md px-3 py-2 text-[12.5px]", tone.amber.soft)}
+            >
+              <TriangleAlert className={cn("size-3.5 shrink-0", tone.amber.text)} />
+              <span className="min-w-0 flex-1 text-fg-2">
+                {t("composer.placeholderWarn", {
+                  count: placeholderWarn.found.length,
+                  list: placeholderWarn.found.slice(0, 3).join(", ") + (placeholderWarn.found.length > 3 ? ", …" : ""),
+                })}
+              </span>
+              <Button
+                size="xs"
+                variant="secondary"
+                onClick={() => {
+                  const first = placeholderWarn.found[0];
+                  setPlaceholderWarn(null);
+                  if (!selectText(editor.current?.editor, first)) editor.current?.focus();
+                }}
+              >
+                {t("composer.placeholderFill")}
+              </Button>
+              <Button size="xs" variant="ghost" onClick={() => submit(placeholderWarn.status, { checked: placeholderWarn.checked, filled: true })}>
+                {t("composer.placeholderSend")}
               </Button>
             </motion.div>
           )}
@@ -1017,6 +1060,21 @@ function ReplyingAs({
       )}
     </div>
   );
+}
+
+/** Selects the first place `text` is written in one piece in the editor, to type over it. */
+function selectText(ed: RichEditorHandle["editor"] | undefined, text: string): boolean {
+  if (!ed) return false;
+  let from = -1;
+  ed.state.doc.descendants((node, pos) => {
+    if (from >= 0) return false;
+    const i = node.isText ? (node.text ?? "").indexOf(text) : -1;
+    if (i >= 0) from = pos + i;
+    return true;
+  });
+  if (from < 0) return false;
+  ed.chain().focus().setTextSelection({ from, to: from + text.length }).scrollIntoView().run();
+  return true;
 }
 
 /** Teammates a reply names with "@" (full name, first name or email), but not the writer. */

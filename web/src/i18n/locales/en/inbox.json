@@ -469,6 +469,10 @@
   "typing_one": "{{who}} is typing",
   "typing_other": "{{who}} are typing",
   "composer": {
+    "placeholderWarn_one": "There’s still a part to fill in: {{list}}. Send anyway?",
+    "placeholderWarn_other": "There are still {{count}} parts to fill in: {{list}}. Send anyway?",
+    "placeholderFill": "Fill it in",
+    "placeholderSend": "Send anyway",
     "reply": "Reply",
     "note": "Note",
     "to": "To",

@@ -39,9 +39,10 @@ import { LabelsPicker, MovePicker, type MoveTarget } from "@/components/collab/p
 import { ThreadRow } from "@/components/collab/ThreadRow";
 import { ThreadView, type ThreadViewHandle } from "@/components/collab/ThreadView";
 
-type ActOpts = { folderId?: string; category?: string; label?: string; silent?: boolean };
+type ActOpts = { folderId?: string; category?: string; label?: string; silent?: boolean; until?: string };
 
-const toastKey: Partial<Record<MailThreadAction, "archived" | "trashed" | "spammed" | "moved" | "inboxed" | "notSpam">> = {
+const toastKey: Partial<Record<MailThreadAction, "archived" | "trashed" | "spammed" | "moved" | "inboxed" | "notSpam" | "snoozed">> = {
+  snooze: "snoozed",
   archive: "archived",
   trash: "trashed",
   spam: "spammed",
@@ -277,7 +278,7 @@ export default function MailPage() {
       }
       setSelected((s) => (s.size ? new Set() : s));
       action.mutate(
-        { ids, action: a, folderId: opts.folderId, category: opts.category },
+        { ids, action: a, folderId: opts.folderId, category: opts.category, until: opts.until },
         {
           onError: (e) => toast.error(e, t("toast.failed")),
         },

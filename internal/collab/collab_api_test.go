@@ -704,6 +704,108 @@ func TestHandlingStateFollowsNewMail(t *testing.T) {
 	}
 }
 
+func TestAPISnooze(t *testing.T) {
+	w := newWorld(t)
+	a := w.account(w.agent, ProviderGoogle, VisibilityShared, Audience{Everyone: true})
+	inbox, sent := w.folder(a, RoleInbox), w.folder(a, RoleSent)
+	tid, _ := w.seedThread(a, "Quote", inbox)
+	srv := w.api(w.agent)
+	var out struct {
+		Threads []MailThread `json:"threads"`
+	}
+	act := func(body map[string]any) int {
+		body["thread_ids"] = []uuid.UUID{tid}
+		return doJSON(t, "POST", srv.URL+"/v1/collab/threads/actions", body, &out)
+	}
+	later := time.Now().Add(90 * 24 * time.Hour).UTC().Truncate(time.Second)
+	if st := act(map[string]any{"action": "snooze", "until": later}); st != 422 {
+		t.Fatalf("snooze without handling: %d", st)
+	}
+	mustExec(t, w.d, `UPDATE collab_accounts SET handling_enabled = true WHERE id = $1`, a.ID)
+	for _, until := range []any{nil, time.Now().Add(-time.Minute)} {
+		if st := act(map[string]any{"action": "snooze", "until": until}); st != 422 {
+			t.Fatalf("snooze until %v: %d", until, st)
+		}
+	}
+	if st := act(map[string]any{"action": "needs_action"}); st != 200 || !out.Threads[0].NeedsAction {
+		t.Fatalf("needs action: %d %+v", st, out)
+	}
+	if st := act(map[string]any{"action": "snooze", "until": later}); st != 200 || out.Threads[0].NeedsAction ||
+		out.Threads[0].SnoozedUntil == nil || !out.Threads[0].SnoozedUntil.Equal(later) {
+		t.Fatalf("snooze: %d %+v", st, out)
+	}
+	var counts CollabCounts
+	if st := doJSON(t, "GET", srv.URL+"/v1/collab/counts", nil, &counts); st != 200 || counts.Boxes.NeedsAction != 0 || counts.Boxes.Snoozed != 1 {
+		t.Fatalf("snoozed counts: %d %+v", st, counts.Boxes)
+	}
+	var page httpx.Page[MailThread]
+	if st := doJSON(t, "GET", srv.URL+"/v1/collab/threads?box=snoozed", nil, &page); st != 200 || len(page.Data) != 1 || page.Data[0].ID != tid {
+		t.Fatalf("snoozed list: %d %+v", st, page)
+	}
+	if st := doJSON(t, "GET", srv.URL+"/v1/collab/threads?box=needs_action", nil, &page); st != 200 || len(page.Data) != 0 {
+		t.Fatalf("needs action while snoozed: %d %+v", st, page)
+	}
+	handling := func() (needs bool, snoozed bool) {
+		t.Helper()
+		var until *time.Time
+		if err := w.d.DB.Pool.QueryRow(w.ctx, `SELECT needs_action, snoozed_until FROM collab_threads WHERE id = $1`, tid).Scan(&needs, &until); err != nil {
+			t.Fatal(err)
+		}
+		return needs, until != nil
+	}
+	// Not due yet: the wake job leaves it. Due: back in Needs action.
+	if err := w.s.wakeSnoozed(w.ctx); err != nil {
+		t.Fatal(err)
+	}
+	if needs, snoozed := handling(); needs || !snoozed {
+		t.Fatalf("woken early: needs %t snoozed %t", needs, snoozed)
+	}
+	mustExec(t, w.d, `UPDATE collab_threads SET snoozed_until = now() - interval '1 second' WHERE id = $1`, tid)
+	if err := w.s.wakeSnoozed(w.ctx); err != nil {
+		t.Fatal(err)
+	}
+	if needs, snoozed := handling(); !needs || snoozed {
+		t.Fatalf("after wake: needs %t snoozed %t", needs, snoozed)
+	}
+	// Done ends a snooze.
+	if st := act(map[string]any{"action": "snooze", "until": later}); st != 200 {
+		t.Fatalf("snooze again: %d", st)
+	}
+	if st := act(map[string]any{"action": "done"}); st != 200 || out.Threads[0].SnoozedUntil != nil || out.Threads[0].NeedsAction {
+		t.Fatalf("done: %d %+v", st, out)
+	}
+	// The account's own reply keeps a snooze; mail from someone else wakes it.
+	if st := act(map[string]any{"action": "snooze", "until": later}); st != 200 {
+		t.Fatalf("snooze before mail: %d", st)
+	}
+	var remote string
+	if err := w.d.DB.Pool.QueryRow(w.ctx, `SELECT remote_id FROM collab_threads WHERE id = $1`, tid).Scan(&remote); err != nil {
+		t.Fatal(err)
+	}
+	a, _ = loadAccount(w.ctx, w.d.DB.Pool, w.wid, a.ID)
+	insert := func(m *newMessage) {
+		t.Helper()
+		p, err := w.s.newPass(w.ctx, w.d.DB.Pool, a)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := p.batch(w.ctx, func(tx pgx.Tx) error { _, err := p.insert(w.ctx, tx, m); return err }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	at := time.Now().UTC()
+	insert(&newMessage{RemoteID: "out", ThreadRemoteID: remote, Raw: testMail{from: a.Email, to: "frank@example.com", subject: "Re: Quote",
+		msgID: "out@example.com", body: "Following up", date: at}.raw(), State: state{FolderIDs: []uuid.UUID{sent.ID}}})
+	if needs, snoozed := handling(); needs || !snoozed {
+		t.Fatalf("after own reply: needs %t snoozed %t", needs, snoozed)
+	}
+	insert(&newMessage{RemoteID: "in", ThreadRemoteID: remote, Raw: testMail{from: "frank@example.com", to: a.Email, subject: "Re: Quote",
+		msgID: "in@example.com", body: "Ready to order", date: at.Add(time.Minute)}.raw(), State: state{Unread: true, FolderIDs: []uuid.UUID{inbox.ID}}})
+	if needs, snoozed := handling(); !needs || snoozed {
+		t.Fatalf("after customer reply: needs %t snoozed %t", needs, snoozed)
+	}
+}
+
 func TestAPISend(t *testing.T) {
 	w := newWorld(t)
 	a := w.account(w.agent, ProviderGoogle, VisibilityPrivate, Audience{})

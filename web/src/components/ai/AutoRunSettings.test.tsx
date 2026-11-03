@@ -57,7 +57,8 @@ it("saves a switch at once and shows it on before the answer", async () => {
   await act(async () => sw("Update a ticket").click());
   // In the order of the switches.
   expect(update).toHaveBeenCalledWith({ assistant_auto: ["update_ticket", "add_note"] });
-  expect(sw("Update a ticket").getAttribute("aria-checked")).toBe("true");
+  // The optimistic write reaches React on TanStack's setTimeout(0) batch, which act does not wait for. The save is still unanswered.
+  await vi.waitFor(() => expect(sw("Update a ticket").getAttribute("aria-checked")).toBe("true"));
   await act(async () => resolve({ ...features, assistant_auto: ["update_ticket", "add_note"] }));
   expect(qc.getQueryData<AIConfig>(qk.aiConfig)?.features.assistant_auto).toEqual(["update_ticket", "add_note"]);
   await unmount();

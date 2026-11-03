@@ -26,6 +26,7 @@ import { folderById, type FolderId } from "@/lib/folders";
 import { canSeeTeam, type WorkspaceData } from "@/lib/spaces/hooks";
 import { isEverywhereList, isSpacePage, type EverywhereList, type SpacePage } from "@/lib/spaces/model";
 import { useOpenInWorkspace } from "@/lib/workspaces";
+import { useCollab } from "@/lib/collab/hooks";
 
 export type RowLink =
   | { kind: "inbox"; folder: FolderId }
@@ -128,7 +129,7 @@ export type RowLabels = {
   allInboxes: string;
   myTeams: string;
   page: (p: SpacePage) => string;
-  section: (id: SidebarSectionId) => string;
+  section: (id: SidebarSectionId, collabEnabled?: boolean) => string;
   everywhere: (list: EverywhereList) => string;
 };
 
@@ -137,6 +138,7 @@ export function useRowLabels(): RowLabels {
   const { t: tShell } = useTranslation("shell");
   const { t: tc } = useTranslation("collab");
   const { t: tw } = useTranslation("workspaces");
+  const collab = useCollab();
   return {
     everywhere: (l) => (l === "mine" ? tw("everywhere.mineTitle") : tw("everywhere.mailTitle")),
     folder: (id) => {
@@ -147,8 +149,8 @@ export function useRowLabels(): RowLabels {
     allInboxes: tc("nav.allInboxes"),
     myTeams: tShell("nav.myTeams"),
     page: (p) => tShell(pageLabels[p]),
-    section: (id) =>
-      id === "favorites" ? tc("nav.favorites") : id === "mail" ? tc("nav.mail") : id === "inbox" ? tShell("nav.inbox") : id === "teams" ? tShell("nav.teams") : id === "views" ? tShell("nav.views") : tShell("nav.workspace"),
+    section: (id, collabEnabled = collab.enabled) =>
+      id === "favorites" ? tc("nav.favorites") : id === "mail" ? tc("nav.mail") : id === "inbox" ? tShell(collabEnabled ? "nav.tickets" : "nav.inbox") : id === "teams" ? tShell("nav.teams") : id === "views" ? tShell("nav.views") : tShell("nav.workspace"),
   };
 }
 

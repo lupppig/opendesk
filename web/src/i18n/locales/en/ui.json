@@ -65,6 +65,7 @@
   "bold": "Bold",
   "formatting": "Formatting",
   "italic": "Italic",
+  "underline": "Underline",
   "strikethrough": "Strikethrough",
   "bulletedList": "Bulleted list",
   "numberedList": "Numbered list",

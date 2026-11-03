@@ -104,7 +104,7 @@ function RemoteSection({ d, id, first, rail, mark, ctx }: { d: WorkspaceData; id
   if (!models.length) return null;
   return (
     <SectionMarkCtx.Provider value={mark}>
-      <Section id={`ws-${d.id}-${id}`} label={ctx.labels.section(id)} rail={rail} first={first}>
+      <Section id={`ws-${d.id}-${id}`} label={ctx.labels.section(id, d.collab)} rail={rail} first={first}>
         {models.map((m) => (
           <NavItemRow key={m.key} model={m} rail={rail} prefs={p} ws={d.id} />
         ))}

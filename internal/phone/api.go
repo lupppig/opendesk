@@ -280,9 +280,9 @@ func (s *Service) Register(api huma.API, r chi.Router) {
 						return err
 					}
 					if a.Describe().ManualWebhook {
-						// Another account's events need a URL of their own: the old account's
-						// notification stops being accepted, and the admin adds the new URL.
-						if old[provider.AccountIDKey] != creds[provider.AccountIDKey] {
+						// Keep the URL only when a stable account ID confirms the same account.
+						// Otherwise, the admin adds a new URL and the old one stops accepting events.
+						if creds[provider.AccountIDKey] == "" || old[provider.AccountIDKey] != creds[provider.AccountIDKey] {
 							if cur.webhookSecretEnc, err = s.newWebhookSecret(); err != nil {
 								return err
 							}

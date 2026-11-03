@@ -9,7 +9,7 @@ import type { MailCounts, MailFolder, MailThread, MailThreadAction } from "../ap
 export const UNDOABLE: ReadonlySet<MailThreadAction> = new Set<MailThreadAction>(["archive", "trash", "spam", "move"]);
 
 /** The conversation as it reads once the action applied. */
-export function applyAction(t: MailThread, action: MailThreadAction, folderId?: string, category?: string): MailThread {
+export function applyAction(t: MailThread, action: MailThreadAction, folderId?: string, category?: string, until?: string): MailThread {
   switch (action) {
     case "categorize":
       return category ? { ...t, category } : t;
@@ -21,10 +21,13 @@ export function applyAction(t: MailThread, action: MailThreadAction, folderId?: 
       return { ...t, starred: true };
     case "unstar":
       return { ...t, starred: false };
+    // Done and needs action end a snooze (contracts/collab.md "Snooze").
     case "done":
-      return { ...t, needs_action: false };
+      return { ...t, needs_action: false, snoozed_until: null };
     case "needs_action":
-      return { ...t, needs_action: true };
+      return { ...t, needs_action: true, snoozed_until: null };
+    case "snooze":
+      return until ? { ...t, needs_action: false, snoozed_until: until } : t;
     case "label":
     case "move":
       return folderId && !t.folder_ids.includes(folderId) ? { ...t, folder_ids: [...t.folder_ids, folderId] } : t;
@@ -68,6 +71,10 @@ export function leavesList(action: MailThreadAction, place: ListPlace, targetFol
     case "unlabel":
       return !!place.folderId && place.folderId === targetFolder;
     case "done":
+      return where === "needs_action" || where === "snoozed";
+    case "needs_action":
+      return where === "snoozed";
+    case "snooze":
       return where === "needs_action";
     default:
       return false;
@@ -137,6 +144,7 @@ export function countsAfter(
   folderId?: string,
   addresses: Record<string, string[]> = {},
   category?: string,
+  until?: string,
 ): MailCounts {
   const roles = new Map(folders.map((f) => [f.id, f.role]));
   const out: MailCounts = { assigned: { ...counts.assigned }, boxes: { ...counts.boxes }, accounts: { ...counts.accounts }, folders: { ...counts.folders } };
@@ -168,9 +176,10 @@ export function countsAfter(
     }
     if (t.shared && inInbox) out.boxes.shared = Math.max(0, out.boxes.shared + sign);
     if (t.needs_action && inInbox) out.boxes.needs_action = Math.max(0, out.boxes.needs_action + sign);
+    if (t.snoozed_until && inInbox && out.boxes.snoozed !== undefined) out.boxes.snoozed = Math.max(0, out.boxes.snoozed + sign);
   };
   for (const t of threads) {
-    const next = { ...applyAction(t, action, folderId, category), folder_ids: foldersAfter(t, action, folders, folderId) };
+    const next = { ...applyAction(t, action, folderId, category, until), folder_ids: foldersAfter(t, action, folders, folderId) };
     count(t, -1);
     count(next, 1);
   }

@@ -21,11 +21,15 @@ export function baseLanguage(tag: string | null | undefined): string {
   return (tag ?? "").trim().toLowerCase().split(/[-_]/)[0] ?? "";
 }
 
+/** True when `tag` names a real language (not empty, undetermined or "no linguistic content"). */
+export function isLanguage(tag: string | null | undefined): tag is string {
+  const b = baseLanguage(tag);
+  return !!b && b !== "und" && b !== "zxx";
+}
+
 /** True when `tag` names a real language that differs from `ours` (by base subtag). */
 export function isForeign(tag: string | null | undefined, ours = "en"): boolean {
-  const b = baseLanguage(tag);
-  if (!b || b === "und" || b === "zxx") return false;
-  return b !== baseLanguage(ours);
+  return isLanguage(tag) && baseLanguage(tag) !== baseLanguage(ours);
 }
 
 /** "es" -> "Spanish". Falls back to the tag itself. */
@@ -36,6 +40,22 @@ export function languageName(tag: string, displayIn = "en"): string {
   } catch {
     return tag;
   }
+}
+
+/** Languages a draft can be translated into from the composer (the EU's and other common ones). */
+export const TRANSLATE_LANGUAGES = [
+  "ar", "bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fr", "ga", "he", "hi", "hr", "hu", "id", "it", "ja", "ko",
+  "lt", "lv", "mt", "nl", "no", "pl", "pt", "ro", "ru", "sk", "sl", "sv", "th", "tr", "uk", "vi", "zh",
+];
+
+/** The composer's translation targets: the customer's language first, then the others by name. */
+export function translateTargets(customer: string | null, displayIn: string): string[] {
+  const first = isLanguage(customer) ? customer : null;
+  const rest = TRANSLATE_LANGUAGES.filter((l) => !first || baseLanguage(first) !== l)
+    .map((l) => [l, languageName(l, displayIn)] as const)
+    .sort((a, b) => a[1].localeCompare(b[1], displayIn))
+    .map(([l]) => l);
+  return first ? [first, ...rest] : rest;
 }
 
 function str(v: unknown): string | null {
