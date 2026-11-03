@@ -110,7 +110,8 @@ func (s *service) applyLocal(ctx context.Context, tx pgx.Tx, a *accountRow, thre
 	}
 	a = current
 	if action == ActionDone || action == ActionNeedsAction {
-		_, err := tx.Exec(ctx, `UPDATE collab_threads SET needs_action = $3, updated_at = now()
+		// Any other handling state ends a snooze, so a conversation marked done is not woken later.
+		_, err := tx.Exec(ctx, `UPDATE collab_threads SET needs_action = $3, snoozed_until = NULL, updated_at = now()
 			WHERE workspace_id = $1 AND id = ANY($2)`, a.WorkspaceID, threadIDs, action == ActionNeedsAction)
 		return err
 	}

@@ -18,6 +18,7 @@ import { rowMotion } from "./motion";
 import { Labels } from "@/components/contacts/bits";
 import { LiveChatBadge, NewCount, UrgentEdge, WaitPill, urgentWash, useChatWait, useHandoffBot } from "./waiting";
 import { TicketTeamChips, useTeamsCtx } from "./teams";
+import { requesterLabel } from "./requester";
 import { browserClick } from "@/lib/links";
 
 export type QuickAction = "assign" | "snooze" | "solve";
@@ -98,7 +99,7 @@ const Row = forwardRef<HTMLAnchorElement, RowProps>(function TicketRow(
   // The bot's hand-off line is the last message of a chat it gave to the team.
   const botLast = !!wait?.handedOff && !awaitingReply(t);
   const bot = useHandoffBot(t);
-  const contactName = t.contact?.name || t.contact?.email || tr("row.unknown");
+  const contactName = requesterLabel(t.contact) || tr("row.unknown");
   const subject = t.subject || tr("row.noSubject");
   const showCheck = selecting || selected;
   const done = t.status === "solved" || t.status === "closed";

@@ -1,0 +1,51 @@
+{
+  "title": "Tâches",
+  "subtitle": "Le travail en arrière-plan de cette instance",
+  "refresh": "Actualiser",
+  "stateLabel": "État de la tâche",
+  "kindLabel": "Type de tâche",
+  "allKinds": "Tous les types",
+  "retrying_one": "{{n}} à réessayer",
+  "retrying_other": "{{n}} à réessayer",
+  "retrying_many": "{{n}} à réessayer",
+  "empty": {
+    "title": "Aucune tâche « {{state}} »",
+    "titleKind": "Aucune tâche « {{state}} » de type {{kind}}",
+    "retryable": "Rien n’échoue en attendant de réessayer.",
+    "discarded": "Aucune tâche n’a épuisé ses tentatives.",
+    "other": "Choisissez un autre état ou type pour chercher plus loin."
+  },
+  "col": {
+    "job": "Tâche",
+    "queue": "File",
+    "state": "État",
+    "attempt": "Tentative",
+    "lastError": "Dernière erreur",
+    "scheduled": "Planifiée"
+  },
+  "hideDetails": "Masquer les détails",
+  "showDetails": "Afficher les détails",
+  "retry": "Réessayer",
+  "cancel": {
+    "button": "Annuler",
+    "title": "Annuler cette tâche ?",
+    "confirm": "Annuler la tâche",
+    "text": "<k>{{kind}}</k> #{{id}} s’arrête et ne reprendra pas sauf si elle est relancée."
+  },
+  "toast": {
+    "retried": "La tâche #{{id}} reprend maintenant",
+    "cancelled": "Tâche #{{id}} annulée"
+  },
+  "details": {
+    "args": "Arguments",
+    "copyArgs": "Copier les arguments",
+    "copyError": "Copier l’erreur",
+    "lastErrorOf_one": "Dernière erreur ({{n}} erreur)",
+    "lastErrorOf_other": "Dernière erreur ({{n}} erreurs)",
+    "lastErrorOf_many": "Dernière erreur ({{n}} erreurs)",
+    "created": "Créée",
+    "lastAttempt": "Dernière tentative",
+    "finished": "Terminée",
+    "notYet": "Pas encore"
+  }
+}

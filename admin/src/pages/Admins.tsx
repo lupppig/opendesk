@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { UserPlus } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ActionButton } from "@/components/ActionButton";
 import { ErrorState } from "@/components/ErrorState";
 import { PageBody, PageHeader } from "@/components/layout";
@@ -15,6 +16,7 @@ import { EmptyState, GhostList } from "@/components/ui/empty";
 import { Field, TextInput } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/toast";
+import { i18n, inSentence } from "@/i18n";
 import { isApiError } from "@/lib/api/client";
 import { api } from "@/lib/api/endpoints";
 import type { AdminRole, InstanceAdmin } from "@/lib/api/types";
@@ -25,25 +27,26 @@ import { useMe } from "@/lib/session";
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function explainGrant(e: unknown): string | undefined {
-  if (isApiError(e, "not_found") || isApiError(e, "user_not_found")) return "No account uses this email. They sign up in the app first.";
-  if (isApiError(e, "admin_mfa_setup_required") || isApiError(e, "target_mfa_required"))
-    return "They need two-factor authentication on in the app before they can be an admin.";
-  if (isApiError(e, "already_admin")) return "They are already an admin. Change their role in the list instead.";
-  if (isApiError(e, "account_suspended")) return "This account is suspended. Restore it before making them an admin.";
+  if (isApiError(e, "not_found") || isApiError(e, "user_not_found")) return i18n.t("admins:grantError.noAccount");
+  if (isApiError(e, "admin_mfa_setup_required") || isApiError(e, "target_mfa_required")) return i18n.t("admins:grantError.mfa");
+  if (isApiError(e, "already_admin")) return i18n.t("admins:grantError.already");
+  if (isApiError(e, "account_suspended")) return i18n.t("admins:grantError.suspended");
   return undefined;
 }
 
 function RolePicker({ value, onChange }: { value: AdminRole; onChange: (r: AdminRole) => void }) {
+  const { t } = useTranslation(["admins", "audit", "common"]);
   return (
     <div className="flex flex-col gap-1.5">
-      <span className="text-[12.5px] font-medium">Role</span>
-      <Segmented value={value} onChange={onChange} options={[...ROLES].reverse().map((r) => ({ value: r, label: ROLE_LABEL[r] }))} />
-      <span className="text-[12px] text-fg-3">{ROLE_HINT[value]}</span>
+      <span className="text-[12.5px] font-medium">{t("col.role")}</span>
+      <Segmented value={value} onChange={onChange} options={[...ROLES].reverse().map((r) => ({ value: r, label: t(`common:${ROLE_LABEL[r]}`) }))} />
+      <span className="text-[12px] text-fg-3">{t(`common:${ROLE_HINT[value]}`)}</span>
     </div>
   );
 }
 
 export default function Admins() {
+  const { t } = useTranslation(["admins", "audit", "common"]);
   const me = useMe();
   const qc = useQueryClient();
   const admins = useQuery(q.admins());
@@ -62,19 +65,19 @@ export default function Admins() {
 
   /** Why a row's admin can't be changed or revoked from here, or null. */
   const lockedReason = (a: InstanceAdmin, action: "change" | "revoke") => {
-    if (a.user.id === me.id) return action === "change" ? "You can't change your own role" : "You can't revoke yourself";
-    if (a.role === "super" && supers <= 1) return "The last super admin stays. The command line can change it.";
+    if (a.user.id === me.id) return action === "change" ? t("locked.ownRole") : t("locked.self");
+    if (a.role === "super" && supers <= 1) return t("locked.lastSuper");
     return null;
   };
 
   return (
     <>
       <PageHeader
-        title="Admins"
-        subtitle="Who can open this panel"
+        title={t("title")}
+        subtitle={t("subtitle")}
         actions={
           <ActionButton perm="admins.manage" variant="primary" icon={<UserPlus />} onClick={() => setGranting(true)}>
-            Add an admin
+            {t("grant.title")}
           </ActionButton>
         }
       />
@@ -87,16 +90,16 @@ export default function Admins() {
           <EmptyState
             art="admins"
             ghost={<GhostList variant="people" />}
-            title="No admins"
-            description="The first admin is granted on the machine that runs the instance, with opendesk admin grant."
+            title={t("empty.title")}
+            description={t("empty.hint")}
           />
         ) : (
           <Table>
             <THead>
-              <TH>Admin</TH>
-              <TH>Role</TH>
-              <TH>Granted by</TH>
-              <TH>Since</TH>
+              <TH>{t("col.admin")}</TH>
+              <TH>{t("col.role")}</TH>
+              <TH>{t("col.grantedBy")}</TH>
+              <TH>{t("col.since")}</TH>
               <TH />
             </THead>
             <tbody>
@@ -108,7 +111,7 @@ export default function Admins() {
                       <span className="min-w-0">
                         <span className="flex items-center gap-1.5">
                           <span className="truncate font-medium text-fg group-hover:underline">{a.user.name || a.user.email}</span>
-                          {a.user.id === me.id && <Badge tone="outline">You</Badge>}
+                          {a.user.id === me.id && <Badge tone="outline">{t("you")}</Badge>}
                         </span>
                         {a.user.name && <span className="block truncate text-[11.5px] text-fg-3">{a.user.email}</span>}
                       </span>
@@ -117,17 +120,17 @@ export default function Admins() {
                   <TD>
                     <AdminRolePill role={a.role} />
                   </TD>
-                  <TD className="text-fg-2">{a.granted_by ? a.granted_by.email : <Badge tone="outline">Command line</Badge>}</TD>
+                  <TD className="text-fg-2">{a.granted_by ? a.granted_by.email : <Badge tone="outline">{t("audit:actor.cli")}</Badge>}</TD>
                   <TD className="text-fg-3">
                     <Time iso={a.created_at} />
                   </TD>
                   <TD align="right">
                     <div className="flex items-center justify-end gap-1">
                       <ActionButton perm="admins.manage" size="xs" variant="secondary" blocked={lockedReason(a, "change")} onClick={() => setEditing({ a, role: a.role })}>
-                        Change role
+                        {t("change.button")}
                       </ActionButton>
                       <ActionButton perm="admins.manage" size="xs" variant="danger" blocked={lockedReason(a, "revoke")} onClick={() => setRevoking(a)}>
-                        Revoke
+                        {t("revoke.button")}
                       </ActionButton>
                     </div>
                   </TD>
@@ -147,33 +150,33 @@ export default function Admins() {
             setRole("support");
           }
         }}
-        title="Add an admin"
-        description="They need an account with two-factor authentication on. They sign in here with their own email, password and code."
-        confirmLabel="Add admin"
+        title={t("grant.title")}
+        description={t("grant.description")}
+        confirmLabel={t("grant.confirm")}
         ready={EMAIL.test(email.trim())}
         explain={explainGrant}
         onConfirm={async (code) => {
           const r = await api.admins.grant({ email: email.trim(), role, code });
           refresh();
-          toast.success(`${r.user.email} is now a ${ROLE_LABEL[r.role].toLowerCase()} admin`);
+          toast.success(t("grant.done", { email: r.user.email, role: inSentence(t(`common:${ROLE_LABEL[r.role]}`)) }));
         }}
       >
-        <Field label="Email">{(p) => <TextInput {...p} type="email" autoFocus autoComplete="off" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@example.com" />}</Field>
+        <Field label={t("grant.email")}>{(p) => <TextInput {...p} type="email" autoFocus autoComplete="off" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t("grant.emailPlaceholder")} />}</Field>
         <RolePicker value={role} onChange={setRole} />
       </StepUpDialog>
 
       <StepUpDialog
         open={!!editing}
         onOpenChange={(o) => !o && setEditing(null)}
-        title={editing ? `Change the role of ${editing.a.user.email}` : "Change role"}
-        description="The new role applies at once, on their next request."
-        confirmLabel="Change role"
+        title={editing ? t("change.title", { email: editing.a.user.email }) : t("change.button")}
+        description={t("change.description")}
+        confirmLabel={t("change.button")}
         ready={!!editing && editing.role !== editing.a.role}
         onConfirm={async (code) => {
           if (!editing) return;
           await api.admins.setRole(editing.a.user.id, editing.role, code);
           refresh();
-          toast.success(`Role changed to ${ROLE_LABEL[editing.role]}`);
+          toast.success(t("change.done", { role: t(`common:${ROLE_LABEL[editing.role]}`) }));
         }}
       >
         {editing && <RolePicker value={editing.role} onChange={(r) => setEditing({ ...editing, role: r })} />}
@@ -182,15 +185,15 @@ export default function Admins() {
       <StepUpDialog
         open={!!revoking}
         onOpenChange={(o) => !o && setRevoking(null)}
-        title={revoking ? `Revoke ${revoking.user.email}?` : "Revoke admin"}
-        description="They lose access to the panel at once and their panel sessions end. Their account and workspaces are not touched."
-        confirmLabel="Revoke admin"
+        title={revoking ? t("revoke.title", { email: revoking.user.email }) : t("revoke.confirm")}
+        description={t("revoke.description")}
+        confirmLabel={t("revoke.confirm")}
         danger
         onConfirm={async (code) => {
           if (!revoking) return;
           await api.admins.revoke(revoking.user.id, code);
           refresh();
-          toast.success(`${revoking.user.email} is no longer an admin`);
+          toast.success(t("revoke.done", { email: revoking.user.email }));
         }}
       />
     </>

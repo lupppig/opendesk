@@ -1,0 +1,107 @@
+{
+  "title": "État",
+  "updated": "Mis à jour",
+  "stale": "La dernière actualisation a échoué ; ces chiffres sont peut-être dépassés.",
+  "down": "En panne",
+  "on": "Activé",
+  "off": "Désactivé",
+  "checks": {
+    "title": "Vérifications",
+    "failing_one": "{{count}} en échec",
+    "failing_other": "{{count}} en échec",
+    "failing_many": "{{count}} en échec",
+    "warning_one": "{{count}} avertissement",
+    "warning_other": "{{count}} avertissements",
+    "warning_many": "{{count}} avertissements",
+    "allPassing": "Toutes passent"
+  },
+  "instance": {
+    "title": "Instance",
+    "version": "Version",
+    "commit": "Commit",
+    "role": "Rôle",
+    "started": "Démarrée"
+  },
+  "database": {
+    "title": "Base de données",
+    "status": "Statut",
+    "latency": "Latence",
+    "schema": "Schéma",
+    "dirty": "Incohérent",
+    "pool": "Pool",
+    "poolLine": "{{inUse}} utilisées, {{idle}} libres, {{total}} sur {{max}}"
+  },
+  "events": {
+    "title": "Événements",
+    "embedded": "Intégré",
+    "cluster": "Cluster",
+    "unpublished": "Non publiés",
+    "oldestUnpublished": "Plus ancien non publié"
+  },
+  "mail": {
+    "title": "E-mails et webhooks",
+    "driver": "Envoi de la plateforme",
+    "inboundFailed": "Entrants en échec, 24 h",
+    "inboundPending": "Entrants en attente",
+    "mailboxesInError": "Boîtes mail en erreur",
+    "webhooksFailing": "Webhooks en échec, 24 h"
+  },
+  "jobs": {
+    "title": "Tâches",
+    "available": "Disponibles",
+    "running": "En cours",
+    "retrying": "À réessayer",
+    "scheduled": "Planifiées",
+    "discarded": "Abandonnées, 24 h",
+    "oldestWaiting": "Plus ancienne en attente"
+  },
+  "config": {
+    "title": "Configuration",
+    "billing": "Facturation",
+    "signup": "Inscription",
+    "aiProvider": "Fournisseur d’IA",
+    "decisions": "Décisions",
+    "embeddings": "Embeddings",
+    "storage": "Stockage",
+    "imap": "IMAP des boîtes mail",
+    "systemSend": "Envoi système",
+    "push": "Notifications push",
+    "helpDomain": "Domaine d’aide"
+  },
+  "update": {
+    "available": "opendesk {{version}} est disponible",
+    "releaseNotes": "Notes de version",
+    "auto": "Cette instance utilise {{current}}. La mise à jour s’installe à la prochaine mise à jour automatique, après une sauvegarde.",
+    "major": "Une nouvelle version majeure : les mises à jour automatiques vous la laissent. Lisez d’abord les notes de version.",
+    "runs": "Cette instance utilise {{current}}.",
+    "how": "Mettez à jour sur le serveur, qui sauvegarde d’abord :",
+    "copyCommand": "Copier la commande"
+  },
+  "updates": {
+    "title": "Mises à jour",
+    "checkNow": "Vérifier maintenant",
+    "versionAvailable": "{{version}} est disponible",
+    "unreachable": "Impossible de joindre GitHub",
+    "newest": "C’est la dernière version",
+    "running": "En service",
+    "from": "depuis {{version}},",
+    "newestRelease": "Dernière version",
+    "notChecked": "Non vérifiée",
+    "newMajor": "Nouvelle majeure",
+    "availableBadge": "Disponible",
+    "current": "À jour",
+    "noneFound": "Aucune trouvée pour l’instant",
+    "lastChecked": "Dernière vérification",
+    "checkOff": "Désactivée (UPDATE_CHECK=false)",
+    "notRelease": "Pas une version publiée",
+    "automatic": "Automatique",
+    "notSetUp": "Non configurée sur cet hôte",
+    "result": {
+      "none": "Pas encore lancée",
+      "current": "Déjà sur la dernière version",
+      "updated": "Mise à jour",
+      "skipped": "Ignorée",
+      "failed": "Échec, retour arrière"
+    }
+  }
+}

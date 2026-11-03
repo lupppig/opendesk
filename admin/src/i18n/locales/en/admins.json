@@ -1,0 +1,47 @@
+{
+  "title": "Admins",
+  "subtitle": "Who can open this panel",
+  "you": "You",
+  "grantError": {
+    "noAccount": "No account uses this email. They sign up in the app first.",
+    "mfa": "They need two-factor authentication on in the app before they can be an admin.",
+    "already": "They are already an admin. Change their role in the list instead.",
+    "suspended": "This account is suspended. Restore it before making them an admin."
+  },
+  "locked": {
+    "ownRole": "You can't change your own role",
+    "self": "You can't revoke yourself",
+    "lastSuper": "The last super admin stays. The command line can change it."
+  },
+  "empty": {
+    "title": "No admins",
+    "hint": "The first admin is granted on the machine that runs the instance, with opendesk admin grant."
+  },
+  "col": {
+    "admin": "Admin",
+    "role": "Role",
+    "grantedBy": "Granted by",
+    "since": "Since"
+  },
+  "grant": {
+    "title": "Add an admin",
+    "description": "They need an account with two-factor authentication on. They sign in here with their own email, password and code.",
+    "confirm": "Add admin",
+    "done": "{{email}} is now a {{role}} admin",
+    "email": "Email",
+    "emailPlaceholder": "name@example.com"
+  },
+  "change": {
+    "button": "Change role",
+    "title": "Change the role of {{email}}",
+    "description": "The new role applies at once, on their next request.",
+    "done": "Role changed to {{role}}"
+  },
+  "revoke": {
+    "button": "Revoke",
+    "confirm": "Revoke admin",
+    "title": "Revoke {{email}}?",
+    "description": "They lose access to the panel at once and their panel sessions end. Their account and workspaces are not touched.",
+    "done": "{{email}} is no longer an admin"
+  }
+}

@@ -515,7 +515,10 @@ func (p *pass) insertMessage(ctx context.Context, tx pgx.Tx, in *newMessage) (uu
 			needsAction, updateHandling = true, true
 		}
 		if updateHandling {
-			if _, err := tx.Exec(ctx, `UPDATE collab_threads SET needs_action = $2, updated_at = now()
+			// New mail from someone else wakes a snoozed conversation, as a customer reply
+			// wakes a snoozed ticket; the account's own reply keeps the snooze ("Snooze").
+			if _, err := tx.Exec(ctx, `UPDATE collab_threads SET needs_action = $2,
+				snoozed_until = CASE WHEN $2 THEN NULL ELSE snoozed_until END, updated_at = now()
 				WHERE id = $1 AND NOT EXISTS (SELECT 1 FROM collab_messages WHERE thread_id = $1 AND (sent_at, id) > ($3, $4))`,
 				threadID, needsAction, sentAt, id); err != nil {
 				return uuid.Nil, err

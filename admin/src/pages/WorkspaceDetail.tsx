@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { Ban, ChevronDown, RotateCcw, ScrollText, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { ActionButton, ActionMenuItem } from "@/components/ActionButton";
 import { DataPairs, ExtLink, IdChip, None } from "@/components/bits";
 import { ErrorState } from "@/components/ErrorState";
@@ -33,13 +34,14 @@ import { countsLine } from "@/lib/testWorkspaces";
 import { CollabSection } from "./WorkspaceCollab";
 
 export default function WorkspaceDetail() {
+  const { t } = useTranslation(["workspaces", "admins", "audit", "common", "shell", "users"]);
   const { id } = useParams({ from: "/shell/workspaces/$id" });
   const ws = useQuery(q.workspace(id));
   useDocumentTitle(ws.data?.name);
 
   return (
     <>
-      <PageHeader title={<BackLink to="/workspaces">Workspaces</BackLink>} />
+      <PageHeader title={<BackLink to="/workspaces">{t("list.title")}</BackLink>} />
       <PageBody>
         {ws.isPending ? (
           <DetailSkeleton />
@@ -49,7 +51,7 @@ export default function WorkspaceDetail() {
             onRetry={() => void ws.refetch()}
             action={
               <Button variant="ghost" asChild>
-                <Link to="/workspaces">All workspaces</Link>
+                <Link to="/workspaces">{t("detail.all")}</Link>
               </Button>
             }
           />
@@ -62,6 +64,7 @@ export default function WorkspaceDetail() {
 }
 
 function WorkspaceView({ w }: { w: AdminWorkspace }) {
+  const { t } = useTranslation(["workspaces", "admins", "audit", "common", "shell", "users"]);
   const qc = useQueryClient();
   const navigate = useNavigate();
   const confirm = useConfirm();
@@ -79,13 +82,13 @@ function WorkspaceView({ w }: { w: AdminWorkspace }) {
   const restore = () =>
     confirm.show(
       <>
-        <span className="font-medium text-fg">{w.name}</span> works again for its members, API keys, widget and help center. Mail ignored while it was suspended is not replayed.
+        <Trans t={t} i18nKey="detail.restore.text" values={{ name: w.name }} components={{ b: <span className="font-medium text-fg" /> }} />
       </>,
       async () => {
         apply(await api.workspaces.unsuspend(w.id));
-        toast.success("Workspace restored");
+        toast.success(t("detail.toast.restored"));
       },
-      { title: "Restore this workspace?", confirmLabel: "Restore" },
+      { title: t("detail.restore.title"), confirmLabel: t("common:actions.restore") },
     );
 
   return (
@@ -101,38 +104,38 @@ function WorkspaceView({ w }: { w: AdminWorkspace }) {
             {w.suspended_at && <SuspendedPill />}
           </div>
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-            <IdChip label="slug" value={w.slug} />
-            <IdChip label="id" value={w.id} />
+            <IdChip label={t("detail.slug")} value={w.slug} />
+            <IdChip label={t("common:id")} value={w.id} />
             <span className="text-[11.5px] text-fg-3">
-              Created <Time iso={w.created_at} />, last active <Time iso={w.last_activity_at} />
+              <Trans t={t} i18nKey="detail.createdActive" components={{ created: <Time iso={w.created_at} />, active: <Time iso={w.last_activity_at} /> }} />
             </span>
           </div>
         </div>
         <div className="flex items-center gap-1.5">
           <Button variant="ghost" asChild icon={<ScrollText />}>
             <Link to="/audit" search={{ target: w.id }}>
-              Audit log
+              {t("shell:nav.audit")}
             </Link>
           </Button>
           <Menu>
             <MenuTrigger asChild>
               <Button variant="secondary" iconRight={<ChevronDown />}>
-                Actions
+                {t("users:detail.actions")}
               </Button>
             </MenuTrigger>
             <MenuContent className="w-[260px]">
               {w.suspended_at ? (
                 <ActionMenuItem perm="workspaces.suspend" icon={<RotateCcw />} onSelect={restore}>
-                  Restore workspace
+                  {t("detail.restore.button")}
                 </ActionMenuItem>
               ) : (
                 <ActionMenuItem perm="workspaces.suspend" icon={<Ban />} onSelect={() => setDialog("suspend")}>
-                  Suspend workspace
+                  {t("detail.suspend.button")}
                 </ActionMenuItem>
               )}
               <MenuSeparator />
               <ActionMenuItem perm={w.test && !canDelete ? "workspaces.test" : "workspaces.delete"} icon={<Trash2 />} danger onSelect={() => setDialog("delete")}>
-                Delete workspace
+                {t("detail.delete.button")}
               </ActionMenuItem>
             </MenuContent>
           </Menu>
@@ -142,25 +145,25 @@ function WorkspaceView({ w }: { w: AdminWorkspace }) {
       {w.test && (
         <Banner
           tone="blue"
-          title={w.test_expires_at ? <>Test workspace, deleted <Time iso={w.test_expires_at} /></> : "Test workspace, kept until deleted"}
+          title={w.test_expires_at ? <Trans t={t} i18nKey="detail.test.deleted" components={{ time: <Time iso={w.test_expires_at} /> }} /> : t("detail.test.kept")}
           action={
             <Button variant="secondary" size="xs" asChild>
-              <Link to="/test-workspaces">Test workspaces</Link>
+              <Link to="/test-workspaces">{t("shell:nav.testWorkspaces")}</Link>
             </Button>
           }
         >
           {w.sample_data.status === "running"
-            ? "Sample data is being added."
+            ? t("detail.test.adding")
             : w.sample_data.counts
-              ? `Sample data: ${countsLine(w.sample_data.counts, 5)}.`
-              : "No sample data."}{" "}
-          It stays out of the overview's counts.
+              ? t("detail.test.sample", { counts: countsLine(w.sample_data.counts, 5) })
+              : t("detail.test.noSample")}{" "}
+          {t("detail.test.outOfCounts")}
         </Banner>
       )}
 
       {w.suspended_at && (
-        <Banner title={<>Suspended <Time iso={w.suspended_at} /></>}>
-          {w.suspended_reason ? <span className="whitespace-pre-wrap">{w.suspended_reason}</span> : "No reason was given."} Members can sign in and see it, but nothing runs for it until it is restored.
+        <Banner title={<Trans t={t} i18nKey="users:detail.suspendedSince" components={{ time: <Time iso={w.suspended_at} /> }} />}>
+          {w.suspended_reason ? <span className="whitespace-pre-wrap">{w.suspended_reason}</span> : t("common:noReason")} {t("detail.suspendedHint")}
         </Banner>
       )}
 
@@ -172,16 +175,16 @@ function WorkspaceView({ w }: { w: AdminWorkspace }) {
           <RecentAudit items={w.recent_audit} />
         </div>
         <div className="flex min-w-0 flex-col gap-5">
-          <Section title="Counts">
+          <Section title={t("detail.counts.title")}>
             <KV
               items={[
-                ["Tickets", <span className="mono tabular-nums">{number(w.counts.tickets)}</span>],
-                ["Open tickets", <span className="mono tabular-nums">{number(w.counts.open_tickets)}</span>],
-                ["Contacts", <span className="mono tabular-nums">{number(w.counts.contacts)}</span>],
-                ["Articles", <span className="mono tabular-nums">{number(w.counts.kb_articles)}</span>],
-                ["Brands", <span className="mono tabular-nums">{number(w.counts.brands)}</span>],
-                ["API keys", <span className="mono tabular-nums">{number(w.counts.api_keys)}</span>],
-                ["Webhooks", <span className="mono tabular-nums">{number(w.counts.webhooks)}</span>],
+                [t("detail.counts.tickets"), <span className="mono tabular-nums">{number(w.counts.tickets)}</span>],
+                [t("detail.counts.openTickets"), <span className="mono tabular-nums">{number(w.counts.open_tickets)}</span>],
+                [t("detail.counts.contacts"), <span className="mono tabular-nums">{number(w.counts.contacts)}</span>],
+                [t("detail.counts.articles"), <span className="mono tabular-nums">{number(w.counts.kb_articles)}</span>],
+                [t("detail.counts.brands"), <span className="mono tabular-nums">{number(w.counts.brands)}</span>],
+                [t("detail.counts.apiKeys"), <span className="mono tabular-nums">{number(w.counts.api_keys)}</span>],
+                [t("detail.counts.webhooks"), <span className="mono tabular-nums">{number(w.counts.webhooks)}</span>],
               ]}
             />
           </Section>
@@ -194,12 +197,12 @@ function WorkspaceView({ w }: { w: AdminWorkspace }) {
       <ReasonDialog
         open={dialog === "suspend"}
         onOpenChange={(o) => setDialog(o ? "suspend" : null)}
-        title={`Suspend ${w.name}?`}
-        description="Members, API keys, the widget and the help center stop working, inbound mail is stored and ignored, and nothing is sent. Nothing is deleted."
-        confirmLabel="Suspend workspace"
+        title={t("detail.suspend.title", { name: w.name })}
+        description={t("detail.suspend.description")}
+        confirmLabel={t("detail.suspend.button")}
         onConfirm={async (reason) => {
           apply(await api.workspaces.suspend(w.id, reason));
-          toast.success("Workspace suspended");
+          toast.success(t("detail.toast.suspended"));
         }}
       />
 
@@ -209,9 +212,9 @@ function WorkspaceView({ w }: { w: AdminWorkspace }) {
           setDialog(o ? "delete" : null);
           if (!o) setConfirmName("");
         }}
-        title={`Delete ${w.name}?`}
-        description="Every ticket, contact, article, mailbox and setting of this workspace is removed for good, and its Stripe subscription is canceled. This can't be undone."
-        confirmLabel="Delete workspace"
+        title={t("detail.delete.title", { name: w.name })}
+        description={t("detail.delete.description")}
+        confirmLabel={t("detail.delete.button")}
         danger
         ready={confirmName === w.name}
         onConfirm={async (code) => {
@@ -219,11 +222,11 @@ function WorkspaceView({ w }: { w: AdminWorkspace }) {
           qc.removeQueries({ queryKey: qk.workspace(w.id) });
           void qc.invalidateQueries({ queryKey: qk.workspaces });
           void qc.invalidateQueries({ queryKey: qk.summary });
-          toast.success(`${w.name} was deleted`);
+          toast.success(t("detail.toast.deleted", { name: w.name }));
           void navigate({ to: "/workspaces" });
         }}
       >
-        <Field label={<>Type <span className="mono font-medium">{w.name}</span> to confirm</>}>
+        <Field label={<Trans t={t} i18nKey="common:ui.typeToConfirm" values={{ text: w.name }} components={{ v: <span className="mono font-medium" /> }} />}>
           {(p) => <TextInput {...p} autoFocus autoComplete="off" spellCheck={false} value={confirmName} onChange={(e) => setConfirmName(e.target.value)} />}
         </Field>
       </StepUpDialog>
@@ -235,19 +238,20 @@ function WorkspaceView({ w }: { w: AdminWorkspace }) {
 }
 
 function Members({ w }: { w: AdminWorkspace }) {
+  const { t } = useTranslation(["workspaces", "admins", "audit", "common", "shell", "users"]);
   return (
     <Section
-      title="Members"
+      title={t("detail.members.title")}
       count={number(w.members_list.length)}
       flush
-      actions={w.pending_invitations ? <span className="text-[11.5px] text-fg-3">{number(w.pending_invitations)} pending invitations</span> : undefined}
+      actions={w.pending_invitations ? <span className="text-[11.5px] text-fg-3">{t("detail.members.pending", { count: w.pending_invitations, n: number(w.pending_invitations) })}</span> : undefined}
     >
       {w.members_list.length ? (
         <Table>
           <THead>
-            <TH>Member</TH>
-            <TH>Role</TH>
-            <TH>Joined</TH>
+            <TH>{t("detail.members.member")}</TH>
+            <TH>{t("admins:col.role")}</TH>
+            <TH>{t("users:list.col.joined")}</TH>
           </THead>
           <tbody>
             {w.members_list.map((m) => (
@@ -262,7 +266,7 @@ function Members({ w }: { w: AdminWorkspace }) {
                   </Link>
                 </TD>
                 <TD>
-                  <Badge tone={m.role === "owner" ? "indigo" : m.role === "admin" ? "blue" : "neutral"}>{humanize(m.role)}</Badge>
+                  <Badge tone={m.role === "owner" ? "indigo" : m.role === "admin" ? "blue" : "neutral"}>{t(`common:memberRole.${m.role}`, { defaultValue: humanize(m.role) })}</Badge>
                 </TD>
                 <TD className="text-fg-3">
                   <Time iso={m.created_at} />
@@ -272,22 +276,23 @@ function Members({ w }: { w: AdminWorkspace }) {
           </tbody>
         </Table>
       ) : (
-        <EmptyState compact art="users" title="No members" description="Everyone has left this workspace." />
+        <EmptyState compact art="users" title={t("detail.members.empty")} description={t("detail.members.emptyHint")} />
       )}
     </Section>
   );
 }
 
 function Mailboxes({ w }: { w: AdminWorkspace }) {
+  const { t } = useTranslation(["workspaces", "admins", "audit", "common", "shell", "users"]);
   return (
-    <Section title="Mailboxes" count={number(w.mailboxes.length)} flush>
+    <Section title={t("detail.mailboxes.title")} count={number(w.mailboxes.length)} flush>
       {w.mailboxes.length ? (
         <Table>
           <THead>
-            <TH>Mailbox</TH>
-            <TH>Receives, sends</TH>
-            <TH>Status</TH>
-            <TH>Last sync</TH>
+            <TH>{t("detail.mailboxes.mailbox")}</TH>
+            <TH>{t("detail.mailboxes.kinds")}</TH>
+            <TH>{t("detail.mailboxes.status")}</TH>
+            <TH>{t("detail.mailboxes.lastSync")}</TH>
           </THead>
           <tbody>
             {w.mailboxes.map((m) => (
@@ -317,89 +322,91 @@ function Mailboxes({ w }: { w: AdminWorkspace }) {
           </tbody>
         </Table>
       ) : (
-        <EmptyState compact art="workspaces" title="No mailboxes" description="This workspace hasn't connected a mailbox." />
+        <EmptyState compact art="workspaces" title={t("detail.mailboxes.empty")} description={t("detail.mailboxes.emptyHint")} />
       )}
     </Section>
   );
 }
 
-const limit = (n: number) => (n === 0 ? "Unlimited" : number(n));
 
 function PlanLimits({ w, billing, onEdit }: { w: AdminWorkspace; billing: boolean; onEdit: () => void }) {
+  const { t } = useTranslation(["workspaces", "admins", "audit", "common", "shell", "users"]);
   const e = w.entitlements;
-  const over = (v: number | null) => (v === null ? <None>Plan default</None> : <Badge tone="amber">Override</Badge>);
+  const limit = (n: number) => (n === 0 ? t("detail.unlimited") : number(n));
+  const over = (v: number | null) => (v === null ? <None>{t("detail.limits.planDefault")}</None> : <Badge tone="amber">{t("detail.limits.override")}</Badge>);
   return (
     <Section
-      title="Plan and limits"
+      title={t("detail.limits.title")}
       actions={
         <ActionButton perm="workspaces.limits" size="xs" onClick={onEdit}>
-          Edit overrides
+          {t("detail.limits.edit")}
         </ActionButton>
       }
     >
       <KV
         items={[
-          ["Plan", <PlanPill plan={w.plan} />],
+          [t("list.col.plan"), <PlanPill plan={w.plan} />],
           [
-            "Mailboxes",
+            t("detail.limits.mailboxes"),
             <span className="flex items-center gap-2">
               <span className="mono tabular-nums">{limit(e.max_mailboxes)}</span>
               {over(w.limits.max_mailboxes)}
             </span>,
           ],
           [
-            "Members",
+            t("detail.limits.members"),
             <span className="flex items-center gap-2">
               <span className="mono tabular-nums">{limit(e.max_members)}</span>
               {over(w.limits.max_members)}
             </span>,
           ],
           [
-            "Monthly AI",
+            t("detail.limits.monthlyAi"),
             <span className="flex items-center gap-2">
-              <span className="mono tabular-nums">{e.unlimited_ai ? "Unlimited" : usd(e.monthly_ai_usd)}</span>
+              <span className="mono tabular-nums">{e.unlimited_ai ? t("detail.unlimited") : usd(e.monthly_ai_usd)}</span>
               {over(w.limits.monthly_ai_usd)}
             </span>,
           ],
           [
-            "Collab storage",
+            t("detail.limits.collabStorage"),
             <span className="flex items-center gap-2">
-              <span className="mono tabular-nums">{e.collab_storage_gb === 0 ? "Unlimited" : `${number(e.collab_storage_gb)} GB`}</span>
+              <span className="mono tabular-nums">{e.collab_storage_gb === 0 ? t("detail.unlimited") : t("detail.gb", { gb: number(e.collab_storage_gb) })}</span>
               {over(w.limits.collab_storage_gb)}
             </span>,
           ],
         ]}
       />
-      {!billing && <p className="mt-3 text-[11.5px] leading-4 text-fg-3">Billing is off on this instance, so every limit is unlimited. Overrides are kept but have no effect.</p>}
+      {!billing && <p className="mt-3 text-[11.5px] leading-4 text-fg-3">{t("detail.limits.noBilling")}</p>}
     </Section>
   );
 }
 
 function Subscription({ w, billing }: { w: AdminWorkspace; billing: boolean }) {
+  const { t } = useTranslation(["workspaces", "admins", "audit", "common", "shell", "users"]);
   const s = w.subscription;
   return (
-    <Section title="Subscription">
+    <Section title={t("list.col.subscription")}>
       {!s ? (
-        <p className="text-[12.5px] text-fg-3">{billing ? "No subscription." : "Billing is off on this instance."}</p>
+        <p className="text-[12.5px] text-fg-3">{billing ? t("detail.sub.none") : t("detail.sub.billingOff")}</p>
       ) : (
         <KV
           items={[
-            ["Plan", <PlanPill plan={s.plan} />],
-            ["Status", <SubscriptionPill status={s.status} />],
-            ["Billed", s.interval === "year" ? "Yearly" : "Monthly"],
-            ["Seats", <span className="mono tabular-nums">{number(s.billed_seats)} billed of {number(s.seats)}</span>],
+            [t("list.col.plan"), <PlanPill plan={s.plan} />],
+            [t("detail.mailboxes.status"), <SubscriptionPill status={s.status} />],
+            [t("detail.sub.billed"), s.interval === "year" ? t("detail.sub.yearly") : t("detail.sub.monthly")],
+            [t("detail.sub.seats"), <span className="mono tabular-nums">{t("detail.sub.seatsLine", { billed: number(s.billed_seats), total: number(s.seats) })}</span>],
             [
-              s.cancel_at_period_end ? "Ends" : "Renews",
+              s.cancel_at_period_end ? t("detail.sub.ends") : t("detail.sub.renews"),
               s.current_period_end ? (
                 <span>
-                  {shortDate(s.current_period_end)} {s.cancel_at_period_end && <Badge tone="amber">Canceling</Badge>}
+                  {shortDate(s.current_period_end)} {s.cancel_at_period_end && <Badge tone="amber">{t("detail.sub.canceling")}</Badge>}
                 </span>
               ) : (
                 <None />
               ),
             ],
             [
-              "Stripe customer",
+              t("detail.sub.stripeCustomer"),
               s.stripe_customer_id ? (
                 <ExtLink href={`https://dashboard.stripe.com/customers/${encodeURIComponent(s.stripe_customer_id)}`} className="mono text-[11.5px]">
                   {s.stripe_customer_id}
@@ -409,7 +416,7 @@ function Subscription({ w, billing }: { w: AdminWorkspace; billing: boolean }) {
               ),
             ],
             [
-              "Subscription",
+              t("list.col.subscription"),
               s.stripe_subscription_id ? (
                 <ExtLink href={`https://dashboard.stripe.com/subscriptions/${encodeURIComponent(s.stripe_subscription_id)}`} className="mono text-[11.5px]">
                   {s.stripe_subscription_id}
@@ -426,24 +433,25 @@ function Subscription({ w, billing }: { w: AdminWorkspace; billing: boolean }) {
 }
 
 function Ai({ w, onGrant }: { w: AdminWorkspace; onGrant: () => void }) {
+  const { t } = useTranslation(["workspaces", "admins", "audit", "common", "shell", "users"]);
   const a = w.ai;
   const m = a.month;
   return (
     <Section
-      title="AI usage"
+      title={t("detail.ai.title")}
       actions={
         <ActionButton perm="workspaces.limits" size="xs" onClick={onGrant}>
-          Grant AI usage
+          {t("detail.grant.title")}
         </ActionButton>
       }
       flush
     >
       <div className="grid grid-cols-2 gap-px border-b border-line-soft bg-line-soft sm:grid-cols-4">
         {[
-          ["Remaining", a.unlimited ? "Unlimited" : usd(a.remaining_usd)],
-          ["Monthly allowance", a.unlimited ? "Unlimited" : usd(a.monthly_usd)],
-          ["Allowance used", usd(a.included_used_usd)],
-          ["Purchased left", usd(a.purchased_usd)],
+          [t("detail.ai.remaining"), a.unlimited ? t("detail.unlimited") : usd(a.remaining_usd)],
+          [t("detail.ai.allowance"), a.unlimited ? t("detail.unlimited") : usd(a.monthly_usd)],
+          [t("detail.ai.allowanceUsed"), usd(a.included_used_usd)],
+          [t("detail.ai.purchasedLeft"), usd(a.purchased_usd)],
         ].map(([k, v]) => (
           <div key={k} className="bg-surface px-4 py-3">
             <div className="label-caps">{k}</div>
@@ -452,15 +460,15 @@ function Ai({ w, onGrant }: { w: AdminWorkspace; onGrant: () => void }) {
         ))}
       </div>
       <div className="flex items-center gap-2 px-4 pt-3 text-[11.5px] text-fg-3">
-        This period, {shortDate(a.period_start)} to {shortDate(a.period_end)}
+        {t("detail.ai.period", { start: shortDate(a.period_start), end: shortDate(a.period_end) })}
       </div>
       {m.by_feature.length ? (
         <Table>
           <THead>
-            <TH>Feature</TH>
-            <TH align="right">Calls</TH>
-            <TH align="right">Charged</TH>
-            <TH align="right">Provider cost</TH>
+            <TH>{t("detail.ai.feature")}</TH>
+            <TH align="right">{t("detail.ai.calls")}</TH>
+            <TH align="right">{t("detail.ai.charged")}</TH>
+            <TH align="right">{t("detail.ai.providerCost")}</TH>
           </THead>
           <tbody>
             {m.by_feature.map((f) => (
@@ -478,7 +486,7 @@ function Ai({ w, onGrant }: { w: AdminWorkspace; onGrant: () => void }) {
               </TR>
             ))}
             <TR className="bg-sunken font-medium">
-              <TD>Total</TD>
+              <TD>{t("detail.ai.total")}</TD>
               <TD align="right" mono>
                 {number(m.calls)}
               </TD>
@@ -492,39 +500,43 @@ function Ai({ w, onGrant }: { w: AdminWorkspace; onGrant: () => void }) {
           </tbody>
         </Table>
       ) : (
-        <p className="px-4 pb-4 pt-2 text-[12.5px] text-fg-3">No AI calls this period.</p>
+        <p className="px-4 pb-4 pt-2 text-[12.5px] text-fg-3">{t("detail.ai.none")}</p>
       )}
     </Section>
   );
 }
 
-function actorOf(a: AuditLog) {
-  if (a.data?.actor === "instance_admin") return <Badge tone="indigo">Instance admin</Badge>;
+function Actor({ a }: { a: AuditLog }) {
+  const { t } = useTranslation(["workspaces", "admins", "audit", "common", "shell", "users"]);
+  if (a.data?.actor === "instance_admin") return <Badge tone="indigo">{t("detail.audit.instanceAdmin")}</Badge>;
   if (a.actor.type === "user" && a.actor.user)
     return (
       <Link to="/users/$id" params={{ id: a.actor.user.id }} className="truncate hover:underline">
         {a.actor.user.name || a.actor.user.email}
       </Link>
     );
-  if (a.actor.type === "api_key") return <span className="text-fg-2">API key</span>;
-  return <span className="text-fg-2">System</span>;
+  if (a.actor.type === "api_key") return <span className="text-fg-2">{t("detail.audit.apiKey")}</span>;
+  return <span className="text-fg-2">{t("detail.audit.system")}</span>;
 }
 
 function RecentAudit({ items }: { items: AuditLog[] }) {
+  const { t } = useTranslation(["workspaces", "admins", "audit", "common", "shell", "users"]);
   return (
-    <Section title="Workspace audit log" count={items.length ? `last ${items.length}` : undefined} flush>
+    <Section title={t("detail.audit.title")} count={items.length ? t("detail.audit.last", { count: items.length }) : undefined} flush>
       {items.length ? (
         <Table>
           <THead>
-            <TH>Who</TH>
-            <TH>Action</TH>
-            <TH>Details</TH>
-            <TH>When</TH>
+            <TH>{t("detail.audit.who")}</TH>
+            <TH>{t("audit:col.action")}</TH>
+            <TH>{t("audit:col.details")}</TH>
+            <TH>{t("audit:col.when")}</TH>
           </THead>
           <tbody>
             {items.map((a) => (
               <TR key={a.id}>
-                <TD className="max-w-[180px]">{actorOf(a)}</TD>
+                <TD className="max-w-[180px]">
+                  <Actor a={a} />
+                </TD>
                 <TD>
                   <span className="mono text-[11.5px]">{a.action}</span>
                 </TD>
@@ -539,21 +551,23 @@ function RecentAudit({ items }: { items: AuditLog[] }) {
           </tbody>
         </Table>
       ) : (
-        <EmptyState compact art="audit" title="Nothing logged yet" description="Changes to settings, members and keys appear here." />
+        <EmptyState compact art="audit" title={t("audit:empty.title")} description={t("detail.audit.emptyHint")} />
       )}
     </Section>
   );
 }
 
 type LimitKey = keyof AdminLimits;
-const LIMIT_FIELDS: { key: LimitKey; label: string; hint: string; decimal?: boolean; suffix?: string; max: number }[] = [
-  { key: "max_mailboxes", label: "Mailboxes", hint: "0 is unlimited.", max: 100_000 },
-  { key: "max_members", label: "Members", hint: "0 is unlimited.", max: 100_000 },
-  { key: "monthly_ai_usd", label: "Monthly AI allowance", hint: "US dollars of AI usage included each month.", decimal: true, suffix: "USD", max: 100_000 },
-  { key: "collab_storage_gb", label: "Collab storage", hint: "Mail Collab stores for the whole workspace. 0 is unlimited.", suffix: "GB", max: 1_000_000 },
+/** Each field's label and hint are `limitsDialog.<key>.label` and `.hint` in the workspaces catalog. */
+const LIMIT_FIELDS: { key: LimitKey; decimal?: boolean; suffix?: string; max: number }[] = [
+  { key: "max_mailboxes", max: 100_000 },
+  { key: "max_members", max: 100_000 },
+  { key: "monthly_ai_usd", decimal: true, suffix: "USD", max: 100_000 },
+  { key: "collab_storage_gb", suffix: "GB", max: 1_000_000 },
 ];
 
 function LimitsDialog({ w, billing, onClose, onSaved }: { w: AdminWorkspace; billing: boolean; onClose: () => void; onSaved: (w: AdminWorkspace) => void }) {
+  const { t } = useTranslation(["workspaces", "admins", "audit", "common", "shell", "users"]);
   const [draft, setDraft] = useState<AdminLimits>({ ...w.limits });
   const [valid, setValid] = useState<Record<LimitKey, boolean>>({ max_mailboxes: true, max_members: true, monthly_ai_usd: true, collab_storage_gb: true });
   const [busy, setBusy] = useState(false);
@@ -567,7 +581,7 @@ function LimitsDialog({ w, billing, onClose, onSaved }: { w: AdminWorkspace; bil
     setError(null);
     try {
       onSaved(await api.workspaces.setLimits(w.id, draft));
-      toast.success("Limits saved");
+      toast.success(t("limitsDialog.saved"));
       onClose();
     } catch (e) {
       setBusy(false);
@@ -579,33 +593,34 @@ function LimitsDialog({ w, billing, onClose, onSaved }: { w: AdminWorkspace; bil
     <Dialog
       open
       onOpenChange={(o) => !o && !busy && onClose()}
-      title="Limit overrides"
-      description={`Overrides replace the plan's limits for ${w.name} on every plan, and survive plan changes.`}
+      title={t("limitsDialog.title")}
+      description={t("limitsDialog.description", { name: w.name })}
       footer={
         <>
           <Button variant="ghost" disabled={busy} onClick={onClose}>
-            Cancel
+            {t("common:actions.cancel")}
           </Button>
           <Button variant="primary" loading={busy} disabled={!changed || !ok} onClick={() => void save()}>
-            Save overrides
+            {t("limitsDialog.save")}
           </Button>
         </>
       }
     >
       <div className="flex flex-col gap-4">
-        {!billing && <Notice kind="info">Billing is off on this instance, so every limit is already unlimited. Overrides are kept but have no effect.</Notice>}
+        {!billing && <Notice kind="info">{t("limitsDialog.noBilling")}</Notice>}
         {LIMIT_FIELDS.map((f) => {
           const v = draft[f.key];
           const useDefault = v === null;
+          const label = t(`limitsDialog.${f.key}.label`);
           return (
             <div key={f.key} className="flex flex-col gap-2 rounded-lg border border-line-soft p-3">
               <div className="flex items-center justify-between gap-3">
-                <span className="text-[12.5px] font-medium">{f.label}</span>
+                <span className="text-[12.5px] font-medium">{label}</span>
                 <label className="flex items-center gap-2 text-[12px] text-fg-2">
-                  Use the plan's
+                  {t("limitsDialog.usePlan")}
                   <Switch
                     checked={useDefault}
-                    aria-label={`Use the plan's ${f.label.toLowerCase()}`}
+                    aria-label={t("limitsDialog.usePlanFor", { label })}
                     onCheckedChange={(on) => {
                       setDraft((d) => ({ ...d, [f.key]: on ? null : (w.limits[f.key] ?? planValue(f.key)) }));
                       setValid((s) => ({ ...s, [f.key]: true }));
@@ -614,13 +629,13 @@ function LimitsDialog({ w, billing, onClose, onSaved }: { w: AdminWorkspace; bil
                 </label>
               </div>
               {useDefault ? (
-                <p className="text-[11.5px] text-fg-3">The plan's limit applies.</p>
+                <p className="text-[11.5px] text-fg-3">{t("limitsDialog.planApplies")}</p>
               ) : (
-                <Field hint={f.hint}>
+                <Field hint={t(`limitsDialog.${f.key}.hint`)}>
                   {(p) => (
                     <NumberInput
                       {...p}
-                      aria-label={f.label}
+                      aria-label={label}
                       value={v as number}
                       min={0}
                       max={f.max}
@@ -643,6 +658,7 @@ function LimitsDialog({ w, billing, onClose, onSaved }: { w: AdminWorkspace; bil
 }
 
 function GrantDialog({ w, onClose, onSaved }: { w: AdminWorkspace; onClose: () => void; onSaved: (w: AdminWorkspace) => void }) {
+  const { t } = useTranslation(["workspaces", "admins", "audit", "common", "shell", "users"]);
   const [amount, setAmount] = useState(10);
   const [amountOk, setAmountOk] = useState(true);
   const [note, setNote] = useState("");
@@ -657,7 +673,7 @@ function GrantDialog({ w, onClose, onSaved }: { w: AdminWorkspace; onClose: () =
     setError(null);
     try {
       onSaved(await api.workspaces.grantAi(w.id, Math.round(amount * 100) / 100, n));
-      toast.success(`Granted ${usd(amount)} of AI usage`);
+      toast.success(t("detail.grant.done", { amount: usd(amount) }));
       onClose();
     } catch (e) {
       setBusy(false);
@@ -669,16 +685,16 @@ function GrantDialog({ w, onClose, onSaved }: { w: AdminWorkspace; onClose: () =
     <Dialog
       open
       onOpenChange={(o) => !o && !busy && onClose()}
-      title="Grant AI usage"
-      description={`Adds purchased AI usage to ${w.name}. It is spent after the monthly allowance, like a top-up, and never expires.`}
+      title={t("detail.grant.title")}
+      description={t("detail.grant.description", { name: w.name })}
       size="sm"
       footer={
         <>
           <Button variant="ghost" disabled={busy} onClick={onClose}>
-            Cancel
+            {t("common:actions.cancel")}
           </Button>
           <Button variant="primary" loading={busy} disabled={!ok} onClick={() => void save()}>
-            Grant {amountOk ? usd(amount) : ""}
+            {amountOk ? t("detail.grant.confirmAmount", { amount: usd(amount) }) : t("detail.grant.confirm")}
           </Button>
         </>
       }
@@ -690,11 +706,11 @@ function GrantDialog({ w, onClose, onSaved }: { w: AdminWorkspace; onClose: () =
           void save();
         }}
       >
-        <Field label="Amount" hint="From $0.01 to $10,000.">
+        <Field label={t("detail.grant.amount")} hint={t("detail.grant.amountHint", { min: usd(0.01), max: usd(10_000) })}>
           {(p) => <NumberInput {...p} value={amount} onChange={setAmount} onValidChange={setAmountOk} min={0.01} max={10_000} decimal suffix="USD" />}
         </Field>
-        <Field label="Note" hint={`${note.length} / 200. Kept in the audit log.`} error={note.length > 200 ? "Keep it under 200 characters." : undefined}>
-          {(p) => <TextInput {...p} autoFocus value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why, and any ticket it relates to" />}
+        <Field label={t("collab.note")} hint={t("detail.grant.noteHint", { length: note.length, max: 200 })} error={note.length > 200 ? t("common:reason.tooLong", { max: 200 }) : undefined}>
+          {(p) => <TextInput {...p} autoFocus value={note} onChange={(e) => setNote(e.target.value)} placeholder={t("detail.grant.notePlaceholder")} />}
         </Field>
         {error && <Notice>{error}</Notice>}
         <button type="submit" hidden aria-hidden tabIndex={-1} />

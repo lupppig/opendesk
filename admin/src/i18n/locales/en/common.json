@@ -1,0 +1,136 @@
+{
+  "adminPill": "Admin",
+  "thisInstance": "This instance",
+  "loading": "Loading",
+  "none": "None",
+  "noData": "No data",
+  "noReason": "No reason was given.",
+  "saved": "Saved",
+  "id": "id",
+  "action": "Action",
+  "copyNamed": "Copy {{name}}",
+  "more_one": "+{{count}} more",
+  "more_other": "+{{count}} more",
+  "clearFilters": "Clear search and filters",
+  "actions": {
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "save": "Save",
+    "restore": "Restore",
+    "tryAgain": "Try again",
+    "loadMore": "Load more",
+    "copy": "Copy",
+    "copied": "Copied",
+    "undo": "Undo",
+    "close": "Close"
+  },
+  "errors": {
+    "notFound": "Not found",
+    "notFoundHint": "It may have been deleted, or the link is wrong.",
+    "didntLoad": "This didn't load",
+    "requestId": "Request id",
+    "copyRequestId": "Copy request id",
+    "generic": "Something went wrong",
+    "network": "Can't reach the API. Check your connection.",
+    "rateLimited": "Too many attempts. Wait a moment and try again.",
+    "forbidden": "Your admin role doesn't allow this."
+  },
+  "time": {
+    "never": "Never",
+    "justNow": "just now",
+    "inAMoment": "in a moment",
+    "short": {
+      "s": "{{n}}s",
+      "m": "{{n}}m",
+      "h": "{{n}}h",
+      "d": "{{n}}d"
+    }
+  },
+  "table": {
+    "shown_one": "{{count}} shown",
+    "shown_other": "{{count}} shown",
+    "end": "End of the list"
+  },
+  "chart": {
+    "total_one": "<n>{{total}}</n> in {{count}} day",
+    "total_other": "<n>{{total}}</n> in {{count}} days",
+    "summary_one": "{{label}}: {{total}} over {{count}} day",
+    "summary_other": "{{label}}: {{total}} over {{count}} days"
+  },
+  "reason": {
+    "label": "Reason",
+    "tooLong": "Keep it under {{max}} characters.",
+    "placeholder": "What happened, and any ticket or report it relates to"
+  },
+  "ui": {
+    "remove": "Remove {{name}}",
+    "areYouSure": "Are you sure?",
+    "typeToConfirm": "Type <v>{{text}}</v> to confirm",
+    "confirmText": "Confirmation text",
+    "dialog": "Dialog",
+    "hidePassword": "Hide password",
+    "showPassword": "Show password",
+    "search": "Search",
+    "clearSearch": "Clear search",
+    "optional": "Optional",
+    "select": "Select"
+  },
+  "plan": {
+    "free": "Free",
+    "pro": "Pro",
+    "collab": "Collab",
+    "self_hosted": "Self-hosted"
+  },
+  "subscription": {
+    "active": "Active",
+    "trialing": "Trialing",
+    "past_due": "Past due",
+    "unpaid": "Unpaid",
+    "canceled": "Canceled",
+    "incomplete": "Incomplete",
+    "incomplete_expired": "Incomplete expired",
+    "paused": "Paused"
+  },
+  "suspended": "Suspended",
+  "test": "Test",
+  "mailbox": {
+    "active": "Active",
+    "error": "Error",
+    "disabled": "Disabled"
+  },
+  "check": {
+    "ok": "OK",
+    "warn": "Warning",
+    "fail": "Failing"
+  },
+  "jobState": {
+    "available": "Available",
+    "running": "Running",
+    "retryable": "Retryable",
+    "scheduled": "Scheduled",
+    "pending": "Pending",
+    "completed": "Completed",
+    "cancelled": "Cancelled",
+    "discarded": "Discarded"
+  },
+  "memberRole": {
+    "owner": "Owner",
+    "admin": "Admin",
+    "agent": "Agent",
+    "viewer": "Viewer"
+  },
+  "role": {
+    "viewer": "Viewer",
+    "support": "Support",
+    "super": "Super"
+  },
+  "roleHint": {
+    "viewer": "Reads every page, changes nothing",
+    "support": "Sessions, suspensions, limits, AI grants, test workspaces and jobs",
+    "super": "Everything, including 2FA, deletion and admins"
+  },
+  "denied": {
+    "super": "Needs the Super admin role",
+    "role": "Needs the {{role}} or Super admin role"
+  }
+}

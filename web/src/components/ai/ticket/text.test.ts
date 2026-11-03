@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Message } from "@/lib/api/types";
-import { baseLanguage, combineDraft, isAiMessage, isForeign, languageName, messageLanguage, streamTextToHtml, ticketLanguage } from "./text";
+import { baseLanguage, combineDraft, isAiMessage, isForeign, isLanguage, languageName, messageLanguage, streamTextToHtml, ticketLanguage, TRANSLATE_LANGUAGES, translateTargets } from "./text";
 
 describe("streamTextToHtml", () => {
   it("splits paragraphs and keeps line breaks", () => {
@@ -46,5 +46,28 @@ describe("combineDraft", () => {
     expect(combineDraft("<p>a</p>", "<p>b</p>", "replace")).toBe("<p>b</p>");
     expect(combineDraft("<p>a</p>", "<p>b</p>", "below")).toBe("<p>a</p><p>b</p>");
     expect(combineDraft("", "<p>b</p>", "below")).toBe("<p>b</p>");
+  });
+});
+
+describe("translateTargets", () => {
+  it("knows a real language from an undetermined one", () => {
+    expect(isLanguage("pt-BR")).toBe(true);
+    expect(isLanguage("und")).toBe(false);
+    expect(isLanguage("zxx")).toBe(false);
+    expect(isLanguage(null)).toBe(false);
+  });
+
+  it("puts the customer's language first, then the others by name in the reader's language", () => {
+    const fr = translateTargets("nl-BE", "fr");
+    expect(fr[0]).toBe("nl-BE");
+    expect(fr).not.toContain("nl");
+    expect(fr).toHaveLength(TRANSLATE_LANGUAGES.length);
+    expect(fr.indexOf("de")).toBeLessThan(fr.indexOf("en")); // allemand < anglais
+    expect(translateTargets(null, "en").indexOf("de")).toBeGreaterThan(translateTargets(null, "en").indexOf("en")); // English < German
+  });
+
+  it("offers every language when the customer's is unknown", () => {
+    expect(translateTargets("und", "fr")).toHaveLength(TRANSLATE_LANGUAGES.length);
+    expect(translateTargets(null, "fr")).toContain("fr");
   });
 });

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -84,6 +85,7 @@ func (s *service) registerQueueRoutes(api huma.API) {
 			Body *struct {
 				AccountID  *uuid.UUID `json:"account_id,omitempty" doc:"Only this account's conversations"`
 				TTLSeconds int        `json:"ttl_seconds,omitempty" minimum:"0" maximum:"900" doc:"How long the claim holds (60 to 900; default 300)"`
+				Categories []string   `json:"categories,omitempty" maxItems:"8" doc:"Only conversations in these categories (keys; primary also takes accounts not split), once sorted"`
 			}
 		}) (*aiClaimOut, error) {
 			p, err := s.requireQueueKey(ctx)
@@ -93,20 +95,23 @@ func (s *service) registerQueueRoutes(api huma.API) {
 			if !s.d.Limiter.Allow("collab-ai-claim:"+p.APIKeyID.String(), claimsPerMinute, time.Minute) {
 				return nil, httpx.RateLimited()
 			}
+			f := queueFilter{}
 			ttl := claimDefault
-			var account *uuid.UUID
 			if in.Body != nil {
 				if in.Body.TTLSeconds != 0 {
 					ttl = min(max(time.Duration(in.Body.TTLSeconds)*time.Second, claimMin), claimMax)
 				}
-				account = in.Body.AccountID
+				f.account = in.Body.AccountID
+				if f.categories, err = queueCategories(in.Body.Categories); err != nil {
+					return nil, err
+				}
 			}
-			if account != nil {
-				if _, err := visibleAccount(ctx, s.d.DB.Pool, p, *account); err != nil {
+			if f.account != nil {
+				if _, err := visibleAccount(ctx, s.d.DB.Pool, p, *f.account); err != nil {
 					return nil, notFound(err, "Account")
 				}
 			}
-			claim, err := s.claimNext(ctx, p, account, ttl)
+			claim, err := s.claimNext(ctx, p, f, ttl)
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
@@ -187,9 +192,9 @@ func (s *service) requireQueueKey(ctx context.Context) (*auth.Principal, error) 
 // replaces only an expired one (or a revoked key's), and a conversation whose fenced draft
 // is being saved is skipped, so a conversation has one holder at a time. A claim that
 // loses a race tries the next candidate, up to claimAttempts.
-func (s *service) claimNext(ctx context.Context, p *auth.Principal, account *uuid.UUID, ttl time.Duration) (*AIClaim, error) {
+func (s *service) claimNext(ctx context.Context, p *auth.Principal, f queueFilter, ttl time.Duration) (*AIClaim, error) {
 	for range claimAttempts {
-		c, raced, err := s.claimOnce(ctx, p, account, ttl)
+		c, raced, err := s.claimOnce(ctx, p, f, ttl)
 		if err != nil || !raced {
 			return c, err
 		}
@@ -197,16 +202,54 @@ func (s *service) claimNext(ctx context.Context, p *auth.Principal, account *uui
 	return nil, nil
 }
 
+// queueFilter narrows what a claim is offered: one account, and categories.
+type queueFilter struct {
+	account    *uuid.UUID
+	categories []string
+}
+
+// queueCategories checks a claim's categories: keys, at most maxCategories, without
+// repeats. None means every category.
+func queueCategories(in []string) ([]string, error) {
+	if len(in) > maxCategories {
+		return nil, httpx.Validation("At most 8 categories.")
+	}
+	var out []string
+	for _, c := range in {
+		c = strings.TrimSpace(c)
+		if !categoryKeyRe.MatchString(c) {
+			return nil, httpx.Validation("A category is a category key, such as primary.")
+		}
+		if !slices.Contains(out, c) {
+			out = append(out, c)
+		}
+	}
+	return out, nil
+}
+
+// queueCategorySQL is the predicate of a conversation (alias t) in one of the categories
+// of SQL parameter k, read as the inbox tabs read it: a conversation whose key its account
+// no longer has, and one of an account not split, is primary. One waiting to be sorted
+// (category_pending) is held back, so it is not offered as primary before it is filed.
+func queueCategorySQL(k string) string {
+	return `NOT t.category_pending AND EXISTS (SELECT 1 FROM collab_accounts qa WHERE qa.id = t.account_id
+		AND (CASE WHEN t.category = ANY(qa.category_keys) THEN t.category ELSE '` + categoryPrimary + `' END) = ANY(` + k + `::text[]))`
+}
+
 // claimOnce is one attempt of claimNext; raced reports a candidate taken meanwhile.
-func (s *service) claimOnce(ctx context.Context, p *auth.Principal, account *uuid.UUID, ttl time.Duration) (*AIClaim, bool, error) {
+func (s *service) claimOnce(ctx context.Context, p *auth.Principal, f queueFilter, ttl time.Duration) (*AIClaim, bool, error) {
 	var out *AIClaim
 	raced := false
 	err := s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
 		args := []any{p.WorkspaceID, p.UserID, p.APIKeyID}
 		where := queueEligibleSQL()
-		if account != nil {
-			args = append(args, *account)
-			where += ` AND t.account_id = $4`
+		if f.account != nil {
+			args = append(args, *f.account)
+			where += ` AND t.account_id = $` + strconv.Itoa(len(args))
+		}
+		if len(f.categories) > 0 {
+			args = append(args, f.categories)
+			where += ` AND ` + queueCategorySQL(`$`+strconv.Itoa(len(args)))
 		}
 		var id uuid.UUID
 		err := tx.QueryRow(ctx, `SELECT t.id FROM collab_threads t WHERE `+where+`

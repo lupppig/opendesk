@@ -1,0 +1,200 @@
+{
+  "title": "Test-Workspaces",
+  "days": "Tage",
+  "deleteLabel": "Workspace löschen",
+  "createdBy": "von {{email}}",
+  "actionsFor": "Aktionen für {{name}}",
+  "empty": {
+    "title": "Keine Test-Workspaces",
+    "hint": "Lege einen an, um opendesk mit realistischen Daten vorzuführen oder etwas auszuprobieren, ohne den Workspace eines Kunden anzufassen. Er wird an dem Tag gelöscht, den du wählst.",
+    "tipPassword": "Inhaber erhalten ein Testkonto mit einem ablaufenden Passwort",
+    "tipCounts": "Test-Workspaces zählen nicht in der Übersicht"
+  },
+  "col": {
+    "owner": "Inhaber",
+    "sample": "Beispieldaten",
+    "deleted": "Löschung"
+  },
+  "owner": {
+    "test": "Testkonto",
+    "own": "Eigenes Konto",
+    "none": "Kein Inhaber",
+    "new": "Neues Testkonto",
+    "existing": "Bestehendes Konto"
+  },
+  "plan": {
+    "recorded": "nur vermerkt",
+    "recordedHint": "Abrechnung aus: jeder Workspace ist unbegrenzt und der Tarif wird nur vermerkt",
+    "noBilling": "Die Abrechnung ist auf dieser Instanz aus: jeder Workspace ist unbegrenzt und der Tarif wird nur vermerkt."
+  },
+  "planHint": {
+    "free": "Die Limits des Free-Tarifs",
+    "pro": "Kein Limit für Postfächer oder Mitglieder, 20 $ KI im Monat und 50 $ KI-Guthaben",
+    "collab": "Kostenloses Collab, bis der Workspace gelöscht wird"
+  },
+  "menu": {
+    "open": "Workspace öffnen"
+  },
+  "expiry": {
+    "kept": "Bleibt",
+    "now": "Wird gerade gelöscht",
+    "soon": "Wird {{when}} gelöscht",
+    "on": "Wird am {{date}} gelöscht",
+    "keptHint": "Bleibt, bis jemand ihn löscht"
+  },
+  "password": {
+    "expired": "Passwort abgelaufen",
+    "soon": "Passwort läuft {{when}} ab",
+    "until": "Passwort bis {{date}}"
+  },
+  "delete": {
+    "1": "Nach einem Tag",
+    "7": "Nach einer Woche",
+    "14": "Nach 2 Wochen",
+    "30": "Nach 30 Tagen",
+    "90": "Nach 90 Tagen",
+    "365": "Nach einem Jahr",
+    "keep": "Bis zur Löschung behalten"
+  },
+  "size": {
+    "small": "Klein",
+    "realistic": "Realistisch",
+    "large": "Groß"
+  },
+  "sizeHint": {
+    "small": "Ein Monat eines kleinen Teams, schnell durchgesehen",
+    "realistic": "Drei Monate eines viel beschäftigten Teams",
+    "large": "Ein Jahr eines großen Teams, für lange Listen und Berichte"
+  },
+  "kind": {
+    "tickets": "Tickets",
+    "chat": "Live-Chat",
+    "kb": "Wissensdatenbank",
+    "team": "Teammitglieder",
+    "collab": "Collab-Mails",
+    "history": "Verlauf"
+  },
+  "adds": {
+    "tickets": "Etwa {{tickets}} offene, wartende und zurückgestellte Tickets von {{contacts}} Kunden bei {{companies}} Unternehmen, mit Labels und Zuweisungen",
+    "ticketsExtras": "Etwa {{tickets}} offene, wartende und zurückgestellte Tickets von {{contacts}} Kunden bei {{companies}} Unternehmen, mit Labels und Zuweisungen, gespeicherten Ansichten und Antworten",
+    "chat": "{{chats}} Widget-Chats, von denen einige gerade auf eine Antwort warten",
+    "kb": "{{articles}} Hilfecenter-Artikel in {{collections}} Sammlungen",
+    "team": "{{members}} Teammitglieder in {{teams}} Teams; sie haben kein Passwort und melden sich nie an",
+    "collab_one": "{{accounts}} Demo-Mail-Konto mit {{threads}} Verläufen, nie mit einem Anbieter verbunden",
+    "collab_other": "{{accounts}} Demo-Mail-Konten mit {{threads}} Verläufen, nie mit einem Anbieter verbunden",
+    "history": "Gelöste und geschlossene Tickets mit Bewertungen aus den letzten {{days}} Tagen, damit Berichte etwas zeigen"
+  },
+  "counts": {
+    "tickets_one": "{{n}} Ticket",
+    "tickets_other": "{{n}} Tickets",
+    "messages_one": "{{n}} Nachricht",
+    "messages_other": "{{n}} Nachrichten",
+    "chats_one": "{{n}} Chat",
+    "chats_other": "{{n}} Chats",
+    "contacts_one": "{{n}} Kontakt",
+    "contacts_other": "{{n}} Kontakte",
+    "companies_one": "{{n}} Unternehmen",
+    "companies_other": "{{n}} Unternehmen",
+    "articles_one": "{{n}} Artikel",
+    "articles_other": "{{n}} Artikel",
+    "members_one": "{{n}} Teammitglied",
+    "members_other": "{{n}} Teammitglieder",
+    "teams_one": "{{n}} Team",
+    "teams_other": "{{n}} Teams",
+    "mail_threads_one": "{{n}} Mail-Verlauf",
+    "mail_threads_other": "{{n}} Mail-Verläufe"
+  },
+  "batch": {
+    "small": "Kleiner Stapel mit {{list}}",
+    "realistic": "Realistischer Stapel mit {{list}}",
+    "large": "Großer Stapel mit {{list}}",
+    "nothing": "nichts"
+  },
+  "sample": {
+    "adding": {
+      "small": "Kleiner Stapel wird hinzugefügt",
+      "realistic": "Realistischer Stapel wird hinzugefügt",
+      "large": "Großer Stapel wird hinzugefügt",
+      "sample": "Beispieldaten werden hinzugefügt"
+    },
+    "lastFailed": "Der letzte Stapel ist fehlgeschlagen.",
+    "added": "Hinzugefügt",
+    "failed": "Fehlgeschlagen",
+    "batches_one": "{{n}} Stapel",
+    "batches_other": "{{n}} Stapel",
+    "add": "Beispieldaten hinzufügen",
+    "stillAdding": "Beispieldaten werden noch hinzugefügt",
+    "size": "Größe",
+    "kinds": "Arten",
+    "clearAll": "Alle abwählen",
+    "chooseAll": "Alle auswählen",
+    "whatAdded": "Was hinzugefügt wird",
+    "oneBatch": "{{size}}, in einem Stapel:",
+    "nothingSent": "Jede Adresse liegt auf der reservierten Domain .invalid, und nichts wird gesendet, gemailt oder berechnet.",
+    "chooseOne": "Wähle mindestens eine Art."
+  },
+  "result": {
+    "ready": "{{name}} ist bereit",
+    "newPassword": "Neues Passwort für {{name}}",
+    "signInWith": "Melde dich mit diesen Daten in der App an.",
+    "ownAccount": "Der Inhaber meldet sich mit seinem eigenen Konto und Passwort an.",
+    "sampleRunning": "Beispieldaten werden hinzugefügt und erscheinen nach und nach.",
+    "dismiss": "Schließen",
+    "copyNow": "Kopiere das Passwort jetzt: es wird nur einmal angezeigt. Geht es verloren, erneuere es auf dieser Seite.",
+    "copyNowUntil": "Kopiere das Passwort jetzt: es wird nur einmal angezeigt und funktioniert ab dem {{date}} nicht mehr. Geht es verloren, erneuere es auf dieser Seite.",
+    "signIn": "Anmeldung",
+    "passwordExpires": "Passwort läuft ab",
+    "deletedOn": "Wird am {{date}} gelöscht",
+    "openSignIn": "Anmeldeseite öffnen",
+    "done": "Fertig"
+  },
+  "create": {
+    "title": "Test-Workspace anlegen",
+    "description": "Ein Workspace für Vorführungen und Tests, angelegt wie jeder andere und als Test markiert. Er zählt nicht in der Übersicht und wird an dem Tag gelöscht, den du wählst.",
+    "emailError": "Die Adresse eines neuen Testkontos endet auf .invalid, das nie E-Mails empfängt.",
+    "testEmailRequired": "Ein neues Testkonto braucht eine Adresse auf .invalid. Um einer echten Person einen Test-Workspace zu geben, wähle ihr bestehendes Konto.",
+    "name": "Name des Workspaces",
+    "namePlaceholder": "Acme-Demo",
+    "emailHint": "Eine reservierte .invalid-Adresse: das Konto ist bestätigt und nichts wird je dorthin gesendet.",
+    "ownerName": "Name",
+    "ownerNamePlaceholder": "Alex Morgan",
+    "passwordLasts": "Passwort gilt",
+    "passwordHint": "Ein starkes Passwort wird erzeugt und einmal angezeigt. Es gilt 1 oder 2 Tage.",
+    "sampleHint": "Wird im Hintergrund hinzugefügt, sobald der Workspace existiert.",
+    "reasonHint": "{{length}} / {{max}}. Wird im Admin-Audit-Log festgehalten.",
+    "reasonPlaceholder": "Verkaufsdemo für Acme am Donnerstag"
+  },
+  "picker": {
+    "search": "Konten nach E-Mail, Name oder ID suchen",
+    "hint": "Die Person besitzt den neuen Workspace und meldet sich mit ihrem eigenen Passwort an; an ihrem Konto ändert sich nichts.",
+    "accounts": "Konten",
+    "noMatch": "Kein passendes Konto."
+  },
+  "add": {
+    "title": "Beispieldaten zu {{name}} hinzufügen",
+    "another": "Ein weiterer Stapel, zusätzlich zu dem, was da ist.",
+    "anotherWith": "Ein weiterer Stapel, zusätzlich zu dem, was da ist ({{counts}}).",
+    "background": "Wird im Hintergrund hinzugefügt; die Liste zeigt, wann es fertig ist.",
+    "onItsWay": "{{batch}} ist unterwegs",
+    "seeding": "Beispieldaten werden noch hinzugefügt. Versuche es erneut, wenn es fertig ist."
+  },
+  "change": {
+    "title": "Löschtermin ändern",
+    "titleRenew": "Verlängern oder Passwort erneuern",
+    "keepDay": "Den aktuellen Tag behalten ({{date}})",
+    "keepAsNow": "Bis zur Löschung behalten (wie jetzt)",
+    "fromToday": "{{choice}}, ab heute",
+    "deletedOn": "<b>{{name}}</b> wird am {{date}} gelöscht.",
+    "kept": "<b>{{name}}</b> bleibt, bis jemand ihn löscht.",
+    "notTestAccount": "Der Inhaber hat ein eigenes Konto; nur das Passwort eines Testkontos wird erneuert.",
+    "passwordReady": "Neues Passwort bereit",
+    "renew": "Passwort des Inhabers erneuern",
+    "renewHint": "Ein neues Passwort für <m>{{email}}</m>, einmal angezeigt. Das alte funktioniert nicht mehr und seine Sitzungen enden.",
+    "newPasswordLasts": "Neues Passwort gilt",
+    "noPassword": "Der Inhaber meldet sich mit seinem eigenen Konto an, also gibt es kein Passwort zu erneuern."
+  },
+  "deleteDialog": {
+    "description": "Alles in diesem Test-Workspace wird endgültig entfernt.",
+    "owner": "Das Testkonto <m>{{email}}</m> wird mit entfernt, außer es ist in einem anderen Workspace."
+  }
+}

@@ -1,5 +1,6 @@
 import { Check, Copy } from "lucide-react";
 import { useState } from "react";
+import { i18n } from "@/i18n";
 import { cn } from "@/lib/cn";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { springs } from "@/lib/motion";
@@ -32,10 +33,10 @@ export async function copyText(text: string) {
   }
 }
 
-export function CopyButton({ value, label = "Copy", className }: { value: string; label?: string; className?: string }) {
+export function CopyButton({ value, label = i18n.t("actions.copy"), className }: { value: string; label?: string; className?: string }) {
   const [done, setDone] = useState(false);
   return (
-    <Tooltip content={done ? "Copied" : label}>
+    <Tooltip content={done ? i18n.t("actions.copied") : label}>
       <button
         type="button"
         aria-label={label}

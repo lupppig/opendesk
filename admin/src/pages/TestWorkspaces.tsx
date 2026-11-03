@@ -9,6 +9,7 @@ import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient } from "@t
 import { Link, useNavigate } from "@tanstack/react-router";
 import { CalendarClock, Database, ExternalLink, FlaskConical, KeyRound, MoreHorizontal, Plus, Trash2, TriangleAlert, X } from "lucide-react";
 import { useState, type ReactNode } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { ActionButton, ActionMenuItem } from "@/components/ActionButton";
 import { ErrorState } from "@/components/ErrorState";
 import { Notice, PageBody, PageHeader } from "@/components/layout";
@@ -61,6 +62,7 @@ type Dialogs = { kind: "create" } | { kind: "add" | "change" | "delete"; w: Admi
 type Result = TestWorkspaceResult & { renewed?: boolean };
 
 export default function TestWorkspaces() {
+  const { t } = useTranslation(["testWorkspaces", "auth", "common", "workspaces"]);
   const qc = useQueryClient();
   const billing = useSession((s) => s.me?.instance.billing_enabled ?? false);
   const [dialog, setDialog] = useState<Dialogs>(null);
@@ -82,13 +84,13 @@ export default function TestWorkspaces() {
 
   const create = (
     <ActionButton perm="workspaces.test" variant="primary" icon={<Plus />} onClick={() => setDialog({ kind: "create" })}>
-      Create test workspace
+      {t("create.title")}
     </ActionButton>
   );
 
   return (
     <>
-      <PageHeader title="Test workspaces" subtitle={rows.length ? number(rows.length) : undefined} actions={create} />
+      <PageHeader title={t("title")} subtitle={rows.length ? number(rows.length) : undefined} actions={create} />
       <PageBody>
         {result && (
           <div className="border-b border-line-soft px-4 py-4 md:px-6">
@@ -103,21 +105,21 @@ export default function TestWorkspaces() {
           <EmptyState
             art="workspaces"
             ghost={<GhostList />}
-            title="No test workspaces"
-            description="Make one to demo opendesk with realistic data, or to try something without touching a customer's workspace. It is deleted on the day you choose."
+            title={t("empty.title")}
+            description={t("empty.hint")}
             action={create}
-            tips={[{ label: "Owners get a test account with a password that expires", icon: <KeyRound /> }, { label: "Test workspaces stay out of the overview's counts", icon: <FlaskConical /> }]}
+            tips={[{ label: t("empty.tipPassword"), icon: <KeyRound /> }, { label: t("empty.tipCounts"), icon: <FlaskConical /> }]}
           />
         ) : (
           <>
             <Table className={list.isPlaceholderData ? "opacity-60 transition-opacity" : undefined}>
               <THead>
-                <TH>Workspace</TH>
-                <TH>Owner</TH>
-                <TH>Plan</TH>
-                <TH>Sample data</TH>
-                <TH>Deleted</TH>
-                <TH>Created</TH>
+                <TH>{t("workspaces:list.col.workspace")}</TH>
+                <TH>{t("col.owner")}</TH>
+                <TH>{t("workspaces:list.col.plan")}</TH>
+                <TH>{t("col.sample")}</TH>
+                <TH>{t("col.deleted")}</TH>
+                <TH>{t("workspaces:list.col.created")}</TH>
                 <TH className="w-10" />
               </THead>
               <tbody>
@@ -138,7 +140,7 @@ export default function TestWorkspaces() {
           onCreated={(r) => {
             setResult(r);
             changed(r.workspace.workspace.id);
-            toast.success(`${r.workspace.workspace.name} is ready`);
+            toast.success(t("result.ready", { name: r.workspace.workspace.name }));
           }}
         />
       )}
@@ -175,6 +177,7 @@ export default function TestWorkspaces() {
 }
 
 function Row({ w, billing, open }: { w: AdminTestWorkspace; billing: boolean; open: (kind: "add" | "change" | "delete") => void }) {
+  const { t } = useTranslation(["testWorkspaces", "auth", "common", "workspaces"]);
   const navigate = useNavigate();
   const exp = expiryLabel(w.test_expires_at);
   const pw = w.owner?.test_account ? passwordLabel(w.owner.password_expires_at) : null;
@@ -204,21 +207,21 @@ function Row({ w, billing, open }: { w: AdminTestWorkspace; billing: boolean; op
               {w.owner.email}
             </Link>
             <span className="mt-0.5 flex items-center gap-1.5">
-              {w.owner.test_account ? <Badge tone="outline">Test account</Badge> : <span className="text-[11px] text-fg-3">Own account</span>}
+              {w.owner.test_account ? <Badge tone="outline">{t("owner.test")}</Badge> : <span className="text-[11px] text-fg-3">{t("owner.own")}</span>}
               {pw && <span className={cn("text-[11px]", pw.tone === "red" ? "text-danger-fg" : pw.tone === "amber" ? "text-tone-amber" : "text-fg-3")}>{pw.label}</span>}
             </span>
           </div>
         ) : (
-          <span className="text-fg-3">No owner</span>
+          <span className="text-fg-3">{t("owner.none")}</span>
         )}
       </TD>
       <TD>
         <span className="flex items-center gap-1.5">
           <PlanPill plan={w.plan} />
           {!billing && w.plan !== "free" && (
-            <Tooltip content="Billing is off: every workspace is unlimited and the plan is only recorded">
+            <Tooltip content={t("plan.recordedHint")}>
               <span tabIndex={0} className="text-[11px] text-fg-4">
-                recorded
+                {t("plan.recorded")}
               </span>
             </Tooltip>
           )}
@@ -228,7 +231,7 @@ function Row({ w, billing, open }: { w: AdminTestWorkspace; billing: boolean; op
         <SampleStatus s={w.sample_data} />
       </TD>
       <TD>
-        <Tooltip content={w.test_expires_at ? fullDate(w.test_expires_at) : "Kept until someone deletes it"}>
+        <Tooltip content={w.test_expires_at ? fullDate(w.test_expires_at) : t("expiry.keptHint")}>
           <span tabIndex={0} className="inline-flex outline-none">
             <Badge tone={exp.tone}>{exp.label}</Badge>
           </span>
@@ -236,26 +239,26 @@ function Row({ w, billing, open }: { w: AdminTestWorkspace; billing: boolean; op
       </TD>
       <TD className="text-fg-3">
         <Time iso={w.created_at} />
-        {w.created_by && <span className="block max-w-[180px] truncate text-[11px] text-fg-4">by {w.created_by.email}</span>}
+        {w.created_by && <span className="block max-w-[180px] truncate text-[11px] text-fg-4">{t("createdBy", { email: w.created_by.email })}</span>}
       </TD>
       <TD align="right">
         <Menu>
           <MenuTrigger asChild>
-            <Button variant="ghost" square size="sm" aria-label={`Actions for ${w.workspace.name}`} icon={<MoreHorizontal />} />
+            <Button variant="ghost" square size="sm" aria-label={t("actionsFor", { name: w.workspace.name })} icon={<MoreHorizontal />} />
           </MenuTrigger>
           <MenuContent align="end" className="w-[240px]">
             <MenuItem icon={<ExternalLink />} onSelect={() => void navigate({ to: "/workspaces/$id", params: { id: w.workspace.id } })}>
-              Open workspace
+              {t("menu.open")}
             </MenuItem>
-            <ActionMenuItem perm="workspaces.test" icon={<Database />} blocked={isRunning(w.sample_data) ? "Sample data is still being added" : null} onSelect={() => open("add")}>
-              Add sample data
+            <ActionMenuItem perm="workspaces.test" icon={<Database />} blocked={isRunning(w.sample_data) ? t("sample.stillAdding") : null} onSelect={() => open("add")}>
+              {t("sample.add")}
             </ActionMenuItem>
             <ActionMenuItem perm="workspaces.test" icon={<CalendarClock />} onSelect={() => open("change")}>
-              {w.owner?.test_account ? "Extend or renew password" : "Change when it is deleted"}
+              {w.owner?.test_account ? t("change.titleRenew") : t("change.title")}
             </ActionMenuItem>
             <MenuSeparator />
             <ActionMenuItem perm="workspaces.test" icon={<Trash2 />} danger onSelect={() => open("delete")}>
-              Delete workspace
+              {t("workspaces:detail.delete.button")}
             </ActionMenuItem>
           </MenuContent>
         </Menu>
@@ -265,7 +268,8 @@ function Row({ w, billing, open }: { w: AdminTestWorkspace; billing: boolean; op
 }
 
 function SampleStatus({ s }: { s: AdminSampleData }) {
-  if (s.status === "none") return <span className="text-[12px] text-fg-4">None</span>;
+  const { t } = useTranslation(["testWorkspaces", "auth", "common", "workspaces"]);
+  if (s.status === "none") return <span className="text-[12px] text-fg-4">{t("common:none")}</span>;
   if (s.status === "running")
     return (
       <span className="flex items-center gap-1.5 text-[12px] text-tone-violet">
@@ -277,12 +281,12 @@ function SampleStatus({ s }: { s: AdminSampleData }) {
   return (
     <div className="min-w-0">
       <span className="flex items-center gap-1.5">
-        {s.status === "failed" ? <Badge tone="red">Failed</Badge> : <Badge tone="green">Added</Badge>}
-        {s.batches > 1 && <span className="text-[11px] text-fg-4">{number(s.batches)} batches</span>}
+        {s.status === "failed" ? <Badge tone="red">{t("sample.failed")}</Badge> : <Badge tone="green">{t("sample.added")}</Badge>}
+        {s.batches > 1 && <span className="text-[11px] text-fg-4">{t("sample.batches", { count: s.batches, n: number(s.batches) })}</span>}
       </span>
       <Tooltip content={s.status === "failed" ? s.error : all}>
         <span tabIndex={0} className="mt-0.5 block max-w-[260px] truncate text-[11px] text-fg-3 outline-none">
-          {s.status === "failed" ? s.error || "The last batch failed." : sampleLine(s)}
+          {s.status === "failed" ? s.error || t("sample.lastFailed") : sampleLine(s)}
         </span>
       </Tooltip>
     </div>
@@ -291,6 +295,7 @@ function SampleStatus({ s }: { s: AdminSampleData }) {
 
 /** The owner's credentials, once: the password is never shown again. */
 function ResultBanner({ r, running, onDismiss }: { r: Result; running: boolean; onDismiss: () => void }) {
+  const { t } = useTranslation(["testWorkspaces", "auth", "common", "workspaces"]);
   const ws = r.workspace.workspace;
   return (
     <div role="status" className="animate-rise-in rounded-lg border border-line bg-surface shadow-xs motion-reduce:animate-none">
@@ -299,36 +304,35 @@ function ResultBanner({ r, running, onDismiss }: { r: Result; running: boolean; 
           <FlaskConical className="size-3.5" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-medium text-fg">{r.renewed ? `New password for ${ws.name}` : `${ws.name} is ready`}</p>
+          <p className="text-[13px] font-medium text-fg">{r.renewed ? t("result.newPassword", { name: ws.name }) : t("result.ready", { name: ws.name })}</p>
           <p className="mt-0.5 text-[12px] text-fg-3">
-            {r.owner.password ? "Sign in to the app with these details." : "The owner signs in with their own account and password."}
-            {running && " Sample data is being added and shows up as it lands."}
+            {r.owner.password ? t("result.signInWith") : t("result.ownAccount")}
+            {running && ` ${t("result.sampleRunning")}`}
           </p>
         </div>
-        <Button variant="ghost" square size="sm" aria-label="Dismiss" icon={<X />} onClick={onDismiss} />
+        <Button variant="ghost" square size="sm" aria-label={t("result.dismiss")} icon={<X />} onClick={onDismiss} />
       </div>
       <div className="flex flex-col gap-3 px-4 py-3">
         {r.owner.password && (
           <div className="flex items-start gap-2 rounded-md border border-tone-amber-line bg-tone-amber-soft px-3 py-2 text-[12.5px] text-fg">
             <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-tone-amber" aria-hidden />
             <span>
-              Copy the password now: it is shown only once
-              {r.owner.password_expires_at ? <> and stops working on {shortDate(r.owner.password_expires_at)}</> : null}. If it is lost, renew it from this page.
+              {r.owner.password_expires_at ? t("result.copyNowUntil", { date: shortDate(r.owner.password_expires_at) }) : t("result.copyNow")}
             </span>
           </div>
         )}
         <dl className="grid gap-x-4 gap-y-2.5 text-[12.5px] sm:grid-cols-[110px_minmax(0,1fr)] sm:items-center">
-          <dt className="text-fg-3">Sign in</dt>
+          <dt className="text-fg-3">{t("result.signIn")}</dt>
           <dd className="min-w-0">
             <CopyField value={r.sign_in_url} />
           </dd>
-          <dt className="text-fg-3">Email</dt>
+          <dt className="text-fg-3">{t("auth:signIn.email")}</dt>
           <dd className="min-w-0">
             <CopyField value={r.owner.email} />
           </dd>
           {r.owner.password && (
             <>
-              <dt className="text-fg-3">Password</dt>
+              <dt className="text-fg-3">{t("auth:signIn.password")}</dt>
               <dd className="min-w-0 ph-no-capture" data-ph-mask>
                 <CopyField value={r.owner.password} />
               </dd>
@@ -336,23 +340,23 @@ function ResultBanner({ r, running, onDismiss }: { r: Result; running: boolean; 
           )}
           {r.owner.password_expires_at && (
             <>
-              <dt className="text-fg-3">Password expires</dt>
+              <dt className="text-fg-3">{t("result.passwordExpires")}</dt>
               <dd className="text-fg">{fullDate(r.owner.password_expires_at)}</dd>
             </>
           )}
-          <dt className="text-fg-3">Workspace</dt>
+          <dt className="text-fg-3">{t("workspaces:list.col.workspace")}</dt>
           <dd className="text-fg">
-            {r.workspace.test_expires_at ? <>Deleted on {fullDate(r.workspace.test_expires_at)}</> : "Kept until someone deletes it"}
+            {r.workspace.test_expires_at ? t("result.deletedOn", { date: fullDate(r.workspace.test_expires_at) }) : t("expiry.keptHint")}
           </dd>
         </dl>
         <div className="flex items-center gap-2">
           <Button variant="secondary" asChild icon={<ExternalLink />}>
             <a href={r.sign_in_url} target="_blank" rel="noopener noreferrer">
-              Open sign-in page
+              {t("result.openSignIn")}
             </a>
           </Button>
           <Button variant="ghost" onClick={onDismiss}>
-            Done
+            {t("result.done")}
           </Button>
         </div>
       </div>
@@ -363,70 +367,71 @@ function ResultBanner({ r, running, onDismiss }: { r: Result; running: boolean; 
 // ─── Sample data fields ────────────────────────────────────────────────────
 
 function SampleFields({ size, setSize, kinds, setKinds }: { size: SampleSize; setSize: (s: SampleSize) => void; kinds: SampleKind[]; setKinds: (k: SampleKind[]) => void }) {
+  const { t } = useTranslation(["testWorkspaces", "auth", "common", "workspaces"]);
   const toggle = (k: SampleKind, on: boolean) => setKinds(orderKinds(on ? [...kinds, k] : kinds.filter((x) => x !== k)));
-  const chosen = KINDS.filter((k) => kinds.includes(k.value));
+  const chosen = KINDS.filter((k) => kinds.includes(k));
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
         <span className="text-[12.5px] font-medium text-fg" id="sample-size">
-          Size
+          {t("sample.size")}
         </span>
         <div role="radiogroup" aria-labelledby="sample-size" className="grid grid-cols-3 gap-1.5">
           {SIZES.map((s) => (
             <button
-              key={s.value}
+              key={s}
               type="button"
               role="radio"
-              aria-checked={size === s.value}
-              onClick={() => setSize(s.value)}
+              aria-checked={size === s}
+              onClick={() => setSize(s)}
               className={cn(
                 "flex flex-col items-start gap-0.5 rounded-md border px-2.5 py-2 text-left outline-none transition-[border-color,background-color,box-shadow] duration-150 focus-visible:shadow-[0_0_0_3px_var(--focus)]",
-                size === s.value ? "border-fg bg-sunken" : "border-line hover:border-line-strong",
+                size === s ? "border-fg bg-sunken" : "border-line hover:border-line-strong",
               )}
             >
-              <span className="text-[12.5px] font-medium text-fg">{s.label}</span>
-              <span className="text-[11px] leading-4 text-fg-3">{s.hint}</span>
+              <span className="text-[12.5px] font-medium text-fg">{t(`size.${s}`)}</span>
+              <span className="text-[11px] leading-4 text-fg-3">{t(`sizeHint.${s}`)}</span>
             </button>
           ))}
         </div>
       </div>
       <fieldset className="flex flex-col gap-1.5">
         <legend className="mb-1.5 flex w-full items-center text-[12.5px] font-medium text-fg">
-          Kinds
+          {t("sample.kinds")}
           <button
             type="button"
             className="ml-auto text-[11.5px] font-normal text-fg-3 underline decoration-line-strong underline-offset-2 hover:text-fg"
             onClick={() => setKinds(kinds.length === ALL_KINDS.length ? [] : ALL_KINDS)}
           >
-            {kinds.length === ALL_KINDS.length ? "Clear all" : "Choose all"}
+            {kinds.length === ALL_KINDS.length ? t("sample.clearAll") : t("sample.chooseAll")}
           </button>
         </legend>
         <div className="grid gap-1 sm:grid-cols-2">
           {KINDS.map((k) => (
-            <label key={k.value} className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-[12.5px] text-fg hover:bg-hover">
-              <Checkbox checked={kinds.includes(k.value)} onCheckedChange={(on) => toggle(k.value, on)} aria-label={k.label} />
-              {k.label}
+            <label key={k} className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-[12.5px] text-fg hover:bg-hover">
+              <Checkbox checked={kinds.includes(k)} onCheckedChange={(on) => toggle(k, on)} aria-label={t(`kind.${k}`)} />
+              {t(`kind.${k}`)}
             </label>
           ))}
         </div>
       </fieldset>
       <div className="rounded-md border border-line bg-sunken px-3 py-2.5">
-        <p className="label-caps">What will be added</p>
+        <p className="label-caps">{t("sample.whatAdded")}</p>
         {chosen.length ? (
           <ul className="mt-1.5 flex flex-col gap-1 text-[12px] leading-[18px] text-fg-2">
-            <li className="text-fg">{SIZES.find((s) => s.value === size)!.hint}, in one batch:</li>
+            <li className="text-fg">{t("sample.oneBatch", { size: t(`sizeHint.${size}`) })}</li>
             {chosen.map((k) => (
-              <li key={k.value} className="flex gap-2">
+              <li key={k} className="flex gap-2">
                 <span aria-hidden className="mt-[7px] size-1 shrink-0 rounded-full bg-fg-4" />
                 <span>
-                  <span className="font-medium text-fg">{k.label}.</span> {kindAdds(k.value, size)}.
+                  <span className="font-medium text-fg">{t(`kind.${k}`)}.</span> {kindAdds(k, size)}.
                 </span>
               </li>
             ))}
-            <li className="mt-1 text-[11.5px] text-fg-3">Every address is on the reserved .invalid domain and nothing is sent, emailed or charged.</li>
+            <li className="mt-1 text-[11.5px] text-fg-3">{t("sample.nothingSent")}</li>
           </ul>
         ) : (
-          <p className="mt-1 text-[12px] text-fg-3">Choose at least one kind.</p>
+          <p className="mt-1 text-[12px] text-fg-3">{t("sample.chooseOne")}</p>
         )}
       </div>
     </div>
@@ -436,6 +441,7 @@ function SampleFields({ size, setSize, kinds, setKinds }: { size: SampleSize; se
 // ─── Create ────────────────────────────────────────────────────────────────
 
 function CreateDialog({ billing, onClose, onCreated }: { billing: boolean; onClose: () => void; onCreated: (r: TestWorkspaceResult) => void }) {
+  const { t } = useTranslation(["testWorkspaces", "auth", "common", "workspaces"]);
   const [name, setName] = useState("");
   const [mode, setMode] = useState<"new" | "existing">("new");
   const [email, setEmail] = useState("");
@@ -451,7 +457,7 @@ function CreateDialog({ billing, onClose, onCreated }: { billing: boolean; onClo
   const [reason, setReason] = useState("");
 
   const ownerEmail = emailEdited ? email : name.trim() ? suggestEmail(name, seeded(name)) : "";
-  const emailError = mode === "new" && ownerEmail && !isTestEmail(ownerEmail) ? "A new test account's address ends in .invalid, which never receives mail." : undefined;
+  const emailError = mode === "new" && ownerEmail && !isTestEmail(ownerEmail) ? t("create.emailError") : undefined;
   const ready =
     !!name.trim() &&
     !!reason.trim() &&
@@ -466,15 +472,15 @@ function CreateDialog({ billing, onClose, onCreated }: { billing: boolean; onClo
       open
       onOpenChange={(o) => !o && onClose()}
       size="lg"
-      title="Create test workspace"
-      description="A workspace for demos and testing, made like any other and flagged as a test. It stays out of the overview's counts and is deleted on the day you choose."
-      confirmLabel="Create test workspace"
+      title={t("create.title")}
+      description={t("create.description")}
+      confirmLabel={t("create.title")}
       ready={ready}
       explain={(e) =>
         isApiError(e, "test_email_required")
-          ? "A new test account needs an address ending in .invalid. To give a real person a test workspace, choose their existing account."
+          ? t("create.testEmailRequired")
           : isApiError(e, "account_suspended")
-            ? "That account is suspended."
+            ? t("auth:loginError.suspended")
             : undefined
       }
       onConfirm={async (code) => {
@@ -491,19 +497,19 @@ function CreateDialog({ billing, onClose, onCreated }: { billing: boolean; onClo
         onCreated(r);
       }}
     >
-      <Field label="Workspace name">
-        {(p) => <TextInput {...p} autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Acme demo" maxLength={200} autoComplete="off" />}
+      <Field label={t("create.name")}>
+        {(p) => <TextInput {...p} autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={t("create.namePlaceholder")} maxLength={200} autoComplete="off" />}
       </Field>
 
       <div className="flex flex-col gap-2">
         <span className="text-[12.5px] font-medium text-fg" id="owner-mode">
-          Owner
+          {t("col.owner")}
         </span>
         <div role="radiogroup" aria-labelledby="owner-mode" className="inline-flex self-start rounded-md bg-sunken p-0.5">
           {(
             [
-              ["new", "New test account"],
-              ["existing", "Existing account"],
+              ["new", t("owner.new")],
+              ["existing", t("owner.existing")],
             ] as const
           ).map(([v, label]) => (
             <button
@@ -523,7 +529,7 @@ function CreateDialog({ billing, onClose, onCreated }: { billing: boolean; onClo
         </div>
         {mode === "new" ? (
           <div className="grid gap-3 rounded-md border border-line-soft p-3 sm:grid-cols-2">
-            <Field label="Email" className="sm:col-span-2" error={emailError} hint="A reserved .invalid address: the account is confirmed and nothing is ever sent to it.">
+            <Field label={t("auth:signIn.email")} className="sm:col-span-2" error={emailError} hint={t("create.emailHint")}>
               {(p) => (
                 <TextInput
                   {...p}
@@ -539,11 +545,11 @@ function CreateDialog({ billing, onClose, onCreated }: { billing: boolean; onClo
                 />
               )}
             </Field>
-            <Field label="Name" optional>
-              {(p) => <TextInput {...p} value={ownerName} onChange={(e) => setOwnerName(e.target.value)} placeholder="Alex Morgan" maxLength={200} autoComplete="off" />}
+            <Field label={t("create.ownerName")} optional>
+              {(p) => <TextInput {...p} value={ownerName} onChange={(e) => setOwnerName(e.target.value)} placeholder={t("create.ownerNamePlaceholder")} maxLength={200} autoComplete="off" />}
             </Field>
-            <Field label="Password lasts" hint="A strong password is generated and shown once. It works for 1 or 2 days.">
-              {(p) => <NumberInput id={p.id} aria-describedby={p["aria-describedby"]} value={passwordDays} onChange={setPasswordDays} min={1} max={2} suffix="days" />}
+            <Field label={t("create.passwordLasts")} hint={t("create.passwordHint")}>
+              {(p) => <NumberInput id={p.id} aria-describedby={p["aria-describedby"]} value={passwordDays} onChange={setPasswordDays} min={1} max={2} suffix={t("days")} />}
             </Field>
           </div>
         ) : (
@@ -551,27 +557,27 @@ function CreateDialog({ billing, onClose, onCreated }: { billing: boolean; onClo
         )}
       </div>
 
-      <Field label="Plan" hint={billing ? PLANS.find((p) => p.value === plan)!.hint : "Billing is off on this instance: every workspace is unlimited and the plan is only recorded."}>
-        {(p) => <Select id={p.id} aria-label="Plan" value={plan} onChange={setPlan} options={PLANS.map((x) => ({ value: x.value, label: x.label }))} />}
+      <Field label={t("workspaces:list.col.plan")} hint={billing ? t(`planHint.${plan}`) : t("plan.noBilling")}>
+        {(p) => <Select id={p.id} aria-label={t("workspaces:list.col.plan")} value={plan} onChange={setPlan} options={PLANS.map((x) => ({ value: x, label: t(`common:plan.${x}`) }))} />}
       </Field>
 
       <div className="flex flex-col gap-3 rounded-md border border-line-soft p-3">
         <label className="flex cursor-pointer items-center justify-between gap-3">
           <span>
-            <span className="block text-[12.5px] font-medium text-fg">Add sample data</span>
-            <span className="block text-[11.5px] text-fg-3">Added in the background once the workspace exists.</span>
+            <span className="block text-[12.5px] font-medium text-fg">{t("sample.add")}</span>
+            <span className="block text-[11.5px] text-fg-3">{t("create.sampleHint")}</span>
           </span>
-          <Switch checked={withSample} onCheckedChange={setWithSample} aria-label="Add sample data" />
+          <Switch checked={withSample} onCheckedChange={setWithSample} aria-label={t("sample.add")} />
         </label>
         {withSample && <SampleFields size={size} setSize={setSize} kinds={kinds} setKinds={setKinds} />}
       </div>
 
-      <Field label="Delete the workspace">
-        {(p) => <Select id={p.id} aria-label="Delete the workspace" value={deleteChoice} onChange={setDeleteChoice} options={DELETE_CHOICES} />}
+      <Field label={t("deleteLabel")}>
+        {(p) => <Select id={p.id} aria-label={t("deleteLabel")} value={deleteChoice} onChange={setDeleteChoice} options={DELETE_CHOICES.map((c) => ({ value: c, label: t(`delete.${c}`) }))} />}
       </Field>
 
-      <Field label="Reason" hint={`${reason.length} / 500. Kept in the admin audit log.`} error={reason.length > 500 ? "Keep it under 500 characters." : undefined}>
-        {(p) => <Textarea {...p} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Sales demo for Acme on Thursday" rows={2} />}
+      <Field label={t("common:reason.label")} hint={t("create.reasonHint", { length: reason.length, max: 500 })} error={reason.length > 500 ? t("common:reason.tooLong", { max: 500 }) : undefined}>
+        {(p) => <Textarea {...p} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={t("create.reasonPlaceholder")} rows={2} />}
       </Field>
     </StepUpDialog>
   );
@@ -588,9 +594,10 @@ function seeded(name: string) {
 }
 
 function UserPicker({ user, onChange }: { user: AdminUserRow | null; onChange: (u: AdminUserRow | null) => void }) {
+  const { t } = useTranslation(["testWorkspaces", "auth", "common", "workspaces"]);
   const [term, setTerm] = useState("");
-  const t = term.trim();
-  const found = useQuery({ queryKey: [...qk.users, "pick", t], queryFn: () => api.users.list({ q: t, limit: 6 }), enabled: t.length >= 2, placeholderData: keepPreviousData });
+  const q2 = term.trim();
+  const found = useQuery({ queryKey: [...qk.users, "pick", q2], queryFn: () => api.users.list({ q: q2, limit: 6 }), enabled: q2.length >= 2, placeholderData: keepPreviousData });
   if (user)
     return (
       <div className="flex items-center gap-2.5 rounded-md border border-line-soft px-3 py-2">
@@ -600,17 +607,17 @@ function UserPicker({ user, onChange }: { user: AdminUserRow | null; onChange: (
           <span className="mono block truncate text-[11.5px] text-fg-3">{user.email}</span>
         </span>
         <Button variant="ghost" size="xs" onClick={() => onChange(null)}>
-          Change
+          {t("workspaces:collab.change")}
         </Button>
       </div>
     );
-  const rows = t.length >= 2 ? (found.data?.data ?? []) : [];
+  const rows = q2.length >= 2 ? (found.data?.data ?? []) : [];
   return (
     <div className="flex flex-col gap-1.5 rounded-md border border-line-soft p-3">
-      <SearchInput value={term} onChange={setTerm} placeholder="Search accounts by email, name or id" inputSize="md" />
-      <p className="text-[11.5px] text-fg-3">They own the new workspace and sign in with their own password; nothing about their account changes.</p>
-      {t.length >= 2 && (
-        <ul className="flex flex-col" aria-label="Accounts">
+      <SearchInput value={term} onChange={setTerm} placeholder={t("picker.search")} inputSize="md" />
+      <p className="text-[11.5px] text-fg-3">{t("picker.hint")}</p>
+      {q2.length >= 2 && (
+        <ul className="flex flex-col" aria-label={t("picker.accounts")}>
           {rows.map((u) => (
             <li key={u.id}>
               <button
@@ -626,7 +633,7 @@ function UserPicker({ user, onChange }: { user: AdminUserRow | null; onChange: (
               </button>
             </li>
           ))}
-          {!found.isFetching && !rows.length && <li className="px-2 py-1.5 text-[12px] text-fg-3">No account matches.</li>}
+          {!found.isFetching && !rows.length && <li className="px-2 py-1.5 text-[12px] text-fg-3">{t("picker.noMatch")}</li>}
         </ul>
       )}
     </div>
@@ -636,6 +643,7 @@ function UserPicker({ user, onChange }: { user: AdminUserRow | null; onChange: (
 // ─── Add data, change, delete ──────────────────────────────────────────────
 
 function AddDataDialog({ w, onClose, onAdded }: { w: AdminTestWorkspace; onClose: () => void; onAdded: () => void }) {
+  const { t } = useTranslation(["testWorkspaces", "auth", "common", "workspaces"]);
   const last = w.sample_data;
   const [size, setSize] = useState<SampleSize>(last.size || "small");
   const [kinds, setKinds] = useState<SampleKind[]>(last.kinds.length ? last.kinds : ALL_KINDS);
@@ -648,27 +656,27 @@ function AddDataDialog({ w, onClose, onAdded }: { w: AdminTestWorkspace; onClose
     try {
       await api.testWorkspaces.addSample(w.workspace.id, { size, kinds });
       onAdded();
-      toast.success(`${batchLine(size, kinds)} is on its way`);
+      toast.success(t("add.onItsWay", { batch: batchLine(size, kinds) }));
       onClose();
     } catch (e) {
       setBusy(false);
-      setError(isApiError(e, "seeding") ? "Sample data is still being added. Try again when it finishes." : errorMessage(e));
+      setError(isApiError(e, "seeding") ? t("add.seeding") : errorMessage(e));
     }
   };
   return (
     <Dialog
       open
       onOpenChange={(o) => !o && !busy && onClose()}
-      title={`Add sample data to ${w.workspace.name}`}
-      description={last.batches ? `Another batch, on top of what is there${last.counts ? ` (${countsLine(last.counts, 3)})` : ""}.` : "Added in the background; the list shows when it is done."}
+      title={t("add.title", { name: w.workspace.name })}
+      description={last.batches ? (last.counts ? t("add.anotherWith", { counts: countsLine(last.counts, 3) }) : t("add.another")) : t("add.background")}
       size="md"
       footer={
         <>
           <Button variant="ghost" disabled={busy} onClick={onClose}>
-            Cancel
+            {t("common:actions.cancel")}
           </Button>
           <Button variant="primary" loading={busy} disabled={!kinds.length} onClick={() => void add()}>
-            Add sample data
+            {t("sample.add")}
           </Button>
         </>
       }
@@ -682,93 +690,96 @@ function AddDataDialog({ w, onClose, onAdded }: { w: AdminTestWorkspace; onClose
 }
 
 function ChangeDialog({ w, onClose, onChanged }: { w: AdminTestWorkspace; onClose: () => void; onChanged: (r: TestWorkspaceResult, renewed: boolean) => void }) {
+  const { t } = useTranslation(["testWorkspaces", "auth", "common", "workspaces"]);
   type Choice = DeleteChoice | "same";
   const [choice, setChoice] = useState<Choice>("same");
   const [renew, setRenew] = useState(false);
   const [days, setDays] = useState(1);
   const testAccount = !!w.owner?.test_account;
-  const current = w.test_expires_at ? `Keep the current day (${shortDate(w.test_expires_at)})` : "Keep it until deleted (as now)";
+  const current = w.test_expires_at ? t("change.keepDay", { date: shortDate(w.test_expires_at) }) : t("change.keepAsNow");
   const options: { value: Choice; label: string }[] = [
     { value: "same", label: current },
-    ...DELETE_CHOICES.map((c) => ({ value: c.value as Choice, label: c.value === "keep" ? c.label : `${c.label}, from today` })),
+    ...DELETE_CHOICES.map((c) => ({ value: c as Choice, label: c === "keep" ? t(`delete.${c}`) : t("change.fromToday", { choice: t(`delete.${c}`) }) })),
   ];
   const ready = choice !== "same" || (renew && days >= 1 && days <= 2);
   return (
     <StepUpDialog
       open
       onOpenChange={(o) => !o && onClose()}
-      title={testAccount ? "Extend or renew password" : "Change when it is deleted"}
+      title={testAccount ? t("change.titleRenew") : t("change.title")}
       description={
-        <>
-          <span className="font-medium text-fg">{w.workspace.name}</span>{" "}
-          {w.test_expires_at ? <>is deleted on {fullDate(w.test_expires_at)}.</> : "is kept until someone deletes it."}
-        </>
+        w.test_expires_at ? (
+          <Trans t={t} i18nKey="change.deletedOn" values={{ name: w.workspace.name, date: fullDate(w.test_expires_at) }} components={{ b: <span className="font-medium text-fg" /> }} />
+        ) : (
+          <Trans t={t} i18nKey="change.kept" values={{ name: w.workspace.name }} components={{ b: <span className="font-medium text-fg" /> }} />
+        )
       }
-      confirmLabel="Save"
+      confirmLabel={t("common:actions.save")}
       ready={ready}
-      explain={(e) => (isApiError(e, "not_test_account") ? "The owner has their own account; only a test account's password is renewed." : undefined)}
+      explain={(e) => (isApiError(e, "not_test_account") ? t("change.notTestAccount") : undefined)}
       onConfirm={async (code) => {
         const r = await api.testWorkspaces.change(w.workspace.id, {
           code,
           ...(choice !== "same" ? { delete_after_days: deleteAfterDays(choice) } : {}),
           ...(renew ? { password_days: days } : {}),
         });
-        toast.success(renew ? "New password ready" : "Saved");
+        toast.success(renew ? t("change.passwordReady") : t("common:saved"));
         onChanged(r, renew);
       }}
     >
-      <Field label="Delete the workspace">
-        {(p) => <Select id={p.id} aria-label="Delete the workspace" value={choice} onChange={setChoice} options={options} />}
+      <Field label={t("deleteLabel")}>
+        {(p) => <Select id={p.id} aria-label={t("deleteLabel")} value={choice} onChange={setChoice} options={options} />}
       </Field>
       {testAccount ? (
         <div className="flex flex-col gap-3 rounded-md border border-line-soft p-3">
           <label className="flex cursor-pointer items-center justify-between gap-3">
             <span>
-              <span className="block text-[12.5px] font-medium text-fg">Renew the owner's password</span>
+              <span className="block text-[12.5px] font-medium text-fg">{t("change.renew")}</span>
               <span className="block text-[11.5px] text-fg-3">
-                A new password for <span className="mono">{w.owner!.email}</span>, shown once. The old one stops working and their sessions end.
+                <Trans t={t} i18nKey="change.renewHint" values={{ email: w.owner!.email }} components={{ m: <span className="mono" /> }} />
               </span>
             </span>
-            <Switch checked={renew} onCheckedChange={setRenew} aria-label="Renew the owner's password" />
+            <Switch checked={renew} onCheckedChange={setRenew} aria-label={t("change.renew")} />
           </label>
           {renew && (
-            <Field label="New password lasts">
-              {(p) => <NumberInput id={p.id} value={days} onChange={setDays} min={1} max={2} suffix="days" />}
+            <Field label={t("change.newPasswordLasts")}>
+              {(p) => <NumberInput id={p.id} value={days} onChange={setDays} min={1} max={2} suffix={t("days")} />}
             </Field>
           )}
         </div>
       ) : (
-        <p className="text-[11.5px] text-fg-3">The owner signs in with their own account, so there is no password to renew.</p>
+        <p className="text-[11.5px] text-fg-3">{t("change.noPassword")}</p>
       )}
     </StepUpDialog>
   );
 }
 
 function DeleteDialog({ w, onClose, onDeleted }: { w: AdminTestWorkspace; onClose: () => void; onDeleted: () => void }) {
+  const { t } = useTranslation(["testWorkspaces", "auth", "common", "workspaces"]);
   const [typed, setTyped] = useState("");
   const name = w.workspace.name;
   const owner: ReactNode = w.owner?.test_account ? (
     <>
       {" "}
-      The test account <span className="mono text-fg">{w.owner.email}</span> goes with it unless it is in another workspace.
+      <Trans t={t} i18nKey="deleteDialog.owner" values={{ email: w.owner.email }} components={{ m: <span className="mono text-fg" /> }} />
     </>
   ) : null;
   return (
     <StepUpDialog
       open
       onOpenChange={(o) => !o && onClose()}
-      title={`Delete ${name}?`}
-      description={<>Everything in this test workspace is removed for good.{owner}</>}
-      confirmLabel="Delete workspace"
+      title={t("workspaces:detail.delete.title", { name })}
+      description={<>{t("deleteDialog.description")}{owner}</>}
+      confirmLabel={t("workspaces:detail.delete.button")}
       danger
       ready={typed === name}
       onConfirm={async (code) => {
         await api.workspaces.remove(w.workspace.id, code, typed);
         onDeleted();
-        toast.success(`${name} was deleted`);
+        toast.success(t("workspaces:detail.toast.deleted", { name }));
       }}
     >
-      <Field label={<>Type <span className="mono font-medium">{name}</span> to confirm</>}>
+      <Field label={<Trans t={t} i18nKey="common:ui.typeToConfirm" values={{ text: name }} components={{ v: <span className="mono font-medium" /> }} />}>
         {(p) => <TextInput {...p} autoFocus autoComplete="off" spellCheck={false} value={typed} onChange={(e) => setTyped(e.target.value)} />}
       </Field>
     </StepUpDialog>

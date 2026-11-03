@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { MailMessage } from "@/lib/api/types";
 import { MailMessageItem } from "./MailMessageItem";
+import { setAlwaysShowImages } from "@/lib/alwaysShowImages";
 
 vi.mock("./MailDetails", () => ({
   useMessageDetails: () => ({ data: undefined }),
@@ -66,5 +67,15 @@ describe("MailMessageItem", () => {
   it("shows remote images of mail the account wrote", async () => {
     await act(async () => root.render(<TooltipProvider><MailMessageItem m={message(true)} open onToggle={() => undefined} /></TooltipProvider>));
     expect(container.innerHTML).toContain("tracker.example");
+  });
+
+  it("shows remote images of others' mail to a member who always shows them", async () => {
+    setAlwaysShowImages(true);
+    try {
+      await act(async () => root.render(<TooltipProvider><MailMessageItem m={message(false)} open onToggle={() => undefined} /></TooltipProvider>));
+      expect(container.innerHTML).toContain("tracker.example");
+    } finally {
+      setAlwaysShowImages(false);
+    }
   });
 });

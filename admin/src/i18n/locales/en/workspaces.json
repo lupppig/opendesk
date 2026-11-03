@@ -1,0 +1,234 @@
+{
+  "list": {
+    "title": "Workspaces",
+    "search": "Search by name, slug, id or a member's email",
+    "filterLabel": "Filter workspaces",
+    "filter": {
+      "all": "All",
+      "suspended": "Suspended",
+      "paid": "Paid",
+      "free": "Free",
+      "collab": "Collab",
+      "test": "Test"
+    },
+    "noMatch": "No workspaces match",
+    "noMatchHint": "Try another name, slug, id or member email, or clear the filters.",
+    "empty": "No workspaces yet",
+    "emptyHint": "Workspaces show up here as people sign up and create them.",
+    "col": {
+      "workspace": "Workspace",
+      "plan": "Plan",
+      "subscription": "Subscription",
+      "members": "Members",
+      "lastActivity": "Last activity",
+      "created": "Created"
+    }
+  },
+  "detail": {
+    "all": "All workspaces",
+    "slug": "slug",
+    "createdActive": "Created <created/>, last active <active/>",
+    "unlimited": "Unlimited",
+    "gb": "{{gb}} GB",
+    "restore": {
+      "title": "Restore this workspace?",
+      "button": "Restore workspace",
+      "text": "<b>{{name}}</b> works again for its members, API keys, widget and help center. Mail ignored while it was suspended is not replayed."
+    },
+    "suspend": {
+      "button": "Suspend workspace",
+      "title": "Suspend {{name}}?",
+      "description": "Members, API keys, the widget and the help center stop working, inbound mail is stored and ignored, and nothing is sent. Nothing is deleted."
+    },
+    "delete": {
+      "button": "Delete workspace",
+      "title": "Delete {{name}}?",
+      "description": "Every ticket, contact, article, mailbox and setting of this workspace is removed for good, and its Stripe subscription is canceled. This can't be undone."
+    },
+    "toast": {
+      "restored": "Workspace restored",
+      "suspended": "Workspace suspended",
+      "deleted": "{{name}} was deleted"
+    },
+    "suspendedHint": "Members can sign in and see it, but nothing runs for it until it is restored.",
+    "test": {
+      "deleted": "Test workspace, deleted <time/>",
+      "kept": "Test workspace, kept until deleted",
+      "adding": "Sample data is being added.",
+      "sample": "Sample data: {{counts}}.",
+      "noSample": "No sample data.",
+      "outOfCounts": "It stays out of the overview's counts."
+    },
+    "counts": {
+      "title": "Counts",
+      "tickets": "Tickets",
+      "openTickets": "Open tickets",
+      "contacts": "Contacts",
+      "articles": "Articles",
+      "brands": "Brands",
+      "apiKeys": "API keys",
+      "webhooks": "Webhooks"
+    },
+    "members": {
+      "title": "Members",
+      "pending_one": "{{n}} pending invitation",
+      "pending_other": "{{n}} pending invitations",
+      "member": "Member",
+      "empty": "No members",
+      "emptyHint": "Everyone has left this workspace."
+    },
+    "mailboxes": {
+      "title": "Mailboxes",
+      "mailbox": "Mailbox",
+      "kinds": "Receives, sends",
+      "status": "Status",
+      "lastSync": "Last sync",
+      "empty": "No mailboxes",
+      "emptyHint": "This workspace hasn't connected a mailbox."
+    },
+    "limits": {
+      "title": "Plan and limits",
+      "edit": "Edit overrides",
+      "planDefault": "Plan default",
+      "override": "Override",
+      "mailboxes": "Mailboxes",
+      "members": "Members",
+      "monthlyAi": "Monthly AI",
+      "collabStorage": "Collab storage",
+      "noBilling": "Billing is off on this instance, so every limit is unlimited. Overrides are kept but have no effect."
+    },
+    "sub": {
+      "none": "No subscription.",
+      "billingOff": "Billing is off on this instance.",
+      "billed": "Billed",
+      "yearly": "Yearly",
+      "monthly": "Monthly",
+      "seats": "Seats",
+      "seatsLine": "{{billed}} billed of {{total}}",
+      "ends": "Ends",
+      "renews": "Renews",
+      "canceling": "Canceling",
+      "stripeCustomer": "Stripe customer"
+    },
+    "ai": {
+      "title": "AI usage",
+      "remaining": "Remaining",
+      "allowance": "Monthly allowance",
+      "allowanceUsed": "Allowance used",
+      "purchasedLeft": "Purchased left",
+      "period": "This period, {{start}} to {{end}}",
+      "feature": "Feature",
+      "calls": "Calls",
+      "charged": "Charged",
+      "providerCost": "Provider cost",
+      "total": "Total",
+      "none": "No AI calls this period."
+    },
+    "grant": {
+      "title": "Grant AI usage",
+      "description": "Adds purchased AI usage to {{name}}. It is spent after the monthly allowance, like a top-up, and never expires.",
+      "confirm": "Grant",
+      "confirmAmount": "Grant {{amount}}",
+      "done": "Granted {{amount}} of AI usage",
+      "amount": "Amount",
+      "amountHint": "From {{min}} to {{max}}.",
+      "noteHint": "{{length}} / {{max}}. Kept in the audit log.",
+      "notePlaceholder": "Why, and any ticket it relates to"
+    },
+    "audit": {
+      "title": "Workspace audit log",
+      "last_one": "last {{count}}",
+      "last_other": "last {{count}}",
+      "who": "Who",
+      "instanceAdmin": "Instance admin",
+      "apiKey": "API key",
+      "system": "System",
+      "emptyHint": "Changes to settings, members and keys appear here."
+    }
+  },
+  "limitsDialog": {
+    "title": "Limit overrides",
+    "description": "Overrides replace the plan's limits for {{name}} on every plan, and survive plan changes.",
+    "save": "Save overrides",
+    "saved": "Limits saved",
+    "noBilling": "Billing is off on this instance, so every limit is already unlimited. Overrides are kept but have no effect.",
+    "usePlan": "Use the plan's",
+    "usePlanFor": "Use the plan's value for {{label}}",
+    "planApplies": "The plan's limit applies.",
+    "max_mailboxes": {
+      "label": "Mailboxes",
+      "hint": "0 is unlimited."
+    },
+    "max_members": {
+      "label": "Members",
+      "hint": "0 is unlimited."
+    },
+    "monthly_ai_usd": {
+      "label": "Monthly AI allowance",
+      "hint": "US dollars of AI usage included each month."
+    },
+    "collab_storage_gb": {
+      "label": "Collab storage",
+      "hint": "Mail Collab stores for the whole workspace. 0 is unlimited."
+    }
+  },
+  "collab": {
+    "title": "Collab",
+    "change": "Change",
+    "offered": "Offered",
+    "complimentary": "Complimentary",
+    "untilDate": "until {{date}}",
+    "noEnd": "no end date",
+    "access": "Access",
+    "accounts": "Mail accounts",
+    "stored": "Mail stored",
+    "ofUnlimited": "of unlimited",
+    "ofGb": "of {{gb}} GB",
+    "note": "Note",
+    "hintBilling": "The Collab plan is hidden. Offer it so this workspace can subscribe at $38 per user per month, or give it for free.",
+    "hintNoBilling": "Billing is off on this instance, so every workspace has Collab unless the instance turns it off. Access is kept but has no effect.",
+    "noBilling": "Billing is off on this instance, so this is kept but has no effect.",
+    "offer": {
+      "title": "Offer the Collab plan",
+      "description": "{{name}} sees the Collab plan on its billing page and can subscribe at $38 per user per month, or switch its Pro subscription to it.",
+      "confirm": "Offer the plan",
+      "done": "Collab plan offered"
+    },
+    "free": {
+      "title": "Give Collab for free",
+      "change": "Change free access",
+      "changeTitle": "Change free Collab access",
+      "confirm": "Give for free",
+      "description_one": "{{name}} gets the Collab plan without paying: unlimited mailboxes and members, $20 of AI per paid seat each month ({{n}} seat now), and Collab.",
+      "description_other": "{{name}} gets the Collab plan without paying: unlimited mailboxes and members, $20 of AI per paid seat each month ({{n}} seats now), and Collab.",
+      "done": "Collab is free",
+      "doneUntil": "Collab is free until {{date}}"
+    },
+    "remove": {
+      "title": "Remove Collab access?",
+      "button": "Remove access",
+      "done": "Collab access removed",
+      "complimentary": "<b>{{name}}</b> loses Collab now unless it pays for the plan. Connected mail accounts stop syncing and are kept.",
+      "offered": "<b>{{name}}</b> can no longer subscribe to the Collab plan. A subscription it already has keeps running."
+    },
+    "ends": "Ends",
+    "endsOn": "Ends {{date}}.",
+    "lastDay": "Last day",
+    "lastDayHint": "Access ends at the end of this day, your time.",
+    "noteHint": "{{length}} / {{max}}. Only admins see it.",
+    "notePlaceholder": "Why, and who asked",
+    "until": {
+      "none": "No end date",
+      "14": "For 2 weeks",
+      "30": "For 30 days",
+      "90": "For 90 days",
+      "365": "For a year",
+      "date": "Until a date"
+    },
+    "dateError": {
+      "format": "Use a date like 2026-12-31.",
+      "noSuchDay": "That day doesn't exist.",
+      "past": "Pick a day in the future."
+    }
+  }
+}

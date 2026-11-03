@@ -1,0 +1,59 @@
+{
+  "navigation": "Navigation",
+  "openNavigation": "Open navigation",
+  "instanceAdministration": "Instance administration",
+  "signedOutHere": "Signed out here",
+  "signedOutHereHint": "The API didn't confirm it. The session ends on its own within the hour.",
+  "logoLink": "opendesk admin overview",
+  "openApp": "Open the app",
+  "signOut": "Sign out",
+  "newVersion": "A new version of the panel is out. Reload to get it.",
+  "notFound": {
+    "title": "Page not found",
+    "description": "There is no page at this address in the admin panel.",
+    "action": "Go to the overview"
+  },
+  "theme": {
+    "label": "Theme",
+    "system": "System",
+    "light": "Light",
+    "dark": "Dark"
+  },
+  "nav": {
+    "overview": "Overview",
+    "workspaces": "Workspaces",
+    "testWorkspaces": "Test workspaces",
+    "users": "Users",
+    "jobs": "Jobs",
+    "health": "Health",
+    "audit": "Audit log",
+    "admins": "Admins"
+  },
+  "shortcuts": {
+    "dialog": "Keyboard shortcuts",
+    "search": "Search this page",
+    "go": {
+      "overview": "Go to overview",
+      "workspaces": "Go to workspaces",
+      "testWorkspaces": "Go to test workspaces",
+      "users": "Go to users",
+      "jobs": "Go to jobs",
+      "health": "Go to health",
+      "audit": "Go to audit log",
+      "admins": "Go to admins"
+    }
+  },
+  "titles": {
+    "signIn": "Sign in",
+    "overview": "Overview",
+    "workspaces": "Workspaces",
+    "workspace": "Workspace",
+    "testWorkspaces": "Test workspaces",
+    "users": "Users",
+    "user": "User",
+    "jobs": "Jobs",
+    "health": "Health",
+    "audit": "Audit log",
+    "admins": "Admins"
+  }
+}

@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { folderById } from "@/lib/folders";
 import { q } from "@/lib/queries";
 import { useCrumbStore } from "./shellStore";
+import { useCollab } from "@/lib/collab/hooks";
 
 export type Crumb = { label: string; to?: string; params?: Record<string, string | undefined> };
 
@@ -24,6 +25,7 @@ export function useBreadcrumbs(): Crumb[] {
   const extra = useCrumbStore((s) => s.label);
   const { data: views } = useQuery(q.views());
   const { data: teams } = useQuery(q.teams());
+  const collab = useCollab();
   const leaf = matches[matches.length - 1];
   const path = leaf?.pathname ?? "";
   const params = (leaf?.params ?? {}) as Record<string, string | undefined>;
@@ -31,7 +33,7 @@ export function useBreadcrumbs(): Crumb[] {
   const crumbs: Crumb[] = [];
 
   if (path.startsWith("/inbox/")) {
-    crumbs.push({ label: t("titles.inbox"), to: "/inbox/$folder/{-$ticketId}", params: { folder: "unassigned", ticketId: undefined } });
+    crumbs.push({ label: t(collab.enabled ? "titles.tickets" : "titles.inbox"), to: "/inbox/$folder/{-$ticketId}", params: { folder: "unassigned", ticketId: undefined } });
     const f = folderById(params.folder ?? "");
     if (f) crumbs.push({ label: t(f.labelKey), to: "/inbox/$folder/{-$ticketId}", params: { folder: f.id, ticketId: undefined } });
   } else if (path.startsWith("/views/")) {
@@ -43,7 +45,7 @@ export function useBreadcrumbs(): Crumb[] {
     const name = params.teamId === "mine" ? t("titles.myTeams") : (teams?.find((x) => x.id === params.teamId)?.name ?? t("titles.team"));
     crumbs.push({ label: name, to: "/teams/$teamId/{-$ticketId}", params: { teamId: params.teamId, ticketId: undefined } });
   } else if (path === "/tickets/new") {
-    crumbs.push({ label: t("titles.inbox"), to: "/inbox/$folder/{-$ticketId}", params: { folder: "unassigned", ticketId: undefined } });
+    crumbs.push({ label: t(collab.enabled ? "titles.tickets" : "titles.inbox"), to: "/inbox/$folder/{-$ticketId}", params: { folder: "unassigned", ticketId: undefined } });
     crumbs.push({ label: t("titles.newTicket") });
   } else if (path.startsWith("/mail/")) {
     crumbs.push({ label: t("titles.mail"), to: "/mail/$box/{-$threadId}", params: { box: "inbox", threadId: undefined } });

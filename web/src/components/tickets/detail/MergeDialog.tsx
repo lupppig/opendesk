@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useParams, type NavigateOptions } from "@tanstack/react-router";
 import { GitMerge } from "lucide-react";
 import { useDeferredValue, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -15,8 +15,17 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
 import { StatusIcon } from "../bits";
 import { useMergeTicket } from "../useTicketActions";
+import { requesterLabel } from "../requester";
 import { EmptyState } from "@/components/ui/empty";
 import { qk } from "@/lib/queries";
+
+// Where the ticket a merge went into opens: in the list the agent was working (an inbox folder,
+// a view or a team inbox, as InboxPage's own rows), with its sort and filters, not in "open".
+export function mergedTicketDest(list: { folder?: string; viewId?: string; teamId?: string }, ticketId: string): NavigateOptions {
+  if (list.viewId) return { to: "/views/$viewId/{-$ticketId}", params: { viewId: list.viewId, ticketId }, search: true };
+  if (list.teamId) return { to: "/teams/$teamId/{-$ticketId}", params: { teamId: list.teamId, ticketId }, search: true };
+  return { to: "/inbox/$folder/{-$ticketId}", params: { folder: list.folder ?? "open", ticketId }, search: true };
+}
 
 export function MergeDialog({ ticket, open, onOpenChange }: { ticket: Ticket; open: boolean; onOpenChange: (o: boolean) => void }) {
   const { t: tr } = useTranslation("inbox");
@@ -27,6 +36,7 @@ export function MergeDialog({ ticket, open, onOpenChange }: { ticket: Ticket; op
   const [error, setError] = useState<string | null>(null);
   const merge = useMergeTicket();
   const navigate = useNavigate();
+  const where = useParams({ strict: false }) as { folder?: string; viewId?: string; teamId?: string };
 
   // Default to the same customer's other tickets; search everything when typing.
   const results = useQuery({
@@ -48,7 +58,7 @@ export function MergeDialog({ ticket, open, onOpenChange }: { ticket: Ticket; op
         onSuccess: () => {
           toast.success(tr("merge.done", { number: target.number }));
           onOpenChange(false);
-          void navigate({ to: "/inbox/$folder/{-$ticketId}", params: { folder: "open", ticketId: target.id } });
+          void navigate(mergedTicketDest(where, target.id));
         },
         onError: (e) => setError(errorMessage(e)),
       },
@@ -107,7 +117,7 @@ export function MergeDialog({ ticket, open, onOpenChange }: { ticket: Ticket; op
                 {t.subject}
               </span>
               <span className="shrink-0 truncate text-xs text-fg-3" data-ph-mask>
-                {t.contact?.name}
+                {requesterLabel(t.contact)}
               </span>
               <span className="mono w-8 shrink-0 text-right text-[11px] text-fg-4">{relShort(t.last_message_at)}</span>
             </button>

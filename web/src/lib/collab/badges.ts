@@ -38,8 +38,8 @@ export function folderNumbers(f: MailFolder, counts: MailCounts | undefined): Ro
   return { unread: folderUnread(f, counts), total: f.total };
 }
 
-/** Shared with me, Assigned to me, and Needs action: one count for conversations still in an inbox. */
-export function listBoxNumbers(box: "shared" | "assigned" | "needs_action", counts: MailCounts | undefined): RowNumbers {
+/** Shared with me, Assigned to me, Needs action and Snoozed: one count for conversations still in an inbox. */
+export function listBoxNumbers(box: "shared" | "assigned" | "needs_action" | "snoozed", counts: MailCounts | undefined): RowNumbers {
   const n = counts?.boxes[box];
   return { unread: n, total: n };
 }

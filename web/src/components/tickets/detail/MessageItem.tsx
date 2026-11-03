@@ -9,6 +9,7 @@ import { q, qk } from "@/lib/queries";
 import { atLeast, useRole, useSession } from "@/lib/session";
 import { isBlankHtml } from "@/lib/collab/html";
 import { isDesignedEmail, type Sanitized, sanitizeEmailHtml, sanitizeProse } from "@/lib/sanitize";
+import { useAlwaysShowImages } from "@/lib/alwaysShowImages";
 import { bytes, clock, fullDate } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { Avatar } from "@/components/ui/avatar";
@@ -45,7 +46,7 @@ type SanitizedBody = Sanitized & { designed: boolean };
 
 /**
  * A message body, sanitized once. An inbound email holds back images from other sites
- * until the reader loads them; a designed one renders in its own frame.
+ * until the reader loads them; a designed one, received, sent or a note, renders in its own frame.
  */
 function useBody(html: string, inbound: boolean, designable: boolean, remote: boolean): SanitizedBody {
   return useMemo(() => {
@@ -78,7 +79,7 @@ function HeldImages({ onLoad }: { onLoad: () => void }) {
 function Original({ id, inbound, remote, onLoadImages }: { id: string; inbound: boolean; remote: boolean; onLoadImages: () => void }) {
   const { t } = useTranslation("inbox");
   const { data, isPending, isError } = useQuery({ queryKey: qk.of("message-original", id), queryFn: () => api.messages.original(id), staleTime: Infinity });
-  const body = useBody(data?.full_html ?? "", inbound, inbound, remote);
+  const body = useBody(data?.full_html ?? "", inbound, true, remote);
   if (isPending)
     return (
       <div className="mt-3 flex items-center gap-2 text-xs text-fg-3">
@@ -571,9 +572,11 @@ export const MessageItem = memo(function MessageItem({
     );
   const address = useMessageAddress(m, receivedAt);
   const inbound = m.direction === "inbound" && !note;
-  const [remote, setRemote] = useState(false);
+  const [loaded, setRemote] = useState(false);
+  // Loaded for this message, or for every email (Settings → Profile → Appearance).
+  const remote = useAlwaysShowImages() || loaded;
   const translated = !!(tr.showing && tr.html);
-  const body = useBody(translated ? tr.html! : m.body_html || `<p>${m.body_text}</p>`, inbound, inbound && !translated, remote);
+  const body = useBody(translated ? tr.html! : m.body_html || `<p>${m.body_text}</p>`, inbound, !translated, remote);
   const replyTo = inbound && m.reply_to && m.reply_to.toLowerCase() !== m.from_email.toLowerCase() ? m.reply_to : null;
 
   // A note sent as a reply is hidden like a deleted message, and says where its words went.

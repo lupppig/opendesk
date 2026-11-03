@@ -1,0 +1,40 @@
+{
+  "title": "Overview",
+  "subtitle": "This instance at a glance",
+  "last30": "Last 30 days",
+  "series": {
+    "signups": "Signups",
+    "workspaces": "New workspaces",
+    "ai": "AI charged"
+  },
+  "tiles": {
+    "users": "Users",
+    "growth": "+{{week}} this week, +{{month}} in 30 days",
+    "activeUsers": "Active users, 7 days",
+    "ofAllUsers": "{{percent}} of all users",
+    "seenInApp": "Seen in the app",
+    "workspaces": "Workspaces",
+    "activeWorkspaces": "Active workspaces, 7 days",
+    "suspended_one": "{{n}} suspended",
+    "suspended_other": "{{n}} suspended",
+    "noneSuspended": "None suspended",
+    "paidWorkspaces": "Paid workspaces",
+    "pastDue_one": "{{n}} past due",
+    "pastDue_other": "{{n}} past due",
+    "nonePastDue": "None past due",
+    "billedSeats": "Billed seats",
+    "aiCharged": "AI charged this month",
+    "calls_one": "{{n}} call",
+    "calls_other": "{{n}} calls",
+    "aiCost": "AI provider cost this month",
+    "aboveCost": "{{amount}} above cost",
+    "belowCost": "{{amount}} below cost",
+    "providerBilled": "What the provider billed this instance"
+  },
+  "health": {
+    "title": "Health",
+    "error": "Couldn't load the health checks",
+    "allPass_one": "The {{count}} check passes",
+    "allPass_other": "All {{count}} checks pass"
+  }
+}

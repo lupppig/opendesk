@@ -228,6 +228,7 @@
     "fullSize": "In voller Größe öffnen",
     "readOnly": "Du kannst diese Unterhaltung lesen. Bearbeiten können sie Agenten und höhere Rollen.",
     "showComments": "Kommentare anzeigen",
+    "replyOrComment": "Wähle, ob du dem Absender antwortest oder für dein Team kommentierst",
     "draft": "Entwurf",
     "draftTo": "An {{who}}",
     "draftNoRecipients": "Noch keine Empfänger",
@@ -288,6 +289,7 @@
   },
   "comments": {
     "title": "Teamkommentare",
+    "internalHint": "Nur dein Team kann das sehen. Der Kommentar wird nicht an den Absender gesendet.",
     "hint": "Kommentare lesen nur Teammitglieder, die diese Unterhaltung sehen können. Sie erreichen nie den Absender.",
     "placeholder": "Kommentieren, @ erwähnt ein Teammitglied",
     "add": "Kommentieren",

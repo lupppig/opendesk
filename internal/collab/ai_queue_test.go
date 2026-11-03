@@ -201,6 +201,90 @@ func queueWorld(t *testing.T, n int) (*world, *fakeGmail, *accountRow, []uuid.UU
 	return w, g, a, threads
 }
 
+// A claim may name categories (GH#262): it is offered only conversations in them, read as
+// the inbox tabs read them, and none still waiting to be sorted. A person's move decides.
+func TestAIQueueCategories(t *testing.T) {
+	w, _, a, threads := queueWorld(t, 4)
+	bot := w.api(w.key(w.agent, "Question drafter", auth.ScopeCollabDraft))
+	human := w.api(w.agent)
+	q, upd, gone, pending := threads[0], threads[1], threads[2], threads[3]
+	claim := func(cats []string, skip bool) (uuid.UUID, int) {
+		t.Helper()
+		var r claimResp
+		st := doJSON(t, "POST", bot.URL+"/v1/collab/ai-queue/claim", map[string]any{"categories": cats, "ttl_seconds": 60}, &r)
+		if st != 200 || r.Claim == nil {
+			return uuid.Nil, st
+		}
+		if st := doJSON(t, "POST", bot.URL+"/v1/collab/ai-queue/claims/"+r.Claim.ConversationID.String()+"/release",
+			map[string]any{"skip": skip}, nil); st != 204 {
+			t.Fatalf("release: %d", st)
+		}
+		return r.Claim.ConversationID, st
+	}
+
+	// Not split: every conversation is primary.
+	if id, _ := claim([]string{"primary"}, false); id != q {
+		t.Fatalf("an account not split reads primary: %s", id)
+	}
+	if id, st := claim([]string{"updates"}, false); id != uuid.Nil || st != 200 {
+		t.Fatalf("updates on an account not split: %d %s", st, id)
+	}
+
+	// Split, with the built-in categories: one in Updates, one in a category the account
+	// no longer has (read as primary), one waiting to be sorted.
+	if st := doJSON(t, "PUT", w.api(w.owner).URL+"/v1/collab/categories/workspace", map[string]any{"enabled": true}, nil); st != 200 {
+		t.Fatalf("categories on: %d", st)
+	}
+	w.s.mailAI = &fakeMailAI{prob: 0.9}
+	if err := w.s.categorize(w.ctx, a.ID, 1); err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, w.d, `UPDATE collab_threads SET category = 'primary', category_source = 'ai', category_pending = false WHERE id = $1`, q)
+	mustExec(t, w.d, `UPDATE collab_threads SET category = 'updates', category_source = 'rule', category_pending = false WHERE id = $1`, upd)
+	mustExec(t, w.d, `UPDATE collab_threads SET category = 'retired', category_source = 'ai', category_pending = false WHERE id = $1`, gone)
+	mustExec(t, w.d, `UPDATE collab_threads SET category = NULL, category_source = NULL, category_pending = true WHERE id = $1`, pending)
+
+	if id, _ := claim([]string{"updates", "updates"}, false); id != upd {
+		t.Fatalf("updates: %s", id)
+	}
+	if id, _ := claim([]string{"primary"}, false); id != q {
+		t.Fatalf("primary: %s", id)
+	}
+	if id, _ := claim(nil, false); id != q {
+		t.Fatalf("without categories the oldest waiting comes first: %s", id)
+	}
+
+	// The person's move decides: moved to Updates, it is no longer offered as primary.
+	if st := doJSON(t, "POST", human.URL+"/v1/collab/threads/actions", map[string]any{"thread_ids": []uuid.UUID{q},
+		"action": "categorize", "category": "updates"}, nil); st != 200 {
+		t.Fatalf("categorize: %d", st)
+	}
+	if id, _ := claim([]string{"updates"}, false); id != q {
+		t.Fatalf("moved in: %s", id)
+	}
+	if id, _ := claim([]string{"primary"}, true); id != gone {
+		t.Fatalf("a key the account no longer has reads primary: %s", id)
+	}
+	// Skipped that one: what is left in primary is waiting to be sorted, held back until it is.
+	if id, st := claim([]string{"primary"}, false); id != uuid.Nil || st != 200 {
+		t.Fatalf("not yet sorted: %d %s", st, id)
+	}
+	if id, _ := claim(nil, false); id != q {
+		t.Fatalf("without categories: %s", id)
+	}
+	mustExec(t, w.d, `UPDATE collab_threads SET category = 'primary', category_source = 'ai', category_pending = false WHERE id = $1`, pending)
+	if id, _ := claim([]string{"primary"}, false); id != pending {
+		t.Fatalf("once sorted: %s", id)
+	}
+
+	var e apiError
+	for _, bad := range [][]string{{"Not a key"}, {"a", "b", "c", "d", "e", "f", "g", "h", "i"}} {
+		if st := doJSON(t, "POST", bot.URL+"/v1/collab/ai-queue/claim", map[string]any{"categories": bad}, &e); st != 422 {
+			t.Fatalf("categories %v: %d", bad, st)
+		}
+	}
+}
+
 // A queue worker's draft carries its claim's token and is checked against the live claim
 // before the provider is called: a worker whose claim expired and passed on is refused,
 // without ending the new holder's claim; a draft without a token (manual drafting) still

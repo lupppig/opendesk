@@ -32,6 +32,7 @@ import { EmptyState } from "@/components/ui/empty";
 import { Kbd } from "@/components/ui/kbd";
 import { Spinner } from "@/components/ui/spinner";
 import { StatusIcon } from "@/components/tickets/bits";
+import { Requester } from "@/components/tickets/requester";
 import { folders } from "@/lib/folders";
 import { relShort } from "@/lib/format";
 import { q, qk } from "@/lib/queries";
@@ -238,14 +239,14 @@ export function CommandPalette() {
                       key={t.id}
                       value={`ticket ${t.number} ${t.subject} ${t.contact?.name ?? ""} ${t.id}`}
                       icon={<StatusIcon status={t.status} />}
-                      hint={<span className="mono">{relShort(t.last_message_at)}</span>}
+                      hint={<span className="mono inline-block text-right sm:min-w-[12ch]">{relShort(t.last_message_at)}</span>}
                       {...link({ to: "/inbox/$folder/{-$ticketId}", params: { folder: "open", ticketId: t.id } })}
                     >
                       <span className="mono shrink-0 text-xs text-fg-3">#{t.number}</span>
                       <span className="truncate" data-ph-mask>
                         {t.subject}
                       </span>
-                      {t.contact && <span className="shrink-0 truncate text-xs text-fg-3">{t.contact.name}</span>}
+                      <Requester contact={t.contact} className="ml-auto" />
                     </Item>
                   ))}
                 </Command.Group>
@@ -603,14 +604,14 @@ function AiResults({
               key={x.id}
               value={`ai ticket ${x.id}`}
               icon={<StatusIcon status={x.status} />}
-              hint={<span className="mono">{relShort(x.last_message_at)}</span>}
+              hint={<span className="mono inline-block text-right sm:min-w-[12ch]">{relShort(x.last_message_at)}</span>}
               {...ticket(x.id)}
             >
               <span className="mono shrink-0 text-xs text-fg-3">#{x.number}</span>
               <span className="truncate" data-ph-mask>
                 {x.subject}
               </span>
-              {x.contact && <span className="shrink-0 truncate text-xs text-fg-3">{x.contact.name}</span>}
+              <Requester contact={x.contact} className="ml-auto" />
             </Item>
           ))}
         </Command.Group>

@@ -3,6 +3,7 @@
 
 import { OTPInput, REGEXP_ONLY_DIGITS } from "input-otp";
 import { useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { TextInput } from "@/components/ui/input";
 import { cn } from "@/lib/cn";
 
@@ -31,6 +32,7 @@ export function OtpInput({
   autoFocus?: boolean;
   size?: "md" | "lg";
 }) {
+  const { t } = useTranslation("auth");
   return (
     <OTPInput
       autoFocus={autoFocus}
@@ -42,7 +44,7 @@ export function OtpInput({
       pattern={REGEXP_ONLY_DIGITS}
       inputMode="numeric"
       autoComplete="one-time-code"
-      aria-label="6-digit code"
+      aria-label={t("code.totpLabel")}
       aria-invalid={invalid || undefined}
       containerClassName={cn("flex items-center", invalid && "animate-shake motion-reduce:animate-none")}
       render={({ slots }) => (
@@ -88,6 +90,7 @@ export function CodeField({
   autoFocus?: boolean;
   size?: "md" | "lg";
 }) {
+  const { t } = useTranslation("auth");
   const recoveryRef = useRef<HTMLInputElement>(null);
   const switched = useRef(false);
   useEffect(() => {
@@ -105,7 +108,7 @@ export function CodeField({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder="xxxx-xxxx-xxxx-xxxx"
-          aria-label="Recovery code"
+          aria-label={t("code.recoveryLabel")}
           autoComplete="off"
           spellCheck={false}
           invalid={invalid}
@@ -122,7 +125,7 @@ export function CodeField({
         }}
         className="self-start text-[12px] text-fg-3 underline decoration-line-strong underline-offset-2 hover:text-fg"
       >
-        {mode === "totp" ? "Use a recovery code" : "Use your authenticator app"}
+        {mode === "totp" ? t("code.useRecovery") : t("code.useApp")}
       </button>
     </div>
   );

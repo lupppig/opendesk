@@ -245,7 +245,7 @@ func threadsOut(ctx context.Context, q db.Querier, list []*threadRow) ([]MailThr
 	for _, t := range list {
 		m := MailThread{ID: t.ID, AccountID: t.AccountID, Subject: t.Subject, Snippet: t.Snippet, Participants: t.Participants,
 			LastMessageAt: t.LastMessageAt, MessageCount: t.MessageCount, Unread: t.Unread, Starred: t.Starred,
-			HasAttachments: t.HasAttachments, NeedsAction: t.NeedsAction, FolderIDs: t.FolderIDs, Shared: slices.Contains(sharedList, t.ID),
+			HasAttachments: t.HasAttachments, NeedsAction: t.NeedsAction, SnoozedUntil: t.SnoozedUntil, FolderIDs: t.FolderIDs, Shared: slices.Contains(sharedList, t.ID),
 			Assignees: assignees[t.ID], CommentCount: comments[t.ID], Category: effectiveCategory(keys[t.AccountID], t.Category)}
 		if m.Assignees == nil {
 			m.Assignees = []domain.UserRef{}

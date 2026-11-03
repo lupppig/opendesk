@@ -138,16 +138,20 @@ func RegisterWorkers(d *deps.Deps, w *river.Workers) {
 	river.AddWorker(w, &sendTicketReplyWorker{s: s})
 	river.AddWorker(w, &ticketAnswerWorker{s: s})
 	river.AddWorker(w, &categorizeWorker{s: s})
+	river.AddWorker(w, &snoozeWakeWorker{s: s})
 }
 
 // Periodic returns this area's scheduled jobs: every minute, queue a sync for each due
-// account; every hour, clean up.
+// account and wake passed snoozes; every hour, clean up.
 func Periodic(d *deps.Deps) []*river.PeriodicJob {
 	return []*river.PeriodicJob{
 		river.NewPeriodicJob(river.PeriodicInterval(time.Minute), func() (river.JobArgs, *river.InsertOpts) {
 			return syncDueArgs{}, &river.InsertOpts{Queue: jobs.QueueEmail, MaxAttempts: 1,
 				UniqueOpts: river.UniqueOpts{ByPeriod: time.Minute}}
 		}, &river.PeriodicJobOpts{RunOnStart: true}),
+		river.NewPeriodicJob(river.PeriodicInterval(time.Minute), func() (river.JobArgs, *river.InsertOpts) {
+			return snoozeWakeArgs{}, &river.InsertOpts{MaxAttempts: 3, UniqueOpts: river.UniqueOpts{ByPeriod: time.Minute}}
+		}, &river.PeriodicJobOpts{RunOnStart: true, ID: snoozeWakeArgs{}.Kind()}),
 		river.NewPeriodicJob(river.PeriodicInterval(time.Hour), func() (river.JobArgs, *river.InsertOpts) {
 			return jobs.CollabCleanupArgs{}, &river.InsertOpts{MaxAttempts: 3, UniqueOpts: river.UniqueOpts{ByPeriod: time.Hour}}
 		}, nil),

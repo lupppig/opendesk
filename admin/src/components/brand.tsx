@@ -1,5 +1,6 @@
 // The opendesk mark ("Module") and lockup, drawn in currentColor so they follow the
 // theme, and the pills that mark this as the privileged surface.
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/cn";
 import { tone, type Tone } from "@/lib/tones";
 
@@ -15,9 +16,10 @@ export function Mark({ className, accent }: { className?: string; accent?: boole
 
 /** "Admin", tinted in the panel's accent: beside the logo wherever the panel shows it. */
 export function AdminPill({ className }: { className?: string }) {
+  const { t } = useTranslation();
   return (
     <span className={cn("inline-flex h-[18px] items-center rounded-sm px-1.5 text-[10.5px] font-semibold tracking-[0.02em]", tone.indigo.chip, className)}>
-      Admin
+      {t("adminPill")}
     </span>
   );
 }
@@ -32,11 +34,12 @@ export function envTone(label: string): Tone {
 }
 
 export function EnvPill({ label, className }: { label: string; className?: string }) {
+  const { t } = useTranslation();
   if (!label) return null;
-  const t = envTone(label);
+  const tn = envTone(label);
   return (
-    <span className={cn("inline-flex h-5 items-center gap-1.5 rounded-sm px-1.5 text-[11px] font-medium", tone[t].chip, className)} title="This instance">
-      <span className={cn("size-1.5 rounded-full", tone[t].solid)} aria-hidden />
+    <span className={cn("inline-flex h-5 items-center gap-1.5 rounded-sm px-1.5 text-[11px] font-medium", tone[tn].chip, className)} title={t("thisInstance")}>
+      <span className={cn("size-1.5 rounded-full", tone[tn].solid)} aria-hidden />
       {label}
     </span>
   );

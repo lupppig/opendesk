@@ -367,7 +367,7 @@
       "phrases": "Une liste compte de 1 à 100 expressions, une par ligne, de 500 caractères au plus chacune.",
       "mergeTrigger": "La fusion dans le ticket ouvert du contact ne s’exécute qu’à la création d’un ticket.",
       "procedureTrigger": "Ollie ne peut pas exécuter de procédure quand un ticket est mis à jour. Choisissez un autre déclencheur.",
-      "callTrigger": "Les conditions d'appel demandent le déclencheur Un appel se termine."
+      "callTrigger": "Les conditions d’appel demandent le déclencheur Un appel se termine."
     },
     "chooseSeverity": "Choisir une gravité",
     "noSeverity": "Aucune gravité",
@@ -403,12 +403,12 @@
     "team_id": "Équipe",
     "brand_id": "Marque",
     "widget_id": "Widget de chat",
-    "call_outcome": "Issue de l'appel",
-    "call_direction": "Sens de l'appel",
-    "call_time": "Heure de l'appel",
-    "call_missed_reason": "Raison de l'appel manqué",
-    "call_line": "Ligne de l'appel",
-    "call_tag": "Étiquette de l'appel",
+    "call_outcome": "Issue de l’appel",
+    "call_direction": "Sens de l’appel",
+    "call_time": "Heure de l’appel",
+    "call_missed_reason": "Raison de l’appel manqué",
+    "call_line": "Ligne de l’appel",
+    "call_tag": "Étiquette de l’appel",
     "assignee_id": "Responsable"
   },
   "ops": {
@@ -809,21 +809,21 @@
       "outbound": "Sortant"
     },
     "call_time": {
-      "outside_business_hours": "En dehors des horaires d'ouverture",
-      "business_hours": "Pendant les horaires d'ouverture"
+      "outside_business_hours": "En dehors des horaires d’ouverture",
+      "business_hours": "Pendant les horaires d’ouverture"
     },
     "call_missed_reason": {
-      "out_of_opening_hours": "En dehors des horaires d'ouverture",
+      "out_of_opening_hours": "En dehors des horaires d’ouverture",
       "short_abandoned": "Raccroché rapidement",
       "abandoned_in_ivr": "Raccroché dans le menu",
-      "abandoned_in_classic": "Raccroché pendant l'attente",
+      "abandoned_in_classic": "Raccroché pendant l’attente",
       "no_available_agent": "Aucun collègue disponible",
-      "agents_did_not_answer": "Personne n'a répondu",
+      "agents_did_not_answer": "Personne n’a répondu",
       "busy": "Ligne occupée",
       "no_answer": "Sans réponse",
-      "failed": "Échec de l'appel",
+      "failed": "Échec de l’appel",
       "cancelled": "Raccroché avant la réponse",
-      "abandon": "Raccroché dans la file d'attente"
+      "abandon": "Raccroché dans la file d’attente"
     }
   }
 }

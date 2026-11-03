@@ -21,6 +21,7 @@ import { springs } from "@/lib/motion";
 import { api } from "@/lib/api/endpoints";
 import { q, qk } from "@/lib/queries";
 import { mergeByActivity, useOpenInWorkspace, useWorkspaces, type Tagged } from "@/lib/workspaces";
+import { requesterLabel } from "@/components/tickets/requester";
 
 /** Rows each workspace contributes: its first page, newest first. */
 const PER_WORKSPACE = 50;
@@ -225,7 +226,7 @@ function TicketLine({ t: tk, ws }: { t: Ticket; ws: Membership["workspace"] }) {
             <>
               <span aria-hidden className="text-fg-4">·</span>
               <span className="truncate" data-ph-mask>
-                {tk.contact.name || tk.contact.email}
+                {requesterLabel(tk.contact)}
               </span>
             </>
           )}

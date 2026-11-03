@@ -49,6 +49,13 @@ func TestDemoAccountStaysLocal(t *testing.T) {
 	if n := w.count(`SELECT count(*) FROM collab_messages WHERE account_id = $1 AND body_html LIKE '%script%'`, id); n != 0 {
 		t.Fatal("a demo body was stored unsanitized")
 	}
+	// Every message keeps its recipients, so Reply and Reply all have someone to answer.
+	if n := w.count(`SELECT count(*) FROM collab_messages WHERE account_id = $1 AND to_addrs @> '[{"email": "sales@acme.example.invalid"}]'`, id); n != 2 {
+		t.Fatalf("%d received messages kept their To, want 2", n)
+	}
+	if n := w.count(`SELECT count(*) FROM collab_messages WHERE account_id = $1 AND to_addrs @> '[{"email": "elena@northwind.example.invalid"}]'`, id); n != 2 {
+		t.Fatalf("%d sent messages and drafts kept their To, want 2", n)
+	}
 	if n := w.count(`SELECT count(*) FROM collab_assignees a JOIN collab_threads t ON t.id = a.thread_id WHERE t.account_id = $1`, id); n != 1 {
 		t.Fatal("no assignee")
 	}

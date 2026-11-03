@@ -4,7 +4,7 @@ A phone connection links a workspace to a cloud phone system. Every call, inboun
 outbound, is documented on the caller's ticket as one call entry in its timeline, kept
 current while the call rings, is answered, ends and gets its recording, comments and AI
 summary. The end of a call runs the `call_ended` automations, so a team decides with
-its own rules what a missed call outside opening hours does. It ships Aircall and Voys.
+its own rules what a missed call outside opening hours does. It ships Aircall, Voys and Placetel.
 
 This is not a support channel (`contracts/support-channels.md`): those mirror tickets
 into chat tools where agents work them, and their engine is built around threads, cards
@@ -20,7 +20,7 @@ The cloud and self-host use the same code. There is no plan gate.
 
 ```ts
 type PhoneProvider = { key: string; name: string; fields: { name: string; label: string; secret: boolean }[];
-  manual_webhook: boolean;     // an admin adds the webhook URL in the provider by hand (Voys)
+  manual_webhook: boolean;     // an admin adds the webhook URL in the provider by hand (Voys, Placetel)
   insight_cards: boolean };    // a ringing call can show a card in the provider's app (Aircall)
 type PhoneConnection = { id: string; provider: string; name: string; account_name: string;
   status: "connected" | "error"; last_error: string;
@@ -222,7 +222,7 @@ trigger takes them; another trigger with one is refused):
 | --- | --- | --- |
 | `call_outcome` | equals, not_equals | answered, missed, voicemail |
 | `call_direction` | equals, not_equals | inbound, outbound |
-| `call_missed_reason` | equals, not_equals | the provider's reason, `[a-z0-9_]` (Aircall: `out_of_opening_hours`, `short_abandoned`, `abandoned_in_ivr`, `abandoned_in_classic`, `no_available_agent`, `agents_did_not_answer`; Voys: `no_answer`, `busy`, `cancelled`, `abandon`, `failed`) |
+| `call_missed_reason` | equals, not_equals | the provider's reason, `[a-z0-9_]` (Aircall: `out_of_opening_hours`, `short_abandoned`, `abandoned_in_ivr`, `abandoned_in_classic`, `no_available_agent`, `agents_did_not_answer`; Voys: `no_answer`, `busy`, `cancelled`, `abandon`, `failed`; Placetel: `missed`, `blocked`, `busy`, `canceled`, `unavailable`, `congestion`) |
 | `call_time` | equals, not_equals | business_hours, outside_business_hours: the call's start against the business hours of the ticket's team, else the workspace's; hours that are off are never outside |
 | `call_line` | equals, not_equals, contains, not_contains | equals and not_equals: the line's id (`PhoneLine.id`, which stays when the line is renamed); contains and not_contains: words of its name |
 | `call_tag` | equals, not_equals, contains, not_contains | the call's tags, like `tag` |
@@ -245,7 +245,8 @@ the `phone.insight_card` job and dropped when it could not go out within three m
 
 With a connection, phone numbers on contacts and in the ticket sidebar are `tel:` links
 (a `00` prefix becomes `+`). The operating system hands them to the default phone app:
-Aircall Workspace or the Voys app, once it is set as the handler for phone links.
+Aircall Workspace, the Voys app or a Placetel-compatible phone app, once it is set as
+the handler for phone links. opendesk does not initiate a provider API call.
 
 ## Aircall
 
@@ -334,6 +335,60 @@ Docs: [API specs](https://openapi.voys.dev) (`voipgrid/user`, `voipgrid/callerid
   the lines list, and two fetches per call with Voys Intelligence.
 - No insight cards: Voys shows none from other apps.
 
+## Placetel
+
+Docs: [REST API v2](https://api.placetel.de/v2/docs/),
+[Notify API](https://github.com/Placetel/call-control-notify-api).
+
+- Credentials: a PROFI API token (`api_token`, `Authorization: Bearer`). Validation reads
+  `GET https://api.placetel.de/v2/users?per_page=1` and requires a positive user id;
+  the connection is named "Placetel". The adapter retains no user details or account id.
+  Replacing the token rotates the manual webhook secret because account identity cannot
+  be compared, and clears receipt health until a callback arrives at the new URL.
+- Setup: connect in opendesk and copy the whole webhook URL. In the Placetel Webportal,
+  open Settings → External APIs and enter it as the notification endpoint. Enable
+  notifications for each wanted number there, or in that number's routing settings under
+  Miscellaneous. Outgoing notifications also require a caller ID on the SIP user and
+  notifications enabled on that number. Use Notify mode and keep the number's normal
+  routing; opendesk acknowledges callbacks without call-control instructions. Make a
+  test call to move the connection from `webhook_missing` to `receiving`.
+- Authentication: use the entire admin-only URL
+  `/v1/phone/hooks/placetel/{connectionId}/{secret}` over HTTPS. The engine verifies its
+  sealed secret in constant time before parsing; this URL is a bearer credential. This
+  adapter uses the manual webhook authentication boundary, including rotation, redacted
+  paths and rate limits described below. It does not use a body token or the provider's
+  optional signature header. Replace the URL in Placetel after rotating it, and remove
+  the notification endpoint there when disconnecting.
+- Callbacks: form-encoded POSTs use `event`, a 64-character SHA-256 hex `call_id`,
+  `direction` (`in` or `out`), `from`, `to`, and on hangup `type` and `duration` (seconds).
+  `IncomingCall` and `OutgoingCall` ring; `CallAccepted` answers inbound calls only;
+  `HungUp` is final. Its `accepted` type marks answered, `voicemail` marks voicemail,
+  and `missed`, `blocked`, `busy`, `canceled`, `unavailable`, `congestion` supply missed
+  reasons (an earlier answer still makes the merged outcome answered). Other events
+  are ignored. Malformed supported callbacks are rejected by the parser. Duplicate
+  meaningful fields are refused, and retries with reordered or unrelated fields share
+  a normalized event identity. SIP peer fields and unknown form fields are not retained.
+- Number mapping: inbound `from` is the customer and `to` the line; outbound reverses
+  them. Numbers keep national spelling, with `00` normalized to `+`; no country is
+  guessed. Anonymous customers have no contact. Short internal extensions and SIP
+  identities are ignored. Lines come from `GET /v2/numbers?per_page=100&page=…`, at
+  most ten pages: the number is the id used by `call_line`, and its name is the label
+  (falling back to the number). Callback line ids use the same normalization.
+- Times: Notify supplies no event timestamp. Start, answer and end use receipt time;
+  accepted hangups infer the answer from receipt time minus `duration`. Delayed
+  callbacks therefore cannot reconstruct exact historical times or business hours.
+  A timestamp supplied as an unrelated field is not trusted. The engine deduplicates
+  and merges call state as for the other providers.
+- No insight cards, provider agent email mapping, summaries or transcripts. Notify's
+  hashed call id has no documented stable correlation to REST recording ids, so the
+  adapter does not match recordings by number or time and exposes no recording or
+  voicemail media links. A voicemail outcome alone does not provide playable media.
+- API rate limits: a 429 snoozes a minute, or a positive `Retry-After` of at most two
+  minutes. API calls are used for credential checks and number listing.
+
+This integration is verified with protocol fixtures and local tests. Live account
+validation remains necessary before claiming live-tested Placetel functionality.
+
 ## Security and operations
 
 - Credentials (with the account id) and the webhook token or secret are AES-GCM sealed with
@@ -359,7 +414,9 @@ Docs: [API specs](https://openapi.voys.dev) (`voipgrid/user`, `voipgrid/callerid
   makes a provider's retry a no-op. Applied events' ids are kept a week, so an event whose
   own time (Aircall's and Voys' `timestamp`) is more than a week old is acknowledged and
   dropped: a replay of it could no longer be recognized. Voys' AI events carry no time; their
-  text is fetched from Voys, so a replay only fetches it again.
+  text is fetched from Voys, so a replay only fetches it again. Placetel uses receipt
+  time because Notify supplies no timestamp; retries deduplicate while their normalized
+  event ids are retained.
 - Provider API clients have a 15-second timeout and do not follow redirects. Their base
   URL is an adapter constant, never user input.
 - Logs carry ids, event names and errors, never numbers, names or call content.
@@ -371,3 +428,5 @@ Aircall SMS and WhatsApp, two-way contact sync, an OAuth app (Aircall Marketplac
 API keys, Aircall's real-time transcription. For Voys: insight cards (Voys has none),
 playable recordings (Voys' recording URL needs the API token), contact sync with its contact
 book, and registering the call notification for the admin (Voys has no API for it).
+For Placetel: recording correlation and playback, summaries, transcripts, agent mapping,
+insight cards and call control.

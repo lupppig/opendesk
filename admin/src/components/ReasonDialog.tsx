@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Textarea } from "@/components/ui/input";
@@ -23,6 +24,7 @@ export function ReasonDialog({
   confirmLabel: string;
   onConfirm: (reason: string) => Promise<unknown>;
 }) {
+  const { t } = useTranslation();
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,7 +65,7 @@ export function ReasonDialog({
       footer={
         <>
           <Button variant="ghost" disabled={busy} onClick={() => close(false)}>
-            Cancel
+            {t("actions.cancel")}
           </Button>
           <Button variant="danger-solid" loading={busy} disabled={!valid} onClick={() => void submit()}>
             {confirmLabel}
@@ -72,7 +74,7 @@ export function ReasonDialog({
       }
     >
       <div className="flex flex-col gap-3">
-        <Field label="Reason" hint={`${reason.length} / ${MAX}`} error={reason.length > MAX ? `Keep it under ${MAX} characters.` : undefined}>
+        <Field label={t("reason.label")} hint={`${reason.length} / ${MAX}`} error={reason.length > MAX ? t("reason.tooLong", { max: MAX }) : undefined}>
           {(p) => (
             <Textarea
               {...p}
@@ -83,7 +85,7 @@ export function ReasonDialog({
               onKeyDown={(e) => {
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void submit();
               }}
-              placeholder="What happened, and any ticket or report it relates to"
+              placeholder={t("reason.placeholder")}
             />
           )}
         </Field>

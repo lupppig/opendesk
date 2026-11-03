@@ -19,7 +19,7 @@ import { isSeverity, pct } from "@/lib/decisions";
 import { MessageItem, type ThreadActions } from "./MessageItem";
 import { LiveAgentReply } from "./AgentReply";
 import { CallEntry } from "./CallEntry";
-import { stickToBottom, type Stick } from "./stickToBottom";
+import { latestMessageFloor, stickToBottom, type Stick } from "./stickToBottom";
 import { BotFace } from "@/components/bots/BotFace";
 import { isAIActor, OllieAvatar, useAssistantName } from "../ollie";
 import { fieldText, useDisplay, useTicketFields, type CustomField } from "../fields";
@@ -465,7 +465,9 @@ export function Timeline({
     return l ? l.text.length + l.tools.length : 0;
   });
   useLayoutEffect(() => {
-    const s = stickToBottom(scroller.current!, content.current!);
+    const el = scroller.current!, box = content.current!;
+    // History after the latest message (triage, rules, API keys) never scrolls the message away on open.
+    const s = stickToBottom(el, box, () => latestMessageFloor(el, box));
     stick.current = s;
     return () => {
       s.stop();

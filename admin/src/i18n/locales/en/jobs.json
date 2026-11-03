@@ -1,0 +1,49 @@
+{
+  "title": "Jobs",
+  "subtitle": "Background work on this instance",
+  "refresh": "Refresh",
+  "stateLabel": "Job state",
+  "kindLabel": "Job kind",
+  "allKinds": "All kinds",
+  "retrying_one": "{{n}} retrying",
+  "retrying_other": "{{n}} retrying",
+  "empty": {
+    "title": "No {{state}} jobs",
+    "titleKind": "No {{state}} jobs of {{kind}}",
+    "retryable": "Nothing is failing and waiting to try again.",
+    "discarded": "No job has run out of attempts.",
+    "other": "Pick another state or kind to look further."
+  },
+  "col": {
+    "job": "Job",
+    "queue": "Queue",
+    "state": "State",
+    "attempt": "Attempt",
+    "lastError": "Last error",
+    "scheduled": "Scheduled"
+  },
+  "hideDetails": "Hide details",
+  "showDetails": "Show details",
+  "retry": "Retry",
+  "cancel": {
+    "button": "Cancel",
+    "title": "Cancel this job?",
+    "confirm": "Cancel job",
+    "text": "<k>{{kind}}</k> #{{id}} stops and won't run again unless it is retried."
+  },
+  "toast": {
+    "retried": "Job #{{id}} runs again now",
+    "cancelled": "Job #{{id}} cancelled"
+  },
+  "details": {
+    "args": "Args",
+    "copyArgs": "Copy args",
+    "copyError": "Copy error",
+    "lastErrorOf_one": "Last error ({{n}} error)",
+    "lastErrorOf_other": "Last error ({{n}} errors)",
+    "created": "Created",
+    "lastAttempt": "Last attempt",
+    "finished": "Finished",
+    "notYet": "Not yet"
+  }
+}

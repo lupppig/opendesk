@@ -1,0 +1,117 @@
+{
+  "list": {
+    "title": "Utilisateurs",
+    "search": "Rechercher par e-mail, nom ou id",
+    "filterLabel": "Filtrer les utilisateurs",
+    "filter": {
+      "all": "Tous",
+      "suspended": "Suspendus",
+      "admins": "Admins",
+      "unverified": "Non vérifiés"
+    },
+    "noMatch": "Aucun utilisateur ne correspond",
+    "noMatchHint": "Essayez un autre e-mail, nom ou id, ou effacez les filtres.",
+    "empty": "Aucun utilisateur",
+    "emptyHint": "Les personnes apparaissent ici dès qu’elles s’inscrivent ou acceptent une invitation.",
+    "col": {
+      "user": "Utilisateur",
+      "security": "Sécurité",
+      "workspaces": "Espaces de travail",
+      "lastSeen": "Vu pour la dernière fois",
+      "joined": "Inscrit"
+    }
+  },
+  "flag": {
+    "verified": "Vérifié",
+    "unverified": "Non vérifié",
+    "twoFactor": "2FA",
+    "noTwoFactor": "Sans 2FA",
+    "noPassword": "Sans mot de passe"
+  },
+  "detail": {
+    "allUsers": "Tous les utilisateurs",
+    "actions": "Actions",
+    "joinedSeen": "Inscrit <joined/>, vu pour la dernière fois <seen/>",
+    "deviceOn": "{{browser}} sur {{os}}",
+    "unknownDevice": "Appareil inconnu",
+    "client": {
+      "web": "Navigateur",
+      "desktop": "Application de bureau",
+      "ios": "Application iPhone"
+    },
+    "blocked": {
+      "suspendSelf": "Vous ne pouvez pas vous suspendre vous-même",
+      "suspendAdmin": "Retirez d’abord son rôle d’admin",
+      "mfaOff": "L’authentification à deux facteurs est désactivée",
+      "mfaSelf": "Désactivez la vôtre dans l’application",
+      "deleteSelf": "Supprimez votre propre compte dans l’application"
+    },
+    "toast": {
+      "verificationSent": "E-mail de vérification envoyé à {{email}}",
+      "alreadyVerified": "Cet e-mail est déjà vérifié",
+      "restored": "Utilisateur rétabli",
+      "signedOutAll": "Déconnecté partout",
+      "sessionSignedOut": "Session déconnectée",
+      "suspended": "Utilisateur suspendu",
+      "mfaOff": "Authentification à deux facteurs désactivée",
+      "deleted": "{{email}} a été supprimé"
+    },
+    "restore": {
+      "title": "Rétablir cet utilisateur ?",
+      "button": "Rétablir l’utilisateur",
+      "text": "<b>{{email}}</b> peut à nouveau se connecter."
+    },
+    "signOutAll": {
+      "title": "Déconnecter partout ?",
+      "button": "Déconnecter partout",
+      "text": "Chaque session de <b>{{email}}</b> prend fin sur tous les appareils, dans l’application et le panneau. La personne peut se reconnecter."
+    },
+    "resendVerification": "Renvoyer l’e-mail de vérification",
+    "suspend": {
+      "button": "Suspendre l’utilisateur",
+      "title": "Suspendre {{email}} ?",
+      "description": "Chaque session prend fin, dans l’application et le panneau, et la personne ne peut plus se connecter avant d’être rétablie. Ses espaces continuent de fonctionner pour tous les autres."
+    },
+    "mfa": {
+      "button": "Désactiver l’authentification à deux facteurs",
+      "title": "Désactiver l’authentification à deux facteurs ?",
+      "confirm": "Désactiver la 2FA",
+      "description": "L’authentificateur et les codes de récupération de {{email}} sont supprimés (les clés d’accès restent), chaque session prend fin, et la personne est avertie par e-mail qu’un administrateur l’a fait. Ne le faites qu’après avoir vérifié qui le demande."
+    },
+    "delete": {
+      "button": "Supprimer l’utilisateur",
+      "title": "Supprimer {{email}} ?",
+      "description": "Le compte et ses données sont supprimés définitivement, comme avec Supprimer le compte de l’utilisateur. C’est irréversible.",
+      "descriptionLeaves_one": "Le compte et ses données sont supprimés définitivement, comme avec Supprimer le compte de l’utilisateur. La personne quitte {{n}} espace. C’est irréversible.",
+      "descriptionLeaves_other": "Le compte et ses données sont supprimés définitivement, comme avec Supprimer le compte de l’utilisateur. La personne quitte {{n}} espaces. C’est irréversible.",
+      "descriptionLeaves_many": "Le compte et ses données sont supprimés définitivement, comme avec Supprimer le compte de l’utilisateur. La personne quitte {{n}} espaces. C’est irréversible.",
+      "soleOwner": "La personne possède un espace qui a d’autres membres. Transférez-le ou supprimez d’abord cet espace."
+    },
+    "suspendedSince": "Suspendu <time/>",
+    "suspendedHint": "La personne ne peut pas se connecter ; ses espaces continuent de fonctionner pour tous les autres.",
+    "noWorkspaces": "Aucun espace",
+    "noWorkspacesHint": "Cette personne n’est membre d’aucun espace.",
+    "sessions": {
+      "title": "Sessions actives",
+      "device": "Appareil",
+      "signedIn": "Connexion",
+      "lastUsed": "Dernière utilisation",
+      "signOut": "Déconnecter",
+      "empty": "Aucune session active",
+      "emptyHint": "La personne est déconnectée partout."
+    },
+    "account": {
+      "title": "Compte",
+      "email": "E-mail",
+      "twoFactor": "Deux facteurs",
+      "password": "Mot de passe",
+      "set": "Défini",
+      "passkeys": "Clés d’accès",
+      "adminRole": "Rôle d’admin"
+    },
+    "identities": {
+      "title": "Identités de connexion",
+      "none": "E-mail et mot de passe uniquement."
+    }
+  }
+}

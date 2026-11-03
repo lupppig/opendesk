@@ -270,6 +270,10 @@
       "label": "Open the next ticket after “{{action}}”",
       "hint": "Also after sending with a status that takes the ticket out of the list. The next ticket of the list or view you came from opens, with its filters and sort; after the last one, you are back on the list. Undoing the send brings you back to the ticket."
     },
+    "alwaysShowImages": {
+      "label": "Always show images",
+      "hint": "Remote images in the emails you receive load with them, without “Load images”. They come from the sender’s servers, which can then tell when an email was opened."
+    },
     "sounds": {
       "title": "Sounds",
       "hint": "Applies to this browser. Live chat has a brighter chime; everything else is quiet.",

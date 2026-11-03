@@ -3,21 +3,23 @@
 
 import { ExternalLink } from "lucide-react";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { CopyButton } from "@/components/ui/copy-button";
 import { cn } from "@/lib/cn";
 
 export function IdChip({ value, label, className }: { value: string; label?: string; className?: string }) {
+  const { t } = useTranslation();
   return (
     <span className={cn("inline-flex min-w-0 items-center gap-0.5 rounded-sm bg-sunken py-px pl-1.5 text-[11.5px] text-fg-2 shadow-[inset_0_0_0_1px_var(--line-soft)]", className)}>
       {label && <span className="mr-1 text-fg-4">{label}</span>}
       <span className="mono truncate">{value}</span>
-      <CopyButton value={value} label={`Copy ${label ?? "id"}`} className="size-5" />
+      <CopyButton value={value} label={t("copyNamed", { name: label ?? t("id") })} className="size-5" />
     </span>
   );
 }
 
 function show(v: unknown): string {
-  if (v === null || v === undefined) return "none";
+  if (v === null || v === undefined) return "null";
   if (typeof v === "string") return v;
   if (typeof v === "number" || typeof v === "boolean") return String(v);
   try {
@@ -29,6 +31,7 @@ function show(v: unknown): string {
 
 /** An object's members as compact "key value" chips, for audit data. */
 export function DataPairs({ data, max = 6 }: { data: Record<string, unknown> | null | undefined; max?: number }) {
+  const { t } = useTranslation();
   const entries = Object.entries(data ?? {});
   if (!entries.length) return <span className="text-fg-4">–</span>;
   const shown = entries.slice(0, max);
@@ -43,7 +46,7 @@ export function DataPairs({ data, max = 6 }: { data: Record<string, unknown> | n
           </span>
         );
       })}
-      {entries.length > max && <span className="text-[11px] text-fg-4">+{entries.length - max} more</span>}
+      {entries.length > max && <span className="text-[11px] text-fg-4">{t("more", { count: entries.length - max })}</span>}
     </span>
   );
 }
@@ -57,7 +60,8 @@ export function ExtLink({ href, children, className }: { href: string; children:
   );
 }
 
-/** "Not set" in quiet grey, for empty values in key/value lists. */
-export function None({ children = "None" }: { children?: ReactNode }) {
-  return <span className="text-fg-4">{children}</span>;
+/** "None" in quiet grey, for empty values in key/value lists. */
+export function None({ children }: { children?: ReactNode }) {
+  const { t } = useTranslation();
+  return <span className="text-fg-4">{children ?? t("none")}</span>;
 }

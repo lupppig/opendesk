@@ -3,6 +3,7 @@
 // enforces the same rule either way.
 
 import { forwardRef } from "react";
+import { useTranslation } from "react-i18next";
 import { Button, type ButtonProps } from "@/components/ui/button";
 import { MenuItem } from "@/components/ui/menu";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -19,13 +20,14 @@ export const ActionButton = forwardRef<HTMLButtonElement, ButtonProps & { perm: 
   { perm, blocked, disabled, ...rest },
   ref,
 ) {
+  const { t } = useTranslation();
   const denied = useDenied(perm);
   const reason = denied ?? blocked ?? null;
   if (!reason) return <Button ref={ref} disabled={disabled} {...rest} />;
   // A disabled button gets no pointer events; the wrapper carries the tooltip.
   return (
     <Tooltip content={reason}>
-      <span tabIndex={0} className="inline-flex rounded-md outline-none" aria-label={`${typeof rest.children === "string" ? rest.children : "Action"}: ${reason}`}>
+      <span tabIndex={0} className="inline-flex rounded-md outline-none" aria-label={`${typeof rest.children === "string" ? rest.children : t("action")}: ${reason}`}>
         <Button ref={ref} disabled {...rest} />
       </span>
     </Tooltip>

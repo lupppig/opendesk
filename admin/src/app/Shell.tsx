@@ -6,6 +6,7 @@ import { Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { Menu as MenuIcon } from "lucide-react";
 import { Dialog as D } from "radix-ui";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { AdminPill, EnvPill } from "@/components/brand";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -50,6 +51,7 @@ function focusSearch() {
 }
 
 export function Shell() {
+  const { t } = useTranslation("shell");
   const authed = useSession((s) => s.status === "authed");
   const navigate = useNavigate();
   const [drawer, setDrawer] = useState(false);
@@ -59,7 +61,7 @@ export function Shell() {
 
   const signOut = () => {
     // The panel forgets the session either way; the API ends it when it answers.
-    api.auth.logout().catch(() => toast.info("Signed out here", { description: "The API didn't confirm it. The session ends on its own within the hour." }));
+    api.auth.logout().catch(() => toast.info(t("signedOutHere"), { description: t("signedOutHereHint") }));
   };
 
   useHotkeys({
@@ -87,7 +89,7 @@ export function Shell() {
               className="fixed inset-y-0 left-0 z-40 flex w-[264px] shadow-float outline-none data-[state=open]:animate-fade-in md:hidden"
               onClick={(e) => (e.target as HTMLElement).closest("a") && setDrawer(false)}
             >
-              <D.Title className="sr-only">Navigation</D.Title>
+              <D.Title className="sr-only">{t("navigation")}</D.Title>
               <Sidebar onSignOut={signOut} onShortcuts={() => setShortcuts(true)} />
             </D.Content>
           </D.Portal>
@@ -95,11 +97,11 @@ export function Shell() {
 
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex h-10 shrink-0 items-center gap-2 px-3 md:pl-1 md:pr-4">
-            <Button variant="ghost" square aria-label="Open navigation" className="md:hidden" icon={<MenuIcon />} onClick={() => setDrawer(true)} />
+            <Button variant="ghost" square aria-label={t("openNavigation")} className="md:hidden" icon={<MenuIcon />} onClick={() => setDrawer(true)} />
             <span className="flex items-center gap-1.5 md:hidden">
               <AdminPill />
             </span>
-            <span className="hidden text-[12px] text-fg-3 md:inline">Instance administration</span>
+            <span className="hidden text-[12px] text-fg-3 md:inline">{t("instanceAdministration")}</span>
             <div className="ml-auto flex items-center gap-2">
               <EnvPill label={config.envLabel} />
             </div>
@@ -112,11 +114,11 @@ export function Shell() {
         </div>
       </div>
 
-      <Dialog open={shortcuts} onOpenChange={setShortcuts} title="Keyboard shortcuts" size="sm">
+      <Dialog open={shortcuts} onOpenChange={setShortcuts} title={t("shortcuts.dialog")} size="sm">
         <ul className="flex flex-col divide-y divide-line-soft pb-1">
           {SHORTCUTS.map((s) => (
             <li key={s.keys} className="flex h-9 items-center justify-between text-[12.5px]">
-              <span className="text-fg-2">{s.label}</span>
+              <span className="text-fg-2">{t(s.label)}</span>
               <Kbd>{s.keys}</Kbd>
             </li>
           ))}

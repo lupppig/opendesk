@@ -5,6 +5,7 @@
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { AdminPill, EnvPill, Lockup } from "@/components/brand";
 import { CodeField, codeReady, type CodeMode } from "@/components/CodeField";
 import { Notice } from "@/components/layout";
@@ -13,12 +14,13 @@ import { Button } from "@/components/ui/button";
 import { Field, PasswordInput, TextInput } from "@/components/ui/input";
 import { errorMessage, isApiError } from "@/lib/api/client";
 import { api } from "@/lib/api/endpoints";
+import { i18n } from "@/i18n";
 import { config } from "@/lib/config";
 import { nextTarget } from "@/lib/next";
 
 const appLink = (path: string) => `${config.appUrl}${path}`;
 
-function A({ href, children }: { href: string; children: ReactNode }) {
+function A({ href, children }: { href: string; children?: ReactNode }) {
   return (
     <a href={href} target="_blank" rel="noopener noreferrer" className="font-medium text-fg underline decoration-line-strong underline-offset-2 hover:decoration-fg">
       {children}
@@ -31,23 +33,19 @@ export function loginError(e: unknown): ReactNode {
   if (!isApiError(e)) return errorMessage(e);
   switch (e.code) {
     case "invalid_credentials":
-      return "That email and password don't match an instance admin.";
+      return i18n.t("auth:loginError.invalidCredentials");
     case "not_admin":
-      return "This account isn't an instance admin. A super admin grants access from the panel, or the operator with opendesk admin grant.";
+      return i18n.t("auth:loginError.notAdmin");
     case "admin_mfa_setup_required":
-      return (
-        <>
-          Admins sign in with two-factor authentication. Turn it on for this account in the app's <A href={appLink("/settings/security")}>security settings</A>, then sign in here.
-        </>
-      );
+      return <Trans ns="auth" i18nKey="loginError.mfaSetupRequired" components={{ a: <A href={appLink("/settings/security")} /> }} />;
     case "account_suspended":
-      return "This account is suspended.";
+      return i18n.t("auth:loginError.suspended");
     case "rate_limited":
-      return "Too many attempts. Wait a few minutes and try again.";
+      return i18n.t("auth:loginError.rateLimited");
     case "captcha_failed":
-      return "The security check didn't pass. Try it again.";
+      return i18n.t("auth:loginError.captchaFailed");
     case "origin_refused":
-      return "The API doesn't accept sign-ins from this address. Check the instance's ADMIN_URL.";
+      return i18n.t("auth:loginError.originRefused");
     default:
       return errorMessage(e);
   }
@@ -56,12 +54,13 @@ export function loginError(e: unknown): ReactNode {
 /** Why the last session ended, when it ended on its own. */
 function endedMessage(code: string | undefined): string | null {
   if (!code) return null;
-  if (code === "account_suspended") return "This account is suspended.";
-  if (code === "not_admin" || code === "forbidden") return "Your admin access was removed.";
-  return "Your session ended. Sign in again.";
+  if (code === "account_suspended") return i18n.t("auth:loginError.suspended");
+  if (code === "not_admin" || code === "forbidden") return i18n.t("auth:ended.removed");
+  return i18n.t("auth:ended.expired");
 }
 
 export default function Login() {
+  const { t } = useTranslation("auth");
   const search = useSearch({ from: "/login" });
   const navigate = useNavigate();
   const [step, setStep] = useState<"password" | "code">("password");
@@ -112,9 +111,9 @@ export default function Login() {
       setCode("");
       if (isApiError(e, "invalid_code")) {
         setCodeInvalid(true);
-        setError(mode === "totp" ? "That code didn't work. Check your authenticator app and try again." : "That recovery code didn't work.");
+        setError(mode === "totp" ? t("code.invalidTotp") : t("code.invalidRecovery"));
       } else if (isApiError(e, "invalid_mfa_token") || (isApiError(e) && e.status === 401)) {
-        restart("This sign-in expired. Start again.");
+        restart(t("signIn.expired"));
       } else setError(loginError(e));
     }
   };
@@ -140,8 +139,8 @@ export default function Login() {
           <div className="px-6 py-7 sm:px-8">
             {step === "password" ? (
               <>
-                <h1 className="text-[20px] font-semibold leading-7 tracking-[-0.03em]">Sign in to the admin panel</h1>
-                <p className="mt-1 text-[12.5px] leading-5 text-fg-3">For the people who run this instance. Every sign-in is recorded in the admin audit log.</p>
+                <h1 className="text-[20px] font-semibold leading-7 tracking-[-0.03em]">{t("signIn.title")}</h1>
+                <p className="mt-1 text-[12.5px] leading-5 text-fg-3">{t("signIn.subtitle")}</p>
                 <form
                   className="mt-6 flex flex-col gap-4"
                   onSubmit={(e) => {
@@ -150,7 +149,7 @@ export default function Login() {
                   }}
                 >
                   {ended && !error && <Notice kind="info">{ended}</Notice>}
-                  <Field label="Email">
+                  <Field label={t("signIn.email")}>
                     {(p) => (
                       <TextInput
                         {...p}
@@ -165,7 +164,7 @@ export default function Login() {
                       />
                     )}
                   </Field>
-                  <Field label="Password">
+                  <Field label={t("signIn.password")}>
                     {(p) => (
                       <PasswordInput
                         {...p}
@@ -181,11 +180,11 @@ export default function Login() {
                   <Turnstile ref={turnstile} onToken={setCaptcha} action="admin_login" />
                   {error && <Notice>{error}</Notice>}
                   <Button type="submit" variant="primary" size="lg" className="w-full" loading={busy} disabled={!email.trim() || !password || (needsCaptcha && !captcha)}>
-                    Continue
+                    {t("signIn.continue")}
                   </Button>
                 </form>
                 <p className="mt-5 text-[12px] leading-[18px] text-fg-4">
-                  No password on this account? Set one with <A href={appLink("/forgot")}>Forgot password</A> in the app first.
+                  <Trans t={t} i18nKey="signIn.noPassword" components={{ a: <A href={appLink("/forgot")} /> }} />
                 </p>
               </>
             ) : (
@@ -193,9 +192,9 @@ export default function Login() {
                 <button type="button" onClick={() => restart()} className="mb-4 inline-flex items-center gap-1 text-[12px] text-fg-3 hover:text-fg">
                   <ArrowLeft className="size-3.5" /> {email}
                 </button>
-                <h1 className="text-[20px] font-semibold leading-7 tracking-[-0.03em]">Two-factor authentication</h1>
+                <h1 className="text-[20px] font-semibold leading-7 tracking-[-0.03em]">{t("mfa.title")}</h1>
                 <p className="mt-1 text-[12.5px] leading-5 text-fg-3">
-                  {mode === "totp" ? "Enter the 6-digit code from your authenticator app." : "Enter one of the recovery codes you saved when you set up two-factor authentication."}
+                  {mode === "totp" ? t("mfa.totpHint") : t("mfa.recoveryHint")}
                 </p>
                 <form
                   className="mt-6 flex flex-col gap-4"
@@ -222,7 +221,7 @@ export default function Login() {
                   />
                   {error && <Notice>{error}</Notice>}
                   <Button type="submit" variant="primary" size="lg" className="w-full" loading={busy} disabled={!codeReady(mode, code)}>
-                    Sign in
+                    {t("mfa.signIn")}
                   </Button>
                 </form>
               </>

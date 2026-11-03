@@ -1,0 +1,136 @@
+{
+  "adminPill": "Admin",
+  "thisInstance": "Diese Instanz",
+  "loading": "Wird geladen",
+  "none": "Keine",
+  "noData": "Keine Daten",
+  "noReason": "Kein Grund angegeben.",
+  "saved": "Gespeichert",
+  "id": "ID",
+  "action": "Aktion",
+  "copyNamed": "{{name}} kopieren",
+  "more_one": "+{{count}} weiterer",
+  "more_other": "+{{count}} weitere",
+  "clearFilters": "Suche und Filter zurücksetzen",
+  "actions": {
+    "cancel": "Abbrechen",
+    "confirm": "Bestätigen",
+    "save": "Speichern",
+    "restore": "Wiederherstellen",
+    "tryAgain": "Erneut versuchen",
+    "loadMore": "Mehr laden",
+    "copy": "Kopieren",
+    "copied": "Kopiert",
+    "undo": "Rückgängig",
+    "close": "Schließen"
+  },
+  "errors": {
+    "notFound": "Nicht gefunden",
+    "notFoundHint": "Es wurde vielleicht gelöscht, oder der Link ist falsch.",
+    "didntLoad": "Das ließ sich nicht laden",
+    "requestId": "Anfrage-ID",
+    "copyRequestId": "Anfrage-ID kopieren",
+    "generic": "Etwas ist schiefgelaufen",
+    "network": "Die API ist nicht erreichbar. Prüfe deine Verbindung.",
+    "rateLimited": "Zu viele Versuche. Warte einen Moment und versuche es erneut.",
+    "forbidden": "Deine Admin-Rolle erlaubt das nicht."
+  },
+  "time": {
+    "never": "Nie",
+    "justNow": "gerade eben",
+    "inAMoment": "gleich",
+    "short": {
+      "s": "{{n}} s",
+      "m": "{{n}} Min.",
+      "h": "{{n}} Std.",
+      "d": "{{n}} T."
+    }
+  },
+  "table": {
+    "shown_one": "{{count}} angezeigt",
+    "shown_other": "{{count}} angezeigt",
+    "end": "Ende der Liste"
+  },
+  "chart": {
+    "total_one": "<n>{{total}}</n> an {{count}} Tag",
+    "total_other": "<n>{{total}}</n> in {{count}} Tagen",
+    "summary_one": "{{label}}: {{total}} an {{count}} Tag",
+    "summary_other": "{{label}}: {{total}} in {{count}} Tagen"
+  },
+  "reason": {
+    "label": "Grund",
+    "tooLong": "Bleib unter {{max}} Zeichen.",
+    "placeholder": "Was passiert ist, und das zugehörige Ticket oder die Meldung"
+  },
+  "ui": {
+    "remove": "{{name}} entfernen",
+    "areYouSure": "Bist du sicher?",
+    "typeToConfirm": "Gib <v>{{text}}</v> zur Bestätigung ein",
+    "confirmText": "Bestätigungstext",
+    "dialog": "Dialog",
+    "hidePassword": "Passwort verbergen",
+    "showPassword": "Passwort anzeigen",
+    "search": "Suchen",
+    "clearSearch": "Suche löschen",
+    "optional": "Optional",
+    "select": "Auswählen"
+  },
+  "plan": {
+    "free": "Free",
+    "pro": "Pro",
+    "collab": "Collab",
+    "self_hosted": "Selbst gehostet"
+  },
+  "subscription": {
+    "active": "Aktiv",
+    "trialing": "Testphase",
+    "past_due": "Überfällig",
+    "unpaid": "Unbezahlt",
+    "canceled": "Gekündigt",
+    "incomplete": "Unvollständig",
+    "incomplete_expired": "Unvollständig abgelaufen",
+    "paused": "Pausiert"
+  },
+  "suspended": "Gesperrt",
+  "test": "Test",
+  "mailbox": {
+    "active": "Aktiv",
+    "error": "Fehler",
+    "disabled": "Deaktiviert"
+  },
+  "check": {
+    "ok": "OK",
+    "warn": "Warnung",
+    "fail": "Fehlgeschlagen"
+  },
+  "jobState": {
+    "available": "Bereit",
+    "running": "Läuft",
+    "retryable": "Wird wiederholt",
+    "scheduled": "Geplant",
+    "pending": "Ausstehend",
+    "completed": "Abgeschlossen",
+    "cancelled": "Abgebrochen",
+    "discarded": "Verworfen"
+  },
+  "memberRole": {
+    "owner": "Inhaber",
+    "admin": "Admin",
+    "agent": "Agent",
+    "viewer": "Betrachter"
+  },
+  "role": {
+    "viewer": "Betrachter",
+    "support": "Support",
+    "super": "Super"
+  },
+  "roleHint": {
+    "viewer": "Liest jede Seite, ändert nichts",
+    "support": "Sitzungen, Sperren, Limits, KI-Guthaben, Test-Workspaces und Jobs",
+    "super": "Alles, auch 2FA, Löschungen und Admins"
+  },
+  "denied": {
+    "super": "Erfordert die Admin-Rolle Super",
+    "role": "Erfordert die Admin-Rolle {{role}} oder Super"
+  }
+}
