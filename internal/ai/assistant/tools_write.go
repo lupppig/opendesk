@@ -211,7 +211,7 @@ func (rc *runCtx) resolveChanges(ctx context.Context, c ticketChanges, allowFiel
 		}
 		p.Priority = c.Priority
 	}
-	if c.Severity != "" {
+	if c.Severity != "" && !rc.noSeverity {
 		if err := validEnum([]string{c.Severity}, append(append([]string{}, severities...), "none"), "severity"); err != nil {
 			return p, err
 		}
@@ -703,7 +703,7 @@ type automationArgs struct {
 
 var triggers = []string{"ticket_created", "customer_replied", "agent_replied", "ticket_updated", "call_ended"}
 
-func proposeAutomation(_ context.Context, _ *runCtx, in json.RawMessage) (any, Preview, error) {
+func proposeAutomation(_ context.Context, rc *runCtx, in json.RawMessage) (any, Preview, error) {
 	a, err := decode[struct {
 		Name       string `json:"name"`
 		Trigger    string `json:"trigger"`
@@ -734,6 +734,9 @@ func proposeAutomation(_ context.Context, _ *runCtx, in json.RawMessage) (any, P
 	args := automationArgs{Name: name, Trigger: a.Trigger, Conditions: []map[string]any{}, Actions: []map[string]any{}}
 	changes := []Change{{Field: "When", From: "", To: strings.ReplaceAll(a.Trigger, "_", " ")}}
 	for _, c := range a.Conditions {
+		if rc.noSeverity && c.Field == "severity" {
+			return nil, Preview{}, httpx.Validation("This workspace does not use severity.")
+		}
 		args.Conditions = append(args.Conditions, map[string]any{"field": c.Field, "op": c.Op, "value": c.Value})
 		op, value := strings.ReplaceAll(c.Op, "_", " "), c.Value
 		if (c.Op == "any" || c.Op == "none") && !strings.Contains(c.Field, "field.") {
@@ -749,12 +752,18 @@ func proposeAutomation(_ context.Context, _ *runCtx, in json.RawMessage) (any, P
 		changes = append(changes, Change{Field: "If", From: "", To: strings.TrimSpace(c.Field + " " + op + " " + value)})
 	}
 	for _, x := range a.Actions {
+		if rc.noSeverity && x.Type == "set_severity" {
+			continue
+		}
 		m := map[string]any{"type": x.Type, "value": x.Value}
 		if x.Field != "" {
 			m["field"] = x.Field
 		}
 		args.Actions = append(args.Actions, m)
 		changes = append(changes, Change{Field: "Then", From: "", To: strings.TrimSpace(strings.ReplaceAll(x.Type, "_", " ") + " " + x.Field + " " + clip(x.Value, 120))})
+	}
+	if len(args.Actions) == 0 {
+		return nil, Preview{}, httpx.Validation("The automation needs an action this workspace uses.")
 	}
 	changes = append(changes, Change{Field: "Enabled", From: "", To: "off, until an admin turns it on"})
 	return args, Preview{Title: "Create the automation " + name, Summary: "Created switched off", Changes: changes}, nil

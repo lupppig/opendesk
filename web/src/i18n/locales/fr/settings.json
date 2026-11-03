@@ -397,7 +397,10 @@
     "hideFor": "Masquer {{name}} des menus",
     "showFor": "Afficher {{name}} dans les menus",
     "finishButton": "Bouton {{action}}",
-    "finishButtonHint": "Affichez à côté d’Envoyer, dans la zone de réponse, un bouton qui envoie et résout le ticket en un clic, et pas seulement dans le menu voisin. Il utilise le libellé de fin de l’espace de travail et définit toujours le statut sur résolu."
+    "finishButtonHint": "Affichez à côté d’Envoyer, dans la zone de réponse, un bouton qui envoie et résout le ticket en un clic, et pas seulement dans le menu voisin. Il utilise le libellé de fin de l’espace de travail et définit toujours le statut sur résolu.",
+    "severity": "Gravité",
+    "severityOn": "Les tickets ont une gravité, de Gravité 1 à Gravité 4, à côté de leur priorité. Désactivez-la si la priorité suffit à votre équipe.",
+    "severityOff": "La gravité disparaît des tickets, des listes, des filtres et du tri, des vues, des modifications groupées, des automatisations, du triage et des rapports, et Ollie ne la définit ni ne la suggère plus. Les tickets gardent leur gravité ; l’API la lit et l’écrit toujours."
   },
   "danger": {
     "title": "Zone de danger",

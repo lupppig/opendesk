@@ -35,7 +35,7 @@ import { q, qk } from "@/lib/queries";
 import { atLeast, reloadSession, updateWorkspace, useRole, useSession } from "@/lib/session";
 import { LOCALE_NAMES, matchLocale, SUPPORTED } from "@/i18n";
 
-type DisplaySettings = { status_labels?: Overrides<TicketStatus>; priority_labels?: Overrides<Priority>; send_and_finish_button?: boolean };
+type DisplaySettings = { status_labels?: Overrides<TicketStatus>; priority_labels?: Overrides<Priority>; send_and_finish_button?: boolean; severity_enabled?: boolean };
 type Draft = {
   name: string;
   settings: Required<Pick<WS, "timezone" | "help_center_enabled" | "help_center_title" | "csat_enabled" | "gravatar" | "domain_logos" | "undo_send_seconds" | "undo_send_chat_seconds" | "message_delete" | "collab_ticket_replies" | "collab_ticket_reply_to" | "agent_online_time" | "snooze_presets">> & {
@@ -49,7 +49,12 @@ type Draft = {
 function toDraft(w: Workspace): Draft {
   const extra: DisplaySettings = w.settings;
   return {
-    display: { status_labels: extra.status_labels ?? {}, priority_labels: extra.priority_labels ?? {}, send_and_finish_button: extra.send_and_finish_button ?? false },
+    display: {
+      status_labels: extra.status_labels ?? {},
+      priority_labels: extra.priority_labels ?? {},
+      send_and_finish_button: extra.send_and_finish_button ?? false,
+      severity_enabled: extra.severity_enabled ?? true,
+    },
     name: w.name,
     settings: {
       timezone: w.settings.timezone ?? "UTC",
@@ -385,6 +390,14 @@ export default function WorkspaceSettings() {
               aria-label={finishButton}
               checked={draft.display.send_and_finish_button}
               onCheckedChange={(v) => setDraft({ ...draft, display: { ...draft.display, send_and_finish_button: v } })}
+              disabled={!canEdit}
+            />
+          </Row>
+          <Row label={t("display.severity")} description={draft.display.severity_enabled ? t("display.severityOn") : t("display.severityOff")}>
+            <Switch
+              aria-label={t("display.severity")}
+              checked={draft.display.severity_enabled}
+              onCheckedChange={(v) => setDraft({ ...draft, display: { ...draft.display, severity_enabled: v } })}
               disabled={!canEdit}
             />
           </Row>

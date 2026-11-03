@@ -144,6 +144,8 @@ type procedureRun struct {
 	tools  map[string]procedureTool
 	used   []string
 	writes int
+	// noSeverity: the workspace does not use severity, so update_ticket neither offers nor sets it.
+	noSeverity bool
 }
 
 // procedureTool is a tool offered to the model in a run.
@@ -332,12 +334,17 @@ func (r *procedureRun) offer(ctx context.Context) []ToolSpec {
 		Schema: obj(map[string]any{"page": str("The page id from search_wiki")}, "page")}})
 	add(procedureTool{write: true, spec: ToolSpec{Name: "add_note", Description: "Leave an internal note on the ticket for the team. The customer never sees it.",
 		Schema: obj(map[string]any{"body": str("The note, in markdown")}, "body")}})
-	add(procedureTool{write: true, spec: ToolSpec{Name: "update_ticket", Description: "Raise the ticket's priority or severity, or add existing labels. Lowering is not possible.",
+	update := ToolSpec{Name: "update_ticket", Description: "Raise the ticket's priority or severity, or add existing labels. Lowering is not possible.",
 		Schema: obj(map[string]any{
 			"priority":   map[string]any{"type": "string", "enum": domain.Priorities},
 			"severity":   map[string]any{"type": "string", "enum": domain.Severities},
 			"add_labels": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Names of existing labels"},
-		})}})
+		})}
+	if on, err := domain.SeverityOn(ctx, r.s.d.DB.Pool, r.a.WorkspaceID); err == nil && !on {
+		r.noSeverity = true
+		update.Description, update.Schema = domain.WithoutSeverityWords(update.Description), domain.WithoutSeverity(update.Schema)
+	}
+	add(procedureTool{write: true, spec: update})
 	ext, err := r.s.connectedTools().Tools(ctx, r.a.WorkspaceID)
 	if err != nil {
 		r.s.d.Log.Warn("procedure connected tools unavailable", "workspace_id", r.a.WorkspaceID, "err", err)
@@ -417,7 +424,11 @@ func (r *procedureRun) call(ctx context.Context, name string, in json.RawMessage
 	case "add_note":
 		return r.addNote(ctx, text("body"))
 	case "update_ticket":
-		return r.updateTicket(ctx, text("priority"), text("severity"), args["add_labels"])
+		severity := text("severity")
+		if r.noSeverity {
+			severity = ""
+		}
+		return r.updateTicket(ctx, text("priority"), severity, args["add_labels"])
 	}
 	return r.callConnected(ctx, *t.ext, in)
 }
@@ -564,7 +575,7 @@ func (r *procedureRun) ticketBlock(ctx context.Context) string {
 	t := r.tc.T
 	lines := []string{"number: " + strconv.FormatInt(t.Number, 10), "subject: " + attr(t.Subject), "status: " + t.Status,
 		"priority: " + t.Priority, "channel: " + t.Channel}
-	if t.Severity != nil {
+	if t.Severity != nil && !r.noSeverity {
 		lines = append(lines, "severity: "+*t.Severity)
 	}
 	if len(t.Tags) > 0 {

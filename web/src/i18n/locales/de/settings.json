@@ -418,7 +418,10 @@
     "hideFor": "{{name}} in den Menüs ausblenden",
     "showFor": "{{name}} in den Menüs anzeigen",
     "finishButton": "Schaltfläche „{{action}}“",
-    "finishButtonHint": "Zeige neben Senden im Antwortfeld eine Schaltfläche, die das Ticket mit einem Klick sendet und löst, nicht nur im Menü daneben. Sie verwendet die Abschlussbezeichnung des Arbeitsbereichs und setzt den Status immer auf gelöst."
+    "finishButtonHint": "Zeige neben Senden im Antwortfeld eine Schaltfläche, die das Ticket mit einem Klick sendet und löst, nicht nur im Menü daneben. Sie verwendet die Abschlussbezeichnung des Arbeitsbereichs und setzt den Status immer auf gelöst.",
+    "severity": "Schweregrad",
+    "severityOn": "Tickets haben neben ihrer Priorität einen Schweregrad, Sev 1 bis Sev 4. Schalte ihn aus, wenn deinem Team die Priorität reicht.",
+    "severityOff": "Der Schweregrad verschwindet aus Tickets, Listen, Filtern, Ansichten, Massenänderungen, Automationen, der Triage und den Berichten, und Ollie setzt oder schlägt ihn nicht mehr vor. Tickets behalten ihren Schweregrad; die API liest und schreibt ihn weiter."
   },
   "danger": {
     "title": "Gefahrenbereich",

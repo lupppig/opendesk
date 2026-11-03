@@ -418,7 +418,10 @@
     "hideFor": "Hide {{name}} from the menus",
     "showFor": "Show {{name}} in the menus",
     "finishButton": "{{action}} button",
-    "finishButtonHint": "Show a button next to Send in the reply box that sends and solves the ticket in one click, not only in the menu beside it. It uses the workspace’s finish label and always sets the status to solved."
+    "finishButtonHint": "Show a button next to Send in the reply box that sends and solves the ticket in one click, not only in the menu beside it. It uses the workspace’s finish label and always sets the status to solved.",
+    "severity": "Severity",
+    "severityOn": "Tickets have a severity, Sev 1 to Sev 4, beside their priority. Turn it off if priority is enough for your team.",
+    "severityOff": "Severity is left out of tickets, lists, filters, views, bulk changes, automations, triage and reports, and Ollie no longer sets or suggests it. Tickets keep the severity they have; the API still reads and writes it."
   },
   "danger": {
     "title": "Danger zone",

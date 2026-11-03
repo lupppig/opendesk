@@ -53,6 +53,7 @@ type CoreWorkspaceSettings struct {
 	UndoSendChatSecs  *int    `json:"undo_send_chat_seconds,omitempty" enum:"0,5,10,20,30" doc:"The same for replies on chat tickets. Default 0: a chat reply goes at once"`
 	SendAndFinish     *bool   `json:"send_and_finish_button,omitempty" doc:"Show a button that sends and solves, using the workspace's finish label next to Send in the reply composer, instead of only in its menu. Default false"`
 	AgentOnlineTime   *bool   `json:"agent_online_time,omitempty" doc:"Record each member's online time from the app's heartbeats and show it in the agents report. Default true; false records none, deletes what was recorded, and the report shows none"`
+	SeverityEnabled   *bool   `json:"severity_enabled,omitempty" doc:"Tickets have a severity beside their priority. Default true; false leaves severity out of the app (ticket, lists, filters, views, bulk actions, automations, reports) and AI never sets or proposes one. The API still reads and writes it, and tickets keep theirs"`
 	// SnoozePresets are the times a ticket's snooze menu offers, in order, besides a date picked by hand.
 	SnoozePresets *[]SnoozePreset `json:"snooze_presets,omitempty" maxItems:"8" doc:"The times a ticket's snooze menu offers, in order, on each agent's own clock. Empty (the default): in 1 hour, in 4 hours, tomorrow at 09:00 and next week (Monday) at 09:00"`
 	// StatusLabels and PriorityLabels rename and recolour the fixed values for display only;
@@ -285,6 +286,9 @@ func validateSettings(s *CoreWorkspaceSettings) (map[string]any, error) {
 	}
 	if s.AgentOnlineTime != nil {
 		out["agent_online_time"] = *s.AgentOnlineTime
+	}
+	if s.SeverityEnabled != nil {
+		out["severity_enabled"] = *s.SeverityEnabled
 	}
 	if s.SnoozePresets != nil {
 		p, err := validSnoozePresets(*s.SnoozePresets)

@@ -9,7 +9,7 @@ import { Picker } from "@/components/ui/picker";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { Channel, Priority, Severity } from "@/lib/api/types";
 import { encodeFieldFilters, parseFieldFilters, type InboxSearch } from "@/lib/folders";
-import { fieldText, useTicketFields, type CustomField } from "./fields";
+import { fieldText, useDisplay, useTicketFields, type CustomField } from "./fields";
 import { q } from "@/lib/queries";
 import { cn } from "@/lib/cn";
 import { AnimatedNumber } from "@/components/motion";
@@ -82,6 +82,8 @@ export function ListToolbar({
   const reduced = useReducedMotion();
   const { data: tags } = useQuery(q.tags());
   const teams = useTeamsCtx();
+  // Without severity in the workspace, its filter and sort leave the menus; one already applied still shows, to remove.
+  const display = useDisplay();
   const mailboxes = teams.mailboxes;
   const [addressOpen, setAddressOpen] = useState(false);
   const openingAddress = useRef(false);
@@ -256,16 +258,18 @@ export function ListToolbar({
                 </MenuCheckItem>
               ))}
             </MenuSub>
-            <MenuSub label={t("filter.severity")}>
-              {severityOrder.map((v) => (
-                <MenuCheckItem key={v} checked={severities.includes(v)} onSelect={() => toggleSeverity(v)} icon={<SeverityChip severity={v} />}>
-                  {severityLabel(v)}
+            {display.severity && (
+              <MenuSub label={t("filter.severity")}>
+                {severityOrder.map((v) => (
+                  <MenuCheckItem key={v} checked={severities.includes(v)} onSelect={() => toggleSeverity(v)} icon={<SeverityChip severity={v} />}>
+                    {severityLabel(v)}
+                  </MenuCheckItem>
+                ))}
+                <MenuCheckItem checked={severities.includes("none")} onSelect={() => toggleSeverity("none")} icon={noSeverityMark}>
+                  {t("filter.noSeverity")}
                 </MenuCheckItem>
-              ))}
-              <MenuCheckItem checked={severities.includes("none")} onSelect={() => toggleSeverity("none")} icon={noSeverityMark}>
-                {t("filter.noSeverity")}
-              </MenuCheckItem>
-            </MenuSub>
+              </MenuSub>
+            )}
             <MenuSub label={t("filter.channel")}>
               {(["email", "chat", "api", "portal", "phone"] as Channel[]).map((c) => (
                 <MenuCheckItem
@@ -420,7 +424,7 @@ export function ListToolbar({
           </Tooltip>
           <MenuContent align="end" className="w-[190px]">
             <MenuLabel>{t("sort.by")}</MenuLabel>
-            {sorts.map((s) => (
+            {sorts.filter((s) => s !== "severity" || display.severity || sort === "severity").map((s) => (
               <MenuCheckItem key={s} checked={sort === s} onSelect={() => onSearch({ ...search, sort: s === "last_message_at" ? undefined : s, order: undefined })}>
                 {t(`sort.${s}`)}
               </MenuCheckItem>

@@ -22,6 +22,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/audit"
 	"github.com/useopendesk/opendesk/internal/auth"
 	"github.com/useopendesk/opendesk/internal/db"
+	"github.com/useopendesk/opendesk/internal/domain"
 	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/integrations"
 )
@@ -370,6 +371,10 @@ func (s *Service) loop(ctx context.Context, rc *runCtx, sid uuid.UUID, emit emit
 	if !s.peerAvailable(ctx, p.WorkspaceID) {
 		// The tool checks again on every call; this keeps it out of sight while it is off.
 		specs = slices.DeleteFunc(specs, func(t ai.ToolSpec) bool { return t.Name == "ask_teammate" })
+	}
+	if on, err := domain.SeverityOn(ctx, s.d.DB.Pool, p.WorkspaceID); err == nil && !on {
+		rc.noSeverity = true
+		specs = withoutSeverity(specs)
 	}
 	ext := rc.external(ctx)
 	for _, name := range rc.extOrder {
