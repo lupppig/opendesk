@@ -51,20 +51,22 @@ export function NewTicketProperties({ s }: { s: NewTicketState }) {
             }
           />
         </Prop>
-        <Prop label={tr("props.severity")}>
-          <Picker
-            value={draft.severity ?? "__none"}
-            placeholder={tr("props.setSeverity")}
-            items={severityItems}
-            onSelect={(v) => set({ severity: v === "__none" ? null : (v as Severity) })}
-            trigger={
-              <PropButton placeholder={!draft.severity}>
-                {draft.severity ? <SeverityChip severity={draft.severity} /> : <span className="h-[16px] w-[22px] shrink-0 rounded-[4px] border border-dashed border-line-strong" />}
-                {draft.severity ? severityLabel(draft.severity) : tr("props.noSeverity")}
-              </PropButton>
-            }
-          />
-        </Prop>
+        {display.severity && (
+          <Prop label={tr("props.severity")}>
+            <Picker
+              value={draft.severity ?? "__none"}
+              placeholder={tr("props.setSeverity")}
+              items={severityItems}
+              onSelect={(v) => set({ severity: v === "__none" ? null : (v as Severity) })}
+              trigger={
+                <PropButton placeholder={!draft.severity}>
+                  {draft.severity ? <SeverityChip severity={draft.severity} /> : <span className="h-[16px] w-[22px] shrink-0 rounded-[4px] border border-dashed border-line-strong" />}
+                  {draft.severity ? severityLabel(draft.severity) : tr("props.noSeverity")}
+                </PropButton>
+              }
+            />
+          </Prop>
+        )}
         <Prop label={tr("props.assignee")}>
           <Picker
             value={s.assignee ?? "__none"}

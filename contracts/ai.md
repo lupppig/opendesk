@@ -288,7 +288,9 @@ Triage output is validated, never trusted: `tags` are at most 3 of the workspace
 tags (canonical names); `suggested_tags` are at most 2 new, cleaned, lowercase names; an
 unknown priority becomes `normal`, sentiment `neutral`, category `other`, language `und`.
 `apply` (and auto-triage, and the automation action) only ever **raises** priority and severity
-(an empty severity is set), so AI never lowers a person's choice. Applying adds the tags, sets `custom.ai_sentiment`,
+(an empty severity is set), so AI never lowers a person's choice. In a workspace that does not use
+severity (`settings.severity_enabled` false, contracts/api.md), triage neither asks nor decides it:
+`severity` is null, with no decision or suggestion for it, whatever `triage_fields` holds. Applying adds the tags, sets `custom.ai_sentiment`,
 `custom.language`, `custom.ai_category`, `custom.ai_triaged_at`, and logs activities with
 `actor_type = "ai"` (`tagged`, `priority_changed`, `ai_triaged`). Only the explicit API
 `apply` creates `suggested_tags` as tags (never when `settings.label_creation` is `"admins"`; labels whose `applies_to` lacks tickets are skipped, and an exclusive label group keeps one label, the last applied, contracts/api.md); auto-triage and the automation action store them
@@ -373,7 +375,10 @@ still names Ollie.
 Ollie is an agent loop over tool use (Anthropic tool use; OpenAI-compatible `tools` as the
 fallback; a provider without tool support answers `501 ai_unsupported`). It needs a signed-in
 user (`kind = user`; API keys get `403`), viewer or above, AI on and `settings.ai.assistant`
-on (`403 assistant_off`). Conversations belong to one user in one workspace.
+on (`403 assistant_off`). Conversations belong to one user in one workspace. In a workspace that
+does not use severity (`settings.severity_enabled` false), the ticket tools (`update_ticket`,
+`bulk_update_tickets`, `create_automation_draft`) are offered without it, and a severity the model
+names anyway is left out of the change.
 
 | method | path | typical cost | body → response |
 | --- | --- | --- | --- |
@@ -616,7 +621,8 @@ allowed on `ticket_created`, `customer_replied`, `agent_replied` and `call_ended
   `get_wiki_page` (the team's wiki, `contracts/wiki.md` "AI"), `add_note` (an internal note in markdown,
   sanitized like every note; `ai: true`, from Ollie, runs no automations), `update_ticket` (raises
   priority or severity, never lowers them, and adds existing labels, exclusive groups kept; activities
-  carry `{via: "procedure", procedure_id, automation_id}`), and the workspace's connected tools
+  carry `{via: "procedure", procedure_id, automation_id}`; without severity in the workspace it offers
+  and sets priority and labels only, and the ticket's facts leave severity out), and the workspace's connected tools
   (`contracts/integrations.md`) that are reads, or writes on the integration's `auto_tools`. No other
   write is offered: never a reply, a handoff or anything a customer sees. A create-style connected write
   whose result links to the provider's hosts is linked to the ticket (`actor_type: "ai"`, no user).

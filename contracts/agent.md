@@ -624,7 +624,9 @@ or an OAuth access token (below); every tool runs through the public API in proc
 principal, so it gets exactly its scopes, role checks, validation, events, activities and audit
 entries. Writes are attributed to the key, or to the user who connected the client.
 
-Tools (offered only when the key has the scope):
+Tools (offered only when the key has the scope). In a workspace that does not use severity
+(`settings.severity_enabled` false, contracts/api.md), the ticket tools are listed without it:
+no severity to filter on, set or create with.
 
 | tool | scope | does |
 | --- | --- | --- |

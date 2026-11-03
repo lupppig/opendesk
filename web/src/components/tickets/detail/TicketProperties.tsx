@@ -403,27 +403,28 @@ function PropertyControls({ t, picker, onPicker, bar }: { t: Ticket; picker: Pro
           )}
         />,
       )}
-      {row(
-        tr("props.severity"),
-        undefined,
-        <Picker
-          {...openFor("severity")}
-          value={t.severity ?? "__none"}
-          placeholder={tr("props.setSeverity")}
-          items={severityItems}
-          onSelect={(v) => patch({ severity: v === "__none" ? null : (v as Severity) })}
-          trigger={trigger(
-            tr("props.severity"),
-            undefined,
-            { placeholder: !t.severity },
-            <>
-              {t.severity ? <SeverityChip severity={t.severity} /> : <span className="h-[16px] w-[22px] shrink-0 rounded-[4px] border border-dashed border-line-strong" />}
-              <span className="truncate">{t.severity ? severityLabel(t.severity) : tr("props.noSeverity")}</span>
-              {aiSet.severity && <SetByOllie note={decided?.severity?.applied ? note(t, "severity") : undefined} />}
-            </>,
-          )}
-        />,
-      )}
+      {display.severity &&
+        row(
+          tr("props.severity"),
+          undefined,
+          <Picker
+            {...openFor("severity")}
+            value={t.severity ?? "__none"}
+            placeholder={tr("props.setSeverity")}
+            items={severityItems}
+            onSelect={(v) => patch({ severity: v === "__none" ? null : (v as Severity) })}
+            trigger={trigger(
+              tr("props.severity"),
+              undefined,
+              { placeholder: !t.severity },
+              <>
+                {t.severity ? <SeverityChip severity={t.severity} /> : <span className="h-[16px] w-[22px] shrink-0 rounded-[4px] border border-dashed border-line-strong" />}
+                <span className="truncate">{t.severity ? severityLabel(t.severity) : tr("props.noSeverity")}</span>
+                {aiSet.severity && <SetByOllie note={decided?.severity?.applied ? note(t, "severity") : undefined} />}
+              </>,
+            )}
+          />,
+        )}
       {row(
         tr("props.assignee"),
         "a",

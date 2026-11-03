@@ -29,6 +29,7 @@ import (
 	"github.com/useopendesk/opendesk/internal/core/oauthgrant"
 	"github.com/useopendesk/opendesk/internal/db"
 	"github.com/useopendesk/opendesk/internal/deps"
+	"github.com/useopendesk/opendesk/internal/domain"
 	"github.com/useopendesk/opendesk/internal/httpx"
 	"github.com/useopendesk/opendesk/internal/idempotency"
 )
@@ -127,22 +128,31 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		tooMany(w, r, keyPerMinute)
 		return
 	}
-	srv := h.server(p, r.Header.Get(idempotency.Header))
+	srv := h.server(r.Context(), p, r.Header.Get(idempotency.Header))
 	h.mcp.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), serverKey{}, srv)))
 }
 
 // server builds the MCP server for one request: the tools the key's scopes allow,
-// each calling the API as the key.
-func (h *Handler) server(p *auth.Principal, clientKey string) *mcp.Server {
+// each calling the API as the key. A workspace that does not use severity gets them
+// without it (contracts/agent.md).
+func (h *Handler) server(ctx context.Context, p *auth.Principal, clientKey string) *mcp.Server {
 	cp := *p
 	cp.Assistant = false
 	s := mcp.NewServer(&mcp.Implementation{Name: "opendesk", Title: "opendesk", Version: "1"},
 		&mcp.ServerOptions{Instructions: instructions})
+	severity, err := domain.SeverityOn(ctx, h.d.DB.Pool, p.WorkspaceID)
+	if err != nil {
+		severity = true
+	}
 	for _, t := range catalog() {
 		if !t.offered(&cp) {
 			continue
 		}
-		s.AddTool(t.mcpTool(), h.run(t, &cp, clientKey))
+		mt := t.mcpTool()
+		if !severity {
+			mt.Description, mt.InputSchema = domain.WithoutSeverityWords(t.Description), domain.WithoutSeverity(t.Schema)
+		}
+		s.AddTool(mt, h.run(t, &cp, clientKey))
 	}
 	return s
 }

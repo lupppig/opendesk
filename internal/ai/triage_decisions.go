@@ -91,6 +91,9 @@ type triageOptions struct {
 	typeLabels []labelOpt
 	labels     []labelOpt
 	teams      []teamOpt
+	// noSeverity: the workspace does not use severity (settings severity_enabled false), so
+	// triage neither asks nor decides it.
+	noSeverity bool
 }
 
 type labelOpt struct{ name, desc string }
@@ -151,6 +154,11 @@ func loadTriageOptions(ctx context.Context, q db.Querier, wid uuid.UUID) (triage
 		var t teamOpt
 		return t, r.Scan(&t.id, &t.name, &t.desc)
 	})
+	if err != nil {
+		return o, err
+	}
+	on, err := domain.SeverityOn(ctx, q, wid)
+	o.noSeverity = !on
 	return o, err
 }
 
@@ -332,6 +340,9 @@ func triageQuestions(o triageOptions) map[string]decide.Question {
 			"Another team: it needs engineering, billing or a third party.",
 			"A major incident: a broad outage or data problem that takes long to resolve."),
 	}
+	if o.noSeverity {
+		delete(q, "severity")
+	}
 	if len(o.typeLabels) > 0 {
 		q["type_label"] = decide.Choice(ask("Which type describes `ticket`?"), labelOptions(o.typeLabels, "None of these types fits."))
 	}
@@ -379,10 +390,11 @@ func (s *Service) triageJev(ctx context.Context, wid uuid.UUID, userID *uuid.UUI
 	a := res.Answers["priority"]
 	t.Priority = domain.Priorities[min(max(a.Level(), 0), 3)]
 	rec("priority", t.Priority, a)
-	a = res.Answers["severity"]
-	sev := []string{"sev4", "sev3", "sev2", "sev1"}[min(max(a.Level(), 0), 3)]
-	t.Severity = &sev
-	rec("severity", sev, a)
+	if a, ok := res.Answers["severity"]; ok && !o.noSeverity {
+		sev := []string{"sev4", "sev3", "sev2", "sev1"}[min(max(a.Level(), 0), 3)]
+		t.Severity = &sev
+		rec("severity", sev, a)
+	}
 	a = res.Answers["category"]
 	t.Category = a.Choice
 	rec("category", a.Choice, a)
@@ -444,12 +456,16 @@ type llmTriage struct {
 	Summary       string   `json:"summary"`
 }
 
-func llmTriageSchema(teams []string) map[string]any {
-	return obj(map[string]any{
+func llmTriageSchema(teams []string, severity bool) map[string]any {
+	s := obj(map[string]any{
 		"tags": strArr, "suggested_tags": strArr, "priority": enumT(domain.Priorities),
 		"severity": enumT(append(slices.Clone(domain.Severities), "none")), "team": enumT(append(slices.Clone(teams), "none")),
 		"sentiment": enumT(Sentiments), "language": strT, "category": enumT(Categories), "summary": strT,
 	}, "tags", "suggested_tags", "priority", "severity", "team", "sentiment", "language", "category", "summary")
+	if !severity {
+		s = domain.WithoutSeverity(s)
+	}
+	return s
 }
 
 // triageLLM asks the AI model for the triage as structured output and validates it
@@ -472,7 +488,7 @@ func (s *Service) triageLLM(ctx context.Context, wid uuid.UUID, userID *uuid.UUI
 	if len(teamLines) > 0 {
 		teamList = strings.Join(teamLines, "\n")
 	}
-	req := Request{Model: s.models.Fast, MaxTokens: 1500, Effort: "low", JSONSchema: llmTriageSchema(teamNames), SchemaName: "ticket_triage",
+	req := Request{Model: s.models.Fast, MaxTokens: 1500, Effort: "low", JSONSchema: llmTriageSchema(teamNames, !o.noSeverity), SchemaName: "ticket_triage",
 		System: []Block{{Text: triageSystem, Cache: true}},
 		Messages: []Message{{Role: "user", Blocks: []Block{
 			{Text: block("available_tags", nil, tagList) + "\n" + block("teams", nil, teamList)},
@@ -529,7 +545,7 @@ func validateTriage(raw llmTriage, o triageOptions) *Triage {
 	if _, ok := priorityRank[t.Priority]; !ok {
 		t.Priority = "normal"
 	}
-	if slices.Contains(domain.Severities, raw.Severity) {
+	if slices.Contains(domain.Severities, raw.Severity) && !o.noSeverity {
 		sev := raw.Severity
 		t.Severity = &sev
 	}

@@ -43,6 +43,7 @@ import {
   validMergeWindow,
   validPhrases,
 } from "@/components/settings2/automation";
+import { useDisplay } from "@/components/tickets/fields";
 import { AiIcon, useCostText } from "@/components/ai/bits";
 import { formatUsd } from "@/lib/format";
 import { useAI } from "@/lib/ai";
@@ -61,7 +62,7 @@ import { cn } from "@/lib/cn";
 import { tone, type Tone } from "@/lib/tones";
 
 /** Built-in fields an automation offers: call fields only on call_ended, and never a destination's time. */
-const automationFields = (trigger: AutomationTrigger) => (f: ConditionField) => f !== "time" && (trigger === "call_ended" || !callFields.has(f));
+const automationFields = (trigger: AutomationTrigger, severity: boolean) => (f: ConditionField) => f !== "time" && (trigger === "call_ended" || !callFields.has(f)) && (severity || f !== "severity");
 
 type Draft = {
   name: string;
@@ -86,8 +87,10 @@ function useActionItems(current: ActionType, trigger: AutomationTrigger) {
   const costText = useCostText();
   const { all } = useAutomationFields();
   const hasTicketFields = all.some((f) => f.entity === "ticket" && !f.archived);
+  const display = useDisplay();
   return offered(allActions, aiActions, enabled, current)
     .filter((a) => a !== "set_field" || hasTicketFields || current === "set_field")
+    .filter((a) => a !== "set_severity" || display.severity || current === "set_severity")
     .filter((a) => actionFitsTrigger(a, trigger) || a === current)
     .map((a) => {
       const n = aiActions.has(a) ? cost(a === "run_procedure" ? "procedure" : "triage") : null;
@@ -108,6 +111,7 @@ export default function AutomationEdit() {
   });
   const isNew = automationId === "new";
   const role = useRole();
+  const display = useDisplay();
   const { data: all, isLoading } = useQuery({
     ...q.automations(),
     enabled: atLeast(role, "admin"),
@@ -380,7 +384,7 @@ export default function AutomationEdit() {
                 <ConditionRow
                   c={c}
                   first={i === 0}
-                  allow={automationFields(draft.trigger)}
+                  allow={automationFields(draft.trigger, display.severity)}
                   invalid={showErrors && condInvalid(c)}
                   onChange={(nc) =>
                     set({

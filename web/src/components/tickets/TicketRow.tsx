@@ -170,8 +170,8 @@ const Row = forwardRef<HTMLAnchorElement, RowProps>(function TicketRow(
     </Tooltip>
   );
 
-  // Severity is optional: a compact chip before the subject, only when set.
-  const severity = t.severity && (
+  // Severity is optional: a compact chip before the subject, only when set and the workspace uses it.
+  const severity = display.severity && t.severity && (
     <Tooltip content={aiSeverity ? `${severityLabel(t.severity)} · ${note(t, "severity")}` : severityLabel(t.severity)}>
       <span className="flex shrink-0">
         <SeverityChip severity={t.severity} />

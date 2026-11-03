@@ -10,6 +10,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Row, Section, SettingsPage } from "@/components/layout";
 import { PriorityIcon, SeverityChip } from "@/components/indicators";
+import { useDisplay } from "@/components/tickets/fields";
 import { Slider } from "@/components/ui/slider";
 import { OllieAvatar, SetByOllie, useAssistantName } from "@/components/tickets/ollie";
 import { TagChip } from "@/components/ui/badge";
@@ -42,6 +43,8 @@ export default function Triage() {
   const qc = useQueryClient();
   const { data: s, isLoading } = useQuery(q.triage());
   const { data: assignment } = useQuery(q.assignment());
+  // Without severity in the workspace, triage never sets it: its choice leaves the page and stays stored.
+  const display = useDisplay();
 
   const write = useMutation({
     mutationFn: (b: Partial<Omit<TriageSettings, "available" | "engine">>) => api.triage.update(b),
@@ -124,7 +127,7 @@ export default function Triage() {
               </Row>
               <Row label={t("triage.fields.label", { name })} description={t("triage.fields.hint")} stack>
                 <div className="grid gap-2 sm:grid-cols-2">
-                  {FIELDS.map((f) => (
+                  {FIELDS.filter((f) => f !== "severity" || display.severity).map((f) => (
                     <FieldOption
                       key={f}
                       field={f}
@@ -281,6 +284,7 @@ function FieldOption({
 function Explainer({ s, name }: { s?: TriageSettings; name: string }) {
   const { t } = useTranslation("settingsInbox");
   const reduce = useReducedMotion();
+  const display = useDisplay();
   const on = !!s?.auto_triage && !!s.available;
   const lines: { key: string; node: ReactNode }[] = [];
   if (s?.fields.includes("priority"))
@@ -293,7 +297,7 @@ function Explainer({ s, name }: { s?: TriageSettings; name: string }) {
         </>
       ),
     });
-  if (s?.fields.includes("severity"))
+  if (s?.fields.includes("severity") && display.severity)
     lines.push({
       key: "severity",
       node: (

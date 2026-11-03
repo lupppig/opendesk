@@ -41,6 +41,8 @@ export function applyDecisions(
 ) {
   const threshold = ws.routing.triageThreshold ?? 0.7;
   const allowed = new Set(opts.force ? ["priority", "severity", "labels", "team"] : ws.routing.triageFields);
+  // A workspace without severity: triage neither sets nor suggests it (settings.severity_enabled).
+  if (ws.workspace.settings.severity_enabled === false) allowed.delete("severity");
   const at = opts.at ?? nowIso();
   const conf = {
     priority: confidenceOf(t, "priority"),

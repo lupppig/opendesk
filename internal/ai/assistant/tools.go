@@ -76,6 +76,8 @@ type runCtx struct {
 	// auto are the built-in changes the workspace lets run without asking, as the run
 	// started (nil until loaded); each one is checked again just before it runs.
 	auto []string
+	// noSeverity: the workspace does not use severity, so changes leave it alone.
+	noSeverity bool
 }
 
 type tool struct {

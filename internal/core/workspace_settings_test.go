@@ -88,3 +88,23 @@ func TestSendAndFinishButton(t *testing.T) {
 		t.Fatal("stored without being set")
 	}
 }
+
+// TestSeveritySetting checks severity can be turned off and on, and stays unset otherwise.
+func TestSeveritySetting(t *testing.T) {
+	for _, v := range []bool{true, false} {
+		out, err := validateSettings(&CoreWorkspaceSettings{SeverityEnabled: &v})
+		if err != nil {
+			t.Fatalf("%v: %v", v, err)
+		}
+		if out["severity_enabled"] != v {
+			t.Fatalf("%v: stored %v", v, out["severity_enabled"])
+		}
+	}
+	out, err := validateSettings(&CoreWorkspaceSettings{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := out["severity_enabled"]; ok {
+		t.Fatal("stored without being set")
+	}
+}

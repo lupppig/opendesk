@@ -292,17 +292,21 @@ export default function TicketDetail({
         { id: "status", label: tr("commands.status"), shortcut: "s", icon: <CircleDot />, run: () => openPicker("status") },
         { id: "priority", label: tr("commands.priority"), shortcut: "p", icon: <Signal />, run: () => openPicker("priority") },
         ...(teamsCtx.hasTeams ? [{ id: "team", label: tr("commands.team"), shortcut: "t", keywords: ["team", "move", "transfer"], icon: <Users />, run: () => openPicker("team") }] : []),
-        { id: "severity", label: tr("commands.severity"), icon: <SeverityChip severity={t.severity ?? "sev3"} />, run: () => openPicker("severity") },
-        ...severityOrder
-          .filter((s) => s !== t.severity)
-          .map((s) => ({
-            id: `severity-${s}`,
-            label: tr("commands.setSeverity", { severity: severityLabel(s) }),
-            keywords: ["severity", "sev", s, `s${s.slice(3)}`],
-            icon: <SeverityChip severity={s} />,
-            run: () => update.mutate({ id: t.id, patch: { severity: s } }),
-          })),
-        ...(t.severity ? [{ id: "severity-clear", label: tr("commands.clearSeverity"), keywords: ["severity"], icon: <SeverityChip severity={null} />, run: () => update.mutate({ id: t.id, patch: { severity: null } }) }] : []),
+        ...(display.severity
+          ? [
+              { id: "severity", label: tr("commands.severity"), icon: <SeverityChip severity={t.severity ?? "sev3"} />, run: () => openPicker("severity") },
+              ...severityOrder
+                .filter((s) => s !== t.severity)
+                .map((s) => ({
+                  id: `severity-${s}`,
+                  label: tr("commands.setSeverity", { severity: severityLabel(s) }),
+                  keywords: ["severity", "sev", s, `s${s.slice(3)}`],
+                  icon: <SeverityChip severity={s} />,
+                  run: () => update.mutate({ id: t.id, patch: { severity: s } }),
+                })),
+              ...(t.severity ? [{ id: "severity-clear", label: tr("commands.clearSeverity"), keywords: ["severity"], icon: <SeverityChip severity={null} />, run: () => update.mutate({ id: t.id, patch: { severity: null } }) }] : []),
+            ]
+          : []),
         { id: "solve", label: solved ? tr("commands.reopen") : finish.command(), shortcut: "e", icon: <CircleCheck />, run: solve },
         { id: "merge", label: tr("detail.merge"), icon: <GitMerge />, run: () => setMergeOpen(true) },
         { id: "history", label: historyShown ? tr("detail.hideHistory") : tr("detail.showHistory"), keywords: ["history", "events", "activity"], icon: <History />, run: () => setTicketHistoryShown(!historyShown) },
@@ -311,7 +315,7 @@ export default function TicketDetail({
     });
     return () => usePageCommands.setState({ commands: [] });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [t?.id, t?.status, t?.spam, t?.severity, canEdit, aiOn, teamsCtx.hasTeams, tr, tAi, indicatorText, display.finish, finishLabel, historyShown]);
+  }, [t?.id, t?.status, t?.spam, t?.severity, canEdit, aiOn, teamsCtx.hasTeams, tr, tAi, indicatorText, display.finish, display.severity, finishLabel, historyShown]);
 
   if (ticket.isError) {
     return (
@@ -572,7 +576,7 @@ export function HeaderPills({ t, bar }: { t: Ticket; bar: boolean }) {
     <span className="hidden shrink-0 items-center gap-1.5 md:flex" data-header-pills>
       {!bar && <StatusPill status={t.status} label={display.status(t.status)} hue={display.statusTone(t.status)} />}
       {!bar && <PriorityPill priority={t.priority} label={display.priority(t.priority)} hue={display.priorityTone(t.priority)} />}
-      {!bar && t.severity && <HeaderSeverity t={t} />}
+      {!bar && display.severity && t.severity && <HeaderSeverity t={t} />}
       {late && <SlaPill ticket={t} />}
       {t.spam && <Badge tone="red">{tr("detail.spam")}</Badge>}
       {!bar && <TicketTeamChips t={t} ctx={teamsCtx} className="ml-0.5" />}

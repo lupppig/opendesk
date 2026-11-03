@@ -30,6 +30,7 @@ import { q } from "@/lib/queries";
 import { atLeast, useRole } from "@/lib/session";
 import { isTone, priorityTone, SERIES, statusTone, tone, toneFor, toneVar, type Tone } from "@/lib/tones";
 import { reportsQuery } from "@/router";
+import { useDisplay } from "@/components/tickets/fields";
 
 const route = getRouteApi("/app/reports");
 
@@ -53,6 +54,8 @@ export default function ReportsPage() {
   const navigate = route.useNavigate();
   const range = reportsQuery(search);
   const scope = useReportScope();
+  // Tickets by severity show only while the workspace uses severity.
+  const severity = useDisplay().severity;
   const filtered = !!(range.team_id || range.brand_id);
   // A link to a team the caller may not see (a private team they are not on) drops the filter.
   const lostTeam = !!search.team && search.team !== NO_TEAM && scope.teamsLoaded && !scope.team(search.team);
@@ -110,11 +113,11 @@ export default function ReportsPage() {
               <VolumeCard d={d} className="xl:col-span-2" />
               <BacklogCard filter={range} openNow={d.open_now} />
             </div>
-            <div className={cn("grid grid-cols-1 gap-4", d.by_severity ? "md:grid-cols-2 xl:grid-cols-4" : "lg:grid-cols-3")}>
+            <div className={cn("grid grid-cols-1 gap-4", severity && d.by_severity ? "md:grid-cols-2 xl:grid-cols-4" : "lg:grid-cols-3")}>
               <Card title={t("channel.title")} subtitle={t("channel.subtitle")}>
                 <ChannelBars data={d.by_channel} />
               </Card>
-              {d.by_severity && (
+              {severity && d.by_severity && (
                 <Card title={t("severity.title")} subtitle={t("severity.subtitle")}>
                   <SeverityBars data={d.by_severity} />
                 </Card>
