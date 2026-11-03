@@ -268,10 +268,12 @@ func (s *service) insertDemoThread(ctx context.Context, tx pgx.Tx, p *pass, t De
 	return true, nil
 }
 
+// addressStrings gives BuildMIME bare addresses, as a send does: it formats each one itself, so a
+// "Name <email>" here would come back unparsable and the message would be stored without them.
 func addressStrings(list []Address) []string {
 	out := make([]string, 0, len(list))
 	for _, a := range list {
-		out = append(out, (&mail.Address{Name: a.Name, Address: a.Email}).String())
+		out = append(out, a.Email)
 	}
 	return out
 }
