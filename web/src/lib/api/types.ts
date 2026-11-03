@@ -1882,6 +1882,8 @@ export type AISettings = {
   assistant_peer?: boolean;
   /** Built-in changes Ollie makes without asking (contracts/ai.md "Approvals"). Default empty. */
   assistant_auto?: AssistantAutoTool[];
+  /** Drafts look up facts with the connected tools that run without approval as reads (contracts/ai.md "Drafts and connected tools"). Default true. */
+  draft_tools?: boolean;
   tone: string;
   reply_language: "customer" | "workspace";
   instructions: string;

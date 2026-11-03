@@ -35,9 +35,13 @@ type AISettings struct {
 	// AssistantAuto are the built-in changes Ollie makes without asking first (some of
 	// AssistantAutoTools). Empty by default: every change waits for approval.
 	AssistantAuto []string `json:"assistant_auto"`
-	Tone          string   `json:"tone"`
-	ReplyLanguage string   `json:"reply_language" enum:"customer,workspace"`
-	Instructions  string   `json:"instructions"`
+	// DraftTools lets a draft look up the facts it needs with the workspace's connected tools
+	// that run without approval as reads (contracts/ai.md "Drafts and connected tools"). On by
+	// default; it changes nothing without such a tool.
+	DraftTools    bool   `json:"draft_tools"`
+	Tone          string `json:"tone"`
+	ReplyLanguage string `json:"reply_language" enum:"customer,workspace"`
+	Instructions  string `json:"instructions"`
 	// Models (contracts/ai.md "Models"); "" = the instance default.
 	Model       string `json:"model"`
 	FastModel   string `json:"fast_model"`
@@ -52,7 +56,7 @@ type AISettings struct {
 
 // DefaultAISettings apply to keys a workspace has not set.
 func DefaultAISettings() AISettings {
-	return AISettings{Enabled: true, Assistant: true, AssistantAuto: []string{}, Tone: "friendly", ReplyLanguage: "customer",
+	return AISettings{Enabled: true, Assistant: true, AssistantAuto: []string{}, DraftTools: true, Tone: "friendly", ReplyLanguage: "customer",
 		WidgetMaxReplies: DefaultWidgetMaxReplies, WidgetBlockedTopics: []string{}, WidgetCollectEmail: true}
 }
 
@@ -74,6 +78,7 @@ func (s Settings) AI() AISettings {
 			field("assistant", &a.Assistant)
 			field("assistant_peer", &a.AssistantPeer)
 			field("assistant_auto", &a.AssistantAuto)
+			field("draft_tools", &a.DraftTools)
 			field("tone", &a.Tone)
 			field("reply_language", &a.ReplyLanguage)
 			field("instructions", &a.Instructions)
@@ -116,6 +121,7 @@ type AISettingsPatch struct {
 	Assistant     *bool     `json:"assistant,omitempty"`
 	AssistantPeer *bool     `json:"assistant_peer,omitempty"`
 	AssistantAuto *[]string `json:"assistant_auto,omitempty" maxItems:"10" doc:"Built-in changes Ollie makes without asking: update_ticket, bulk_update_tickets, add_note, create_kb_draft, create_view, create_automation_draft. Replaces the list"`
+	DraftTools    *bool     `json:"draft_tools,omitempty" doc:"Drafts look up facts with the connected tools that run without approval as reads"`
 	Tone          *string   `json:"tone,omitempty" maxLength:"200" doc:"friendly, professional, concise, or free text up to 200 characters"`
 	ReplyLanguage *string   `json:"reply_language,omitempty" enum:"customer,workspace"`
 	Instructions  *string   `json:"instructions,omitempty" maxLength:"2000"`
@@ -175,6 +181,9 @@ func ValidateAIPatch(p AISettingsPatch, allowedModel func(string) bool) (map[str
 			}
 		}
 		out["assistant_auto"] = list
+	}
+	if p.DraftTools != nil {
+		out["draft_tools"] = *p.DraftTools
 	}
 	if p.Tone != nil {
 		t := strings.Join(strings.Fields(*p.Tone), " ")

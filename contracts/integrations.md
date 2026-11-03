@@ -132,6 +132,8 @@ Tools turned off in settings are neither offered nor run. `disabled_tools`, `ask
   and whose result has a link on the provider's hosts, is linked back to the ticket
   (`POST /v1/tickets/{id}/links`, attributed `ai` for the user). The step's `refs` carry
   `{kind: "external", id: <url>}`.
+- A draft reply (`contracts/ai.md` "Drafts and connected tools") calls reads only (`CallRead`), before
+  it is written.
 - A procedure an automation runs (`contracts/ai.md` "Automations") calls reads, and writes on
   `auto_tools` only (`CallAuto`); a create-style write's link on the provider's hosts is linked to its
   ticket the same way, `actor_type: "ai"` with no user.

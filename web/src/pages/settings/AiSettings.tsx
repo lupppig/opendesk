@@ -37,6 +37,7 @@ const DEFAULTS: AISettings = {
   widget_answers: false,
   assistant: true,
   assistant_peer: false,
+  draft_tools: true,
   tone: "friendly",
   reply_language: "customer",
   instructions: "",
@@ -247,6 +248,14 @@ export default function AiSettings() {
               <Counter n={draft.instructions.length} max={INSTRUCTIONS_MAX} />
             </div>
           </Row>
+          <FeatureRow
+            label={t("settings.draft_tools")}
+            description={t("settings.draft_tools_hint", { name: assistantName })}
+            cost={undefined}
+            checked={draft.draft_tools ?? true}
+            disabled={off}
+            onChange={(draft_tools) => set({ draft_tools })}
+          />
         </Section>
 
         {available && <ProviderSection canEdit={canEdit} />}
