@@ -69,6 +69,8 @@ import { MailMessageItem } from "./MailMessageItem";
 import { PersonPanel } from "./PersonPanel";
 import { AssignPicker, LabelsPicker, MovePicker, type MoveTarget } from "./pickers";
 import { ShareDialog } from "./ShareDialog";
+import { SnoozeMenu } from "@/components/tickets/detail/SnoozeMenu";
+import { weekdayClock } from "@/lib/format";
 
 export type ThreadViewHandle = { reply: (mode: ComposeMode) => void; comment: () => void; move: () => void; labels: () => void; people: () => void };
 
@@ -79,7 +81,7 @@ export type ThreadViewProps = {
   onNext?: () => void;
   position?: { index: number; total: number };
   /** Applies an action from the page, so its toast and Undo know the list. */
-  onAction: (action: MailThreadAction, opts?: { folderId?: string; category?: string; label?: string; silent?: boolean }) => void;
+  onAction: (action: MailThreadAction, opts?: { folderId?: string; category?: string; label?: string; silent?: boolean; until?: string }) => void;
   markReadOnOpen: boolean;
   /** Open the composer in this mode once loaded. */
   intent?: ComposeMode | null;
@@ -516,9 +518,18 @@ export const ThreadView = forwardRef<ThreadViewHandle, ThreadViewProps>(function
               {th.unread ? <MailOpen /> : <Mail />}
             </HeaderButton>
             {account?.handling_enabled && (
-              <HeaderButton label={th.needs_action ? t("action.done") : t("action.needsAction")} pressed={!th.needs_action} onClick={() => onAction(th.needs_action ? "done" : "needs_action", { silent: true })}>
-                <Check />
-              </HeaderButton>
+              <>
+                <HeaderButton label={th.needs_action ? t("action.done") : t("action.needsAction")} pressed={!th.needs_action} onClick={() => onAction(th.needs_action ? "done" : "needs_action", { silent: true })}>
+                  <Check />
+                </HeaderButton>
+                {/* The ticket snooze picker, as is (contracts/collab.md "Snooze"). */}
+                <SnoozeMenu onSnooze={(at) => onAction("snooze", { until: at.toISOString() })} />
+                {th.snoozed_until && (
+                  <span className="mono ml-1 hidden whitespace-nowrap text-[11px] text-fg-4 sm:inline" title={t("thread.snoozedUntil", { when: weekdayClock(new Date(th.snoozed_until)) })}>
+                    {weekdayClock(new Date(th.snoozed_until))}
+                  </span>
+                )}
+              </>
             )}
           </>
         )}

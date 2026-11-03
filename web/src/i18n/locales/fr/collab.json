@@ -30,6 +30,7 @@
     "shared": "Partagés avec moi",
     "assigned": "Attribués à moi",
     "needs_action": "À traiter",
+    "snoozed": "En pause",
     "folder": "Dossier"
   },
   "customize": {
@@ -192,6 +193,9 @@
     "inboxed_many": "{{count}} conversations déplacées vers la boîte de réception",
     "notSpam_one": "Conversation déplacée vers la boîte de réception",
     "notSpam_other": "{{count}} conversations déplacées vers la boîte de réception",
+    "snoozed_one": "Conversation mise en pause",
+    "snoozed_other": "{{count}} conversations mises en pause",
+    "snoozed_many": "{{count}} conversations mises en pause",
     "notSpam_many": "{{count}} conversations déplacées vers la boîte de réception",
     "undo": "Annuler",
     "failed": "L’action a échoué. Rien n’a changé.",
@@ -206,6 +210,7 @@
     "notFound": "Cette conversation n’est plus disponible",
     "notFoundHint": "Elle a été supprimée, n’est plus accessible ou son compte a été déconnecté.",
     "back": "Retour à la liste",
+    "snoozedUntil": "En pause jusqu’au {{when}}",
     "sharedWith": "Partagée avec {{who}}",
     "assignedTo": "Attribuée à {{who}}",
     "everyone": "tout le monde",

@@ -35,7 +35,11 @@ const (
 	BoxShared      = "shared"
 	BoxAssigned    = "assigned"
 	BoxNeedsAction = "needs_action"
+	BoxSnoozed     = "snoozed"
 )
+
+// handlingSQL is the predicate of a conversation (alias t) whose account tracks handling.
+const handlingSQL = `EXISTS (SELECT 1 FROM collab_accounts ha WHERE ha.id = t.account_id AND ha.visibility = 'shared' AND ha.handling_enabled)`
 
 // maxAssignees bounds a conversation's assignees.
 const maxAssignees = 20
@@ -75,7 +79,9 @@ func boxSQL(box, u string) string {
 	case BoxAssigned:
 		return `EXISTS (SELECT 1 FROM collab_assignees xa WHERE xa.thread_id = t.id AND xa.user_id = ` + u + `) AND ` + notJunk
 	case BoxNeedsAction:
-		return `t.needs_action AND EXISTS (SELECT 1 FROM collab_accounts ha WHERE ha.id = t.account_id AND ha.visibility = 'shared' AND ha.handling_enabled) AND t.folder_ids && ` + inboxSQL
+		return `t.needs_action AND ` + handlingSQL + ` AND t.folder_ids && ` + inboxSQL
+	case BoxSnoozed:
+		return `t.snoozed_until IS NOT NULL AND ` + handlingSQL + ` AND t.folder_ids && ` + inboxSQL
 	}
 	return `t.folder_ids && ` + inboxSQL
 }
@@ -95,7 +101,7 @@ func visibleAccountsSQL(u string) string {
 }
 
 type listThreadsInput struct {
-	Box       string `query:"box" enum:"inbox,unread,starred,sent,drafts,archive,trash,spam,all,shared,assigned,needs_action" default:"inbox"`
+	Box       string `query:"box" enum:"inbox,unread,starred,sent,drafts,archive,trash,spam,all,shared,assigned,needs_action,snoozed" default:"inbox"`
 	AccountID string `query:"account_id" doc:"Only this account's conversations"`
 	FolderID  string `query:"folder_id" doc:"Only this folder's conversations; replaces box"`
 	Q         string `query:"q" maxLength:"200" doc:"Matches each message's subject, sender and text, and the conversation's subject and participants"`
@@ -134,6 +140,7 @@ type CollabBoxCounts struct {
 	Assigned    int `json:"assigned"`
 	Drafts      int `json:"drafts"`
 	NeedsAction int `json:"needs_action"`
+	Snoozed     int `json:"snoozed"`
 }
 
 type threadIDInput struct {
@@ -300,9 +307,10 @@ func (s *service) registerThreadRoutes(api huma.API) {
 		func(ctx context.Context, in *struct {
 			Body struct {
 				ThreadIDs []uuid.UUID `json:"thread_ids" minItems:"1" maxItems:"100"`
-				Action    string      `json:"action" enum:"read,unread,star,unstar,archive,inbox,trash,spam,not_spam,move,label,unlabel,done,needs_action,categorize"`
+				Action    string      `json:"action" enum:"read,unread,star,unstar,archive,inbox,trash,spam,not_spam,move,label,unlabel,done,needs_action,snooze,categorize"`
 				FolderID  *uuid.UUID  `json:"folder_id,omitempty" doc:"The folder or label of move, label and unlabel"`
 				Category  string      `json:"category,omitempty" maxLength:"40" doc:"The category key of categorize"`
+				Until     *time.Time  `json:"until,omitempty" doc:"When snooze ends, in the future"`
 			}
 		}) (*struct {
 			Body struct {
@@ -320,6 +328,9 @@ func (s *service) registerThreadRoutes(api huma.API) {
 			tids := appendNew(nil, b.ThreadIDs...)
 			if len(tids) == 0 || len(tids) > 100 {
 				return nil, httpx.Validation("Choose 1 to 100 conversations.")
+			}
+			if b.Action == ActionSnooze && (b.Until == nil || !b.Until.After(time.Now())) {
+				return nil, httpx.Validation("until must be in the future")
 			}
 			threads, err := visibleThreads(ctx, s.d.DB.Pool, p, tids)
 			if err != nil {
@@ -366,12 +377,16 @@ func (s *service) registerThreadRoutes(api huma.API) {
 				if (b.Action == ActionLabel || b.Action == ActionUnlabel) && a.Provider == ProviderIMAP {
 					return nil, errLabels
 				}
-				if (b.Action == ActionDone || b.Action == ActionNeedsAction) && (a.Visibility != VisibilityShared || !a.HandlingEnabled) {
+				if slices.Contains(handlingActions, b.Action) && (a.Visibility != VisibilityShared || !a.HandlingEnabled) {
 					return nil, httpx.Validation("Handling state is not enabled for this account.")
 				}
 				list := byAccount[aid]
 				err = s.d.DB.Tx(ctx, func(tx pgx.Tx) error {
-					if err := s.applyLocal(ctx, tx, a, list, b.Action, folder); err != nil {
+					if b.Action == ActionSnooze {
+						if err := snoozeThreads(ctx, tx, a.WorkspaceID, list, *b.Until); err != nil {
+							return err
+						}
+					} else if err := s.applyLocal(ctx, tx, a, list, b.Action, folder); err != nil {
 						return err
 					}
 					return s.publishChanged(ctx, tx, p.WorkspaceID, &a.ID, list, true)
@@ -655,11 +670,12 @@ func (s *service) counts(ctx context.Context, q db.Querier, p *auth.Principal) (
 		(SELECT count(*) FROM collab_threads t WHERE `+inAccounts+` AND `+boxSQL(BoxUnread, "$2")+`),
 		(SELECT count(*) FROM collab_threads t WHERE `+inAccounts+` AND `+boxSQL(BoxDrafts, "$2")+`),
 		(SELECT count(*) FROM collab_threads t WHERE `+inAccounts+` AND `+boxSQL(BoxNeedsAction, "$2")+`),
+		(SELECT count(*) FROM collab_threads t WHERE `+inAccounts+` AND `+boxSQL(BoxSnoozed, "$2")+`),
 		(SELECT count(*) FROM collab_threads t WHERE t.workspace_id = $1 AND `+threadVisibleSQL("t", "$2")+`
 			AND EXISTS (SELECT 1 FROM collab_shares xs WHERE xs.thread_id = t.id) AND t.folder_ids && `+inboxSQL+`),
 		(SELECT count(*) FROM collab_threads t WHERE t.workspace_id = $1
 			AND EXISTS (SELECT 1 FROM collab_assignees xa WHERE xa.thread_id = t.id AND xa.user_id = $2) AND t.folder_ids && `+inboxSQL+`)`,
-		p.WorkspaceID, p.UserID).Scan(&out.Boxes.Inbox, &out.Boxes.Unread, &out.Boxes.Drafts, &out.Boxes.NeedsAction, &out.Boxes.Shared, &out.Boxes.Assigned)
+		p.WorkspaceID, p.UserID).Scan(&out.Boxes.Inbox, &out.Boxes.Unread, &out.Boxes.Drafts, &out.Boxes.NeedsAction, &out.Boxes.Snoozed, &out.Boxes.Shared, &out.Boxes.Assigned)
 	if err != nil {
 		return out, err
 	}

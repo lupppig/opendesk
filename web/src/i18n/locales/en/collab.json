@@ -30,6 +30,7 @@
     "shared": "Shared with me",
     "assigned": "Assigned to me",
     "needs_action": "Needs action",
+    "snoozed": "Snoozed",
     "folder": "Folder"
   },
   "customize": {
@@ -192,6 +193,8 @@
     "inboxed_other": "{{count}} conversations moved to inbox",
     "notSpam_one": "Conversation moved to inbox",
     "notSpam_other": "{{count}} conversations moved to inbox",
+    "snoozed_one": "Conversation snoozed",
+    "snoozed_other": "{{count}} conversations snoozed",
     "undo": "Undo",
     "failed": "That did not work. Nothing changed.",
     "syncing": "Syncing {{name}}",
@@ -205,6 +208,7 @@
     "notFound": "This conversation is gone",
     "notFoundHint": "It was removed, moved out of your reach, or its account was disconnected.",
     "back": "Back to the list",
+    "snoozedUntil": "Snoozed until {{when}}",
     "sharedWith": "Shared with {{who}}",
     "assignedTo": "Assigned to {{who}}",
     "everyone": "everyone",

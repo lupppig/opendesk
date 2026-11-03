@@ -2762,6 +2762,8 @@ export type MailThread = {
   has_attachments: boolean;
   /** A shared inbox conversation that still needs a person to handle it. */
   needs_action: boolean;
+  /** When a snoozed conversation is back in Needs action (contracts/collab.md "Snooze"); null when not snoozed. */
+  snoozed_until?: string | null;
   folder_ids: string[];
   /** Shared on its own beyond its account's audience. */
   shared: boolean;
@@ -2943,7 +2945,7 @@ export type SidebarPrefs = {
 /** unread / total / none for mail rows; count / awaiting / urgent / overdue / none for ticket rows, and open for team rows. */
 export type SidebarBadge = "unread" | "total" | "count" | "awaiting" | "urgent" | "overdue" | "open" | "none";
 
-export type MailBox = "inbox" | "unread" | "starred" | "sent" | "drafts" | "archive" | "trash" | "spam" | "all" | "shared" | "assigned" | "needs_action";
+export type MailBox = "inbox" | "unread" | "starred" | "sent" | "drafts" | "archive" | "trash" | "spam" | "all" | "shared" | "assigned" | "needs_action" | "snoozed";
 
 export type MailThreadAction =
   | "read"
@@ -2960,11 +2962,12 @@ export type MailThreadAction =
   | "label"
   | "unlabel"
   | "done"
-  | "needs_action";
+  | "needs_action"
+  | "snooze";
 
 export type MailCounts = {
-  /** Unread conversations; assigned and shared: open ones. */
-  boxes: { inbox: number; unread: number; shared: number; assigned: number; drafts: number; needs_action: number };
+  /** Unread conversations; assigned, shared, needs_action and snoozed: open ones. */
+  boxes: { inbox: number; unread: number; shared: number; assigned: number; drafts: number; needs_action: number; snoozed?: number };
   accounts: Record<string, number>;
   folders: Record<string, number>;
   /** By account with aliases, then address (its own included): unread conversations in its inbox with it on a message; missing = 0. */

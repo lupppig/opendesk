@@ -1,7 +1,7 @@
 // Small pieces every Collab surface shares: an account's colour dot, box and folder
 // icons, label pills and the provider mark.
 
-import { Archive, AtSign, CircleDot, File, FileEdit, Folder, Inbox, Layers, Mail, MailOpen, Send, ShieldAlert, Star, Tag, Trash2, UserCheck, Users } from "lucide-react";
+import { AlarmClock, Archive, AtSign, CircleDot, File, FileEdit, Folder, Inbox, Layers, Mail, MailOpen, Send, ShieldAlert, Star, Tag, Trash2, UserCheck, Users } from "lucide-react";
 import type { ReactNode } from "react";
 import type { MailBox, MailFolder, MailProvider } from "@/lib/api/types";
 import { ProviderLogo } from "@/components/mailboxes/ProviderLogo";
@@ -29,6 +29,7 @@ export const boxIcon: Record<MailBox | "folder", ReactNode> = {
   shared: <Users />,
   assigned: <UserCheck />,
   needs_action: <CircleDot />,
+  snoozed: <AlarmClock />,
   folder: <Folder />,
 };
 

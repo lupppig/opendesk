@@ -862,7 +862,7 @@ export const api = {
       list: (q: CollabThreadQuery) => http.get<T.Page<T.MailThread>>("/v1/collab/threads", { query: q }),
       get: (id: string) => http.get<T.MailThreadDetail>(`/v1/collab/threads/${id}`),
       /** All or nothing: a thread the caller cannot act on is 404. */
-      action: (b: { thread_ids: string[]; action: T.MailThreadAction; folder_id?: string; category?: string }) =>
+      action: (b: { thread_ids: string[]; action: T.MailThreadAction; folder_id?: string; category?: string; until?: string }) =>
         http.post<{ threads: T.MailThread[] }>("/v1/collab/threads/actions", b),
       share: (id: string, shares: T.MailAudience) => http.put<T.MailThreadDetail>(`/v1/collab/threads/${id}/shares`, { shares }),
       assign: (id: string, user_ids: string[]) => http.put<T.MailThreadDetail>(`/v1/collab/threads/${id}/assignees`, { user_ids }),
