@@ -1,12 +1,13 @@
 // AI in the reply composer: draft a reply (streamed), rewrite the draft or the
-// selection, translate the draft into the customer's language. Every change is
+// selection, translate the draft into a language picked from a list (the customer's,
+// when known, first). Every change is
 // undoable: drafts by toast, rewrites and translations from a diff review.
 // Typical costs are shown in the menu. Status, sources and diff patterns adapted
 // from Beautiful UI (MIT, see web/THIRD_PARTY_NOTICES.md and ../ui/).
 
 import { useQueryClient } from "@tanstack/react-query";
 import { DropdownMenu as M, Popover as P } from "radix-ui";
-import { Languages, PenLine, Square, Undo2 } from "lucide-react";
+import { ChevronRight, Languages, PenLine, Square, Undo2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import type { AIFeature, KBSource, RewriteMode, Ticket } from "@/lib/api/types";
@@ -27,8 +28,8 @@ import { htmlToPlain } from "../ui/diff";
 import { SourceChips } from "../ui/StreamingText";
 import { ShimmerText, WorkingBar, formatElapsed, useElapsed } from "../ui/Thinking";
 import { balanceSpent, isAbort, reportAiError } from "./errors";
-import { isForeign, languageName, streamTextToHtml, ticketLanguage } from "./text";
-import { inSentence } from "@/i18n";
+import { isLanguage, languageName, streamTextToHtml, ticketLanguage, translateTargets } from "./text";
+import { inSentence, uiLanguage } from "@/i18n";
 
 export const REWRITE_MODES: RewriteMode[] = ["friendlier", "more_formal", "shorter", "longer", "fix_grammar", "simplify"];
 
@@ -49,10 +50,10 @@ export type ComposerAi = {
   undoReview: () => void;
   draft: (instructions?: string) => void;
   rewrite: (mode: RewriteMode) => void;
-  translate: () => void;
+  translate: (target: string) => void;
   stop: () => void;
-  /** Customer language to translate into, when it differs from ours. */
-  target: string | null;
+  /** Languages the draft can be translated into, the customer's first when known (replies only). */
+  targets: string[];
 };
 
 function currentHtml(ed: RichEditorHandle | null): string {
@@ -70,7 +71,7 @@ export function useComposerAi(editor: RefObject<RichEditorHandle | null>, ticket
   const [review, setReview] = useState<AiReview | null>(null);
   const abort = useRef<AbortController | null>(null);
   const lang = ticketLanguage(ticket);
-  const target = mode === "reply" && lang && isForeign(lang) ? lang : null;
+  const targets = mode === "reply" ? translateTargets(isLanguage(lang) ? lang : null, uiLanguage()) : [];
 
   const restore = useCallback(
     (html: string) => {
@@ -189,9 +190,9 @@ export function useComposerAi(editor: RefObject<RichEditorHandle | null>, ticket
     }
   };
 
-  const translate = async () => {
+  const translate = async (target: string) => {
     const prev = currentHtml(editor.current);
-    if (busy || !prev || !target) return;
+    if (busy || !prev) return;
     setBusy({ kind: "translate", started: Date.now() });
     setReview(null);
     try {
@@ -199,7 +200,7 @@ export function useComposerAi(editor: RefObject<RichEditorHandle | null>, ticket
       const next = res.html ?? streamTextToHtml(res.text ?? "");
       editor.current?.setHtml(next);
       balanceSpent(qc);
-      setReview({ id: Date.now(), title: t("composer.translated", { language: languageName(target) }), before: htmlToPlain(prev), after: htmlToPlain(next), prev });
+      setReview({ id: Date.now(), title: t("composer.translated", { language: languageName(target, uiLanguage()) }), before: htmlToPlain(prev), after: htmlToPlain(next), prev });
     } catch (e) {
       reportAiError(e, t("composer.translateFailed"));
     } finally {
@@ -226,9 +227,9 @@ export function useComposerAi(editor: RefObject<RichEditorHandle | null>, ticket
     },
     draft,
     rewrite: (m) => void rewrite(m),
-    translate: () => void translate(),
+    translate: (target) => void translate(target),
     stop: () => abort.current?.abort(),
-    target,
+    targets,
   };
 }
 
@@ -243,6 +244,11 @@ function Item({ icon, children, hint, onSelect, disabled }: { icon?: ReactNode; 
       {hint}
     </M.Item>
   );
+}
+
+/** "anglais" -> "Anglais": language names start lowercase in some languages. */
+function capitalized(s: string): string {
+  return s.charAt(0).toLocaleUpperCase(uiLanguage()) + s.slice(1);
 }
 
 function Cost({ feature }: { feature: AIFeature }) {
@@ -297,12 +303,27 @@ export function ComposerAiMenu({ ai, hasDraft, disabled }: { ai: ComposerAi; has
                     {t(`rewrite.${m}`)}
                   </Item>
                 ))}
-                {ai.target && (
+                {ai.targets.length > 0 && (
                   <>
                     <M.Separator className="-mx-1 my-1 h-px bg-line" />
-                    <Item icon={<Languages />} onSelect={ai.translate} disabled={!hasDraft} hint={<Cost feature="translate" />}>
-                      {t("composer.translateTo", { language: languageName(ai.target) })}
-                    </Item>
+                    <M.Sub>
+                      <M.SubTrigger className={cn(itemCls, "data-[state=open]:bg-hover")} disabled={!hasDraft}>
+                        <Languages />
+                        <span className="flex-1 truncate">{t("composer.translateInto")}</span>
+                        <Cost feature="translate" />
+                        <ChevronRight />
+                      </M.SubTrigger>
+                      <M.Portal>
+                        <M.SubContent sideOffset={6} collisionPadding={8}
+                          className={cn(floatingPanel, "max-h-[min(360px,var(--radix-popper-available-height))] min-w-[180px] overflow-y-auto p-1")}>
+                          {ai.targets.map((l) => (
+                            <Item key={l} onSelect={() => ai.translate(l)}>
+                              {capitalized(languageName(l, uiLanguage()))}
+                            </Item>
+                          ))}
+                        </M.SubContent>
+                      </M.Portal>
+                    </M.Sub>
                   </>
                 )}
               </M.Content>

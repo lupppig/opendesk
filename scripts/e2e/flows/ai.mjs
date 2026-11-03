@@ -66,7 +66,10 @@ export async function run(t) {
   });
 
   await t.step("translate the draft to the customer's language", async () => {
-    await aiMenu(/^Translate to/);
+    // Translate into opens a list of languages, the customer's (Spanish) first.
+    await owner.getByRole("button", { name: "Write with AI" }).click();
+    await owner.getByRole("menuitem", { name: /^Translate into/ }).click();
+    await owner.getByRole("menuitem", { name: "Spanish" }).first().click();
     await until(async () => (await editor.innerText()).includes("[es]"), "translated draft", 15_000);
     await editor.press("ControlOrMeta+a");
     await editor.press("Backspace");
