@@ -465,6 +465,10 @@
   "typing_one": "{{who}} schreibt",
   "typing_other": "{{who}} schreiben",
   "composer": {
+    "placeholderWarn_one": "Es ist noch eine Stelle auszufüllen: {{list}}. Trotzdem senden?",
+    "placeholderWarn_other": "Es sind noch {{count}} Stellen auszufüllen: {{list}}. Trotzdem senden?",
+    "placeholderFill": "Ausfüllen",
+    "placeholderSend": "Trotzdem senden",
     "reply": "Antwort",
     "note": "Notiz",
     "to": "An",

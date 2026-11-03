@@ -483,6 +483,11 @@
   "typing_other": "{{who}} écrivent",
   "typing_many": "{{who}} écrivent",
   "composer": {
+    "placeholderWarn_one": "Il reste un passage à compléter : {{list}}. Envoyer quand même ?",
+    "placeholderWarn_many": "Il reste {{count}} passages à compléter : {{list}}. Envoyer quand même ?",
+    "placeholderWarn_other": "Il reste {{count}} passages à compléter : {{list}}. Envoyer quand même ?",
+    "placeholderFill": "Compléter",
+    "placeholderSend": "Envoyer quand même",
     "reply": "Répondre",
     "note": "Note",
     "to": "À",
