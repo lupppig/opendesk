@@ -395,8 +395,10 @@
   "snooze": {
     "title": "Snooze",
     "until": "Snooze until",
-    "hour": "In 1 hour",
-    "hours": "In 4 hours",
+    "inHours_one": "In {{count}} hour",
+    "inHours_other": "In {{count}} hours",
+    "inDays_one": "In {{count}} day",
+    "inDays_other": "In {{count}} days",
     "tomorrow": "Tomorrow",
     "week": "Next week",
     "set": "Set",

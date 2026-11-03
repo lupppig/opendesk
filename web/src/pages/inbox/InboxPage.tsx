@@ -15,7 +15,7 @@ import { realtime } from "@/lib/realtime/manager";
 import { cn } from "@/lib/cn";
 import { EmptyState } from "@/components/ui/empty";
 import { springs } from "@/lib/motion";
-import { snoozeOptions } from "@/components/tickets/detail/SnoozeMenu";
+import { SNOOZE_TOMORROW, snoozeAt } from "@/components/tickets/detail/snooze";
 import { InboxEmpty } from "./InboxEmpty";
 import { Skeleton, SkeletonRows } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -401,7 +401,7 @@ export default function InboxPage() {
           action: { label: tr("toast.undo"), onClick: () => update.mutate({ id: t.id, patch: { assignee_id: t.assignee?.id ?? null } }) },
         });
       } else if (a === "snooze") {
-        const at = snoozeOptions().find((o) => o.key === "tomorrow")!.at;
+        const at = snoozeAt(SNOOZE_TOMORROW);
         update.mutate({ id: t.id, patch: { snoozed_until: at.toISOString() } });
         toast.success(tr("quick.snoozed", { number: t.number }), {
           action: { label: tr("toast.undo"), onClick: () => update.mutate({ id: t.id, patch: { snoozed_until: t.snoozed_until } }) },

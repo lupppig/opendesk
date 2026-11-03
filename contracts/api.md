@@ -58,7 +58,11 @@ type WorkspaceSettings = { brand_color?: string; timezone?: string; help_center_
   undo_send_chat_seconds?: 0 | 5 | 10 | 20 | 30 /* default 0: the same for replies on chat tickets, which go at once unless set */;
   send_and_finish_button?: boolean /* default false: the app's composer shows "Send and solve" (or "Send and close" when solved is labelled Closed; a custom finish label) as a segment before Send rather than only in its menu, in the same words as the ticket header's finish button; display only */;
   agent_online_time?: boolean /* default true: heartbeats count toward each member's online time and the agents report shows it ("Agents report"); false records none, deletes the online time recorded so far (agent_presence), and the report answers online_time "off" */;
+  snooze_presets?: SnoozePreset[] /* at most 8: the times the app's snooze menu offers, in this order, beside a date and time picked by hand; absent or [] (a PATCH with [] restores them): in 1 hour, in 4 hours, tomorrow at 09:00, next week at 09:00. The app works each out on the agent's own clock when the menu opens; the API stores only the list */;
   status_labels?: Partial<Record<TicketStatus, DisplayOverride>>; priority_labels?: Partial<Record<Priority, DisplayOverride>> /* display only; the API values never change */ };
+type SnoozePreset = { kind: "hours"; hours: number /* 1..168: the top of the hour at least this many hours away */ }
+  | { kind: "days"; days: number /* 1..365 */; time: string /* "HH:mm", 24-hour: that many days from today at this time */ }
+  | { kind: "week"; time: string /* "HH:mm": next Monday (a week on, on a Monday) at this time */ };
 type DisplayOverride = { label?: string /* 1..40, no < > */; color?: LabelColor; hidden?: boolean /* status_labels only: left out of the menus agents pick a status from (a ticket in it keeps it; the API, automations and snooze still set it); never open or solved; finishing always sets solved, including when its display label is Closed */ };
 type Membership = { workspace: Workspace; role: Role; suspended: boolean /* an instance admin suspended it: its routes answer 403 workspace_suspended (contracts/admin.md) */ };
 type Role = "owner" | "admin" | "agent" | "viewer";

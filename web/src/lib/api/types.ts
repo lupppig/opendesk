@@ -62,9 +62,13 @@ export type WorkspaceSettings = {
   /** Display-only names and colours for the fixed statuses and priorities. */
   status_labels?: Partial<Record<TicketStatus, DisplayOverride>>;
   priority_labels?: Partial<Record<Priority, DisplayOverride>>;
+  /** The times a ticket's snooze menu offers, in order (at most 8). Absent or empty: in 1 hour, in 4 hours, tomorrow and next week, at 09:00. */
+  snooze_presets?: SnoozePreset[];
 };
 /** `hidden` (statuses only): left out of the menus agents pick a status from. */
 export type DisplayOverride = { label?: string; color?: LabelColor; hidden?: boolean };
+/** A snooze menu time, on the agent's clock: the top of the hour at least `hours` away (1-168), `days` from today at `time` (1-365), or next Monday at `time` ("HH:mm"). */
+export type SnoozePreset = { kind: "hours"; hours: number } | { kind: "days"; days: number; time: string } | { kind: "week"; time: string };
 export type Workspace = {
   id: string;
   name: string;
