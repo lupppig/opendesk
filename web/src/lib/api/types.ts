@@ -1269,11 +1269,15 @@ export type PanelBlock =
   | { type: "fields"; title?: string; items: PanelField[] }
   | { type: "list"; title?: string; items: PanelListItem[] }
   | { type: "note"; text: string; tone: PanelTone };
+export type TicketPanelErrorCode = "timeout" | "rate_limited" | "ticket" | "refused" | "status" | "answer";
+
 export type TicketPanelData = {
   panel_id: string;
   kind: "shopify" | "http";
   state: "ok" | "empty" | "no_contact" | "error";
   message?: string;
+  /** error: why, for the app to say in the reader's language; absent when only `message` (the product's or the network's words) says it. */
+  code?: TicketPanelErrorCode;
   customer?: PanelCustomer;
   orders?: PanelOrder[];
   /** http: a version 1 answer's sections. */

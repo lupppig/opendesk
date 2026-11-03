@@ -940,6 +940,14 @@
     "empty": "Nichts zu diesem Kontakt.",
     "emptyShopify": "Kein Kunde mit dieser E-Mail-Adresse im Shop.",
     "error": "Konnte nicht geladen werden: {{message}}",
+    "errors": {
+      "timeout": "keine Antwort in der vorgesehenen Zeit.",
+      "rate_limited": "zu viele Abfragen. Versuch es in einer Minute erneut.",
+      "ticket": "das Ticket konnte nicht gelesen werden.",
+      "refused": "die Zugangsdaten wurden abgelehnt. Ein Admin kann sie in den Einstellungen prüfen.",
+      "status": "das andere Produkt hat mit einem Fehler geantwortet.",
+      "answer": "die Antwort konnte nicht gelesen werden."
+    },
     "retry": "Erneut versuchen",
     "orders_one": "{{count}} Bestellung",
     "orders_other": "{{count}} Bestellungen",

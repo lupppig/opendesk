@@ -944,6 +944,14 @@
     "empty": "Nothing about this contact.",
     "emptyShopify": "No customer with this email in the store.",
     "error": "Couldn’t load: {{message}}",
+    "errors": {
+      "timeout": "No answer in time.",
+      "rate_limited": "Too many lookups. Try again in a minute.",
+      "ticket": "Couldn’t read the ticket.",
+      "refused": "The credentials were refused. An admin can check them in Settings.",
+      "status": "The other product answered with an error.",
+      "answer": "The answer couldn’t be read."
+    },
     "retry": "Try again",
     "orders_one": "{{count}} order",
     "orders_other": "{{count}} orders",

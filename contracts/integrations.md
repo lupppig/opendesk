@@ -176,7 +176,9 @@ interface TicketPanel { id: string; kind: "shopify" | "http"; name: string;
   last_error: string; created_at: string; updated_at: string }
 interface TicketPanelData { panel_id: string; kind: "shopify" | "http";
   state: "ok" | "empty" /* nothing about this contact */ | "no_contact" /* shopify: the contact has no email */ | "error";
-  message?: string /* error: a few words, never a URL */; customer?: Customer; orders?: Order[] /* shopify */;
+  message?: string /* error: a few words, never a URL */;
+  code?: "timeout" | "rate_limited" | "ticket" | "refused" | "status" | "answer" /* error: why, for the app to say in the reader's language; absent when only the product's or the network's words say it */;
+  customer?: Customer; orders?: Order[] /* shopify */;
   sections?: Section[] /* http, a version 1 answer */; blocks?: Block[] /* http, a version 2 answer, cleaned ("The http answer") */;
   fetched_at: string }
 /* A field the panel does not show is left out of Customer and Order, and its list is empty. */
