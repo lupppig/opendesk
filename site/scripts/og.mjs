@@ -6,7 +6,8 @@
 //
 // It starts its own dev server with OG_CARDS=1 on a free port, beside any you have
 // running, and stops it after.
-// Needs Chromium for Playwright once: pnpm exec playwright-core install chromium
+// Needs Chromium for Playwright once: pnpm exec playwright-core install chromium,
+// or PLAYWRIGHT_EXECUTABLE_PATH set to an installed Chromium-based browser (Brave, Chrome).
 import { spawn } from 'node:child_process';
 import { copyFileSync } from 'node:fs';
 import { createServer } from 'node:net';
@@ -48,7 +49,7 @@ async function ready() {
 let browser;
 try {
   await ready();
-  browser = await chromium.launch();
+  browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH || undefined });
   const page = await browser.newPage({ viewport: { width: 1200, height: 630 }, deviceScaleFactor: SCALE, reducedMotion: 'reduce', colorScheme: 'light' });
   // The first visit can be cut short while Vite optimises dependencies and reloads.
   for (let i = 0; ; i++) {
