@@ -609,13 +609,13 @@
     },
     "ollie": {
       "title": "Ollie dans les canaux de support",
-      "description": "Ollie résume chaque nouveau fil de ticket, suggère des réponses, répond aux questions et prévient des SLA et des clients mécontents. Choisissez les modifications qu'il peut faire de lui-même.",
-      "error": "Impossible d'enregistrer ce qu'Ollie peut faire.",
-      "commands": "Les commandes saisies comme reply, note et status sont celles de l'agent et fonctionnent toujours. Les réponses au client, les nouveaux tickets et les fermetures proposés par Ollie demandent toujours une confirmation.",
+      "description": "Ollie résume chaque nouveau fil de ticket, suggère des réponses, répond aux questions et prévient des SLA et des clients mécontents. Choisissez les modifications qu’il peut faire de lui-même.",
+      "error": "Impossible d’enregistrer ce qu’Ollie peut faire.",
+      "commands": "Les commandes saisies comme reply, note et status sont celles de l’agent et fonctionnent toujours. Les réponses au client, les nouveaux tickets et les fermetures proposés par Ollie demandent toujours une confirmation.",
       "actions": {
         "reply": {
           "title": "Envoyer des réponses",
-          "hint": "Ollie peut préparer une réponse au client. Elle n'est envoyée qu'après la confirmation de l'agent."
+          "hint": "Ollie peut préparer une réponse au client. Elle n’est envoyée qu’après la confirmation de l’agent."
         },
         "note": {
           "title": "Ajouter des notes internes",
@@ -623,7 +623,7 @@
         },
         "assign_self": {
           "title": "Assigner les tickets",
-          "hint": "Ollie peut assigner le ticket à l'agent qui lui parle."
+          "hint": "Ollie peut assigner le ticket à l’agent qui lui parle."
         },
         "status": {
           "title": "Changer le statut",
@@ -635,32 +635,32 @@
         },
         "create_ticket": {
           "title": "Créer des tickets",
-          "hint": "Ollie peut créer un ticket à partir d'un message du canal après confirmation."
+          "hint": "Ollie peut créer un ticket à partir d’un message du canal après confirmation."
         }
       },
       "channel": {
-        "label": "Réglages d'Ollie pour {{name}}",
+        "label": "Réglages d’Ollie pour {{name}}",
         "title": "Ollie dans #{{name}}",
         "description": "Comment Ollie travaille dans les fils de tickets de ce canal.",
         "summary": "Résumer les nouveaux fils",
-        "summaryHint": "À l'ouverture du fil d'un ticket, Ollie indique ce dont le client a besoin, ce qu'il a déjà essayé, son ressenti et l'urgence. Utilise des crédits IA.",
+        "summaryHint": "À l’ouverture du fil d’un ticket, Ollie indique ce dont le client a besoin, ce qu’il a déjà essayé, son ressenti et l’urgence. Utilise des crédits IA.",
         "warnings": "Alertes SLA et ressenti",
         "warningsHint": "Ollie prévient dans le fil quand un objectif SLA approche ou est dépassé, et quand le client semble mécontent.",
         "length": "Longueur des réponses",
-        "lengthHint": "La longueur des réponses et suggestions d'Ollie dans ce canal.",
+        "lengthHint": "La longueur des réponses et suggestions d’Ollie dans ce canal.",
         "lengthValues": {
           "brief": "Courte",
           "standard": "Standard",
           "detailed": "Détaillée"
         },
         "personality": "Personnalité",
-        "personalityHint": "Le ton d'Ollie ici. Elle ne change jamais ce qu'Ollie peut faire.",
+        "personalityHint": "Le ton d’Ollie ici. Elle ne change jamais ce qu’Ollie peut faire.",
         "personalityPlaceholder": "Chaleureux et positif, des mots simples, sans jargon",
         "personalityInvalid": "La personnalité ne peut pas contenir < ou >.",
         "submit": "Enregistrer",
         "cancel": "Annuler",
-        "saved": "Réglages d'Ollie enregistrés.",
-        "error": "Impossible d'enregistrer les réglages d'Ollie."
+        "saved": "Réglages d’Ollie enregistrés.",
+        "error": "Impossible d’enregistrer les réglages d’Ollie."
       }
     },
     "empty": {
@@ -857,17 +857,17 @@
   },
   "phone": {
     "title": "Téléphone",
-    "description": "Connectez votre téléphonie cloud. Chaque appel arrive sur le ticket de l'appelant, avec qui l'a pris, sa durée et son enregistrement.",
+    "description": "Connectez votre téléphonie cloud. Chaque appel arrive sur le ticket de l’appelant, avec qui l’a pris, sa durée et son enregistrement.",
     "connections": {
       "title": "Téléphonies",
       "description": "Les appels de ces comptes sont consignés sur les tickets."
     },
     "empty": {
-      "title": "Aucune téléphonie pour l'instant",
-      "body": "Connectez Aircall ou Voys et chaque appel est consigné sur le ticket de l'appelant.",
-      "tipTimeline": "Les appels dans l'historique du ticket",
+      "title": "Aucune téléphonie pour l’instant",
+      "body": "Connectez Aircall ou Voys et chaque appel est consigné sur le ticket de l’appelant.",
+      "tipTimeline": "Les appels dans l’historique du ticket",
       "tipMissed": "Aucun appel manqué sans suite",
-      "tipAutomations": "Des automatisations à la fin d'un appel"
+      "tipAutomations": "Des automatisations à la fin d’un appel"
     },
     "health": {
       "healthy": "Reçoit les appels",
@@ -882,13 +882,13 @@
     },
     "healthCode": {
       "receiving": "Les appels sont envoyés à opendesk.",
-      "webhook_missing": "La téléphonie n'envoie pas les appels à opendesk. Testez la connexion pour la configurer à nouveau.",
+      "webhook_missing": "La téléphonie n’envoie pas les appels à opendesk. Testez la connexion pour la configurer à nouveau.",
       "credentials_refused": "La téléphonie a refusé les identifiants. Remplacez-les par des identifiants valides.",
       "provider_unreachable": "Impossible de joindre la téléphonie. Réessayez dans un instant.",
-      "webhookManual": "Aucun appel n'est encore arrivé. Ajoutez l'adresse du webhook ci-dessous dans {{name}}, puis passez un appel de test."
+      "webhookManual": "Aucun appel n’est encore arrivé. Ajoutez l’adresse du webhook ci-dessous dans {{name}}, puis passez un appel de test."
     },
-    "lastEvent": "Dernier événement d'appel {{when}}",
-    "noEventYet": "Aucun appel pour l'instant. Les appels apparaissent sur les tickets dès qu'ils sonnent.",
+    "lastEvent": "Dernier événement d’appel {{when}}",
+    "noEventYet": "Aucun appel pour l’instant. Les appels apparaissent sur les tickets dès qu’ils sonnent.",
     "webhook": "Adresse du webhook, enregistrée dans votre compte par opendesk",
     "rotate": {
       "label": "Remplacer les identifiants de {{name}}",
@@ -902,41 +902,41 @@
     "disconnect": "Déconnecter",
     "disconnected": "Téléphonie déconnectée.",
     "disconnectError": "Impossible de déconnecter la téléphonie.",
-    "saveError": "Impossible d'enregistrer la modification.",
+    "saveError": "Impossible d’enregistrer la modification.",
     "placement": {
       "title": "Appels de {{name}}",
-      "description": "Où va un appel, et ce qu'il y fait.",
+      "description": "Où va un appel, et ce qu’il y fait.",
       "reuse": "Utiliser un ticket résolu récemment",
-      "reuseHint": "Quand l'appelant n'a pas de ticket ouvert, l'appel va sur son dernier ticket résolu dans le délai choisi.",
-      "reuseNever": "Quand l'appelant n'a pas de ticket ouvert, l'appel en ouvre un nouveau.",
+      "reuseHint": "Quand l’appelant n’a pas de ticket ouvert, l’appel va sur son dernier ticket résolu dans le délai choisi.",
+      "reuseNever": "Quand l’appelant n’a pas de ticket ouvert, l’appel en ouvre un nouveau.",
       "never": "Jamais",
       "day": "Sous 1 jour",
       "daysN": "Sous {{n}} jours",
       "assign": "Assigner les appels répondus",
-      "assignHint": "Un ticket sans responsable va au collègue qui a pris l'appel. Les collègues sont reconnus par leur e-mail.",
-      "cards": "Afficher l'appelant dans Aircall",
-      "cardsHint": "Pendant qu'un appel sonne, Aircall affiche l'appelant, le ticket de l'appel et ses derniers tickets.",
+      "assignHint": "Un ticket sans responsable va au collègue qui a pris l’appel. Les collègues sont reconnus par leur e-mail.",
+      "cards": "Afficher l’appelant dans Aircall",
+      "cardsHint": "Pendant qu’un appel sonne, Aircall affiche l’appelant, le ticket de l’appel et ses derniers tickets.",
       "dial": "Appeler depuis opendesk",
       "dialHint": "Les numéros des contacts et des tickets ouvrent votre application de téléphone. Choisissez {{name}} comme application par défaut pour les liens téléphoniques pour passer vos appels avec."
     },
     "automations": {
       "title": "Automatisations",
-      "description": "Les automatisations peuvent s'exécuter à la fin d'un appel, selon son issue, son sens, sa ligne, ses étiquettes et s'il est arrivé en dehors des horaires d'ouverture.",
+      "description": "Les automatisations peuvent s’exécuter à la fin d’un appel, selon son issue, son sens, sa ligne, ses étiquettes et s’il est arrivé en dehors des horaires d’ouverture.",
       "docs": "Guide téléphone",
-      "docsHint": "Étapes de configuration et exemples d'automatisations.",
+      "docsHint": "Étapes de configuration et exemples d’automatisations.",
       "openDocs": "Ouvrir le guide"
     },
     "example": {
-      "name": "Appel manqué en dehors des horaires d'ouverture",
-      "hint": "Rouvrir le ticket de l'appelant, ajouter une note et augmenter sa priorité. Créée désactivée, pour que vous la vérifiiez.",
+      "name": "Appel manqué en dehors des horaires d’ouverture",
+      "hint": "Rouvrir le ticket de l’appelant, ajouter une note et augmenter sa priorité. Créée désactivée, pour que vous la vérifiiez.",
       "create": "Créer cette automatisation",
-      "note": "Appel manqué en dehors des horaires d'ouverture : rappeler.",
+      "note": "Appel manqué en dehors des horaires d’ouverture : rappeler.",
       "created": "Automatisation créée, désactivée.",
-      "error": "Impossible de créer l'automatisation."
+      "error": "Impossible de créer l’automatisation."
     },
     "providers": {
       "title": "Téléphonies disponibles",
-      "descriptionAdmin": "Choisissez-en une pour la connecter avec sa clé d'API.",
+      "descriptionAdmin": "Choisissez-en une pour la connecter avec sa clé d’API.",
       "description": "Un administrateur peut connecter une téléphonie."
     },
     "provider": {
@@ -944,36 +944,36 @@
       "voys": "Téléphonie cloud néerlandaise. Appels, transcriptions et résumés Voys Intelligence arrivent sur les tickets."
     },
     "field": {
-      "api_id": "ID d'API",
-      "api_token": "Jeton d'API"
+      "api_id": "ID d’API",
+      "api_token": "Jeton d’API"
     },
     "connect": {
       "title": "Connecter {{name}}",
-      "aircallSetup": "Dans Aircall, ouvrez Intégrations et API, puis Clés d'API, et créez une clé. Collez ici son ID et son jeton : opendesk enregistre son propre webhook dans votre compte et ne touche pas aux autres.",
+      "aircallSetup": "Dans Aircall, ouvrez Intégrations et API, puis Clés d’API, et créez une clé. Collez ici son ID et son jeton : opendesk enregistre son propre webhook dans votre compte et ne touche pas aux autres.",
       "cancel": "Annuler",
       "submit": "Connecter",
       "connected": "{{name}} connecté.",
       "error": "Impossible de connecter {{name}}.",
-      "voysSetup": "Dans Voys Freedom, ouvrez vos paramètres personnels et copiez votre jeton d'API. Utilisez le jeton d'un administrateur qui a accès aux enregistrements d'appels, pour recevoir aussi les transcriptions et les résumés. Ensuite, vous ajoutez l'adresse du webhook d'opendesk dans Voys."
+      "voysSetup": "Dans Voys Freedom, ouvrez vos paramètres personnels et copiez votre jeton d’API. Utilisez le jeton d’un administrateur qui a accès aux enregistrements d’appels, pour recevoir aussi les transcriptions et les résumés. Ensuite, vous ajoutez l’adresse du webhook d’opendesk dans Voys."
     },
-    "webhookManual": "Adresse du webhook, à ajouter dans {{name}} comme notification d'appel",
-    "disconnectBodyManual": "opendesk ne consigne plus les nouveaux appels de {{name}}. Retirez aussi la notification d'appel dans {{name}}. Les appels déjà sur les tickets restent.",
+    "webhookManual": "Adresse du webhook, à ajouter dans {{name}} comme notification d’appel",
+    "disconnectBodyManual": "opendesk ne consigne plus les nouveaux appels de {{name}}. Retirez aussi la notification d’appel dans {{name}}. Les appels déjà sur les tickets restent.",
     "hook": {
       "title": "Ajouter opendesk dans {{name}}",
-      "description": "{{name}} envoie les appels à cette adresse dès que vous l'ajoutez comme notification d'appel.",
+      "description": "{{name}} envoie les appels à cette adresse dès que vous l’ajoutez comme notification d’appel.",
       "done": "Terminé",
       "rotate": "Créer une nouvelle adresse",
       "rotateLabel": "Créer une nouvelle adresse de webhook pour {{name}}",
       "rotateTitle": "Créer une nouvelle adresse de webhook ?",
-      "rotateBody": "L'adresse actuelle cesse de fonctionner tout de suite. Collez la nouvelle dans {{name}} pour continuer à recevoir les appels.",
+      "rotateBody": "L’adresse actuelle cesse de fonctionner tout de suite. Collez la nouvelle dans {{name}} pour continuer à recevoir les appels.",
       "rotateError": "Impossible de créer une nouvelle adresse de webhook."
     },
     "voys": {
       "step1": "Dans Voys Freedom, ouvrez Integratie, puis Gespreksnotificaties, et cliquez sur Toevoegen.",
       "step2": "Saisissez une description comme opendesk et choisissez Custom comme service.",
-      "step3": "Collez l'adresse du webhook comme Web hook URL.",
+      "step3": "Collez l’adresse du webhook comme Web hook URL.",
       "step4": "Cochez les événements de résumé et de transcription (ils demandent Voys Intelligence), puis cliquez sur Opslaan.",
-      "step5": "Passez un appel de test : la connexion indique Reçoit les appels dès qu'il arrive."
+      "step5": "Passez un appel de test : la connexion indique Reçoit les appels dès qu’il arrive."
     }
   }
 }

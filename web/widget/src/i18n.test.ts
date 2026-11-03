@@ -37,6 +37,10 @@ describe("widget locale", () => {
     }
   });
 
+  it("writes French with the typographic apostrophe, never the typewriter one", () => {
+    expect(Object.values(catalogs.fr).filter((v) => v.includes("'"))).toEqual([]);
+  });
+
   it("interpolates and falls back to English", () => {
     __setDictForTests("fr", catalogs.fr);
     expect(t("typing", { name: "Priya" })).toBe("Priya est en train d’écrire…");

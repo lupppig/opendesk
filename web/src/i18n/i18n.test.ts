@@ -250,4 +250,12 @@ describe("catalogs", () => {
       });
     }
   }
+
+  it("writes French with the typographic apostrophe (l’appel), never the typewriter one", () => {
+    const strings = (o: unknown): string[] => (typeof o === "string" ? [o] : o && typeof o === "object" ? Object.values(o).flatMap(strings) : []);
+    const straight = Object.entries(files)
+      .filter(([f]) => f.startsWith("./locales/fr/"))
+      .flatMap(([f, cat]) => strings(cat).filter((s) => s.includes("'")).map((s) => `${f}: ${s}`));
+    expect(straight).toEqual([]);
+  });
 });
