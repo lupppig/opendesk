@@ -260,6 +260,12 @@
       "label": "Disposition en conversation",
       "hint": "Les messages du client à gauche, les réponses et notes de votre équipe à droite, comme dans un chat. Pleine largeur sur un écran étroit."
     },
+    "conversationWidth": {
+      "label": "Largeur de la conversation",
+      "hint": "Limitée garde les messages et la zone de réponse à une largeur facile à lire sur un grand écran. Pleine largeur leur laisse toute la largeur du ticket.",
+      "limited": "Limitée",
+      "full": "Pleine largeur"
+    },
     "properties": {
       "label": "Propriétés du ticket",
       "hint": "Statut, priorité, responsable, équipe et étiquettes dans la colonne des détails, ou dans une barre au-dessus de la conversation, modifiables sur place. Avec la barre, la colonne des détails commence par le client et ce que vos applications savent de lui.",

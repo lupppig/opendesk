@@ -25,6 +25,7 @@ import { isAIActor, OllieAvatar, useAssistantName } from "../ollie";
 import { fieldText, useDisplay, useTicketFields, type CustomField } from "../fields";
 import { messageSide, sideClass } from "./messageFrame";
 import { useConversationLayout } from "@/lib/conversationLayout";
+import { conversationMaxWidth, useConversationWidth } from "@/lib/conversationWidth";
 
 type Item = { kind: "message"; at: string; m: Message } | { kind: "activity"; at: string; a: Activity };
 
@@ -410,6 +411,8 @@ export function Timeline({
   const { t } = useTranslation("indicators");
   // Messages to the customer's side and the team's (Settings → Profile → Appearance); activity stays full width.
   const conversation = useConversationLayout();
+  // A readable measure, or the pane's whole width (Settings → Profile → Appearance).
+  const width = useConversationWidth();
   const threadById = useMemo(() => new Map((threads ?? []).map((th) => [th.id, th])), [threads]);
   // Each thread's latest message carries its actions; its first says what went along.
   const [firstInThread, lastInThread] = useMemo(() => {
@@ -479,7 +482,7 @@ export function Timeline({
   let lastDay = "";
   return (
     <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto" aria-label={t("tickets.conversation")} role="log">
-      <div ref={content} className={cn("mx-auto flex w-full max-w-[820px] flex-col gap-2 px-5 py-5", conversation && "@container")}>
+      <div ref={content} className={cn("mx-auto flex w-full flex-col gap-2 px-5 py-5", conversationMaxWidth(width), conversation && "@container")}>
         {loading ? (
           <div className="flex flex-col gap-3">
             {[0, 1].map((i) => (

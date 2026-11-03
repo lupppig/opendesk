@@ -260,6 +260,12 @@
       "label": "Conversation layout",
       "hint": "The customer's messages on the left, your team's replies and notes on the right, like a chat. Full width on a narrow screen."
     },
+    "conversationWidth": {
+      "label": "Conversation width",
+      "hint": "Limited keeps the messages and the reply box to a width that reads easily on a wide screen. Full width lets them use the whole width of the ticket.",
+      "limited": "Limited",
+      "full": "Full width"
+    },
     "properties": {
       "label": "Ticket properties",
       "hint": "Status, priority, assignee, team and labels in the details column, or in a bar above the conversation, edited in place. In the bar, the details column starts with the customer and what your apps know about them.",

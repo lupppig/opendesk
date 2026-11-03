@@ -39,6 +39,7 @@ import { backToNote, deliver, hold, undoSeconds as undoSecondsFor, useUnsent, ty
 import { EmailChips, SavedReplyButton, UploadChip, uploadFiles } from "./composerParts";
 import { addressLabel, fromLine, replyAddresses, TeamDot, useTeamsCtx, type TeamsCtx } from "../teams";
 import { AccountDot } from "@/components/collab/bits";
+import { conversationMaxWidth, useConversationWidth } from "@/lib/conversationWidth";
 import { identitySignature } from "@/lib/collab/identities";
 import { parsePersonalValue, personalFromLine, personalValue, ReplyToLine, usePersonalSenders, type PersonalFrom, type PersonalSender } from "./personalFrom";
 
@@ -558,6 +559,8 @@ export const Composer = forwardRef<
   const [previewing, setPreviewing] = useState(false);
   // The editor opens up while in use or holding a draft, and rests small otherwise.
   const open = focused || !!draft.html || uploads.length > 0;
+  // As wide as the timeline above it.
+  const width = useConversationWidth();
 
   // mod+J in the reply box asks Ollie for a draft; everywhere else it opens Ollie
   // (AssistantRoot). Handled here first, so the app-wide binding sees it as taken.
@@ -568,7 +571,7 @@ export const Composer = forwardRef<
 
   return (
     <div className="shrink-0 px-5 pb-4" onKeyDown={onComposerKey}>
-      <div className="mx-auto w-full max-w-[820px]">
+      <div className={cn("mx-auto w-full", conversationMaxWidth(width))}>
         {!disabled && (
           <SuggestedReplyCard
             ticket={ticket}
