@@ -75,6 +75,22 @@ export async function run(t) {
     await editor.press("Backspace");
   });
 
+  await t.step("draft a reply with instructions", async () => {
+    await aiMenu(/^Draft with instructions/);
+    const guide = owner.getByLabel("What should the reply say?");
+    await guide.waitFor();
+    // The menu hands the focus back to its button when its closing animation ends,
+    // after the instructions box has opened. The box has to stay open through that.
+    await owner.waitForTimeout(500);
+    assert(await guide.isVisible(), "the instructions box stays open");
+    await guide.fill("Keep it brief");
+    await owner.locator("form").filter({ has: guide }).getByRole("button", { name: "Draft a reply" }).click();
+    await until(async () => (await editor.innerText()).includes("Please try resetting your password"), "guided draft streamed into the composer", 20_000);
+    await until(async () => !(await owner.getByText("Drafting a reply").count()), "guided draft finished");
+    await editor.press("ControlOrMeta+a");
+    await editor.press("Backspace");
+  });
+
   await t.step("ask about the ticket", async () => {
     const ask = owner.getByRole("textbox", { name: "Ask Ollie" });
     await ask.fill("What has the customer tried?");
