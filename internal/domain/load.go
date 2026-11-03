@@ -345,12 +345,15 @@ func PublicMessage(m Message) Message {
 	return m
 }
 
-var attachmentLink = regexp.MustCompile(`/v1/attachments/([0-9a-f-]{36})\?exp=\d+(&amp;|&)sig=[0-9a-f]+`)
+// attachmentLink is a signed attachment link with the origin it was stored with, if any
+// (sub 1): inline images are stored with the address the instance had at the time.
+var attachmentLink = regexp.MustCompile(`(https?://[^\s"'<>/?#]+)?/v1/attachments/([0-9a-f-]{36})\?exp=\d+(&amp;|&)sig=[0-9a-f]+`)
 
 // ResignAttachmentLinks refreshes the signed attachment links inside a message's stored
 // HTML (its inline images), so a body keeps rendering after the links it was stored with
-// expire. Only links to the message's own attachments are signed again: a stored body is
-// not a way to sign links to other files.
+// expire, and after the instance moves to another address (API_URL): a link stored with
+// an origin gets the current one. Only links to the message's own attachments are signed
+// again: a stored body is not a way to sign links to other files.
 func ResignAttachmentLinks(html string, own []Attachment) string {
 	return resignAttachmentLinks(html, own, false)
 }
@@ -361,12 +364,15 @@ func resignAttachmentLinks(html string, own []Attachment, deleted bool) string {
 	}
 	return attachmentLink.ReplaceAllStringFunc(html, func(m string) string {
 		sub := attachmentLink.FindStringSubmatch(m)
-		id, err := uuid.Parse(sub[1])
+		id, err := uuid.Parse(sub[2])
 		if err != nil || !slices.ContainsFunc(own, func(a Attachment) bool { return a.ID == id }) {
 			return m
 		}
-		fresh := strings.TrimPrefix(attachmentURL(id, deleted), apiURL)
-		if sub[2] == "&amp;" {
+		fresh := attachmentURL(id, deleted)
+		if sub[1] == "" {
+			fresh = strings.TrimPrefix(fresh, apiURL)
+		}
+		if sub[3] == "&amp;" {
 			fresh = strings.Replace(fresh, "&", "&amp;", 1)
 		}
 		return fresh
