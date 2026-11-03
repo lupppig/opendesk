@@ -233,6 +233,7 @@
     "fullSize": "Ouvrir en taille réelle",
     "readOnly": "Vous pouvez lire cette conversation. Les agents et les rôles supérieurs peuvent agir dessus.",
     "showComments": "Afficher les commentaires",
+    "replyOrComment": "Choisir entre répondre à l’expéditeur ou commenter pour l’équipe",
     "draft": "Brouillon",
     "draftTo": "À {{who}}",
     "draftNoRecipients": "Aucun destinataire pour le moment",
@@ -294,6 +295,7 @@
   },
   "comments": {
     "title": "Commentaires de l’équipe",
+    "internalHint": "Votre équipe seule peut voir ceci. Le commentaire ne sera pas envoyé à l’expéditeur.",
     "hint": "Seuls les collègues qui ont accès à cette conversation peuvent lire les commentaires. Ils ne sont jamais envoyés à l’expéditeur.",
     "placeholder": "Commentez, @ pour mentionner un collègue",
     "add": "Commenter",

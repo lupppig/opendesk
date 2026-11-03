@@ -231,6 +231,7 @@
     "fullSize": "Open full size",
     "readOnly": "You can read this conversation. Agents and above can act on it.",
     "showComments": "Show comments",
+    "replyOrComment": "Choose whether to reply to the sender or comment for your team",
     "draft": "Draft",
     "draftTo": "To {{who}}",
     "draftNoRecipients": "No recipients yet",
@@ -292,6 +293,7 @@
   },
   "comments": {
     "title": "Team comments",
+    "internalHint": "Only your team sees this. It will not be sent to the sender.",
     "hint": "Only teammates who can see this conversation read comments. They never reach the sender.",
     "placeholder": "Comment, @ to mention a teammate",
     "add": "Comment",

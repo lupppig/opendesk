@@ -1,5 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act } from "react";
+import { createRoot } from "react-dom/client";
+import { ConfirmProvider } from "@/components/ui/confirm";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { i18n } from "@/i18n";
@@ -17,6 +20,9 @@ vi.mock("@tanstack/react-router", async (original) => ({ ...await original<typeo
 let detail: MailThreadDetail;
 let account: MailAccount;
 let qc: QueryClient;
+let host: HTMLDivElement | null = null;
+let root: ReturnType<typeof createRoot> | null = null;
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 beforeEach(async () => {
   installMock();
   setWorkspaceId(db.workspaces[0].workspace.id);
@@ -36,38 +42,83 @@ beforeEach(async () => {
   qc.setQueryData(qk.collabStatus, { enabled: true });
   qc.setQueryData(qk.mailAccounts, []);
 });
-afterEach(() => { qc.clear(); setWorkspaceId(null); });
+afterEach(async () => {
+  if (root) await act(async () => root?.unmount());
+  host?.remove();
+  root = null;
+  host = null;
+  qc.clear();
+  setWorkspaceId(null);
+  vi.unstubAllGlobals();
+});
 
-function buttons() {
+function renderMarkup() {
   qc.setQueryData(qk.mailThread(detail.thread.id), detail);
-  const html = renderToStaticMarkup(
+  return renderToStaticMarkup(
     <QueryClientProvider client={qc}><TooltipProvider>
       <ThreadView threadId={detail.thread.id} onClose={() => undefined} onAction={() => undefined} markReadOnOpen={false} />
     </TooltipProvider></QueryClientProvider>,
   );
+}
+
+function alternateReplyButtons() {
+  const html = renderMarkup();
   const doc = new DOMParser().parseFromString(html, "text/html");
   return [...doc.querySelectorAll("footer button[aria-label]")].map((b) => b.getAttribute("aria-label")).filter((name) => name === "Reply" || name === "Reply all");
 }
 
-it("puts Reply all first for a conversation-only agent with no account in the list", async () => {
+it("keeps Reply selected by default without opening a composer", () => {
+  const doc = new DOMParser().parseFromString(renderMarkup(), "text/html");
+  const group = doc.querySelector('footer [role="group"]');
+  expect(group?.getAttribute("aria-label")).toBe("Choose whether to reply to the sender or comment for your team");
+  expect(group?.querySelector('button[aria-pressed="true"]')?.textContent).toBe("Reply");
+  expect(doc.querySelector('footer [contenteditable="true"]')).toBeNull();
+});
+
+it("switches to an explicitly internal comment mode", async () => {
+  vi.stubGlobal("matchMedia", () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+  vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+  vi.stubGlobal("requestAnimationFrame", vi.fn());
+  qc.setQueryData(qk.mailThread(detail.thread.id), detail);
+  host = document.createElement("div");
+  document.body.append(host);
+  root = createRoot(host);
+  await act(async () => {
+    root?.render(<QueryClientProvider client={qc}><TooltipProvider><ConfirmProvider>
+      <ThreadView threadId={detail.thread.id} onClose={() => undefined} onAction={() => undefined} markReadOnOpen={false} />
+    </ConfirmProvider></TooltipProvider></QueryClientProvider>);
+  });
+  const comment = [...host.querySelectorAll<HTMLButtonElement>("footer [role='group'] button")].find((button) => button.textContent === "Comment");
+  expect(comment).toBeTruthy();
+  await act(async () => comment?.click());
+  expect(comment?.getAttribute("aria-pressed")).toBe("true");
+  expect(host.textContent).toContain("Only your team sees this. It will not be sent to the sender.");
+  expect(host.querySelector('footer [contenteditable="true"]')).not.toBeNull();
+  const reply = host.querySelector<HTMLButtonElement>('footer [role="group"] button[aria-pressed="false"]');
+  await act(async () => reply?.click());
+  expect(reply?.getAttribute("aria-pressed")).toBe("true");
+  expect(host.textContent).not.toContain("Only your team sees this. It will not be sent to the sender.");
+});
+
+it("uses the account's Reply all default and keeps Reply as the alternative", async () => {
   await api.collab.accounts.update(account.id, { reply_all: true });
   detail.account = (await api.collab.threads.get(detail.thread.id)).account;
-  expect(buttons()).toEqual(["Reply all", "Reply"]);
+  expect(alternateReplyButtons()).toEqual(["Reply"]);
 });
 it("uses the live account preference ahead of a stale conversation default", () => {
   qc.setQueryData(qk.mailAccounts, [{ ...account, reply_all: false }]);
-  expect(buttons()).toEqual(["Reply", "Reply all"]);
+  expect(alternateReplyButtons()).toEqual(["Reply all"]);
   detail.account.reply_all = false;
   qc.setQueryData(qk.mailAccounts, [{ ...account, reply_all: true }]);
-  expect(buttons()).toEqual(["Reply all", "Reply"]);
+  expect(alternateReplyButtons()).toEqual(["Reply"]);
 });
 it("keeps Reply first for disabled preferences and older servers without the field", () => {
   detail.account.reply_all = false;
-  expect(buttons()).toEqual(["Reply", "Reply all"]);
+  expect(alternateReplyButtons()).toEqual(["Reply all"]);
   delete detail.account.reply_all;
-  expect(buttons()).toEqual(["Reply", "Reply all"]);
+  expect(alternateReplyButtons()).toEqual(["Reply all"]);
 });
 it("offers only Reply when Reply all adds no recipient", () => {
   detail.messages[0].cc = [];
-  expect(buttons()).toEqual(["Reply"]);
+  expect(alternateReplyButtons()).toEqual([]);
 });

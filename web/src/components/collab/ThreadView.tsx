@@ -16,6 +16,7 @@ import {
   Forward,
   Inbox,
   Link2,
+  Lock,
   Mail,
   MailOpen,
   MessageSquare,
@@ -173,6 +174,7 @@ export const ThreadView = forwardRef<ThreadViewHandle, ThreadViewProps>(function
   const { data: members } = useQuery(q.members());
   const [composer, setComposer] = useState<ComposeMode | null>(null);
   const [composerKey, setComposerKey] = useState(0);
+  const [commentThread, setCommentThread] = useState<string | null>(null);
   // The stored draft the composer continues, and the draft it saves to (hidden from the conversation while open).
   const [editing, setEditing] = useState<MailMessage | null>(null);
   const [composerDraftId, setComposerDraftId] = useState<string | null>(null);
@@ -187,6 +189,7 @@ export const ThreadView = forwardRef<ThreadViewHandle, ThreadViewProps>(function
   const composerRef = useRef<HTMLDivElement>(null);
   const commentsRef = useRef<HTMLDivElement>(null);
   const commentBar = useRef<CommentBarHandle>(null);
+  const commentMode = commentThread === threadId;
   // A comment just posted comes into view once it is in the list.
   const posted = useRef<string | null>(null);
   const reduce = useReducedMotion();
@@ -274,6 +277,7 @@ export const ThreadView = forwardRef<ThreadViewHandle, ThreadViewProps>(function
   const showComposer = () => requestAnimationFrame(() => requestAnimationFrame(() => composerRef.current?.scrollIntoView({ block: "nearest" })));
   const openComposer = (mode: ComposeMode) => {
     if (!detail?.can_act) return;
+    setCommentThread(null);
     setEditing(null);
     setComposerDraftId(null);
     setComposer(mode);
@@ -283,6 +287,7 @@ export const ThreadView = forwardRef<ThreadViewHandle, ThreadViewProps>(function
   /** Continues a draft: under its conversation, or new mail in the floating composer. */
   const editDraft = (m: MailMessage) => {
     if (!detail?.can_act) return;
+    setCommentThread(null);
     if (!messages.length) {
       compose.open({ fromDraft: m });
       onClose();
@@ -296,11 +301,17 @@ export const ThreadView = forwardRef<ThreadViewHandle, ThreadViewProps>(function
   };
   useImperativeHandle(ref, () => ({
     reply: openComposer,
-    comment: () => detail?.can_act && commentBar.current?.focus(),
+    comment: () => detail?.can_act && setCommentThread(threadId),
     move: () => detail?.can_act && setMoveOpen(true),
     labels: () => detail?.can_act && hasLabels && setLabelOpen(true),
     people: togglePanel,
   }));
+
+  useEffect(() => setCommentThread(null), [threadId]);
+
+  useEffect(() => {
+    if (commentMode && detail?.can_act) commentBar.current?.focus();
+  }, [commentMode, detail?.can_act, threadId]);
 
   const commentCount = detail?.comments.length ?? 0;
   useEffect(() => {
@@ -691,7 +702,7 @@ export const ThreadView = forwardRef<ThreadViewHandle, ThreadViewProps>(function
           </AnimatePresence>
 
           {canAct && (editing || composer) && (
-            <div ref={composerRef} className="mt-1 scroll-mb-4">
+            <div ref={composerRef} className="mt-1 scroll-mb-4" hidden={commentMode}>
               {editing ? (
                 <MailComposer
                   key={`draft-${editing.id}-${composerKey}`}
@@ -743,38 +754,64 @@ export const ThreadView = forwardRef<ThreadViewHandle, ThreadViewProps>(function
       <footer className={cn("@container relative z-10 shrink-0 border-t border-line bg-surface transition-shadow duration-200 ease-out", below && "shadow-[0_-8px_16px_-12px_rgb(10_10_10/0.18)] dark:shadow-[0_-8px_16px_-12px_rgb(0_0_0/0.6)]")}>
         <div className="mx-auto w-full max-w-[860px] px-4 py-2.5 md:px-6">
           {canAct ? (
-            <CommentBar
-              ref={commentBar}
-              detail={detail}
-              onPosted={(id) => (posted.current = id)}
-            >
-              {detail.comments.length > 0 && (
-                <>
+            <>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div role="group" aria-label={t("thread.replyOrComment")} className="inline-flex items-center rounded-md bg-sunken p-0.5">
+                  <Button
+                    size="sm"
+                    variant={commentMode ? "ghost" : "subtle"}
+                    aria-pressed={!commentMode}
+                    onClick={() => {
+                      setCommentThread(null);
+                      if (!editing && !composer) openComposer(replyModes[0] ?? "reply");
+                    }}
+                  >
+                    {t("action.reply")}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={commentMode ? "subtle" : "ghost"}
+                    aria-pressed={commentMode}
+                    onClick={() => setCommentThread(th.id)}
+                  >
+                    {t("comments.add")}
+                  </Button>
+                </div>
+                {detail.comments.length > 0 && (
                   <Tooltip content={t("thread.showComments")}>
                     <Button size="md" variant="ghost" icon={<MessageSquare />} aria-label={t("list.comments", { count: detail.comments.length })} onClick={showComments}>
                       <Count n={detail.comments.length} className="text-[11.5px]" />
                     </Button>
                   </Tooltip>
-                  {!editing && !composer && <span aria-hidden className="mx-0.5 h-4 w-px bg-line" />}
-                </>
-              )}
-              {!editing && !composer && (
-                <>
-                  {replyModes.map((mode) => (
-                    <Tooltip key={mode} content={replyKind[mode].label} shortcut={replyKind[mode].shortcut}>
-                      <Button size="md" icon={replyKind[mode].icon} aria-label={replyKind[mode].label} onClick={() => openComposer(mode)}>
-                        <span className="hidden @[36rem]:inline">{replyKind[mode].label}</span>
+                )}
+              </div>
+              {commentMode ? (
+                <div>
+                  <p className="mb-1.5 flex items-center gap-1.5 rounded-md bg-note px-2.5 py-1.5 text-[11.5px] text-fg-3">
+                    <Lock aria-hidden className="size-3 shrink-0 text-fg-4" />
+                    {t("comments.internalHint")}
+                  </p>
+                  <CommentBar ref={commentBar} detail={detail} onPosted={(id) => (posted.current = id)} />
+                </div>
+              ) : (
+                !editing && !composer && (
+                  <div className="flex items-center gap-1">
+                    {replyModes.slice(1).map((mode) => (
+                      <Tooltip key={mode} content={replyKind[mode].label} shortcut={replyKind[mode].shortcut}>
+                        <Button size="md" variant="ghost" icon={replyKind[mode].icon} aria-label={replyKind[mode].label} onClick={() => openComposer(mode)}>
+                          <span className="hidden @[36rem]:inline">{replyKind[mode].label}</span>
+                        </Button>
+                      </Tooltip>
+                    ))}
+                    <Tooltip content={t("action.forward")} shortcut="f">
+                      <Button size="md" variant="ghost" icon={<Forward />} aria-label={t("action.forward")} onClick={() => openComposer("forward")}>
+                        <span className="hidden @[36rem]:inline">{t("action.forward")}</span>
                       </Button>
                     </Tooltip>
-                  ))}
-                  <Tooltip content={t("action.forward")} shortcut="f">
-                    <Button size="md" icon={<Forward />} aria-label={t("action.forward")} onClick={() => openComposer("forward")}>
-                      <span className="hidden @[36rem]:inline">{t("action.forward")}</span>
-                    </Button>
-                  </Tooltip>
-                </>
+                  </div>
+                )
               )}
-            </CommentBar>
+            </>
           ) : (
             <p className="rounded-md bg-sunken px-3 py-2 text-[12px] text-fg-3">{t("thread.readOnly")}</p>
           )}
