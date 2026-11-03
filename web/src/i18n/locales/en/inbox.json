@@ -21,6 +21,8 @@
     "notSpam": "Not spam",
     "spam": "Spam",
     "deleteTicket": "Delete ticket",
+    "showHistory": "Show ticket history",
+    "hideHistory": "Hide ticket history",
     "delete": "Delete",
     "deleteTitle": "Delete #{{number}}?",
     "deleteBody": "The ticket and its conversation will be deleted for everyone in the workspace.",

@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronUp, CircleCheck, CircleDot, Signal, Copy, GitMerge, MoreHorizontal, PanelRight, RotateCcw, ShieldAlert, ShieldCheck, Trash2, UserRound, Users, X, MessageSquare, MessagesSquare, StickyNote } from "lucide-react";
+import { ChevronDown, ChevronUp, CircleCheck, CircleDot, Signal, Copy, GitMerge, History, MoreHorizontal, PanelRight, RotateCcw, ShieldAlert, ShieldCheck, Trash2, UserRound, Users, X, MessageSquare, MessagesSquare, StickyNote } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { tone } from "@/lib/tones";
@@ -15,6 +15,7 @@ import { useTranslation } from "react-i18next";
 import { AiIcon } from "@/components/ai/bits";
 import { atLeast, useRole, useSession } from "@/lib/session";
 import { cn } from "@/lib/cn";
+import { setTicketHistoryShown, useTicketHistoryShown, visibleActivities } from "@/lib/ticketHistory";
 import { useDocumentTitle } from "@/app/RootLayout";
 import { usePageCommands } from "@/app/shellStore";
 import { Button } from "@/components/ui/button";
@@ -161,6 +162,8 @@ export default function TicketDetail({
   const [snoozeOpen, setSnoozeOpen] = useState(false);
   const [burst, setBurst] = useState(0);
   const [mergeOpen, setMergeOpen] = useState(false);
+  // The history between the messages (status, assignments, tags, rules…), shown or hidden per browser.
+  const historyShown = useTicketHistoryShown();
   const [panel, setPanel] = useState(readPanel);
   const [panelWidth, setPanelWidth] = usePaneWidth("details");
   const rowRef = useRef<HTMLDivElement>(null);
@@ -302,12 +305,13 @@ export default function TicketDetail({
         ...(t.severity ? [{ id: "severity-clear", label: tr("commands.clearSeverity"), keywords: ["severity"], icon: <SeverityChip severity={null} />, run: () => update.mutate({ id: t.id, patch: { severity: null } }) }] : []),
         { id: "solve", label: solved ? tr("commands.reopen") : finish.command(), shortcut: "e", icon: <CircleCheck />, run: solve },
         { id: "merge", label: tr("detail.merge"), icon: <GitMerge />, run: () => setMergeOpen(true) },
+        { id: "history", label: historyShown ? tr("detail.hideHistory") : tr("detail.showHistory"), keywords: ["history", "events", "activity"], icon: <History />, run: () => setTicketHistoryShown(!historyShown) },
         { id: "spam", label: t.spam ? tr("detail.notSpam") : tr("detail.markSpam"), icon: <ShieldAlert />, run: spam },
       ],
     });
     return () => usePageCommands.setState({ commands: [] });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [t?.id, t?.status, t?.spam, t?.severity, canEdit, aiOn, teamsCtx.hasTeams, tr, tAi, indicatorText, display.finish, finishLabel]);
+  }, [t?.id, t?.status, t?.spam, t?.severity, canEdit, aiOn, teamsCtx.hasTeams, tr, tAi, indicatorText, display.finish, finishLabel, historyShown]);
 
   if (ticket.isError) {
     return (
@@ -427,6 +431,9 @@ export default function TicketDetail({
                 >
                   {tr("props.copyLink")}
                 </MenuItem>
+                <MenuItem icon={<History />} onSelect={() => setTicketHistoryShown(!historyShown)}>
+                  {historyShown ? tr("detail.hideHistory") : tr("detail.showHistory")}
+                </MenuItem>
                 <MenuSeparator />
                 <MenuItem icon={t.spam ? <ShieldCheck /> : <ShieldAlert />} onSelect={spam}>
                   {t.spam ? tr("detail.notSpam") : tr("detail.markSpam")}
@@ -459,7 +466,7 @@ export default function TicketDetail({
           <Timeline
             ticketId={realId}
             messages={messages.data}
-            activities={activities.data}
+            activities={visibleActivities(activities.data, historyShown)}
             loading={!messages.data}
             onRetry={(m) => composer.current?.retry(m)}
             onToReply={canEdit ? (m) => composer.current?.fromNote(m) : undefined}

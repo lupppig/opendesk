@@ -21,6 +21,8 @@
     "notSpam": "Non indésirable",
     "spam": "Indésirables",
     "deleteTicket": "Supprimer le ticket",
+    "showHistory": "Afficher l’historique du ticket",
+    "hideHistory": "Masquer l’historique du ticket",
     "delete": "Supprimer",
     "deleteTitle": "Supprimer #{{number}} ?",
     "deleteBody": "Le ticket et sa conversation seront supprimés pour tout l’espace de travail.",

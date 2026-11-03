@@ -21,6 +21,8 @@
     "notSpam": "Kein Spam",
     "spam": "Spam",
     "deleteTicket": "Ticket löschen",
+    "showHistory": "Ticketverlauf anzeigen",
+    "hideHistory": "Ticketverlauf ausblenden",
     "delete": "Löschen",
     "deleteTitle": "#{{number}} löschen?",
     "deleteBody": "Das Ticket und seine Unterhaltung werden für alle im Workspace gelöscht.",
