@@ -20,7 +20,7 @@ Whichever you use, the workspace comes from the credential: an API key's own wor
 
 ## API keys
 
-API keys are the right choice for integrations. Create one in **Settings → API keys** (admin only) with a name, a set of scopes and an optional expiry. The secret is shown **once**, when the key is created. opendesk stores only a hash of it.
+API keys are the right choice for integrations. Create one in **Settings → API keys** (admin only) with a name, a set of scopes and an optional expiry. The secret is shown **once**, when the key is created. opendesk stores only a hash of it. You can change a key's scopes later from its menu (**Edit permissions**): adding one asks you to have signed in recently, as creating a key does.
 
 ```sh
 curl https://api.opendesk.sh/v1/contacts \

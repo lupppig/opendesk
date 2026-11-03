@@ -244,7 +244,16 @@ export function registerWorkspace() {
   patch("/v1/api-keys/:id", (ctx) => {
     const key = ctx.ws.apiKeys.find((k) => k.id === ctx.params.id);
     if (!key) throw notFound("API key");
+    // Like the API: adding a scope needs the same fresh sign-in as making a key.
+    const scopes = strArr(ctx.body.scopes);
+    const before = key.scopes;
+    if (scopes && scopes.some((sc) => !before.includes(sc))) {
+      if (db.stepUp === "mfa_required") throw new HttpError(403, "mfa_required", "this action requires two-factor authentication");
+      if (db.stepUp === "reauth_required") throw new HttpError(403, "reauth_required", "For your security, sign in again to do this. Your last sign-in is more than 12 hours old.");
+    }
     assign(key, ctx.body, ["name", "scopes"]);
+    if (scopes && (scopes.length !== before.length || scopes.some((sc) => !before.includes(sc))))
+      audit(ctx.ws, "api_key.scopes_changed", "api_key", key.id, { from: before, to: key.scopes });
     if ("private_team_ids" in ctx.body) setGrants(ctx.ws, key, privateTeams(ctx, key.private_team_ids ?? []));
     audit(ctx.ws, "api_key.updated", "api_key", key.id, { fields: Object.keys(ctx.body) });
     return key;

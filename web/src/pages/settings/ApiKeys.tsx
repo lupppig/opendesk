@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { EyeOff, KeyRound, MoreHorizontal, Pencil, Plus, ShieldCheck, Trash2 } from "lucide-react";
+import { EyeOff, KeyRound, MoreHorizontal, Pencil, Plus, ShieldCheck, SlidersHorizontal, Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { NoAccess, Section, SettingsPage } from "@/components/layout";
@@ -55,6 +55,7 @@ export default function ApiKeys() {
   const [creating, setCreating] = useState(false);
   const [created, setCreated] = useState<(ApiKey & { secret: string }) | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [scoping, setScoping] = useState<ApiKey | null>(null);
 
   const revoke = useListMutation<ApiKey, string>(qk.apiKeys, (id) => api.apiKeys.remove(id), (rows, id) => rows.filter((k) => k.id !== id), {
     errorText: t("apiKeys.revokeError"),
@@ -208,6 +209,9 @@ export default function ApiKeys() {
                           <MenuItem icon={<Pencil />} onSelect={() => setRenaming(k.id)}>
                             {t("apiKeys.rename")}
                           </MenuItem>
+                          <MenuItem icon={<SlidersHorizontal />} onSelect={() => setScoping(k)}>
+                            {t("apiKeys.scopes.menu")}
+                          </MenuItem>
                           <MenuSeparator />
                           <MenuItem
                             danger
@@ -235,6 +239,7 @@ export default function ApiKeys() {
         )}
       </Section>
 
+      {scoping && <ScopesDialog apiKey={scoping} onClose={() => setScoping(null)} />}
       {creating && (
         <CreateKeyDialog
           onClose={() => setCreating(false)}
@@ -327,8 +332,6 @@ export function CreateKeyDialog({ onClose, onCreated }: { onClose: () => void; o
   const [privateTeams, setPrivateTeams] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  const preset = scopes.length === allScopes.length ? "full" : scopes.length === readScopes.length && readScopes.every((s) => scopes.includes(s)) ? "read" : "custom";
-
   const create = useMutation({
     mutationFn: () =>
       api.apiKeys.create({
@@ -347,8 +350,6 @@ export function CreateKeyDialog({ onClose, onCreated }: { onClose: () => void; o
       if (!isReauthError(e)) setError(errorMessage(e));
     },
   });
-
-  const toggle = (id: string, on: boolean) => setScopes((s) => (on ? [...new Set([...s, id])] : s.filter((x) => x !== id)));
 
   const submit = () => {
     setError(null);
@@ -384,37 +385,7 @@ export function CreateKeyDialog({ onClose, onCreated }: { onClose: () => void; o
         <Field label={t("apiKeys.form.name")}>
           {(p) => <TextInput {...p} autoFocus value={name} maxLength={80} placeholder={t("apiKeys.form.namePlaceholder")} onChange={(e) => setName(e.target.value)} />}
         </Field>
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between">
-            <span className="text-[12.5px] font-medium">{t("apiKeys.form.scopes")}</span>
-            <Segmented
-              size="xs"
-              value={preset}
-              onChange={(v) => {
-                if (v === "read") setScopes(readScopes);
-                if (v === "full") setScopes(allScopes);
-              }}
-              options={[
-                { value: "read", label: t("apiKeys.form.readOnly") },
-                { value: "full", label: t("apiKeys.form.full") },
-                { value: "custom", label: t("apiKeys.form.custom") },
-              ]}
-            />
-          </div>
-          <div className="overflow-hidden rounded-md border border-line">
-            {scopeGroups.map((g) => (
-              <div key={g.resource} className="flex h-10 items-center gap-3 border-b border-line-soft px-3 last:border-0">
-                <span className="flex-1 text-[12.5px] text-fg">{g.label}</span>
-                {g.scopes.map((s) => (
-                  <label key={s.id} className={cn("flex items-center gap-1.5 text-[12px]", scopes.includes(s.id) ? "text-fg" : "text-fg-3")}>
-                    <Checkbox checked={scopes.includes(s.id)} onCheckedChange={(on) => toggle(s.id, on)} aria-label={`${g.label} ${s.label.toLowerCase()}`} />
-                    {s.label}
-                  </label>
-                ))}
-              </div>
-            ))}
-          </div>
-        </div>
+        <ScopeChecklist scopes={scopes} onChange={setScopes} />
         <Field label={t("apiKeys.form.expires")}>
           {(p) => (
             <Select<Expiry>
@@ -434,6 +405,116 @@ export function CreateKeyDialog({ onClose, onCreated }: { onClose: () => void; o
         {isReauthError(create.error) && <ReauthNotice error={create.error} />}
         <button type="submit" className="hidden" />
       </form>
+    </Dialog>
+  );
+}
+
+/** The scope presets and checkboxes, for a new key and for changing an existing one's. */
+function ScopeChecklist({ scopes, onChange }: { scopes: string[]; onChange: (scopes: string[]) => void }) {
+  const { t } = useTranslation("settingsDev");
+  const preset = scopes.length === allScopes.length ? "full" : scopes.length === readScopes.length && readScopes.every((s) => scopes.includes(s)) ? "read" : "custom";
+  const toggle = (id: string, on: boolean) => onChange(on ? [...new Set([...scopes, id])] : scopes.filter((x) => x !== id));
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between">
+        <span className="text-[12.5px] font-medium">{t("apiKeys.form.scopes")}</span>
+        <Segmented
+          size="xs"
+          value={preset}
+          onChange={(v) => {
+            if (v === "read") onChange(readScopes);
+            if (v === "full") onChange(allScopes);
+          }}
+          options={[
+            { value: "read", label: t("apiKeys.form.readOnly") },
+            { value: "full", label: t("apiKeys.form.full") },
+            { value: "custom", label: t("apiKeys.form.custom") },
+          ]}
+        />
+      </div>
+      <div className="overflow-hidden rounded-md border border-line">
+        {scopeGroups.map((g) => (
+          <div key={g.resource} className="flex h-10 items-center gap-3 border-b border-line-soft px-3 last:border-0">
+            <span className="flex-1 text-[12.5px] text-fg">{g.label}</span>
+            {g.scopes.map((s) => (
+              <label key={s.id} className={cn("flex items-center gap-1.5 text-[12px]", scopes.includes(s.id) ? "text-fg" : "text-fg-3")}>
+                <Checkbox checked={scopes.includes(s.id)} onCheckedChange={(on) => toggle(s.id, on)} aria-label={`${g.label} ${s.label.toLowerCase()}`} />
+                {s.label}
+              </label>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Changes an existing key's scopes. Taking a scope away is immediate; adding one asks for the
+ * same recent sign-in as making a key (the notice below explains a refusal and signs in again).
+ */
+export function ScopesDialog({ apiKey, onClose }: { apiKey: ApiKey; onClose: () => void }) {
+  const { t } = useTranslation("settingsDev");
+  const qc = useQueryClient();
+  const [scopes, setScopes] = useState<string[]>(apiKey.scopes);
+  const [error, setError] = useState<string | null>(null);
+  const added = scopes.filter((s) => !apiKey.scopes.includes(s));
+  const removed = apiKey.scopes.filter((s) => !scopes.includes(s));
+
+  const save = useMutation({
+    mutationFn: () => api.apiKeys.update(apiKey.id, { scopes }),
+    onSuccess: (k) => {
+      upsertInList(qc, qk.apiKeys, k);
+      onClose();
+    },
+    onError: (e) => {
+      if (!isReauthError(e)) setError(errorMessage(e));
+    },
+  });
+
+  const submit = () => {
+    setError(null);
+    if (!scopes.length) return setError(t("apiKeys.form.scopeRequired"));
+    save.mutate();
+  };
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(o) => !o && onClose()}
+      title={t("apiKeys.scopes.title", { name: apiKey.name })}
+      description={t("apiKeys.scopes.description")}
+      footer={
+        <>
+          <span className="mr-auto text-xs text-danger-fg">{error}</span>
+          <Button variant="ghost" onClick={onClose}>
+            {t("cancel")}
+          </Button>
+          <Button variant="primary" loading={save.isPending} disabled={!added.length && !removed.length} onClick={submit}>
+            {t("apiKeys.scopes.save")}
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-3 pb-1">
+        <ScopeChecklist scopes={scopes} onChange={setScopes} />
+        {(added.length > 0 || removed.length > 0) && (
+          <div className="flex flex-wrap items-center gap-1" aria-label={t("apiKeys.scopes.changes")}>
+            {added.map((s) => (
+              <MonoChip key={s} className="border-tone-amber-line text-tone-amber">
+                + {s}
+              </MonoChip>
+            ))}
+            {removed.map((s) => (
+              <MonoChip key={s} className="text-fg-4 line-through">
+                − {s}
+              </MonoChip>
+            ))}
+          </div>
+        )}
+        {added.length > 0 && <p className="text-[12px] text-fg-3">{t("apiKeys.scopes.addingNeedsSignIn")}</p>}
+        {isReauthError(save.error) && <ReauthNotice error={save.error} />}
+      </div>
     </Dialog>
   );
 }

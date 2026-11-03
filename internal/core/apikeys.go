@@ -102,6 +102,22 @@ func validScopes(in []string) ([]string, error) {
 	return out, nil
 }
 
+// scopeChanges says what going from one sorted scope list to another adds and removes.
+func scopeChanges(from, to []string) (added, removed []string) {
+	added, removed = []string{}, []string{}
+	for _, sc := range to {
+		if !slices.Contains(from, sc) {
+			added = append(added, sc)
+		}
+	}
+	for _, sc := range from {
+		if !slices.Contains(to, sc) {
+			removed = append(removed, sc)
+		}
+	}
+	return added, removed
+}
+
 func (s *svc) registerAPIKeys(api huma.API) {
 	tags := []string{"API keys"}
 
@@ -237,6 +253,9 @@ func (s *svc) registerAPIKeys(api huma.API) {
 				Name *string `json:"name,omitempty" maxLength:"200"`
 				// PrivateTeamIDs replaces the list. Only a team's members add it; admins may remove any.
 				PrivateTeamIDs *[]string `json:"private_team_ids,omitempty" maxItems:"200"`
+				// Scopes replaces the key's scopes. Adding one asks for the same fresh sign-in as
+				// creating a key; removing is immediate.
+				Scopes *[]string `json:"scopes,omitempty" maxItems:"20" doc:"The key's scopes, replacing the current ones. Adding a scope needs a recent sign-in (and the second factor when on), as creating a key does"`
 			}
 		}) (*struct{ Body CoreAPIKey }, error) {
 			p, err := requireUserWorkspace(ctx, auth.RoleAdmin)
@@ -255,17 +274,43 @@ func (s *svc) registerAPIKeys(api huma.API) {
 				}
 				name = &v
 			}
+			var wanted []string
+			if in.Body.Scopes != nil {
+				if wanted, err = validScopes(*in.Body.Scopes); err != nil {
+					return nil, err
+				}
+			}
 			var k CoreAPIKey
-			teamsChanged := false
+			teamsChanged, scopesChanged := false, false
 			err = s.tx(ctx, func(tx pgx.Tx) error {
-				var current []string
-				err := tx.QueryRow(ctx, `SELECT private_team_ids::text[] FROM api_keys WHERE id = $1 AND workspace_id = $2 AND revoked_at IS NULL FOR UPDATE`,
-					id, p.WorkspaceID).Scan(&current)
+				var current, scopes []string
+				var creator *uuid.UUID
+				err := tx.QueryRow(ctx, `SELECT private_team_ids::text[], scopes, created_by FROM api_keys WHERE id = $1 AND workspace_id = $2 AND revoked_at IS NULL FOR UPDATE`,
+					id, p.WorkspaceID).Scan(&current, &scopes, &creator)
 				if db.IsNotFound(err) {
 					return httpx.NotFound("API key")
 				}
 				if err != nil {
 					return err
+				}
+				before := scopes
+				var added, removed []string
+				if wanted != nil {
+					added, removed = scopeChanges(before, wanted)
+					if len(added) > 0 {
+						// More access for a live credential: the same checks as making a new key.
+						if err := s.requireMFA(ctx, p); err != nil {
+							return err
+						}
+						if err := requireRecentLogin(ctx, tx, p); err != nil {
+							return err
+						}
+						// collab:draft reads its creator's mail: only they hand it to a key.
+						if slices.Contains(added, auth.ScopeCollabDraft) && (creator == nil || *creator != p.UserID) {
+							return httpx.E(http.StatusForbidden, "forbidden", "Only the member who created this key can give it collab:draft: the key drafts replies as them.")
+						}
+					}
+					scopes, scopesChanged = wanted, len(added)+len(removed) > 0
 				}
 				var teams []uuid.UUID
 				if in.Body.PrivateTeamIDs != nil {
@@ -274,8 +319,8 @@ func (s *svc) registerAPIKeys(api huma.API) {
 					}
 					teamsChanged = !sameIDs(current, teams)
 				}
-				if _, err := tx.Exec(ctx, `UPDATE api_keys SET name = COALESCE($3, name), private_team_ids = COALESCE($4, private_team_ids)
-					WHERE id = $1 AND workspace_id = $2`, id, p.WorkspaceID, name, teams); err != nil {
+				if _, err := tx.Exec(ctx, `UPDATE api_keys SET name = COALESCE($3, name), private_team_ids = COALESCE($4, private_team_ids), scopes = $5
+					WHERE id = $1 AND workspace_id = $2`, id, p.WorkspaceID, name, teams, scopes); err != nil {
 					return err
 				}
 				if in.Body.PrivateTeamIDs != nil {
@@ -286,14 +331,23 @@ func (s *svc) registerAPIKeys(api huma.API) {
 				if k, err = loadAPIKey(ctx, tx, p.WorkspaceID, id); err != nil {
 					return err
 				}
+				if scopesChanged {
+					if err := audit.Log(ctx, tx, p, p.WorkspaceID, "api_key.scopes_changed", "api_key", &id,
+						map[string]any{"name": k.Name, "from": before, "to": k.Scopes, "added": added, "removed": removed}); err != nil {
+						return err
+					}
+				}
+				if in.Body.Name == nil && in.Body.PrivateTeamIDs == nil {
+					return nil
+				}
 				return audit.Log(ctx, tx, p, p.WorkspaceID, "api_key.updated", "api_key", &id,
 					map[string]any{"name": k.Name, "private_team_ids": uuidStrings(k.PrivateTeamIDs)})
 			})
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			if teamsChanged {
-				// Sockets of this key carry its teams in their token; they reconnect with the new list.
+			if teamsChanged || scopesChanged {
+				// Sockets of this key carry its teams and scopes in their token; they reconnect with the new ones.
 				s.disconnect(id, uuid.Nil)
 			}
 			return &struct{ Body CoreAPIKey }{k}, nil
