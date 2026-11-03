@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Tooltip } from "@/components/ui/tooltip";
 import { EmailFrame } from "@/components/tickets/detail/EmailFrame";
+import { AIDraftFeedback } from "./AIDraftFeedback";
 import { DetailsTrigger, SenderWarning, useMessageDetails, Via } from "./MailDetails";
 
 type Body = { designed: boolean; html: string; held: number };
@@ -232,6 +233,7 @@ export const MailMessageItem = memo(function MailMessageItem({
             <DetailsTrigger m={m} details={details.data} loading={details.isLoading} />
             {m.reply_to.length > 0 && normEmail(m.reply_to[0].email) !== normEmail(m.from.email) && <span data-text className="max-w-full cursor-text select-text truncate">{t("thread.replyTo", { list: list(m.reply_to) })}</span>}
             {m.sent_by && <span data-text className="max-w-full cursor-text select-text truncate text-fg-4">{t("thread.sentBy", { name: m.sent_by.name })}</span>}
+            <AIDraftFeedback m={m} />
           </div>
         </div>
         <Tooltip content={fullDate(m.sent_at)}>

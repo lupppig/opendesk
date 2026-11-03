@@ -194,7 +194,8 @@
     "syncing": "{{name}} wird synchronisiert",
     "sent": "Gesendet von {{email}}",
     "shared": "Freigabe aktualisiert",
-    "assigned": "Zuständige aktualisiert"
+    "assigned": "Zuständige aktualisiert",
+    "aiFeedbackSaved": "Feedback gespeichert"
   },
   "thread": {
     "label": "Unterhaltung",
@@ -821,5 +822,29 @@
       "action": "Kategorien einrichten",
       "dismiss": "Nicht jetzt"
     }
+  },
+  "aiFeedback": {
+    "from": "Aus KI-Entwurf von {{name}}",
+    "asWritten": "unverändert gesendet",
+    "edited": "vor dem Senden bearbeitet",
+    "give": "Feedback geben",
+    "edit": "Feedback bearbeiten",
+    "title": "Feedback zu diesem KI-Entwurf",
+    "description": "{{name}} liest es, um seine Entwürfe zu verbessern. Die E-Mail ändert sich dadurch nie.",
+    "reason": "Was war falsch?",
+    "reasonPlaceholder": "Grund wählen",
+    "reasons": {
+      "wrong_facts": "Falsche Fakten",
+      "wrong_tone": "Falscher Ton",
+      "missing_info": "Fehlende Informationen",
+      "should_not_answer": "Hätte nicht antworten sollen",
+      "other": "Sonstiges"
+    },
+    "note": "Notiz (optional)",
+    "notePlaceholder": "Was sollte es anders machen?",
+    "better": "Bessere Antwort (optional)",
+    "betterPlaceholder": "Wie Sie geantwortet hätten",
+    "privacy": "Nur der KI-Client, der diesen Entwurf geschrieben hat, liest Ihre Notiz und Antwort.",
+    "save": "Feedback speichern"
   }
 }

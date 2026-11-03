@@ -48,6 +48,7 @@ type draftContent struct {
 	// every file that is not an inline image. Inline images stay while the HTML shows them.
 	KeepAttachments []string `json:"keep_attachments,omitempty" maxItems:"100" doc:"The draft's own files to keep (MailAttachment ids); left out keeps them all"`
 	FromEmail       string   `json:"from_email,omitempty" maxLength:"254" doc:"One of the account's usable addresses; left out keeps the draft's"`
+	ClientRef       string   `json:"client_ref,omitempty" maxLength:"200" doc:"AI keys: a label of your own for the instructions behind this draft, returned with its outcome; left out keeps it"`
 }
 
 type draftCreateInput struct {
@@ -64,6 +65,7 @@ type draftCreateInput struct {
 		ForwardAttachments bool        `json:"forward_attachments,omitempty" doc:"Forward: attach the original's files"`
 		FromEmail          string      `json:"from_email,omitempty" maxLength:"254" doc:"One of the account's usable addresses"`
 		ClaimToken         *uuid.UUID  `json:"claim_token,omitempty" doc:"AI queue: the claim this reply reports back on; refused once that claim has expired or passed on"`
+		ClientRef          string      `json:"client_ref,omitempty" maxLength:"200" doc:"AI keys: a label of your own for the instructions behind this draft, returned with its outcome"`
 	}
 }
 
@@ -118,7 +120,8 @@ func (s *service) registerDraftRoutes(api huma.API) {
 				defer unlock()
 			}
 			id, _, err := s.saveDraft(ctx, p, t, nil, threadRemote, threadID, composeIn{Mode: b.Mode, To: b.To, Cc: b.Cc, Bcc: b.Bcc,
-				Subject: b.Subject, BodyHTML: b.BodyHTML, AttachmentIDs: b.AttachmentIDs, ForwardAttachments: b.ForwardAttachments, FromEmail: b.FromEmail})
+				Subject: b.Subject, BodyHTML: b.BodyHTML, AttachmentIDs: b.AttachmentIDs, ForwardAttachments: b.ForwardAttachments, FromEmail: b.FromEmail,
+				ClientRef: b.ClientRef})
 			if err != nil {
 				return nil, err
 			}
@@ -194,7 +197,12 @@ func (s *service) registerDraftRoutes(api huma.API) {
 			if err != nil {
 				return nil, httpx.Wrap(err)
 			}
-			if err := pass.batch(ctx, func(tx pgx.Tx) error { return pass.remove(ctx, tx, storedOf(m)) }); err != nil {
+			if err := pass.batch(ctx, func(tx pgx.Tx) error {
+				if err := pass.remove(ctx, tx, storedOf(m)); err != nil {
+					return err
+				}
+				return settleDiscarded(ctx, tx, m.ID, p.UserID)
+			}); err != nil {
 				return nil, httpx.Wrap(err)
 			}
 			return nil, nil
@@ -322,7 +330,7 @@ func draftCompose(m *messageRow, c *draftContent, send bool) composeIn {
 		}
 	}
 	return composeIn{To: c.To, Cc: c.Cc, Bcc: c.Bcc, Subject: c.Subject, BodyHTML: c.BodyHTML, AttachmentIDs: c.AttachmentIDs,
-		FromEmail: c.FromEmail, MessageID: m.MessageID, Draft: m, Keep: keep, NeedRecipients: send}
+		FromEmail: c.FromEmail, MessageID: m.MessageID, Draft: m, Keep: keep, NeedRecipients: send, ClientRef: c.ClientRef}
 }
 
 // loadDraft loads a draft the caller sees, with its account and conversation; anything
@@ -436,6 +444,9 @@ func (s *service) saveDraft(ctx context.Context, p *auth.Principal, t target, dr
 	if err != nil {
 		return uuid.Nil, nil, httpx.Wrap(err)
 	}
+	if ai != nil {
+		ai.Ref = in.ClientRef
+	}
 	ref, err := dp.SaveDraft(pctx, d)
 	if err != nil {
 		s.log.Info("collab draft not saved", "account_id", t.a.ID, "reason", safeError(err))
@@ -523,6 +534,19 @@ func (s *service) storeDraft(ctx context.Context, a *accountRow, raw []byte, ref
 				return err
 			}
 		}
+		if id != uuid.Nil {
+			// The AI's text is kept for its outcome; a person's save takes an AI draft over
+			// ("AI draft outcomes").
+			var err error
+			if ai != nil {
+				err = recordAISave(ctx, tx, id, ai)
+			} else if replace != nil {
+				err = markTakenOver(ctx, tx, id, by)
+			}
+			if err != nil {
+				return err
+			}
+		}
 		if ai != nil && id != uuid.Nil {
 			// The content is the client's; the entry names the conversation, never the words.
 			// The actor is ai, through the key, on behalf of the member who created it.
@@ -583,8 +607,11 @@ func (s *service) storeSentDraft(ctx context.Context, a *accountRow, raw []byte,
 			return err
 		}
 		var err error
-		id, err = p.insert(ctx, tx, in)
-		return err
+		if id, err = p.insert(ctx, tx, in); err != nil || id == uuid.Nil {
+			return err
+		}
+		draftID := draft.ID
+		return settleSent(ctx, tx, &draftID, id, by)
 	})
 	if err != nil {
 		return uuid.Nil, err

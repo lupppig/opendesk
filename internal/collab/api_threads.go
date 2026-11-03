@@ -389,6 +389,12 @@ func (s *service) registerThreadRoutes(api huma.API) {
 					} else if err := s.applyLocal(ctx, tx, a, list, b.Action, folder); err != nil {
 						return err
 					}
+					if b.Action == ActionDone {
+						// Done without sending its AI draft: abandoned ("AI draft outcomes").
+						if err := settleDone(ctx, tx, list, p.UserID); err != nil {
+							return err
+						}
+					}
 					return s.publishChanged(ctx, tx, p.WorkspaceID, &a.ID, list, true)
 				})
 				if err != nil {

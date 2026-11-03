@@ -2824,12 +2824,35 @@ export type MailMessage = {
   draft_id?: string | null;
   /** Drafts an AI key saved and no person has saved since: the key's name, shown "AI draft by" (contracts/collab.md "AI drafts"). */
   drafted_by_ai?: string | null;
+  /** The AI draft it is, or was sent from, even once a person took it over (contracts/collab.md "AI draft outcomes"). */
+  ai_draft?: AIDraftRef | null;
   /** The message of the conversation it answers (its In-Reply-To), when stored. */
   in_reply_to_id?: string | null;
   /** The account's address (its own or an alias) it was sent from or written to; null when none. */
   own_address?: string | null;
   /** Mail the account wrote: sent from opendesk, a draft, or in its Sent or Drafts at the provider. A From naming the account does not make mail outgoing. */
   outgoing: boolean;
+};
+
+export type AIDraftOutcomeKind = "sent_unchanged" | "sent_edited" | "discarded" | "replaced" | "abandoned";
+
+export type AIDraftRef = {
+  /** The AI draft record (PUT /v1/collab/ai-drafts/{id}/feedback). */
+  id: string;
+  /** The key's name when it last saved the draft. */
+  client: string;
+  outcome: AIDraftOutcomeKind | null;
+  has_feedback: boolean;
+};
+
+export type AIDraftFeedbackReason = "wrong_facts" | "wrong_tone" | "missing_info" | "should_not_answer" | "other";
+
+export type AIDraftFeedbackBody = {
+  reason: AIDraftFeedbackReason;
+  /** At most 1,000 characters. */
+  note?: string;
+  /** Sanitized like mail. */
+  better_answer_html?: string;
 };
 
 /** How a message came, read from its source (GET /v1/collab/messages/{id}/details). */

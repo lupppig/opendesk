@@ -904,6 +904,8 @@ export const api = {
       /** With a body the draft is saved with it first. */
       send: (id: string, b?: CollabDraftBody) => http.post<T.MailMessage>(`/v1/collab/drafts/${id}/send`, b),
     },
+    /** A person's feedback on an AI draft, for the key that wrote it (contracts/collab.md "AI draft outcomes"). */
+    aiDraftFeedback: (id: string, b: T.AIDraftFeedbackBody) => http.put<void>(`/v1/collab/ai-drafts/${id}/feedback`, b),
     sidebar: {
       get: () => http.get<T.SidebarPrefs>("/v1/collab/sidebar"),
       put: (b: T.SidebarPrefs) => http.put<T.SidebarPrefs>("/v1/collab/sidebar", b),
