@@ -18,6 +18,8 @@
 # Env: E2E_APP_URL (http://localhost:5173), E2E_API_URL (http://localhost:8080), E2E_ONLY
 # (comma-separated flows: account inbox tickets kb widget ai settings danger
 # billing), E2E_SKIP_MFA=1, E2E_HEADED=1, E2E_SHOTS=<dir>, E2E_BAIL=0, E2E_WS_DEBUG=1.
+# PLAYWRIGHT_EXECUTABLE_PATH=<browser binary> runs an installed Chromium-based
+# browser (Brave, Chrome) instead of downloading Playwright's bundled Chromium.
 # The billing flow needs the API started with billing on against fake-stripe.mjs.
 set -euo pipefail
 
@@ -33,7 +35,7 @@ trap cleanup EXIT
 
 [[ -d node_modules/playwright ]] || pnpm install --ignore-workspace --frozen-lockfile
 node --test mail-links.test.mjs
-npx playwright install chromium >/dev/null
+[[ -n "${PLAYWRIGHT_EXECUTABLE_PATH:-}" ]] || npx playwright install chromium >/dev/null
 [[ -f "$root/web/dist/widget/v1.js" ]] || (cd "$root/web" && pnpm build:widget)
 
 node fake-ai.mjs 9900 >"$work/ai.log" 2>&1 & pids+=($!)

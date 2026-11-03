@@ -6,6 +6,8 @@
 //   node scripts/docs/shots.mjs inbox/overview mailboxes/add # only these shots (any file)
 //
 // DOCS_SHOTS_URL points at another app (default http://127.0.0.1:5310).
+// PLAYWRIGHT_EXECUTABLE_PATH runs an installed Chromium-based browser instead of
+// Playwright's bundled one.
 //
 // A shot file exports `shots`, a list of:
 //
@@ -371,7 +373,7 @@ async function capture(browser, shot, theme) {
 }
 
 const jobs = todo.flatMap((shot) => (shot.themes ?? ['light', 'dark']).map((theme) => ({ shot, theme })));
-const browser = await chromium.launch();
+const browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH || undefined });
 let failed = 0;
 const workers = Array.from({ length: Math.min(4, jobs.length) }, async () => {
   for (let job = jobs.shift(); job; job = jobs.shift()) {

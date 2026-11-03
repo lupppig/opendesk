@@ -269,7 +269,7 @@ services:
   s3:
     <<: *hardening
     profiles: [minio, s3]
-    image: ${S3_IMAGE:-rustfs/rustfs:1.0.3}
+    image: ${S3_IMAGE:-rustfs/rustfs:1.0.4}
     environment:
       RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY_ID:-opendesk}
       RUSTFS_SECRET_KEY: ${S3_SECRET_ACCESS_KEY:-}
@@ -337,7 +337,7 @@ services:
   ollama:
     <<: *hardening
     profiles: [ollama]
-    image: ${OLLAMA_IMAGE:-ollama/ollama:0.40.8}
+    image: ${OLLAMA_IMAGE:-ollama/ollama:0.40.13}
     environment:
       OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
     volumes:
@@ -346,7 +346,7 @@ services:
 
   ollama-init:
     profiles: [ollama]
-    image: ${OLLAMA_IMAGE:-ollama/ollama:0.40.8}
+    image: ${OLLAMA_IMAGE:-ollama/ollama:0.40.13}
     restart: "no"
     logging: *logging
     environment:
